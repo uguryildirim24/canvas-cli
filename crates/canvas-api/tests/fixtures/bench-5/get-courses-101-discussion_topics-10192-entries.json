@@ -1,0 +1,15 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses/101/discussion_topics/10192/entries",
+  "query": [],
+  "status": 403,
+  "headers": {},
+  "body": {
+    "errors": [
+      {
+        "message": "initial post required"
+      }
+    ],
+    "status": "unauthorized"
+  }
+}

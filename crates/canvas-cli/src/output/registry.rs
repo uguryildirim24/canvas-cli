@@ -33,6 +33,14 @@ pub const SCHEMA_IDENTITY: &str = "canvas-cli/identity@1";
 pub const SCHEMA_CONFIG: &str = "canvas-cli/config@1";
 pub const SCHEMA_DOCTOR: &str = "canvas-cli/doctor@1";
 pub const SCHEMA_PLAN: &str = "canvas-cli/plan@1";
+pub const SCHEMA_PAGES: &str = "canvas-cli/pages@1";
+pub const SCHEMA_PAGE: &str = "canvas-cli/page@1";
+pub const SCHEMA_SYLLABUS: &str = "canvas-cli/syllabus@1";
+pub const SCHEMA_DISCUSSIONS: &str = "canvas-cli/discussions@1";
+pub const SCHEMA_DISCUSSION: &str = "canvas-cli/discussion@1";
+pub const SCHEMA_INBOX: &str = "canvas-cli/inbox@1";
+pub const SCHEMA_CONVERSATION: &str = "canvas-cli/conversation@1";
+pub const SCHEMA_INBOX_UNREAD: &str = "canvas-cli/inbox_unread@1";
 pub const SCHEMA_HERE: &str = "canvas-cli/here@1";
 pub const SCHEMA_BRIDGE: &str = "canvas-cli/bridge@1";
 pub const SCHEMA_VERSION: &str = "canvas-cli/version@1";
@@ -200,6 +208,46 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
             id: SCHEMA_DOCTOR,
             variant: None,
             fixture: include_str!("schemas/doctor.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_PAGES,
+            variant: None,
+            fixture: include_str!("schemas/pages.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_PAGE,
+            variant: None,
+            fixture: include_str!("schemas/page.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_SYLLABUS,
+            variant: None,
+            fixture: include_str!("schemas/syllabus.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_DISCUSSIONS,
+            variant: None,
+            fixture: include_str!("schemas/discussions.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_DISCUSSION,
+            variant: None,
+            fixture: include_str!("schemas/discussion.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_INBOX,
+            variant: None,
+            fixture: include_str!("schemas/inbox.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_CONVERSATION,
+            variant: None,
+            fixture: include_str!("schemas/conversation.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_INBOX_UNREAD,
+            variant: None,
+            fixture: include_str!("schemas/inbox_unread.json"),
         },
         SchemaEntry {
             id: SCHEMA_VERSION,
@@ -1343,6 +1391,264 @@ mod tests {
             insta::assert_snapshot!(json);
         });
     }
+}
+
+// --- M8-a richer reads (Appendix D v2, `docs/reads-v2.md`) ---
+
+/// One piece of content the Markdown cannot carry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmbeddedJson {
+    /// `iframe`, `lti`, `video`, `audio`, or `unknown`.
+    pub kind: String,
+    pub src_origin: Option<String>,
+    /// Always `unavailable`: this package never fetches embedded content.
+    pub reported: String,
+}
+
+/// One same-origin Canvas file a body refers to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileRefJson {
+    pub file_id: String,
+    pub name: Option<String>,
+    pub url: String,
+}
+
+/// One reference that leaves the Canvas origin; never fetched.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalLinkJson {
+    pub url: String,
+}
+
+/// Listing row for `pages`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageSummaryJson {
+    pub id: String,
+    pub title: Option<String>,
+    pub url: Option<String>,
+    pub updated_at: Option<String>,
+    pub published: Option<bool>,
+    pub front_page: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PagesResult {
+    pub course_id: String,
+    pub listing: FilesListingJson,
+    pub pages: Vec<PageSummaryJson>,
+}
+
+/// One page body with everything the Markdown could not show.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageDetailJson {
+    pub id: String,
+    pub course_id: String,
+    pub title: Option<String>,
+    pub url: Option<String>,
+    pub updated_at: Option<String>,
+    pub published: Option<bool>,
+    pub front_page: Option<bool>,
+    pub locked_for_user: Option<bool>,
+    pub html_url: Option<String>,
+    pub body_markdown: Option<String>,
+    /// True when the body was cut at 64 KiB.
+    pub truncated: bool,
+    pub embedded: Vec<EmbeddedJson>,
+    pub files: Vec<FileRefJson>,
+    pub external_links: Vec<ExternalLinkJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageResult {
+    pub page: PageDetailJson,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SyllabusResult {
+    pub course_id: String,
+    pub syllabus_markdown: Option<String>,
+    pub truncated: bool,
+    pub embedded: Vec<EmbeddedJson>,
+    pub files: Vec<FileRefJson>,
+    pub external_links: Vec<ExternalLinkJson>,
+    pub updated_at: Option<String>,
+}
+
+/// One child topic of a group discussion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupTopicChildJson {
+    pub id: Option<String>,
+    pub group_id: Option<String>,
+}
+
+/// Listing row for `discussions`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiscussionSummaryJson {
+    pub id: String,
+    pub course_id: Option<String>,
+    pub title: Option<String>,
+    pub posted_at: Option<String>,
+    pub last_reply_at: Option<String>,
+    pub author: Option<String>,
+    pub read_state: Option<String>,
+    pub unread_count: Option<u64>,
+    pub reply_count: Option<u64>,
+    pub locked: Option<bool>,
+    pub pinned: Option<bool>,
+    pub is_announcement: Option<bool>,
+    pub require_initial_post: Option<bool>,
+    pub assignment_id: Option<String>,
+    pub points_possible: Option<f64>,
+    pub group_category_id: Option<String>,
+    pub html_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiscussionsResult {
+    pub course_id: String,
+    pub listing: FilesListingJson,
+    pub discussions: Vec<DiscussionSummaryJson>,
+}
+
+/// One reply, top level or nested.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiscussionReplyJson {
+    pub id: String,
+    pub parent_id: Option<String>,
+    pub user_id: Option<String>,
+    pub user_name: Option<String>,
+    pub created_at: Option<String>,
+    pub message_markdown: Option<String>,
+    pub truncated: bool,
+    pub read_state: Option<String>,
+    pub replies_count: u64,
+}
+
+/// How much of a reply set this answer covers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepliesCoverageJson {
+    pub pages_fetched: u32,
+    pub complete: bool,
+    /// `initial_post_required`, `page_failed`, `not_requested`, or `null`.
+    pub blocked: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiscussionDetailJson {
+    pub id: String,
+    pub course_id: Option<String>,
+    pub title: Option<String>,
+    pub posted_at: Option<String>,
+    pub last_reply_at: Option<String>,
+    pub author: Option<String>,
+    pub discussion_type: Option<String>,
+    pub read_state: Option<String>,
+    pub unread_count: Option<u64>,
+    pub reply_count: Option<u64>,
+    pub locked: Option<bool>,
+    pub pinned: Option<bool>,
+    pub is_announcement: Option<bool>,
+    pub require_initial_post: Option<bool>,
+    pub assignment_id: Option<String>,
+    pub points_possible: Option<f64>,
+    pub group_category_id: Option<String>,
+    pub group_topic_children: Vec<GroupTopicChildJson>,
+    pub html_url: Option<String>,
+    pub message_markdown: Option<String>,
+    pub truncated: bool,
+    pub embedded: Vec<EmbeddedJson>,
+    pub files: Vec<FileRefJson>,
+    pub external_links: Vec<ExternalLinkJson>,
+    pub replies: Vec<DiscussionReplyJson>,
+    /// Which `--page` of replies `replies` holds. 1 when `--page` is absent.
+    pub replies_page: u32,
+    /// How many replies the covered set holds, across every page.
+    ///
+    /// `replies` shows at most one page of them, so a page past the end is an
+    /// empty list beside a non-zero total, and a reader can tell that apart
+    /// from a thread with no replies (SPEC §19 item 28).
+    ///
+    /// `null` when the thread was never read — `--replies` was not asked, so
+    /// `replies_coverage.blocked` is `not_requested`. A count of 0 is an
+    /// observation that the thread has no replies, and this field never
+    /// reports one the command did not make.
+    pub replies_total: Option<u32>,
+    pub replies_coverage: RepliesCoverageJson,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiscussionResult {
+    pub discussion: DiscussionDetailJson,
+}
+
+/// One conversation participant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParticipantJson {
+    pub id: Option<String>,
+    pub name: Option<String>,
+}
+
+/// One attachment on a conversation message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConversationAttachmentJson {
+    pub file_id: Option<String>,
+    pub name: Option<String>,
+    pub size: Option<u64>,
+}
+
+/// Listing row for `inbox`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConversationSummaryJson {
+    pub id: String,
+    pub subject: Option<String>,
+    pub workflow_state: Option<String>,
+    pub last_message_at: Option<String>,
+    pub message_count: Option<u64>,
+    pub context_name: Option<String>,
+    pub starred: Option<bool>,
+    pub participants: Vec<ParticipantJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InboxResult {
+    pub scope: String,
+    pub listing: FilesListingJson,
+    pub conversations: Vec<ConversationSummaryJson>,
+}
+
+/// One message inside a conversation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConversationMessageJson {
+    pub id: Option<String>,
+    pub author_id: Option<String>,
+    pub created_at: Option<String>,
+    pub body: Option<String>,
+    /// True when the body was cut at 64 KiB.
+    pub truncated: bool,
+    pub attachments: Vec<ConversationAttachmentJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConversationDetailJson {
+    pub id: String,
+    pub subject: Option<String>,
+    pub workflow_state: Option<String>,
+    pub last_message_at: Option<String>,
+    pub context_name: Option<String>,
+    pub participants: Vec<ParticipantJson>,
+    pub messages: Vec<ConversationMessageJson>,
+    /// False when the listing row was served and no message set was fetched.
+    pub messages_complete: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConversationResult {
+    pub conversation: ConversationDetailJson,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxUnreadResult {
+    /// `null` when Canvas did not report a count.
+    pub unread_count: Option<u64>,
 }
 
 // --- M7-a typed result payloads (`here@1`, `bridge@1`; REPORT §3.2, §3.3) ---

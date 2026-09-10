@@ -1,0 +1,10 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "scrub_text(&f.text(&[\"inbox\", \"show\", \"700\"], 0).await, &server.uri())"
+---
+Conversation 700
+with You, Alex Kim
+
+— 2026-09-09T12:00:00Z
+Can we meet before the lab?
+attachment 42 notes.pdf

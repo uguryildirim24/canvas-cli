@@ -60,9 +60,12 @@ expression: normalized(detail)
       "points_possible": 10.0,
       "rubric": [
         {
+          "criterion_use_range": false,
           "description": "Reasoning",
           "id": "c1",
-          "points": 10.0
+          "long_description": null,
+          "points": 10.0,
+          "ratings": []
         }
       ],
       "rubric_assessed": false,

@@ -389,6 +389,7 @@ fn split_course_fields(
                 };
             }
             "syllabus_markdown"
+            | "syllabus_refs"
             | "teachers"
             | "time_zone"
             | "modules_count"

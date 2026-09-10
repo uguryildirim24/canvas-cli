@@ -1,0 +1,73 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "normalized(out, &server.uri())"
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "page",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "page:5:course-overview",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "<generated_at>",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "page": {
+      "body_markdown": "Read the [handbook](<origin>/courses/5/files/42).\n\nAlso [these notes](https://elsewhere.test/notes).\n\n[embedded iframe: unavailable to this tool]\n\n[embedded lti: unavailable to this tool]",
+      "course_id": "5",
+      "embedded": [
+        {
+          "kind": "iframe",
+          "reported": "unavailable",
+          "src_origin": "https://player.test"
+        },
+        {
+          "kind": "lti",
+          "reported": "unavailable",
+          "src_origin": null
+        }
+      ],
+      "external_links": [
+        {
+          "url": "https://elsewhere.test/notes"
+        }
+      ],
+      "files": [
+        {
+          "file_id": "42",
+          "name": "handbook",
+          "url": "<origin>/courses/5/files/42"
+        }
+      ],
+      "front_page": true,
+      "html_url": "https://canvas.test/courses/5/pages/course-overview",
+      "id": "301",
+      "locked_for_user": false,
+      "published": true,
+      "title": "Page 301",
+      "truncated": false,
+      "updated_at": "2026-09-01T14:00:00Z",
+      "url": "course-overview"
+    }
+  },
+  "schema": "canvas-cli/page@1",
+  "warnings": []
+}

@@ -1,0 +1,53 @@
+{
+  "discussion": {
+    "assignment_id": "2",
+    "author": "Dr. Reed",
+    "course_id": "1",
+    "discussion_type": "threaded",
+    "embedded": [],
+    "external_links": [],
+    "files": [],
+    "group_category_id": "9",
+    "group_topic_children": [
+      {
+        "group_id": "77",
+        "id": "56"
+      }
+    ],
+    "html_url": "https://canvas.test/courses/1/discussion_topics/55",
+    "id": "55",
+    "is_announcement": false,
+    "last_reply_at": "2026-09-08T10:00:00Z",
+    "locked": false,
+    "message_markdown": "What surprised you this week?",
+    "pinned": false,
+    "points_possible": 5.0,
+    "posted_at": "2026-09-01T14:00:00Z",
+    "read_state": "unread",
+    "replies": [
+      {
+        "created_at": "2026-09-02T09:00:00Z",
+        "id": "900",
+        "message_markdown": "The lab took longer than I expected.",
+        "parent_id": null,
+        "read_state": "unread",
+        "replies_count": 1,
+        "truncated": false,
+        "user_id": "31",
+        "user_name": "Alex Kim"
+      }
+    ],
+    "replies_coverage": {
+      "blocked": null,
+      "complete": true,
+      "pages_fetched": 2
+    },
+    "replies_page": 1,
+    "replies_total": 1,
+    "reply_count": 4,
+    "require_initial_post": true,
+    "title": "Week 1 reflection",
+    "truncated": false,
+    "unread_count": 2
+  }
+}

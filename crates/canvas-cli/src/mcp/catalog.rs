@@ -20,14 +20,16 @@ use serde_json::Value;
 use crate::cli::AssignmentBucket;
 use crate::commands::{
     Globals, announcement, announcements, assignment, assignments, bridge, calendar, course,
-    courses, download, files, grades, handled::Handled, here, modules, open, receipts, submission,
-    submit, sync, todo,
+    courses, discussions, download, files, grades, handled::Handled, here, inbox, modules, open,
+    pages, receipts, submission, submit, sync, todo,
 };
 use crate::output::{
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
-    SCHEMA_BRIDGE, SCHEMA_CALENDAR, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOWNLOAD, SCHEMA_FILES,
-    SCHEMA_GRADES, SCHEMA_HERE, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_PLAN, SCHEMA_RECEIPTS,
-    SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO,
+    SCHEMA_BRIDGE, SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES,
+    SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_FILES, SCHEMA_GRADES,
+    SCHEMA_HERE, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_PAGE,
+    SCHEMA_PAGES, SCHEMA_PLAN, SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT,
+    SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_TODO,
 };
 
 /// What a tool does to its environment (§3.5).
@@ -216,6 +218,77 @@ pub struct ModulesListArgs {
     #[serde(default)]
     pub items: bool,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PagesListArgs {
+    pub course: String,
+    /// Also list pages Canvas reports as unpublished. It changes what is
+    /// shown, never what is fetched.
+    #[serde(default)]
+    pub unpublished: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PageGetArgs {
+    pub course: String,
+    /// The page's URL slug, its numeric id, or a full Canvas page URL. A URL
+    /// must name the same course.
+    pub page: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SyllabusGetArgs {
+    pub course: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DiscussionsListArgs {
+    pub course: String,
+    /// Only topics this identity has not read. Reading one never marks it
+    /// read.
+    #[serde(default)]
+    pub unread: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DiscussionGetArgs {
+    pub course: String,
+    /// Topic id, or a full Canvas discussion URL naming the same course.
+    pub discussion: String,
+    /// Also read the thread. Without it the answer carries no replies and
+    /// says so in `replies_coverage`.
+    #[serde(default)]
+    pub replies: bool,
+    /// Which page of replies to show, 100 per page, counting from 1. It needs
+    /// `replies`. A page past the end is an empty window, not an error.
+    #[serde(default)]
+    pub page: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InboxListArgs {
+    /// `inbox` (the default), `unread`, `sent`, or `archived`.
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InboxGetArgs {
+    /// Conversation id.
+    pub id: String,
+}
+
+/// `inbox.unread_count` takes nothing; it reports one number for the identity.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InboxUnreadCountArgs {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -505,6 +578,40 @@ pub fn specs() -> &'static [ToolSpec] {
             input_schema: schema_of::<ModulesListArgs>,
         },
         ToolSpec {
+            name: "pages.list",
+            title: "List course pages",
+            description: "List a course's wiki pages: title, slug, and when each was updated.",
+            schema: SCHEMA_PAGES,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<PagesListArgs>,
+        },
+        ToolSpec {
+            name: "page.get",
+            title: "Show one course page",
+            description: "One page as Markdown, with what the text could not show: embedded \
+                          content, its file references, and its external links.",
+            schema: SCHEMA_PAGE,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<PageGetArgs>,
+        },
+        ToolSpec {
+            name: "syllabus.get",
+            title: "Show a course syllabus",
+            description: "A course's syllabus as Markdown. It costs no request of its own.",
+            schema: SCHEMA_SYLLABUS,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<SyllabusGetArgs>,
+        },
+        ToolSpec {
             name: "announcements.list",
             title: "List announcements",
             description: "Recent announcements across courses. Reading never marks one read.",
@@ -525,6 +632,64 @@ pub fn specs() -> &'static [ToolSpec] {
             idempotent: true,
             open_world: true,
             input_schema: schema_of::<AnnouncementGetArgs>,
+        },
+        ToolSpec {
+            name: "discussions.list",
+            title: "List course discussions",
+            description: "A course's discussion topics. Announcements are a different listing: \
+                          use `announcements.list` for those. Nothing is marked read.",
+            schema: SCHEMA_DISCUSSIONS,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<DiscussionsListArgs>,
+        },
+        ToolSpec {
+            name: "discussion.get",
+            title: "Show one discussion",
+            description: "One topic, and its thread when `replies` is asked. `replies_coverage` \
+                          says how much of the thread was read; it stays unread either way.",
+            schema: SCHEMA_DISCUSSION,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<DiscussionGetArgs>,
+        },
+        ToolSpec {
+            name: "inbox.list",
+            title: "List conversations",
+            description: "The identity's Canvas conversations. Every request says \
+                          `auto_mark_as_read=false`, so reading marks nothing.",
+            schema: SCHEMA_INBOX,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<InboxListArgs>,
+        },
+        ToolSpec {
+            name: "inbox.get",
+            title: "Show one conversation",
+            description: "One conversation with its messages and attachments. It stays unread.",
+            schema: SCHEMA_CONVERSATION,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<InboxGetArgs>,
+        },
+        ToolSpec {
+            name: "inbox.unread_count",
+            title: "Count unread conversations",
+            description: "How many conversations are unread. `null` means Canvas did not say.",
+            schema: SCHEMA_INBOX_UNREAD,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<InboxUnreadCountArgs>,
         },
         ToolSpec {
             name: "calendar.list",
@@ -796,6 +961,22 @@ pub async fn dispatch(
                 .await
                 .into()
         }
+        "pages.list" => {
+            let args: PagesListArgs = parse(arguments)?;
+            pages::handle_list(globals, args.course, args.unpublished)
+                .await
+                .into()
+        }
+        "page.get" => {
+            let args: PageGetArgs = parse(arguments)?;
+            pages::handle_show(globals, args.course, args.page)
+                .await
+                .into()
+        }
+        "syllabus.get" => {
+            let args: SyllabusGetArgs = parse(arguments)?;
+            pages::handle_syllabus(globals, args.course).await.into()
+        }
         "announcements.list" => {
             let args: AnnouncementsListArgs = parse(arguments)?;
             announcements::handle(globals, args.course, args.since, args.unread)
@@ -807,6 +988,36 @@ pub async fn dispatch(
             announcement::handle(globals, args.course, args.id)
                 .await
                 .into()
+        }
+        "discussions.list" => {
+            let args: DiscussionsListArgs = parse(arguments)?;
+            discussions::handle_list(globals, args.course, args.unread)
+                .await
+                .into()
+        }
+        "discussion.get" => {
+            let args: DiscussionGetArgs = parse(arguments)?;
+            discussions::handle_show(
+                globals,
+                args.course,
+                args.discussion,
+                args.replies,
+                args.page,
+            )
+            .await
+            .into()
+        }
+        "inbox.list" => {
+            let args: InboxListArgs = parse(arguments)?;
+            inbox::handle_list(globals, args.scope).await.into()
+        }
+        "inbox.get" => {
+            let args: InboxGetArgs = parse(arguments)?;
+            inbox::handle_show(globals, args.id).await.into()
+        }
+        "inbox.unread_count" => {
+            let _args: InboxUnreadCountArgs = parse(arguments)?;
+            inbox::handle_unread_count(globals).await.into()
         }
         "calendar.list" => {
             let args: CalendarListArgs = parse(arguments)?;
@@ -978,8 +1189,16 @@ mod tests {
             "grades.get",
             "files.list",
             "modules.list",
+            "pages.list",
+            "page.get",
+            "syllabus.get",
             "announcements.list",
             "announcement.get",
+            "discussions.list",
+            "discussion.get",
+            "inbox.list",
+            "inbox.get",
+            "inbox.unread_count",
             "calendar.list",
             "submission.get",
             "receipts.list",

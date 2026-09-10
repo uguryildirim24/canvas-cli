@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/api/v1/conversations/unread_count",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": {
+    "unread_count": "2"
+  }
+}

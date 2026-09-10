@@ -417,6 +417,30 @@ impl CourseRow {
             })
     }
 
+    /// The syllabus reference projection the cache stores (M8-a).
+    ///
+    /// A cache written before M8-a has none, and the lists are then empty
+    /// rather than wrong.
+    #[must_use]
+    pub fn syllabus_refs(&self) -> canvas_core::markdown::BodyRefs {
+        self.data_json
+            .get("syllabus_refs")
+            .and_then(|v| match v {
+                Value::String(s) => serde_json::from_str(s).ok(),
+                other => serde_json::from_value(other.clone()).ok(),
+            })
+            .unwrap_or_default()
+    }
+
+    /// Course `updated_at` from `data_json` when Canvas reported one.
+    #[must_use]
+    pub fn updated_at(&self) -> Option<String> {
+        self.data_json
+            .get("updated_at")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    }
+
     /// Time zone from `data_json` when present.
     #[must_use]
     pub fn time_zone(&self) -> Option<String> {

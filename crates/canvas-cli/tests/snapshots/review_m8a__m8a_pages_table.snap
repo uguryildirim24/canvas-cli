@@ -1,0 +1,6 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "scrub_text(&f.text(&[\"pages\", \"5\"], 0).await, &server.uri())"
+---
+  ID     TITLE       SLUG               UPDATED                 STATE      
+  301    Page 301    course-overview    2026-09-01T14:00:00Z    published
