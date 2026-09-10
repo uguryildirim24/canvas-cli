@@ -53,8 +53,17 @@ pub struct OpenIdentity {
 impl OpenIdentity {
     /// Take the shared identity lock, re-verify, and open both databases.
     pub fn open(paths: &Paths, identity: &IdentityDocument) -> Result<Self, StoreError> {
+        Self::open_with_coord(paths, identity, crate::coord::CoordConfig::from_env())
+    }
+
+    /// Open with explicit coordinator tuning (`[network]` concurrency).
+    pub fn open_with_coord(
+        paths: &Paths,
+        identity: &IdentityDocument,
+        coord: crate::coord::CoordConfig,
+    ) -> Result<Self, StoreError> {
         identity.verify()?;
-        let store = Store::open(paths, identity)?;
+        let store = Store::open_with_coord(paths, identity, coord)?;
         let lock = std::sync::Arc::clone(&store.lock);
         Ok(Self {
             lock,

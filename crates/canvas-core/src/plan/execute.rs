@@ -91,6 +91,23 @@ pub async fn execute(
         return Err(invalidate(store, &plan, "identity generation changed"));
     }
 
+    // REPORT §3.6: foreground interest, registered before the first pre-flight
+    // request and held until execute returns. While it is registered `watch`
+    // admits no new polling request, so the revalidation read is never queued
+    // behind a poll. A coordinator that cannot record it costs priority, not
+    // the execute; `submit` may already hold this assignment, and then the
+    // registration here is a no-op that the outer holder releases.
+    let _interest = match store
+        .coordinator()
+        .register_interest(crate::coord::InterestKind::PlanExecute, plan.assignment_id)
+    {
+        Ok(interest) => interest,
+        Err(error) => {
+            tracing::debug!(%error, "cannot register foreground plan interest");
+            None
+        }
+    };
+
     // Pre-flight step 1 again: the plan is compared against a fresh read.
     let assignment =
         crate::submit::fetch_assignment(client, plan.course_id, plan.assignment_id).await?;

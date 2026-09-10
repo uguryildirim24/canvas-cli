@@ -73,28 +73,45 @@ impl Default for CoordConfig {
 
 impl CoordConfig {
     /// The default configuration with the debug-only test overrides applied.
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self::default().with_test_overrides()
+    }
+
+    /// Apply `[network]` concurrency from the caller's configuration.
+    #[must_use]
+    pub fn with_concurrency(mut self, api: usize, storage: usize) -> Self {
+        self.api_concurrency = api.clamp(1, 8);
+        self.storage_concurrency = storage.max(1);
+        self
+    }
+
+    /// Apply the debug-only test overrides.
     ///
     /// Two cross-process tests need a shorter waiter and a smaller cap than a
     /// real session, and they run the shipped binary, so the values have to
     /// arrive through the environment. Release builds ignore both.
     #[must_use]
-    pub fn from_env() -> Self {
-        let mut config = Self::default();
+    pub fn with_test_overrides(mut self) -> Self {
         if !cfg!(debug_assertions) {
-            return config;
+            return self;
         }
         if let Some(n) = env_usize("CANVAS_TEST_API_CONCURRENCY") {
-            config.api_concurrency = n.clamp(1, 8);
+            self.api_concurrency = n.clamp(1, 8);
         }
-        if let Some(ms) = env_usize("CANVAS_TEST_REFRESH_WAIT_MS") {
-            config.refresh_wait = Duration::from_millis(ms as u64);
+        if let Some(ms) = env_millis("CANVAS_TEST_REFRESH_WAIT_MS") {
+            self.refresh_wait = ms;
         }
-        config
+        self
     }
 }
 
 fn env_usize(name: &str) -> Option<usize> {
     std::env::var(name).ok()?.parse().ok()
+}
+
+fn env_millis(name: &str) -> Option<Duration> {
+    Some(Duration::from_millis(env_usize(name)?.try_into().ok()?))
 }
 
 /// The shared coordinator for one identity.
