@@ -170,3 +170,29 @@ fn origin_context_restores_on_nested_panic_without_leaking_url_in_errors() {
         .unwrap();
     assert!(!err.to_string().contains("SECRET"));
 }
+
+#[test]
+fn malformed_wrapped_collections_cannot_become_successful_empty_pages() {
+    for input in ["{}", r#"{"meta":{}}"#, r#"{"grading_periods":null}"#] {
+        assert!(serde_json::from_str::<WrappedCollection<GradingPeriod>>(input).is_err());
+    }
+    let empty: WrappedCollection<GradingPeriod> = load(r#"{"grading_periods":[]}"#);
+    assert!(empty.items.is_empty());
+}
+
+#[test]
+fn course_teachers_and_planner_assignment_keys_are_retained() {
+    let course: Course = load(r#"{"id":"100","teachers":[{"id":"2","name":"Ada"}]}"#);
+    assert_eq!(course.teachers.unwrap()[0].id, 2);
+    let planner: PlannerItem = load(
+        r#"{"plannable_type":"discussion_topic","plannable":{"id":"4","assignment_id":"9","parent_assignment_id":"8","todo_date":"2026-09-20T00:00:00-04:00","custom_kind_field":true}}"#,
+    );
+    let plannable = planner.plannable.unwrap();
+    assert_eq!(plannable.assignment_id, Some(9));
+    assert_eq!(plannable.parent_assignment_id, Some(8));
+    assert_eq!(
+        plannable.todo_date.unwrap().to_string(),
+        "2026-09-20T04:00:00Z"
+    );
+    assert_eq!(plannable.extra["custom_kind_field"], true);
+}
