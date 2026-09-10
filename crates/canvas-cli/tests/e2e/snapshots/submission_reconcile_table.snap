@@ -1,0 +1,9 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 9
+--- stdout ---
+reconcile recovery — no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes
+journal 00000000-0000-4000-8000-00000000000j  state=outcome_unknown  owner=n/a  attribution=unknown
+--- stderr ---

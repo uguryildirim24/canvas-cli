@@ -1,0 +1,8 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+00000000-0000-4000-8000-00000000000j  submitted  owner=n/a  superseded=false  acknowledged=false
+--- stderr ---

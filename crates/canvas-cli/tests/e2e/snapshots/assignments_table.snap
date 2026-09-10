@@ -1,0 +1,9 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  ID    Course    Name             Due                                  Status     
+  9               Problem Set 1    Sat Sep 19, 11:59 PM (in 10d 10h)    submitted  
+--- stderr ---

@@ -1,0 +1,13 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+Welcome
+posted 2026-09-01T08:00:00-04:00
+unread
+<origin>/courses/100/discussion_topics/40
+
+Hello
+--- stderr ---

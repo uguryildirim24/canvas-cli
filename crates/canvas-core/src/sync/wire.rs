@@ -1,16 +1,16 @@
 //! Preserve field presence while projecting API models onto allowlisted cache fields.
 
 use super::{
-    SyncError, assignment_group_to_entity, assignment_to_entity, course_to_entity,
-    enrollment_to_entity, file_to_entity, folder_to_entity, grading_period_to_entity,
-    module_to_entity,
+    SyncError, announcement_to_entity, assignment_group_to_entity, assignment_to_entity,
+    calendar_event_to_entity, course_to_entity, enrollment_to_entity, file_to_entity,
+    folder_to_entity, grading_period_to_entity, module_to_entity,
 };
 use crate::store::{EntityIngest, FieldGroup, FieldWrite};
 use canvas_api::{
     Supplied,
     models::{
-        Assignment, AssignmentGroup, Course, Enrollment, File, Folder, GradingPeriod, Module,
-        ModuleItem,
+        Announcement, Assignment, AssignmentGroup, CalendarEvent, Course, Enrollment, File, Folder,
+        GradingPeriod, Module, ModuleItem,
     },
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
@@ -184,6 +184,99 @@ impl Observed<Course> {
             }
         }
         Ok(entity)
+    }
+}
+
+impl Observed<Announcement> {
+    /// Entity for one announcement, keeping explicit `null` distinct from an
+    /// absent field so the per-field freshness rule (§10) can clear a value.
+    pub fn entity(self) -> EntityIngest {
+        let mut entity = announcement_to_entity(&self.model);
+        observe(
+            &mut entity.fields,
+            &self.raw,
+            "context_code",
+            FieldGroup::Core,
+        );
+        observe(&mut entity.fields, &self.raw, "title", FieldGroup::Core);
+        observe(&mut entity.fields, &self.raw, "posted_at", FieldGroup::Core);
+        observe(
+            &mut entity.fields,
+            &self.raw,
+            "delayed_post_at",
+            FieldGroup::Core,
+        );
+        observe(&mut entity.fields, &self.raw, "message", FieldGroup::Detail);
+        observe(
+            &mut entity.fields,
+            &self.raw,
+            "html_url",
+            FieldGroup::Detail,
+        );
+        observe(
+            &mut entity.fields,
+            &self.raw,
+            "read_state",
+            FieldGroup::Status,
+        );
+        // `course_id` is derived from `context_code`, so it follows it.
+        if matches!(supplied(&self.raw, "context_code"), Supplied::Null) {
+            entity.fields.retain(|f| f.name != "course_id");
+            entity.fields.push(FieldWrite {
+                name: "course_id",
+                group: FieldGroup::Core,
+                value: None,
+            });
+        }
+        // The author name comes from either key; only both being explicitly
+        // null means the server cleared it.
+        if matches!(supplied(&self.raw, "user_name"), Supplied::Null)
+            && matches!(supplied(&self.raw, "author"), Supplied::Null)
+        {
+            entity.fields.retain(|f| f.name != "author");
+            entity.fields.push(FieldWrite {
+                name: "author",
+                group: FieldGroup::Core,
+                value: None,
+            });
+        }
+        entity
+    }
+}
+
+impl Observed<Announcement> {
+    /// Entity for the detail route (§12.6), where the course comes from the
+    /// path and not from `context_code`.
+    pub fn entity_in_course(self, course_id: i64) -> EntityIngest {
+        let mut entity = self.entity();
+        entity.fields.retain(|f| f.name != "course_id");
+        entity.fields.push(FieldWrite {
+            name: "course_id",
+            group: FieldGroup::Core,
+            value: Some(course_id.to_string()),
+        });
+        entity
+    }
+}
+
+impl Observed<CalendarEvent> {
+    /// Entity for one calendar event, keeping explicit `null` distinct from an
+    /// absent field (§10).
+    pub fn entity(self) -> EntityIngest {
+        let mut entity = calendar_event_to_entity(&self.model);
+        for name in ["title", "start_at", "end_at", "context_code"] {
+            observe(&mut entity.fields, &self.raw, name, FieldGroup::Core);
+        }
+        for name in ["all_day", "all_day_date"] {
+            observe(&mut entity.fields, &self.raw, name, FieldGroup::Core);
+        }
+        for name in ["description", "location_name", "html_url"] {
+            observe(&mut entity.fields, &self.raw, name, FieldGroup::Detail);
+        }
+        for name in ["workflow_state", "hidden"] {
+            observe(&mut entity.fields, &self.raw, name, FieldGroup::Status);
+        }
+        entity
     }
 }
 

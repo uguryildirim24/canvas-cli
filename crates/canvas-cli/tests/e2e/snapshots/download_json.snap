@@ -1,0 +1,88 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "folders",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "files",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "modules",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "cache",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "courses": [
+      {
+        "course_code": "",
+        "course_id": "100",
+        "files": [
+          {
+            "action": "planned",
+            "error": null,
+            "id": "501",
+            "path": "100-100/modules/01-Week 1/syllabus.pdf",
+            "previous_path": null,
+            "size": 2048,
+            "verify": null
+          }
+        ]
+      }
+    ],
+    "dest": "<scratch>/downloads",
+    "dry_run": true,
+    "totals": {
+      "bytes": 2048,
+      "downloaded": 0,
+      "failed": 0,
+      "locked": 0,
+      "modified": 0,
+      "moved": 0,
+      "planned": 1,
+      "skipped": 0,
+      "skipped_external": 0,
+      "unavailable": 0,
+      "unmanaged": 0,
+      "unresolved_move": 0,
+      "unsafe_path": 0
+    }
+  },
+  "schema": "canvas-cli/download@1",
+  "warnings": []
+}

@@ -1,0 +1,7 @@
+---
+source: crates/canvas-cli/tests/m4b.rs
+expression: stdout
+---
+  POSTED              COURSE    ID      TITLE                     READ    
+  2026-09-08 10:00    CHEM      9001    Lab 3 is posted           unread  
+  2026-09-02 14:30    CHEM      9000    Quiz 2 moved to Friday    read

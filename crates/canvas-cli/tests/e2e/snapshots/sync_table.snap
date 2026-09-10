@@ -1,0 +1,19 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  DATASET              SCOPE                                 SOURCE     COUNT    STALE    REQUESTS  
+  announcements        window:2026-09-08..2026-09-21:ctx:    network    1        false    1         
+                       ad57366865126e55649ecb23ae1d488875                                           
+                       44976efea46a48eb5d85a6eeb4d306                                               
+  assignments          course:100                            network    1        false    1         
+  course_totals        course:100                            network    2        false    0         
+  courses              active                                network    1        false    1         
+  enrollment_grades    period:none                           network    1        false    1         
+  grading_periods      course:100                            network    1        false    1         
+  missing              all                                   network    1        false    1         
+  planner              window:2026-09-08..2026-09-21         network    1        false    1         
+  terms                active                                network    1        false    0         
+--- stderr ---

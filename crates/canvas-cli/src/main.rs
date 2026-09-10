@@ -47,17 +47,6 @@ impl From<ColorChoice> for ColorMode {
     }
 }
 
-fn not_implemented(json: bool) -> ExitCode {
-    commands::emit::emit_error(
-        json,
-        "not_implemented",
-        "not implemented yet",
-        1,
-        None,
-        None,
-    )
-}
-
 fn m1b_globals(globals: &Globals) -> commands::Globals {
     commands::Globals {
         json: globals.json,
@@ -188,9 +177,6 @@ async fn main() -> ExitCode {
                 Commands::Grades { course, period } => {
                     commands::grades::run(&m1b_globals(&globals), course, period).await
                 }
-                Commands::Announcements { .. }
-                | Commands::Announcement { .. }
-                | Commands::Calendar { .. } => not_implemented(globals.json),
                 Commands::Submit {
                     target,
                     assignment,
@@ -257,6 +243,34 @@ async fn main() -> ExitCode {
                         }
                     };
                     commands::receipts::run(&m1b_globals(&globals), cmd)
+                }
+                Commands::Announcements {
+                    course,
+                    since,
+                    unread,
+                } => {
+                    commands::announcements::run(&m1b_globals(&globals), course, since, unread)
+                        .await
+                }
+                Commands::Announcement { target, id } => {
+                    commands::announcement::run(&m1b_globals(&globals), target, id).await
+                }
+                Commands::Calendar {
+                    days,
+                    course,
+                    ics,
+                    alarm,
+                } => {
+                    commands::calendar::run(
+                        &m1b_globals(&globals),
+                        commands::calendar::CalendarArgs {
+                            days,
+                            course,
+                            ics,
+                            alarm,
+                        },
+                    )
+                    .await
                 }
             }
         })

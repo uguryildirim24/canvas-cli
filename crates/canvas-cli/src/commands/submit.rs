@@ -10,7 +10,6 @@ use canvas_core::submit::{
     ExecuteError, ExecuteOutcome, FreezeError, FrozenInput, InputKind, Plan, PreflightError,
     SubmitError, TextSource, execute, freeze_files, freeze_html, freeze_text, freeze_url,
 };
-use jiff::Timestamp;
 
 use super::Globals;
 use super::emit::{base_envelope, emit, emit_error, require_client, session_error, sync_error};
@@ -108,7 +107,7 @@ pub async fn run(
                 comment.as_deref(),
             )
         },
-        Timestamp::now(),
+        crate::output::now_timestamp(),
     )
     .await
     {
@@ -147,7 +146,7 @@ pub async fn run(
                 &handle,
                 channel,
                 None,
-                Timestamp::now(),
+                crate::output::now_timestamp(),
             )
         });
     if let Err(e) = approved {
@@ -160,7 +159,7 @@ pub async fn run(
         &session.paths.identity_dir,
         session.identity.key.as_str(),
         &plan_id,
-        Timestamp::now(),
+        crate::output::now_timestamp(),
     )
     .await
     {

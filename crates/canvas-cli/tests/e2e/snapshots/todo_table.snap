@@ -1,0 +1,15 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+missing=1 due_today=0 due_week=1 hidden=0
+2026-09-11
+  ID    Course     Name          Due                                 Status   
+  11    CHEM301    Lab Report    Fri Sep 11, 11:59 PM (in 2d 10h)    missing  
+2026-09-19
+  ID    Course     Name             Due                                  Status   
+  9     CHEM301    Problem Set 1    Sat Sep 19, 11:59 PM (in 10d 10h)    unknown  
+
+--- stderr ---

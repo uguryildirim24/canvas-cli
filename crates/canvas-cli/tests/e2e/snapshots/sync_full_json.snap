@@ -1,0 +1,289 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "announcements",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-09-08..2026-09-21:ctx:ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "assignments",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "calendar_events",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-09-08..2026-09-21:ctx:d21ee8da5900505f23e4d4dfa5fe7b90c2dbc4a8a0e40edd1c03ddb1234e5820",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "course_totals",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "active",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "enrollment_grades",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "period:none",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "files",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "folders",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "grading_periods",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "missing",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "all",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "modules",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "planner",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-09-08..2026-09-21",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "terms",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "active",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 11,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "datasets": [
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "announcements",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "window:2026-09-08..2026-09-21:ctx:ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "assignments",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "calendar_events",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "window:2026-09-08..2026-09-21:ctx:d21ee8da5900505f23e4d4dfa5fe7b90c2dbc4a8a0e40edd1c03ddb1234e5820",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 2,
+        "dataset": "course_totals",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 0,
+        "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "courses",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "active",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "enrollment_grades",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "period:none",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "files",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "folders",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "grading_periods",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "missing",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "all",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "modules",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "planner",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "window:2026-09-08..2026-09-21",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "terms",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 0,
+        "scope": "active",
+        "source": "network",
+        "stale": false
+      }
+    ]
+  },
+  "schema": "canvas-cli/sync@1",
+  "warnings": []
+}

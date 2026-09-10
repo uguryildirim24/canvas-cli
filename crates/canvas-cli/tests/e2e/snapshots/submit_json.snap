@@ -1,0 +1,59 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 4,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "attribution": "observed",
+    "candidates": [],
+    "error": null,
+    "files": [],
+    "journal_id": "00000000-0000-4000-8000-00000000000j",
+    "outcome": "ok",
+    "post_status": 200,
+    "posted": {
+      "attachments": [],
+      "attempt": 1,
+      "body_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683",
+      "evidence": "post-response",
+      "excused": null,
+      "late": false,
+      "missing": false,
+      "response_sha256": "19fbb9f8c3139bdc9a93f7b9678be0d70f0ef67c7ec08dcefb5ddcbd8114213c",
+      "submission_id": "77",
+      "submission_type": "online_text_entry",
+      "submitted_at": "2026-09-09T17:05:12Z",
+      "submitted_at_local": "2026-09-09T13:05:12-04:00",
+      "url": null,
+      "workflow_state": "submitted"
+    },
+    "receipt_id": "00000000-0000-4000-8000-00000000000r",
+    "response_kind": null,
+    "server_match": null,
+    "state": "submitted",
+    "text": {
+      "input_sha256": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+      "sent_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683",
+      "transform": "text-to-html"
+    },
+    "url": null
+  },
+  "schema": "canvas-cli/submit@1",
+  "warnings": []
+}

@@ -1,0 +1,119 @@
+{
+  "method": "GET",
+  "path": "/api/v1/announcements",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "context_code": "course_101",
+      "html_url": "https://canvas.example.edu/courses/101/discussion_topics/10151",
+      "id": 10151,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 1 for course 101.</p>",
+      "posted_at": "2026-01-06T21:00:00Z",
+      "published": true,
+      "title": "Announcement 1"
+    },
+    {
+      "context_code": "course_101",
+      "html_url": "https://canvas.example.edu/courses/101/discussion_topics/10152",
+      "id": 10152,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 2 for course 101.</p>",
+      "posted_at": "2026-01-07T21:00:00Z",
+      "published": true,
+      "title": "Announcement 2"
+    },
+    {
+      "context_code": "course_102",
+      "html_url": "https://canvas.example.edu/courses/102/discussion_topics/10251",
+      "id": 10251,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 1 for course 102.</p>",
+      "posted_at": "2026-01-06T21:00:00Z",
+      "published": true,
+      "title": "Announcement 1"
+    },
+    {
+      "context_code": "course_102",
+      "html_url": "https://canvas.example.edu/courses/102/discussion_topics/10252",
+      "id": 10252,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 2 for course 102.</p>",
+      "posted_at": "2026-01-07T21:00:00Z",
+      "published": true,
+      "title": "Announcement 2"
+    },
+    {
+      "context_code": "course_103",
+      "html_url": "https://canvas.example.edu/courses/103/discussion_topics/10351",
+      "id": 10351,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 1 for course 103.</p>",
+      "posted_at": "2026-01-06T21:00:00Z",
+      "published": true,
+      "title": "Announcement 1"
+    },
+    {
+      "context_code": "course_103",
+      "html_url": "https://canvas.example.edu/courses/103/discussion_topics/10352",
+      "id": 10352,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 2 for course 103.</p>",
+      "posted_at": "2026-01-07T21:00:00Z",
+      "published": true,
+      "title": "Announcement 2"
+    },
+    {
+      "context_code": "course_104",
+      "html_url": "https://canvas.example.edu/courses/104/discussion_topics/10451",
+      "id": 10451,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 1 for course 104.</p>",
+      "posted_at": "2026-01-06T21:00:00Z",
+      "published": true,
+      "title": "Announcement 1"
+    },
+    {
+      "context_code": "course_104",
+      "html_url": "https://canvas.example.edu/courses/104/discussion_topics/10452",
+      "id": 10452,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 2 for course 104.</p>",
+      "posted_at": "2026-01-07T21:00:00Z",
+      "published": true,
+      "title": "Announcement 2"
+    },
+    {
+      "context_code": "course_105",
+      "html_url": "https://canvas.example.edu/courses/105/discussion_topics/10551",
+      "id": 10551,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 1 for course 105.</p>",
+      "posted_at": "2026-01-06T21:00:00Z",
+      "published": true,
+      "title": "Announcement 1"
+    },
+    {
+      "context_code": "course_105",
+      "html_url": "https://canvas.example.edu/courses/105/discussion_topics/10552",
+      "id": 10552,
+      "is_announcement": true,
+      "locked": false,
+      "message": "<p>Notice 2 for course 105.</p>",
+      "posted_at": "2026-01-07T21:00:00Z",
+      "published": true,
+      "title": "Announcement 2"
+    }
+  ]
+}
