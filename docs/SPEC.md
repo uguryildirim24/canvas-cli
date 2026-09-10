@@ -1,6 +1,6 @@
 # canvas-cli — Specification
 
-Status: draft v0.8, 2026-09-09. Owner: Rolf. Supersedes v0.7 after `docs/reviews/spec-v0.7-review.md`. Research inputs: `docs/research/r1-canvas-api.md`, `r2-prior-art.md`, `r3-rust-stack.md`. Appendix E maps every round-1 to round-7 finding to its resolution.
+Status: draft v0.9, 2026-09-10. Owner: Rolf. Supersedes v0.8. Research inputs: `docs/research/r1-canvas-api.md`, `r2-prior-art.md`, `r3-rust-stack.md`, and `docs/agent-ux/REPORT.md` for the post-v1 rounds. §§1–19 and Appendices A–E are the v1 contract. §§20–23 record what the post-v1 packages **built**, as `main` has them; Appendix C names those packages and their review files. §24 and §25 are placeholders for the packages still in flight. Appendix E maps every round-1 to round-7 finding to its resolution.
 
 ## 0. Summary
 
@@ -143,7 +143,30 @@ canvas completions bash|zsh|fish|powershell|elvish
 canvas version
 ```
 
-Command names reserved for v2 (no contract in this document): `grades estimate|what-if|target`, `inbox …`, `discussions …`, `discussion …`, `dashboard`, `notify …`, `submit --resume`.
+### Commands added after v1
+
+```
+canvas pages <course> [--unpublished]
+canvas page <course> <url-slug|id|URL>
+canvas syllabus <course>
+
+canvas discussions <course> [--unread]
+canvas discussion <course> <id|URL> [--replies] [--page N]
+
+canvas inbox [--scope inbox|unread|sent|archived]
+canvas inbox show <id>
+canvas inbox unread-count
+
+canvas watch [--jsonl] [--since CURSOR] [--once]
+canvas notify [--since CURSOR] [--stdout]
+
+canvas schema <command> | canvas schema --list
+canvas mcp
+```
+
+`pages`, `page`, `syllabus`, `discussions`, `discussion`, and `inbox *` are §23. `watch` and `notify` are §22. `schema` and `mcp` are §21.
+
+Command names still reserved for a later round (no contract in this document): `grades estimate|what-if|target`, `dashboard`, `submit --resume`, `bridge …`, `here`, and the write halves of `inbox` and `discussion`.
 
 ### Behaviour notes
 
@@ -160,6 +183,9 @@ Command names reserved for v2 (no contract in this document): `grades estimate|w
 - **`calendar`** §12.5.
 - **`open`** takes a typed target or a URL. It needs an identity for the origin and never fetches: numeric IDs and URLs build the target directly; a name is resolved only over a complete cached dataset, otherwise the command exits 6 with `use a numeric ID or a URL`. A URL whose origin differs from the active identity's origin is refused (exit 6).
 - **`sync`** refreshes courses, assignments, submissions, missing, the default planner window, enrollment grades, and announcements for active courses. `--full` adds folders, files, modules, module items, and calendar events.
+- **`pages`**, **`page`**, **`syllabus`**, **`discussions`**, **`discussion`**, **`inbox`**, **`inbox show`**, **`inbox unread-count`** §23. Every one is a `GET` and marks nothing read.
+- **`watch`**, **`notify`** §22. `watch --json` is exit 2 and names `--jsonl`; `notify` is a raw-output command.
+- **`schema`**, **`mcp`** §21.
 - **`doctor`** selects an identity like any class-B command when one is selectable and otherwise runs only the identity-free checks. Local checks: config parse, profile and identity, active credential source and stray or pending-cleanup entries, DB integrity and schema versions, credential backend status, identity lock, journals with an absent owner (recovered per §12.2). Only with `--network`, network checks (`GET /users/self` id equals the profile's user id, `X-Rate-Limit-Remaining`, clock skew from the `Date` header). Without `--network`, or with `--offline`, network checks are reported as `skipped`.
 
 ### Command classes
@@ -168,10 +194,12 @@ Every command belongs to exactly one class. The class decides identity selection
 
 | Class | Commands |
 |---|---|
-| A. identity-free, local | `version`, `completions`, `config *`, `identity list` |
-| B. identity-bound, local | `alias *`, `receipts list\|show\|export\|acknowledge`, `cache *`, `identity remove` (operand selects the identity), `open` (browser launch only), `auth status`, `auth logout`, `auth token`, `doctor` (without `--network`; falls back to the identity-free subset when no identity can be selected) |
-| C. identity-bound, cache-backed read | `courses`, `course`, `todo`, `assignments`, `assignment`, `submission` (without `verify`/`reconcile`), `grades`, `files`, `modules`, `announcements`, `announcement`, `calendar` |
-| D. network-required | `auth login`, `submit`, `submission verify`, `submission reconcile`, `sync`, `download`, `doctor --network` |
+| A. identity-free, local | `version`, `completions`, `config *`, `identity list`, `schema` |
+| B. identity-bound, local | `alias *`, `receipts list\|show\|export\|acknowledge`, `cache *`, `identity remove` (operand selects the identity), `open` (browser launch only), `auth status`, `auth logout`, `auth token`, `doctor` (without `--network`; falls back to the identity-free subset when no identity can be selected), `notify` |
+| C. identity-bound, cache-backed read | `courses`, `course`, `todo`, `assignments`, `assignment`, `submission` (without `verify`/`reconcile`), `grades`, `files`, `modules`, `announcements`, `announcement`, `calendar`, `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox`, `inbox show`, `inbox unread-count` |
+| D. network-required | `auth login`, `submit`, `submission verify`, `submission reconcile`, `sync`, `download`, `doctor --network`, `watch` |
+
+`canvas mcp` has no class of its own. It binds one identity locally at startup and refuses to start without one (exit 3); the process itself opens no network connection, and each tool takes the class of the command behind it.
 
 `auth login` is the one class-D command that runs without an existing identity; it creates one. Class-B commands never open a network connection. The class-B commands that read or change the credential store locally are `auth status`, `auth token`, `auth logout`, `identity remove`, and `doctor`; every other command touches the store only when a network call needs the token (§13).
 
@@ -228,7 +256,8 @@ Rules:
 - `profile` and `identity` are `null` for class-A commands and for errors raised before identity selection.
 - `outcome` is `ok`, `partial`, `recovery`, `mismatch`, `refused`, or `error`; `exit` is the process exit code (§14). On `error`, `result` is `{ "code": "auth", "message": "…", "http_status": 401, "server_errors": [], "details": {} }` and the schema is `canvas-cli/error@1`. When an error aborts a command after a durable side effect, `details` carries `journal_id`, the journal `state`, and any known `posted` identity, or the per-file results already produced.
 - `requests` is `{ "api": n, "storage": n, "cost": x }`, where `cost` is the sum of `X-Request-Cost` values seen (`null` when none).
-- Raw-output commands reject `--json` with exit 2: `completions`, `auth token --reveal`, `config edit`, `calendar --ics -`, `receipts export --out -`. Clap usage errors and `--help` keep clap's text output.
+- Raw-output commands reject `--json` with exit 2: `completions`, `auth token --reveal`, `config edit`, `calendar --ics -`, `receipts export --out -`, `schema`, `notify`. Clap usage errors and `--help` keep clap's text output.
+- `canvas watch` also rejects `--json` with exit 2 and names `--jsonl`. Its stream is a separate contract (§22): one self-describing `event@1` document per line, closed by one `watch@1` envelope. This rule for `--json` is unchanged.
 - `--json` disables color and progress.
 
 ### Streams and confirmations
@@ -312,6 +341,8 @@ XDG layout on every Unix, including macOS. Windows uses AppData. Implemented wit
 | Data root | `~/.local/share/canvas-cli/` | `%LOCALAPPDATA%\canvas-cli\data\` |
 | Env binding file | `<data root>/env-bindings.toml` | same |
 | Identity locks (never deleted) | `<data root>/locks/<identity-key>.lock`, `<identity-key>.cred.lock` | same |
+| Coordinator locks (never deleted, §22) | `<identity dir>/locks/api-slot-<n>.lock`, `refresh-<dataset>-<scope>.lock`, `interest-assignment-<id>.lock` | same |
+| Broker endpoint (reserved for M7-a, §24) | `<data root>/bridge/<identity-key>.sock` in `<data root>/bridge/` (dir `0700`, socket `0600`) | named pipe `\\.\pipe\canvas-cli-<identity-key>` |
 | Env binding lock | `<data root>/env-bindings.lock` | same |
 | Identity dir | `<data root>/<identity-key>/` | same |
 | Cache DB (disposable) | `<identity dir>/cache.sqlite` | same |
@@ -347,6 +378,9 @@ ttl_modules       = "1h"
 ttl_files         = "1h"
 ttl_announcements = "15m"
 ttl_calendar      = "1h"
+ttl_pages         = "1h"
+ttl_discussions   = "15m"
+ttl_inbox         = "5m"
 
 [network]
 api_concurrency     = 4
@@ -358,6 +392,10 @@ color = "auto"
 
 Precedence: defaults → `config.toml` → `CANVAS_*` env → flags, via `figment`. `config set` validates keys.
 
+`cache.ttl_pages`, `cache.ttl_discussions`, and `cache.ttl_inbox` were added by M8-a (§23). No `bridge.*` key exists yet; the companion's own keys arrive with §24.
+
+The `governor`, `interest`, `observations`, `baselines`, `events`, `consumer_cursor`, `plans`, and `approval_handles` tables all live in the identity's `state.sqlite`, so `cache clear` cannot reach them (§20, §22).
+
 ## 10. Cache, state, and sync
 
 ### Databases and locking
@@ -366,7 +404,20 @@ Precedence: defaults → `config.toml` → `CANVAS_*` env → flags, via `figmen
 - **Identity lock.** Every process that opens an identity takes a **shared** lock on `<data root>/locks/<identity-key>.lock` for its lifetime, then verifies `identity.json` (origin, user id, key, generation) and keeps the generation in memory. The lock file is never deleted.
 - **Identity removal** (`identity remove`): take the identity lock **exclusively** (5 s timeout, else exit 13); re-read `identity.json`; delete credential entries (any failure → exit 13, nothing else removed); delete the identity directory; remove profiles that reference the key and clear `default_profile` if it was one of them; release. A process that was waiting on the lock re-reads `identity.json` after acquiring it; a missing directory or a different generation means the identity is gone or was recreated, and the process exits 13 with `identity changed`.
 - `cache clear` runs `DELETE` on every cache table in one transaction followed by `VACUUM`; it never unlinks an open database. Mutation epochs (below) live in `state.sqlite`, so a clear cannot erase them.
-- All SQLite access runs on one dedicated thread per process fed by a bounded channel.
+- All SQLite access runs on one dedicated thread per process fed by a bounded channel. The coordinator's governor connection is the one exception (§22, §19 item 22).
+
+### Migration list
+
+Each database keeps its own `PRAGMA user_version` and its own ordered batch list. A batch is applied inside one transaction, and a database already at its current version runs none.
+
+| Migration | Database | Package | Adds |
+|---|---|---|---|
+| `0001_initial` | both | M1-a | the v1 cache and state schema |
+| `0002_reads` | cache | M8-a | `pages`, `discussion_topics`, `discussion_entries`, `conversations`, `conversation_unread` (§23) |
+| `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link and its partial unique index (§20) |
+| `0003_events` | state | M6-c | `governor`, `interest`, `observations`, `baselines`, `events`, `consumer_cursor` (§22) |
+
+`CACHE_USER_VERSION` is 2 and `STATE_USER_VERSION` is 3. A database at a newer version is refused (exit 13).
 
 ### Entities, observations, membership, coverage
 
@@ -395,6 +446,13 @@ A list refresh downloads every page, then in one transaction upserts entities pe
 | `folders`, `files` | `course:<id>` | `GET /courses/:id/folders`, `GET /courses/:id/files` | `ttl_files` | all pages, or a recorded denial |
 | `announcements` | `window:<start>..<end>:ctx:<sha256 of sorted course ids>` | batches of ≤10 `context_codes[]` | `ttl_announcements` | all batches stored or isolated |
 | `calendar_events` | `window:<start>..<end>:ctx:<sha256 of sorted contexts>` | `GET /calendar_events?type=event&context_codes[]=…` batches of ≤10 | `ttl_calendar` | all batches |
+| `pages` | `course:<id>` | `GET /courses/:id/pages?sort=title` | `ttl_pages` | all pages, or a recorded denial |
+| `page` | `page:<course>:<operand>` | `GET /courses/:id/pages/:url_or_id` | `ttl_pages` | one object |
+| `discussions` | `course:<id>` | `GET /courses/:id/discussion_topics?only_announcements=false` | `ttl_discussions` | all pages, or a recorded denial |
+| `discussion` | `topic:<id>`, and `topic:<id>:replies` with `--replies` | `GET /courses/:id/discussion_topics/:tid`; for replies `GET …/entries` and `GET …/entries/:eid/replies` | `ttl_discussions` | one object; for the replies scope, every entry page and every needed reply page |
+| `inbox` | `scope:<inbox\|unread\|sent\|archived>` | `GET /conversations?scope=…&auto_mark_as_read=false` | `ttl_inbox` | all pages, or a recorded denial |
+| `conversation` | `conversation:<id>` | `GET /conversations/:id?auto_mark_as_read=false` | `ttl_inbox` | one object |
+| `inbox_unread` | `all` | `GET /conversations/unread_count` | `ttl_inbox` | one object |
 
 **Hit predicate.** A dataset (or window) request is served from cache when a `fetch_log` row of that dataset and scope (for windows: with the same context hash, `window_start ≤ requested start`, `window_end ≥ requested end`) has `complete = 1`, `stale = 0`, `epoch_seen ≥ state epoch for that scope` (below), and age within TTL. Otherwise: online, refresh; if the refresh fails and a row exists, serve it with `stale: true`; `--offline` serves any existing complete row with `stale: true`, and exits 7 when none exists.
 
@@ -630,7 +688,7 @@ canvas-cli/
 
 Runtime: `#[tokio::main(flavor = "current_thread")]` plus the blocking pool above. Credential-store access happens only when a network call needs the token, except for the class-B commands listed in §5 that inspect or change the store.
 
-Performance targets are measured by `xtask bench` (M5): cached `todo` first output p50 < 50 ms, p95 < 150 ms; full cached `todo` p95 < 250 ms; cold-start (empty page cache) p95 < 400 ms; all with a 5-course fixture and once more while one download stream is active. Numbers are recorded in `docs/bench.md`.
+Performance targets are measured by `xtask bench` (M5): cached `todo` first output p50 < 50 ms, p95 < 150 ms; full cached `todo` p95 < 250 ms; cold-start (empty page cache) p95 < 400 ms; all with a 5-course fixture and once more while one download stream is active. Numbers are recorded in `docs/bench.md`. `cargo xtask bench --watch` measures the same targets again with a resident `canvas watch` on the same identity and records one tick's cost; `cargo xtask bench --mcp` measures a warm `todo.list` round trip over a real stdio pipe and the size of the `tools/list` catalog (§21). Neither has a §13 target of its own.
 
 ## 14. Errors and exit codes
 
@@ -652,6 +710,17 @@ Single-invocation rule: exactly one JSON envelope (§7). Aborts use the `error` 
 | 11 | Cancelled | user answered no, or Ctrl-C at a confirmation |
 | 12 | Partial | some files, courses, or batches failed, were unavailable, or were refused as `unsafe_path`/`unresolved_move`; `verify` `unavailable` |
 | 13 | Local persistence | DB open/migrate failure; newer schema; identity.json mismatch; lock timeout; journal insert failure; credential store `Denied`/`Locked`; logout partial failure |
+
+**Refusal reasons.** No post-v1 package adds an exit code. Exit 8 gained a machine-readable `details.reason` on the `error@1` envelope, so an agent can branch without reading a message:
+
+| `details.reason` | Raised by |
+|---|---|
+| `expired` | the plan's 15-minute admission window passed (§20) |
+| `invalidated` | the plan was declined, cancelled, or is gone, or a frozen observation changed (§20) |
+| `approval_required` | the plan has no recorded human approval, or its handle was rejected (§20, §21) |
+| `not_attached` | `canvas://…/context/<handle>` has no attachment (§21; the bridge is §24) |
+
+`in_progress` stays a message on an exit-8 refusal, not a reason. The M8-a refusals keep `code: refused` with the `initial_post_required:` message prefix (§23). Every reason above is decided before any upload and before the submission `POST`.
 
 **Precedence** when several apply in one invocation: an abort (2, 3, 13, 4, 5, 6, 7, in that order of detection) ends the command immediately, after the durable phase outcome (journal state, per-file results) has been committed and is carried in `details`. For a completed command: 9 > 10 > 8 > 12 > 11 > 0.
 
@@ -719,6 +788,8 @@ Three implementation lanes (`w1`, `w2`, `w3`), one git worktree and one private 
 
 An owner adds the interface (enum variant, schema entry, migration) that the other lanes need at the start of the round and pushes it first; other lanes rebase on it. A package that depends on a sibling in the same round (M2-b on M1-c) is merged last and must pass its acceptance on the merged sibling. Interface requests between lanes go through Claude.
 
+The table above stops at R5, which is the v1 plan. The rounds after it (R6 onward) follow the same lane model; `docs/agent-ux/REPORT.md` §4 holds their package list, and Appendix C names the ones that are on `main`.
+
 ## 19. Open questions for the owner
 
 1. ~~Can a Lasell student create a personal access token?~~ **Resolved 2026-09-09: yes.**
@@ -753,6 +824,431 @@ An owner adds the interface (enum variant, schema entry, migration) that the oth
 30. **The companion declares `scripting` as a third permission (REPORT §3.3, raised by the M7-a code review 2026-09-10).** Chrome requires `scripting` for `chrome.scripting.executeScript` even under `activeTab`; the alternative, a declarative `content_scripts` entry, needs `host_permissions` and injects into every Canvas page unasked. Coordinator reading applied: `activeTab`, `nativeMessaging`, `scripting`, still no `host_permissions`; recorded in `docs/companion.md`. Confirm.
 31. **A broker socket client may name any consumer handle (REPORT §3.2, same review).** `attach` and `here` take the consumer as a field, so any process that can open the `0600` socket in the `0700` directory can opt in under any name. REPORT §3.2 says consumer handles express routing within the owner's OS trust domain, not isolation from another unrestricted process; the review closed the case where this leaked across the MCP adapter. State this boundary explicitly when the companion is written into the SPEC.
 32. **Equal navigation generation with a different document id (REPORT §3.3 step 6, same review).** `Broker::update` refuses a lower generation; a message with an equal generation but another document id is accepted as a new document. The shipped extension increments the generation on every committed navigation, so the case is unreachable from it. Decide whether such a message is stale (refuse) or a legitimate same-document replacement (accept).
+33. **`schema@1` is per-form (§7 versus `canvas schema`, raised by the M8-a3 code review 2026-09-10).** `canvas schema event` now describes the `--jsonl` line (`line`) and drops `envelope`, `result`, `error`, while every other page keeps them; the contract id stays `schema@1`. §7's bump rule governs envelopes and `canvas schema` is raw output (item 20). Reviewer's reading applied: per-form by design, because the old page described a wrapper that never exists. Decide whether that stands or the page becomes `schema@2`.
+34. **`canvas notify` has no desktop backend (REPORT §3.6, raised by this consolidation pass).** §3.6 says desktop alerts consume events, and REPORT §4's M6-c row calls them optional. The command builds the alerts and deduplicates them by cursor, but `--stdout` is the only backend: `notify-rust` was rejected because its macOS path is Objective-C FFI and the workspace forbids `unsafe`. Without `--stdout` the command writes the same lines to stdout and warns on stderr, so it never claims a notification it did not post. Decide whether a real desktop backend is wanted (a separate helper, or an `unsafe` exception for one crate), or whether `notify` is a stdout producer that another tool routes.
+35. **The M8-a schema pages describe nullable fields as non-nullable (§7 versus `canvas schema`, raised by the M8-a2 code review 2026-09-10).** `pages@1`, `page@1`, `syllabus@1`, `discussions@1`, `discussion@1`, `inbox@1`, `conversation@1`, and `inbox_unread@1` have no typed arm in the schema generator, so their documents are inferred from the registry fixture: `canvas schema discussion` reports `message_markdown` as `"type": "string"` although §7 lets it be `null`. The page declares `result_source: "registry fixture"`, so it is honest about being an approximation, but a strict host validating a tool result against `outputSchema` would reject a legitimate answer. Options: derive `JsonSchema` on the eight result types, or widen every inferred property. Both change the generator for other schemas too.
+36. **`canvas schema --list` names commands that do not exist (§5 versus `canvas schema`, same review).** The listing derives a command name from the schema id, so `conversation@1` is listed as `conversation`, `inbox_unread@1` as `inbox unread`, and `plan@1`, `receipt@1`, `reconcile@1`, `verify@1`, `event@1`, and `error@1` as commands of their own — while `canvas schema "inbox show"` and `canvas schema "inbox unread-count"` exit 6, as `submission reconcile` and `receipts verify` already did. Fixing it means giving a registry entry a command name of its own, which changes M6-b's registry contract. Current code is unchanged.
+
+## 20. Operation plans and approval
+
+Built by M6-a (`docs/reviews/code-M6-a.md`) from `docs/agent-ux/REPORT.md` §3.5. A **plan** is the frozen description of one remote write, held between the moment the content is fixed and the moment a person approves it. Approval names exact bytes, not an intention.
+
+```text
+prepare  →  issue_handle  →  approve  →  execute  →  journal (§12.2)
+```
+
+`plan::execute` is the only route from a plan to a submission journal. From the journal insert onward §12.2 is unchanged.
+
+### Tables
+
+Migration `0002_plans` on `state.sqlite` (§10).
+
+| Table | Columns |
+|---|---|
+| `plans` | `plan_id` (PK), `identity_key`, `identity_generation`, `consumer`, `course_id`, `assignment_id`, `kind`, `payload_json`, `file_paths_json`, `input_sha256`, `sent_sha256`, `baseline_attempt`, `baseline_submission_id`, `observations_json`, `plan_sha256`, `state`, `created_at`, `expires_at`, `approval_json`, `journal_id`, `invalidated_reason`; index on `(assignment_id, state)` |
+| `approval_handles` | `handle` (PK), `plan_id` → `plans`, `consumer`, `expires_at`, `used_at`; index on `plan_id` |
+| `submission_journal` | gains `plan_id` and `approval_json`, plus the partial unique index `submission_journal_plan ON submission_journal(plan_id) WHERE plan_id IS NOT NULL` |
+
+SQLite keeps `NULL` values distinct in a unique index, so a journal written before plans existed never collides. Such a journal exposes `plan_id` and `approval` as `null`, per Appendix D's nullable convention.
+
+### Plan states
+
+| State | Meaning | Reached from |
+|---|---|---|
+| `prepared` | frozen and stored; no approval yet | `prepare` |
+| `approved` | a person approved this exact plan | `prepared` |
+| `executed` | linked to a journal; says nothing about the submission's outcome | `approved` |
+| `expired` | the admission deadline passed before execute | `prepared`, `approved` |
+| `invalidated` | a meaningful fact changed, or the plan was declined or cancelled | `prepared`, `approved`, `expired` |
+
+Every transition is one `BEGIN IMMEDIATE` with an expected-state guard on the row, the discipline §12.2 sets for the journal. An `executed` plan is history: `expire` and `invalidate` both name the states they may leave, so no statement rewrites it. A guard that matches zero rows is read by the transition that ran it, not by one rule: `approve` reports a lost race as a local failure (exit 13), the execute link takes it as another execute having consumed the approval and answers with that execute's journal, and `expire` and `invalidate` leave a plan they may not move untouched.
+
+### Admission expiry
+
+`expires_at = created_at + 15 minutes`. Expiry gates **first admission only**: a status read or a replay of a plan that is already `executed` is answered with its journal and is never turned into an expired plan. Loading a plan does not expire it.
+
+### The approval record
+
+```text
+approval {
+  channel: "tty" | "elicitation" | "panel" | "yes-flag",
+  at: ts,
+  consumer?: string,
+  plan_sha256
+}
+```
+
+`approval` is `null` before approval. `yes-flag` records an explicit CLI `--yes` and never claims an interactive decision. The audit is copied into the journal in the admission transaction and is preserved in receipt exports (Appendix D `Journal`, `receipt@1`, `plan@1`).
+
+### The handle binding
+
+`issue_handle` mints a random handle against a `prepared` plan and binds it to that plan, that consumer, and a deadline. `approve` spends the handle with `UPDATE approval_handles SET used_at = ? WHERE handle = ? AND used_at IS NULL` inside the same immediate transaction that sets the plan to `approved`, so a handle is single-use. Echoing a digest, a handle, or a boolean in an ordinary tool argument is not approval.
+
+Each rejection is its own refusal, so no answer says whether another handle would have worked: `unknown_handle`, `handle_for_another_plan`, `handle_already_used`, `wrong_consumer`, `handle_expired`, `plan_digest_mismatch`.
+
+### What `plan_sha256` covers
+
+The digest is taken over the canonical JSON of: identity key and generation, consumer, course id, assignment id, kind, each file's name, size, and `sha256`, the text `input_sha256`, `transform`, and `sent_sha256`, the URL, a digest of the comment, the baseline attempt and submission id, every observation below, and `created_at`/`expires_at`. Object keys are sorted, so the digest does not depend on struct declaration order.
+
+It deliberately excludes the outbound bytes and the local file paths. The bytes are pinned by `sent_sha256` and the files by their `sha256`, which §12.2 step 8 re-verifies against the streamed upload. Approving a digest therefore approves exact content, never a path that could later name other bytes.
+
+### Revalidated observations
+
+`observations_json` freezes the facts execute compares: `can_submit`, `allowed_attempts`, `extra_attempts`, `group_category_id`, `submission_types`, `allowed_extensions`, `locked_for_user`, `due_at`, `lock_at`, `unlock_at`. The two list fields are sorted, so a reordered Canvas response is not a change.
+
+### Prepare
+
+`prepare` runs the whole §12.2 pre-flight — step 1 fresh `GET`, step 2 admission and owner-absent recovery, steps 3–4 eligibility, step 5 freeze, step 6 baseline — and stores a `prepared` plan. It takes the admission lock for its own pre-flight only and releases it before returning: **no lock is held while a person considers a plan.** Preparing uploads nothing and posts nothing.
+
+### Execute
+
+In order:
+
+1. A plan already `executed` returns its journal at once (`replayed`). Expiry is never evaluated for it.
+2. Refuse an expired, invalidated, or unapproved plan, and a plan whose stored document no longer matches `plan_sha256`, before any network call.
+3. Refuse a plan that belongs to another identity, or to another identity generation.
+4. Register foreground interest (§22) and re-read the assignment (pre-flight step 1 again).
+5. Take assignment admission. When another process holds it, wait up to 5 seconds for **this plan's own** concurrent execute to publish its journal, then return that journal; anything else is the ordinary `in_progress` refusal. (§19 item 16.)
+6. Re-read the plan under admission and re-check the expiry, the invalidation, and the recorded approval, so a decline that landed during the read names itself. The digest and the identity checks of steps 2 and 3 are not repeated.
+7. Compare every frozen observation against the fresh read. The first difference invalidates the plan and needs a fresh plan and a fresh approval.
+8. Run §12.2 steps 3–4 (eligibility, group, kinds), then compare the baseline attempt and submission id, then the allowed extensions, then re-hash every frozen file from disk.
+9. One state transaction consumes the approval, inserts the journal with `plan_id` and the approval audit, and marks the plan `executed`. Two guards make it exactly one journal per plan: the partial unique index, and `UPDATE plans … WHERE plan_id = ? AND state = 'approved'`.
+10. Uploads begin only after that transaction commits.
+
+A concurrent execute, a restarted host, and a replayed acceptance all return the existing journal. None of them creates a second attempt.
+
+### The human `submit`
+
+`canvas submit` keeps its v1 contract: confirmations on stderr, one `submit@1` envelope on stdout, and the §14 exit codes. It now runs on top of the plan layer — freeze, prompt, approve, execute — and pays one extra pre-flight `GET` for the revalidation read. An answered prompt records `tty`; `--yes` records `yes-flag`; a declined or unanswerable prompt cancels the plan, so it can never be executed later. The plan phase is a preview and an internal contract; it is not a second envelope.
+
+`canvas submit` refuses a plan that already admitted a journal with exit 8. `submission.execute` replays it instead (below).
+
+### `plan@1`
+
+Appendix D. `submission.prepare` and the human `submit` plan phase produce it. `comment_chars` replaces the comment text, and the outbound bytes and local paths never appear.
+
+### Exit mappings
+
+These extend §14. No new exit code is added.
+
+| Condition | Envelope | Exit |
+|---|---|---|
+| Plan expired | `outcome: refused`, `code: refused`, `details.reason: "expired"` | 8 |
+| Plan invalidated, declined, cancelled, missing, or a changed observation | `details.reason: "invalidated"` | 8 |
+| No recorded human approval, or a rejected handle | `details.reason: "approval_required"` | 8 |
+| Another submit holds the assignment | `code: refused`, message `in_progress` (with the journal id when one is known) | 8 |
+| Local lock timeout or database failure | `code: local` | 13 |
+
+Every one of these is decided before any upload and before the submission `POST`.
+
+### `replayed` (§19 item 17)
+
+`submit@1` carries `replayed: bool`. `submission.execute` on a plan that is already `executed` returns that journal's own `submit@1` envelope — its own `outcome`, `state`, and `exit` — with `replayed: true`. A replayed acceptance, a second execute in flight, and a lost response all arrive there. The human `submit` never reaches that path and always reports `false`. The field is additive, so `submit@1` keeps `@1`.
+
+## 21. Agent surface
+
+Built by M6-b (`docs/reviews/code-M6-b.md`) and extended by M8-a2 (`docs/reviews/code-M8-a2.md`), from `docs/agent-ux/REPORT.md` §3.2. Three surfaces share one implementation: `canvas schema` publishes the contracts, `canvas mcp` serves them over the Model Context Protocol, and the shipped skill tells a model how to use them.
+
+Every command has one core that returns the §7 envelope and a thin wrapper that prints it. `canvas mcp` calls the same core the CLI calls, so there is one implementation per command and nothing shells out to `canvas`.
+
+### 21.1 `canvas schema`
+
+Class A. Raw output, like `completions`: one JSON Schema document on stdout with no §7 envelope. `--json` is a usage error (exit 2). An unknown operand exits 6 and names `canvas schema --list`. `canvas schema --list` prints the registry, one row per schema shape.
+
+The document is generated from the registry, never hand-written. A result type that derives `JsonSchema` is described exactly; the rest is inferred from the registry fixture, and `result_source` says which.
+
+Every page carries `$schema`, `contract` (`canvas-cli/schema@1`), `command`, `schema`, `result_source`, and `output`. `output` says how the bytes are framed:
+
+| Form | `output.form` | `output.flag` | Body of the page |
+|---|---|---|---|
+| Envelope | `envelope` | `--json` | `envelope` (the `oneOf` of the result and `error@1`), `result`, `error` |
+| Stream summary (`watch@1`) | `envelope` | `--jsonl` | as above, plus `output.refuses: ["--json"]` |
+| Stream line (`event@1`) | `jsonl` | `--jsonl` | `line` only, with its `schema` field pinned by `const`; no `envelope`, no `result`, no `error` |
+
+A `--jsonl` line is self-describing and is never wrapped, so its page describes the line itself. The contract id stays `schema@1` for every form; §19 item 33 records that question. `schema@1` has no registry row of its own, so `canvas schema schema` exits 6 (§19 item 20).
+
+### 21.2 `canvas mcp`
+
+`canvas mcp` serves the Model Context Protocol on stdin and stdout. One instance serves one identity **and** one identity generation, bound at startup from the selected profile (§8). Without an identity it refuses to start with the §14 auth error, exit 3. It re-reads `identity.json` every two seconds and stops with exit 13 when the identity is replaced or removed (§10). The process writes one JSON-RPC message per line on stdout and nothing else.
+
+**Protocol revisions.** Two are implemented, newest first:
+
+| Revision | How it is reached |
+|---|---|
+| `2026-07-28` | primary; no `initialize` handshake. Every request carries its own version, client identity, and capabilities in `_meta`, and a host discovers the server with `server/discover`. |
+| `2025-11-25` | through the `initialize` handshake; the adapter for hosts that have not moved yet. |
+
+Any other revision fails explicitly with a JSON-RPC error rather than being downgraded silently.
+
+**The tool catalog.** Exactly 30 tools. Annotations describe **effects**, not command classes: `readOnlyHint` is true only for a tool whose effect is a read, `destructiveHint` is false for every tool in the catalog, and `idempotentHint` and `openWorldHint` are set per tool.
+
+| Effect | Tools | `readOnlyHint` |
+|---|---|---|
+| Read | `courses.list`, `course.get`, `todo.list`, `assignments.list`, `assignment.get`, `grades.get`, `files.list`, `modules.list`, `pages.list`, `page.get`, `syllabus.get`, `announcements.list`, `announcement.get`, `discussions.list`, `discussion.get`, `inbox.list`, `inbox.get`, `inbox.unread_count`, `calendar.list`, `submission.get`, `receipts.list`, `receipts.show`, `download.plan`, `open.url` | true |
+| Local organization | `sync.run`, `download.run`, `submission.prepare` | false |
+| Remote write | `submission.execute` | false |
+| Evidence retirement | `submission.reconcile`, `receipts.acknowledge` | false |
+
+`download.plan` is a dry run and `open.url` resolves without launching, which is why both are annotated as reads; §19 item 21 records that reading. `submission.execute` is the only `RemoteWrite` tool, and a test pins that it is the only one.
+
+**What the catalog does not contain.** Credentials, token reveal, identity administration, arbitrary HTTP or shell, `--yes`, cache clearing, `download --force`, and every browser action. They are unreachable by name and by argument: every argument struct rejects unknown fields, `download.*` hard-codes `dest: None` and `force: false`, `calendar.list` hard-codes `ics: None`, `open.url` never launches a browser, and `submission.prepare` hard-codes `yes: false` and refuses `text: "-"` because stdin is the transport. `download.run` keeps the v1 `jobs` argument unclamped (§19 item 21).
+
+**Results.** A tool result carries the whole §7 envelope: `structuredContent` is the document `--json` prints, and the text block is the same document serialized. A domain failure keeps the envelope with its `outcome` and `exit`, and is marked `isError` for `error`, `refused`, `mismatch`, and `recovery`; `partial` stays a success with gaps. Only a protocol or argument failure becomes a JSON-RPC error. Every tool's `outputSchema` is the union of its result envelope and the `error@1` envelope, declared `"type": "object"` beside the `oneOf` so a strict host validator loads it.
+
+**`ttlMs` and `cacheScope`.** The revision puts these on discovery, list, and `resources/read` results and nowhere else, so a tool result reports the same two values under this server's own `_meta` keys, `dev.canvas-cli/ttlMs` and `dev.canvas-cli/cacheScope`, rather than inventing wire fields. Every result of this server is one identity's private data, so `cacheScope` is `private` on all of them. The `ttlMs` budget is the smallest remaining TTL over every `freshness` row of the envelope, and it is **zero** for an empty list, a stale or incomplete row, an unparseable or future `fetched_at`, or a dataset with no TTL group. §7 coverage stays authoritative.
+
+**Resources.** Namespaced by identity and generation: `canvas://<identity-key>/<generation>/<path>`. A foreign key, another generation, and an unknown path all address nothing here.
+
+| Path | Kind | Reads |
+|---|---|---|
+| `todo` | listed | the default `todo.list` window |
+| `receipts` | listed | local receipts and unresolved journals |
+| `course/{course_id}/assignments` | template | one course's assignments, as `assignments.list` returns them |
+| `context/{consumer_handle}` | template | the M7 bridge; this release answers `refused` with `details.reason: "not_attached"` |
+
+A read goes through the same command core the matching tool uses, so a resource and a tool cannot answer differently.
+
+**The approval round trip.** `submission.execute` is the only tool that can return `input_required`, and therefore the only tool whose retry may carry a `requestState`. A retry that names any other tool is an argument error and leaves the plan untouched.
+
+1. `submission.execute(plan_id)` on a `prepared` plan issues a server-side approval handle and returns `input_required` with one keyed input request and the handle in `requestState`. Nothing is dispatched, and no client is built.
+2. The host asks a person and retries the tool with a new JSON-RPC request id, the echoed `requestState`, and keyed `inputResponses`.
+3. Accept spends the handle and approves the plan (§20); decline and cancel invalidate it.
+4. A host that declares no elicitation gets `outcome: refused`, exit 8, `details.reason: "approval_required"`, carrying the plan id and the handle, so the approval can still be recorded through another channel.
+
+**Subscriptions.** §22.
+
+**Catalog size.** `cargo xtask bench --mcp` measures the catalog at **30 tools, 220 855 bytes, about 55 224 estimated tokens** per `tools/list`, against the 22 tools and about 41 900 tokens M6-b first recorded. Most of each row is the output schema, which inlines the whole §7 envelope in both shapes because a host validator reads a tool definition on its own. §19 item 19 owns the question.
+
+### 21.3 The shipped skill
+
+`skill/canvas-cli/` ships `SKILL.md` and five workflows: `read-an-assignment.md`, `organize-the-week.md`, `download-course-files.md`, `prepare-and-submit.md`, and `reconcile-an-unknown-outcome.md`. The skill names exactly the tool catalog — a test diffs the two in both directions — and confines the two submission tools to the approval workflow. It states the envelope reading order, the §14 exit table including 11, and the coverage fields a model must not paper over (`replies_coverage`, `replies_total`, `messages_complete`, `embedded`). A forbidden flag appears only as an explicit statement that it does not exist.
+
+### 21.4 Host matrix
+
+`docs/agent-hosts.md` records which hosts were actually run against a build on the owner's machine, what each negotiated, and what stayed untested. It is evidence, not a claim: a host that is not in its table was not exercised. The two third-party hosts that connected both negotiated `2025-11-25`; the primary revision is exercised only by the project's own clients, and the approval round trip is verified only against the project's own client.
+
+## 22. Coordinator, events, `watch`, `notify`
+
+Built by M6-c (`docs/reviews/code-M6-c.md`), M6-c2 (`docs/reviews/code-M6-c2.md`), and M8-a3 (`docs/reviews/code-M8-a3.md`), from `docs/agent-ux/REPORT.md` §3.6 and §3.4. Every CLI, `watch`, and `mcp` process that binds one identity shares its network work through the identity directory and `state.sqlite`. There is no daemon.
+
+### 22.1 The coordinator
+
+Four shared things, all per identity:
+
+| Purpose | Where |
+|---|---|
+| Cross-process request permit | `<identity dir>/locks/api-slot-<n>.lock`, one file for each `0 <= n < api_concurrency` |
+| Dataset scope refresh single-flight | `<identity dir>/locks/refresh-<dataset>-<scope>.lock` |
+| Foreground submission interest | `<identity dir>/locks/interest-assignment-<id>.lock` and the `interest` table |
+| The shared §11 governor | the `governor` table |
+
+Lock files are created with `create_new` when absent, locked with `fs4`, and **never deleted**; only `identity remove` removes them (§3.4). The root identity lock keeps its §9 path and is never deleted either.
+
+**Permits.** An admitted API request holds one slot file for its whole duration, so the §11 concurrency cap is the same number whether one process or five are running, and a process that dies frees its slot with its descriptor. `flock` is per open file description, so the cap also holds between tasks inside one process. While every slot is taken the waiter polls between 2 ms and 40 ms. If the lock directory fails for longer than 5 seconds the request is admitted without a cross-process slot: a broken directory degrades to this process's own cap and says so, instead of hanging the command. Storage transfers keep a per-process semaphore.
+
+**The shared governor row.** `governor` holds one row (`id = 1`) with the §11 `estimate`, `watermark`, `cooldown_until`, `refill`, and `updated_at`. It is read before an admission decision and merged back under `BEGIN IMMEDIATE`. Two merge rules, because §11 has two:
+
+- **Before an admission decision**, the conservative rule applies: a lower stored estimate always wins, a higher one only above the watermark, and a live cooldown is adopted.
+- **Right after this process applied a response sample**, only a strictly newer row may displace that sample. In process, §11 already lets a header replace the estimate outright; without this rule the shared estimate would fall by one pre-charge per request and never recover, and a cooldown could never end.
+
+The per-process issue counter is realigned above any watermark this process adopts, so a process that adopts another's watermark can still apply its own later sample. The §11 header-silence reset belongs to the row, not to one process: a process that has read a live row does not reset the estimate to full from its own clock.
+
+The coordinator reads and writes the row through its own `state.sqlite` connection, outside the store's single SQLite thread, so the request path never queues behind a command's own database work. §19 item 22 records what that costs.
+
+**Refresh single-flight.** One process fetches a dataset scope; the others wait on its lock and then re-read the cache. The lock file name encodes the dataset and the scope: every byte outside `[a-z0-9._]` becomes `~<two lower-case hex digits>`, including `~` itself and every upper-case letter, so the encoding is injective, contains no `-` of its own, and cannot be folded by a case-insensitive filesystem. A name over 200 characters is replaced by a digest of the same two components.
+
+A waiter gives up after 30 seconds. It then serves the coverage the cache already holds with honest §7 metadata — `source: "cache"`, `stale: true`, and the row's own `complete` and `error` — and makes no second fetch. With nothing usable it reports the §14 exit 13 lock timeout. A `--fresh` waiter accepts the holder's row only when its `fetched_at` is at or after the waiter's own start. §19 item 25 records the cold-cache case.
+
+**Foreground interest and priority.** `plan execute` registers interest before its first pre-flight request; `canvas submit` registers it as soon as the assignment id exists, which is after its resolution reads (§19 item 29). Both hold it until the command returns. The row lives in `interest(assignment_id, kind, registered_at)` with `kind ∈ {submit, plan_execute}`; liveness is the matching lock file, so a registrant that dies frees its interest with its descriptor and polling can never be starved by a crash.
+
+While a live registration exists, or while any journal is in state `planned`, `uploading`, `uploaded`, or `posting` (§10's pending hook), `watch` admits no new polling request and holds no slot. `watch` re-reads that state before it polls each refresh, so interest that arrives during a tick stops the rest of that tick. A terminal `outcome_unknown` journal is **not** in flight: polling continues, so its readback can still happen. A refresh already admitted finishes its own pagination; §19 item 23 records that bound, and §19 item 29 records where `submit` registers.
+
+No network wait ever happens inside a database transaction.
+
+### 22.2 Events
+
+Migration `0003_events` on `state.sqlite` adds `governor`, `interest`, `observations`, `baselines`, `events`, and `consumer_cursor`. `cache clear` touches only the cache connection, so it is structurally incapable of reaching any of them.
+
+**The observation protocol.** A cache commit and a state transaction cannot be one transaction, so the sequence is built to survive a kill between them:
+
+1. A refresh commits its pages to `cache.sqlite`.
+2. A `pending` `observations` row names the exact cache row it saw. The observation id is `<dataset>:<scope>:<fetch_log rowid>:<fetched_at>`, so a cache row that was removed or refreshed again no longer matches.
+3. One state transaction compares that row against the baseline and commits the cursor, the baseline, and the events together, keyed by the observation id.
+
+A kill between 1 and 2 leaves the baseline untouched: the next refresh reports the same difference, one refresh later. A kill between 2 and 3 leaves a `pending` row that the next `watch` tick picks up. If the cache row it named is gone or has been overwritten, the gap is real and is reported once as `resync_required`. A restart never pretends the gap did not happen, and re-applying an `applied` observation emits nothing.
+
+**Baseline rules.**
+
+- Only a `fetch_log` row with `complete = 1` and `stale = 0` is observed at all, so a partial or failed page can never imply a removal.
+- The first complete observation of a dataset scope sets the baseline and emits nothing.
+- Only the same complete scope is compared. `removed` means absent from that membership.
+- `baselines(dataset, scope, observation_id, observed_at, members_json)` holds one row per dataset scope.
+
+**Shapes.** A dataset produces events only when it has a shape, and a shape names the table, the allowlisted columns, the allowlisted `data_json` keys, and the kinds it may emit.
+
+| Dataset | Table | Allowlisted payload | added | removed | changed |
+|---|---|---|---|---|---|
+| `assignments` | `assignments` | `name`, `due_at`, `points_possible`, `submitted`, `graded`, `score`, `missing`, `workflow_state`, `attempt`, `grade`, `posted_at` | `assignment.added` | `assignment.removed` | `assignment.changed` |
+| `missing` | `assignments` | `name`, `due_at`, `points_possible` | `missing.new` | — | — |
+| `announcements` | `announcements` | `title`, `posted_at` | `announcement.new` | — | — |
+| `inbox_unread` | `conversation_unread` | `unread_count` | `inbox.unread_count` | — | `inbox.unread_count` |
+
+Within a changed entity the fields are split: a changed `due_at` is `due.changed`; a `posted_at` that goes from null to non-null is `grade.posted`; a changed `score` or `grade` without that evidence is `grade.changed`; everything else is the shape's own change kind. A published grade is reported once, not twice.
+
+The unread count has no removal kind and its `added` kind is unreachable: one row is the whole membership, a failed read is not observed, and a gap deletes the baseline rather than emptying it. A count that became known again is the same news to a consumer as a count that changed.
+
+**Journal events.** `submission.state` is written inside the journal's own transaction (§12.2), with `dataset: "submission_journal"` and `scope: "assignment:<id>"`, so either both land or neither does.
+
+**Kinds.** `assignment.added`, `assignment.changed`, `assignment.removed`, `due.changed`, `grade.changed`, `grade.posted`, `announcement.new`, `missing.new`, `submission.state`, `inbox.unread_count`, `resync_required`.
+
+**The log.** `events(cursor INTEGER PRIMARY KEY AUTOINCREMENT, observation_id, kind, observed_at, identity_key, generation, dataset, scope, entity_key, before, after)`. `AUTOINCREMENT` keeps `sqlite_sequence`, so retention never hands a deleted cursor to a second event — which is what a consumer's deduplication key relies on.
+
+**Retention.** 30 days. Expiry deletes rows in one `BEGIN IMMEDIATE`; it never removes the database file.
+
+**Cursors.** Replay is at least once, in cursor order; consumers deduplicate by cursor. A cursor below the log's low water mark, or from another identity generation, cannot be replayed: it emits one `resync_required` document and the run closes normally with exit 0. `consumer_cursor(consumer, cursor, updated_at)` holds a derived consumer's durable position; `set_consumer_cursor` never moves a position backwards, and only an unreplayable **stored** position is replaced with the log's high water mark.
+
+**§15.** An event payload is the allowlisted cache columns and nothing else. No token, signed URL, message body, conversation subject, participant, or DOM text can reach a row.
+
+### 22.3 `canvas watch`
+
+`canvas watch [--jsonl] [--since CURSOR] [--once]`. Network-required (class D): `--offline` is a usage error, exit 2. `--json` is refused with exit 2 and names `--jsonl`, because the stream is its own contract and §7's one-document rule is unchanged.
+
+`watch` is a resident consumer: it holds the shared identity lock for its whole life, so `identity remove` reports busy (§3.4).
+
+Each tick, in order: expire the retention window; apply any observation an earlier run left pending; refresh the §10 datasets whose TTL has run out and whose backoff allows it; then emit exactly the rows the event log gained, in cursor order. Nothing is invented.
+
+The refresh order is `courses:active`, `enrollment_grades:none`, `assignments:course:<id>` for each course, `missing:self`, `planner:default`, `announcements:courses`, and `inbox_unread:all` last. The unread count is last because it is the cheapest and least urgent dataset, so a slow inbox never delays what a deadline depends on.
+
+Ticks are 30 seconds apart. A scope that fails backs off from 30 seconds, doubling to a ceiling of 15 minutes, so a broken scope is still retried. The TTLs do the staggering: `watch` promises no universal freshness and no 60-second guarantee (§3.6).
+
+With no `--since`, `watch` replays the whole retained log before streaming live events; §19 item 24 records that reading. One replay read takes 500 rows.
+
+`--jsonl` prints one complete `canvas-cli/event@1` document per line. `--once` runs one tick and closes with one `canvas-cli/watch@1` envelope reporting `since`, `cursor`, `events`, `ticks`, `resync_required`, `skipped`, and the `sync@1` dataset rows. `skipped` is `foreground_interest`, `journal_in_flight`, or `null`.
+
+### 22.4 `canvas notify`
+
+`canvas notify [--since CURSOR] [--stdout]`. Identity-bound and local (class B): it reads the event log only. It needs no token, opens no network connection, and refreshes no dataset.
+
+It reads the events after its cursor, groups them by event-kind group (`assignments`, `grades`, `announcements`, `missing`, `submission`, `inbox`, `resync`), and writes one line per group. The position is durable in `consumer_cursor` under the consumer name `notify` and moves only **after** the lines are written, so a failed run repeats them rather than dropping them; a second run posts nothing the first one posted. Alerts are deduplicated by cursor, never by content. `--since` overrides the stored position for one run and never touches it.
+
+`notify` is a raw-output command: it has no §7 payload, no Appendix D row, and `--json` is a usage error (exit 2).
+
+`--stdout` is the only backend. Without it the command writes the same lines to stdout and warns on stderr that no desktop backend is available, so it never claims a notification it did not post. §19 item 34 owns that gap.
+
+### 22.5 MCP subscriptions
+
+`canvas mcp` implements `subscriptions/listen` over the same log (M6-c2). A host may name a cursor in `_meta` under `dev.canvas-cli/cursor`; without one, the durable consumer position is used, which is what a reconnecting host wants.
+
+Every notification comes from the log in `state.sqlite`. There is no in-memory event source. The position advances only after a batch's notifications are sent, so a stream that dies mid-batch replays that batch rather than dropping it.
+
+A row invalidates a resource of this binding only when it names that resource's scope — either because the scope changed, or because a `resync_required` row says an observation of it was lost:
+
+| Dataset | Invalidates |
+|---|---|
+| `assignments`, scope `course:<id>` | `course/<id>/assignments` and `todo` |
+| `missing` | `todo` |
+| `submission_journal` | `receipts` |
+| everything else | nothing |
+
+A batch invalidates each URI once. A row from another identity key or generation invalidates nothing.
+
+`context/<consumer-handle>` is readable but **not subscribable**: REPORT §3.2 forbids implicit sharing from resource subscriptions, and a host holding one would be told on a resync that a consumer context it does not own changed. A filter entry naming a foreign key, another generation, an unknown path, or a name no event can reach is dropped rather than refused, so the host keeps the part of its subscription that can be served.
+
+A resync invalidates every subscribed resource once and then follows the log from its high water mark. A cursor the **host** named is the host's own position and never replaces the stored one; only an unreplayable stored position is reset.
+
+The subscription holds a shared identity lease for the life of the stream, which makes a subscribed host a resident consumer under §3.4. It writes nothing but cursor rows and needs no token and no network. The SDK answers the first request of a connection inline, so a connection whose *first* request is `subscriptions/listen` gets no other answer while the stream is open.
+
+## 23. Richer reads
+
+Built by M8-a (`docs/reviews/code-M8-a.md`) and M8-a2 (`docs/reviews/code-M8-a2.md`), from `docs/agent-ux/REPORT.md` §4's M8-a row. Every command in this section is **class C**. Every request is a `GET`. Nothing here marks anything read.
+
+### 23.1 Contract
+
+| Command | Request | Dataset / scope / TTL |
+|---|---|---|
+| `pages <course> [--unpublished]` | `GET /courses/:id/pages?sort=title` | `pages` / `course:<id>` / `ttl_pages` |
+| `page <course> <slug\|id\|URL>` | `GET /courses/:id/pages/:url_or_id` | `page` / `page:<course>:<operand>` / `ttl_pages` |
+| `syllabus <course>` | none of its own | `course` / `course:<id>` / `ttl_courses` |
+| `discussions <course> [--unread]` | `GET /courses/:id/discussion_topics?only_announcements=false` | `discussions` / `course:<id>` / `ttl_discussions` |
+| `discussion <course> <id\|URL> [--replies] [--page N]` | `GET /courses/:id/discussion_topics/:tid`; with `--replies` also `GET …/discussion_topics/:tid/entries` and `GET …/entries/:eid/replies` | `discussion` / `topic:<id>` or `topic:<id>:replies` / `ttl_discussions` |
+| `inbox [--scope inbox\|unread\|sent\|archived]` | `GET /conversations?scope=<scope>&auto_mark_as_read=false` | `inbox` / `scope:<scope>` / `ttl_inbox` |
+| `inbox show <id>` | `GET /conversations/:id?auto_mark_as_read=false` | `conversation` / `conversation:<id>` / `ttl_inbox` |
+| `inbox unread-count` | `GET /conversations/unread_count` | `inbox_unread` / `all` / `ttl_inbox` |
+
+`per_page=100` is appended by the client to every paginated collection request whose path does not already carry it; a single-object `GET` never gets it (§11).
+
+**Nothing is marked read.** Every conversation request carries `auto_mark_as_read=false`. The materialized `/view` discussion endpoint is never used: it marks entries read as a side effect of reading them. `--unread` filters on the stored `read_state` and `unread_count`; it marks nothing.
+
+`sync` and `sync --full` do not refresh these datasets. They keep their v1 request budgets and their §13 targets; the new reads refresh on demand.
+
+### 23.2 Reading rules
+
+- **The pages listing never asks for bodies.** `include[]=body` would pull one full body per page for a listing that shows titles. A body arrives only from `page`, and the per-field write rule (§10) merges it into the same row, so a later listing refresh does not drop it.
+- **`--unpublished` filters; it does not fetch.** The request is the same either way. Without the flag a page Canvas reports as `published: false` is hidden; a page with no `published` field is shown, because absence is not a denial.
+- **A page is keyed by `page_id`, and its coverage scope keeps the operand the caller used.** Canvas accepts a slug and an id, and the two are different cache keys until a fetch says which page they name. Both write the same row.
+- **`page` and `discussion` need their course operand even for a URL.** A URL naming a different course than the operand is exit 6, and so is a URL on another origin.
+- **`syllabus` sends no request of its own.** It reads the `course` dataset. The cache stores `syllabus_markdown` and the JSON `syllabus_refs` projection beside it, never the source HTML. A cache written before M8-a has no projection, so its reference lists are empty rather than wrong.
+- **`syllabus.updated_at` is the course's own `updated_at`.** Canvas reports no revision time for a syllabus body, so the field is `null` today rather than a guess.
+- **`discussions` lists discussion topics only.** The request is pinned at `only_announcements=false`, so Canvas never returns an announcement through it. There is no `--announcements` flag (§19 item 27), and the human output points at `canvas announcements`. `is_announcement` stays in `discussions@1` and `discussion@1`, because Canvas sends it on a topic: it is a topic property, not a filter.
+- **Replies have their own coverage scope.** A read without `--replies` covers `topic:<id>`; with `--replies` it covers `topic:<id>:replies`. One can never make the other look covered. Without `--replies` the answer is `replies: []` with `replies_coverage { pages_fetched: 0, complete: false, blocked: "not_requested" }` — never `complete`.
+- **Nested replies are followed only when Canvas truncated them.** An entry carries its `recent_replies` inline; only an entry with `has_more_replies` costs a second request. `pages_fetched` counts every page across both routes.
+- **A reply-page failure keeps what was stored.** Fetching stops at the first failure, the pages already read are ingested, and the topic row records `replies_complete = false` with `replies_blocked`. The coverage lives on the row, so a later cached read reports the same incompleteness and the same exit.
+- **`--page N` selects which stored replies to show, 100 per page.** The fetch still covers the whole set. A page past the end is exit 0 with an empty `replies` list, not an error (§19 item 28). `discussion@1` carries `replies_page` (1 when `--page` is absent) and `replies_total`, so an empty window is never read as a thread with no replies. `replies_total` is `null` when `--replies` was not asked: no count was made.
+- **`discussion@1` replies carry `parent_id`.** The reply list is flat and holds both top-level entries and nested replies.
+- **A conversation listing row is not a conversation.** `inbox show` reports `messages_complete`, which is false when only the listing row is cached, so an empty `messages` array is never read as "no messages".
+- **A conversation message body is plain text.** Canvas sends it as text, not HTML, so it is not converted to Markdown. It is bounded like every other body.
+- **The unread count may be unknown.** Canvas returns it as a string or a number. A value that is absent or unparseable stays `null` rather than becoming `0`. The count lives in a one-row table, because the cache is per identity.
+
+### 23.3 Bodies, embedded content, and file references
+
+One HTML body is converted to Markdown and a `BodyRefs` projection. The projection holds no HTML.
+
+- Every `<iframe>`, `<video>`, `<audio>`, `<embed>`, and `<object>` becomes an `embedded` row and a one-line placeholder in the Markdown, so a reader is told what it cannot see. `kind` is `video`, `audio`, `lti` (an `<iframe>` whose source names `external_tools` or `/lti/`), `iframe`, or `unknown`. `reported` is always `unavailable`; nothing embedded is fetched.
+- Every `<a href>`, `<area href>`, `<img src>`, and `<source src>` is resolved against the active identity origin at read time. A same-origin reference whose path ends in `/files/:id` becomes a `files` row; every other origin becomes an `external_links` row and is never fetched. A fragment, a `mailto:`, and a `javascript:` URL are dropped.
+- **Every reference is stripped of its capability-bearing parts before it is stored or shown** (§15): the userinfo, and every query parameter §11's redaction list names — `access_token`, `verifier`, `sig`, `token`, `Signature`, `Policy`, `Expires`, `X-Amz-*`. The rest of the reference is kept as written, because that is what tells the reader where it points. The rewrite happens before the Markdown is rendered, so a converted body carries no capability either. A persisted `html_url` keeps only its origin and path, the rule `modules` already used.
+- **A body over 64 KiB is cut on a character boundary.** `truncated` is `true`, the envelope gains a `partial[]` row, and the exit is 12. A cut body is never reported as complete. The bound counts per document: a page, a syllabus, a topic message, one reply, and one conversation message each count on their own.
+
+Raw HTML bodies stay in `pages.body`, `discussion_topics.message`, and `discussion_entries.message` and are converted at read time, following the v1 `announcements.message` pattern; the syllabus converts before storing. §19 item 26 owns that difference.
+
+### 23.4 Exits
+
+| Case | Outcome |
+|---|---|
+| Listing denied (`403`/`404`, not a throttle) | `partial[]` row `pages:course:<id>`, `discussions:course:<id>`, or `inbox:scope:<scope>`; `listing.available = false`; exit 12. The denial is stored as coverage, so a later cached read reports it too. |
+| Single item denied | exit 8, `code: refused` |
+| Not found | exit 6, through the resolver path |
+| Cross-origin URL operand | exit 6, `code: resolution` |
+| `require_initial_post` gate with `--replies` | exit 8, `code: refused`, message starting `initial_post_required` |
+| A reply page failed after earlier pages were stored | `replies_coverage.complete = false`, `blocked: "page_failed"`, `partial[]` row `discussion_entries:topic:<id>`, exit 12 |
+| A body cut at 64 KiB | `truncated: true`, `partial[]`, exit 12 |
+| `--offline` with no complete coverage | exit 7 |
+| Bad `--scope`; `--page` without `--replies`; `--page 0` | exit 2 |
+
+A `403` on the entries route of a topic whose `require_initial_post` is true is the initial-post refusal, and only when `--replies` was asked; reading the topic itself still succeeds. A `403` on a topic without that flag is an ordinary incomplete page set. Auth (`401`) and throttling (`429`, or a rate-limited `403`) always propagate as exit 3 and exit 5; they are never recorded as coverage.
+
+### 23.5 The rubric extension
+
+Additive on `assignment@1` and `submission@1`. A rubric criterion keeps `id`, `description`, and `points`, and gains `long_description`, `criterion_use_range` (false when Canvas does not say), and `ratings[]` (empty when Canvas does not send one), each rating being `{ id, description, long_description?, points? }`. A rubric assessment gains `rating_id`, `null` when Canvas does not name the rating. Both are re-projected on read, so a row cached by an earlier build still carries every declared field. Fixtures written before M8-a still validate, and both schemas keep `@1`.
+
+### 23.6 Cache and config
+
+Cache migration `0002_reads` adds `pages`, `discussion_topics`, `discussion_entries`, `conversations`, and `conversation_unread`, and moves `CACHE_USER_VERSION` to 2. Each table is keyed by its Canvas id, as the v1 tables are. Nested arrays — `group_topic_children`, conversation `participants` and `messages` — live in `data_json`; reply entries live in `discussion_entries` with membership under `discussion_entries` / `topic:<id>`.
+
+`cache.ttl_pages` (default `1h`), `cache.ttl_discussions` (default `15m`), and `cache.ttl_inbox` (default `5m`) join the §9 keys.
+
+### 23.7 Schemas
+
+`pages@1`, `page@1`, `syllabus@1`, `discussions@1`, `discussion@1`, `inbox@1`, `conversation@1`, and `inbox_unread@1` are registered with fixtures (Appendix D). Ids are strings, every declared field is present, unknown values are `null`, and an array is never `null`. Text bodies are Markdown, bounded at 64 KiB per document.
+
+These eight schemas have no typed arm in the schema generator, so their `canvas schema` pages are inferred from the registry fixture and declare `result_source: "registry fixture"`. A nullable field is therefore described as non-nullable on those pages. §19 item 35 owns that gap.
+
+## 24. Companion, broker, presence
+
+*Reserved for M7-a and M7-b (`extension/`, `canvas bridge`, `canvas here`, `context.*`, follow, panel approvals). Both packages are in flight and no part of them is on `main`; §19 items 30–32 already record their open questions. This section is written when they merge.*
+
+## 25. Discussion and inbox writes
+
+*Reserved for M8-b (per-operation prepare, execute, status, and reconcile for conversation and discussion writes, on the §20 plan layer). The package is in flight and no part of it is on `main`. This section is written when it merges.*
 
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
@@ -760,7 +1256,7 @@ An owner adds the interface (enum variant, schema entry, migration) that the oth
 |---|---|---|
 | clap (derive, env) | 4.6.6 | CLI |
 | clap_complete / clap_mangen | 4.6.9 / 0.3.3 | completions, man pages |
-| tokio (rt, macros, fs, time, sync, io-util, signal, net) | 1.53.1 | runtime; `net` for the broker socket (M7-a) |
+| tokio (workspace: rt, macros, fs, time, sync; per crate: io-util, signal, rt-multi-thread, process) | 1.53.1 | runtime. `net` is enabled today only in `canvas-api`'s dev-dependencies; the broker socket that needs it is M7-a (§24) |
 | reqwest (rustls, json, stream, gzip, brotli, multipart) | 0.13.5 | HTTP |
 | futures-util | 0.3.34 | streams |
 | serde / serde_json | 1.0.229 / 1.0.151 | models, JSON |
@@ -770,23 +1266,26 @@ An owner adds the interface (enum variant, schema entry, migration) that the oth
 | figment (toml, env) + toml | 0.10.19 / 1.1.5 | config |
 | rusqlite (bundled) | 0.40.2 | DBs |
 | cap-std + cap-fs-ext (`std`) | 3.4.6 | containment, no-follow opens |
-| fs4 | latest 0.13.x | file locks (`flock` / `LockFileEx`) |
+| fs4 | 0.13.1 | file locks (`flock` / `LockFileEx`) |
 | comfy-table | 8.0.0 | tables |
 | anstyle / anstream | 1.0.14 / 1.0.0 | color |
 | indicatif | 0.18.6 | progress |
 | open | 5.4.3 | browser |
-| sha2 | 0.10.x | hashes |
-| html2text or htmd | latest (pick in M1-c) | HTML → text |
-| tracing / tracing-subscriber | latest | logs |
+| sha2 | 0.10.9 | hashes |
+| htmd (+ markup5ever_rcdom) | 0.5.5 / 0.38.0 | HTML → Markdown; M1-c picked `htmd` over `html2text` |
+| tracing / tracing-subscriber | 0.1.44 / 0.3.23 | logs |
+| uuid (serde, v4) | 1.18.1 | journal ids, plan ids, approval handles, identity generations |
 | thiserror / anyhow | 2.0.20 / 1.0.104 | errors |
-| rmcp (`=3.2.0`, `server`, `transport-io`, `local`: the command cores are `!Send`, so the service runs in a `LocalSet`) | 3.2.0 | `canvas mcp` (M6-b); brings `chrono` transitively, see §19 item 18 |
+| rmcp (`=3.2.0`, no default features; `server`, `client`, `macros`, `elicitation`, `transport-io`, `transport-async-rw`, `schemars`, `local`) | 3.2.0 | `canvas mcp` (M6-b). `local` is load-bearing: the command cores are `!Send`, so the service runs in a `LocalSet`. Brings `chrono` transitively, see §19 item 18 |
 | schemars (`=1.2.2`) | 1.2.2 | JSON Schema for `canvas schema` and the MCP tool schemas (M6-b) |
 | dev: wiremock, assert_cmd, predicates, insta | 0.6.5, 2.2.2, 3.1.4, 1.48.0 | tests |
 | tools: cargo-nextest, cargo-deny, cargo-dist, release-plz | 0.9.143, 0.20.2, 0.32.0, 0.3.164 | CI, release |
 
 Toolchain: stable 1.98.x in CI; MSRV 1.88; owner machine 1.97.1.
 
-## Appendix B. Canvas endpoints used (v1)
+Every version is pinned with `=`, in the workspace manifest or in the crate that uses it. Direct dependencies the table still omits: `getrandom` 0.4.3, `unicode-normalization` 0.1.25, `httpdate` 1.0.3, `rpassword` 7.4.0, `rustix` 1.1.4 (`fs`, `process`; `canvas-cli` under `cfg(unix)` only), and, for tests and `xtask` only, `tokio-rustls` 0.26.5, `tempfile` 3.23.0, and `url` 2.5.8. No post-v1 package added a dependency after `rmcp` and `schemars`. `uuid` names journal ids, plan ids, approval handles, and identity generations.
+
+## Appendix B. Canvas endpoints used
 
 | Command | Endpoint |
 |---|---|
@@ -805,6 +1304,23 @@ Toolchain: stable 1.98.x in CI; MSRV 1.88; owner machine 1.97.1.
 | announcements | `GET /api/v1/announcements?context_codes[]=course_N…(≤10)&start_date=…&end_date=…&per_page=100`; `GET /api/v1/courses/:cid/discussion_topics/:id` |
 | calendar | `GET /api/v1/calendar_events?type=event&context_codes[]=…(≤10)&start_date=…&end_date=…&per_page=100` |
 
+Added after v1. Every one is a `GET`. `per_page=100` is appended by the client to every paginated collection request whose path does not already carry it; a single-object `GET` never gets it (§11).
+
+| Command | Endpoint |
+|---|---|
+| pages | `GET /api/v1/courses/:id/pages?sort=title&per_page=100` |
+| page | `GET /api/v1/courses/:id/pages/:url_or_id` |
+| syllabus | none of its own; reads the `course` dataset (§23) |
+| discussions | `GET /api/v1/courses/:id/discussion_topics?only_announcements=false&per_page=100` |
+| discussion | `GET /api/v1/courses/:cid/discussion_topics/:tid`; with `--replies` also `GET /api/v1/courses/:cid/discussion_topics/:tid/entries?per_page=100` and `GET /api/v1/courses/:cid/discussion_topics/:tid/entries/:eid/replies?per_page=100` |
+| inbox | `GET /api/v1/conversations?scope=inbox\|unread\|sent\|archived&auto_mark_as_read=false&per_page=100` |
+| inbox show | `GET /api/v1/conversations/:id?auto_mark_as_read=false` |
+| inbox unread-count | `GET /api/v1/conversations/unread_count` |
+| submit, plan execute | no new endpoint; the pre-flight read `GET …/assignments/:aid?include[]=submission&include[]=can_submit` runs twice, once to freeze the plan and once to revalidate it (§20) |
+| watch, mcp | no new endpoint; both refresh the §10 datasets above |
+
+The materialized discussion endpoint `GET …/discussion_topics/:tid/view` is deliberately not used: it marks entries read as a side effect of reading them (§23).
+
 ## Appendix C. What the research and the reviews changed
 
 - Local grade math, target solver, GraphQL, ETags, hard links, group submissions: out of v1.
@@ -816,7 +1332,25 @@ Toolchain: stable 1.98.x in CI; MSRV 1.88; owner machine 1.97.1.
 - Complete JSON schemas (Appendix D); single-envelope and exit-precedence rules.
 - Dependency-ordered packages with per-round shared-file owners.
 
-## Appendix D. JSON `result` payloads (v1)
+### What the post-v1 rounds changed
+
+`docs/agent-ux/REPORT.md` proposed an agent-first surface on top of the v1 contract. These packages are on `main`; each has its own code review, and §§20–23 record what they built rather than what was proposed.
+
+| Package | What it added | Section | Review |
+|---|---|---|---|
+| M6-a | operation plans, approval handles, the approval audit, the human `submit` refactor | §20 | `docs/reviews/code-M6-a.md` |
+| M6-b | `canvas schema`, `canvas mcp`, the shipped skill, the host matrix | §21 | `docs/reviews/code-M6-b.md` |
+| M6-c | cross-process permits, the shared governor, refresh single-flight, foreground interest, the event log, `canvas watch`, `canvas notify` | §22 | `docs/reviews/code-M6-c.md` |
+| M6-c2 | `subscriptions/listen` over the event log | §22.5 | `docs/reviews/code-M6-c2.md` |
+| M8-a | `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox *`, the rubric extension | §23 | `docs/reviews/code-M8-a.md` |
+| M8-a2 | the eight M8-a read tools on the agent surface; §19 items 27 and 28 applied | §21, §23 | `docs/reviews/code-M8-a2.md` |
+| M8-a3 | the `inbox.unread_count` event; the per-form `canvas schema` pages | §22, §21 | `docs/reviews/code-M8-a3.md` |
+
+Still in flight, and not on `main`: M7-a and M7-b (the companion, §24) and M8-b (discussion and inbox writes, §25). M8-c (GraphQL) and M8-d (OAuth) stay conditional, as REPORT §4 leaves them.
+
+`docs/reads-v2.md` was the M8-a contract document. Its content is now §23, and the file is a pointer.
+
+## Appendix D. JSON `result` payloads
 
 Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `date` = civil `YYYY-MM-DD`; `T?` = nullable; arrays are never `null`. Every listed field is always present.
 
@@ -833,6 +1367,10 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 - `Availability` = `{ locked?: bool, lock_explanation?: string, submittable?: bool, external?: bool, unlock_at?: ts+local, lock_at?: ts+local }`
 - `Attachment` = `{ id, display_name, size?: number, content_type?: string }`
 - `Freshness` = envelope entry `{ dataset, scope, source: "cache"|"network", fetched_at?: ts, complete: bool, count?: number, stale: bool }`
+- `Listing` = `{ available: bool, http_status?: number }` — the shape `files@1` already used, reused by `pages@1`, `discussions@1`, and `inbox@1` (§23)
+- `Embedded` = `{ kind: "iframe"|"lti"|"video"|"audio"|"unknown", src_origin?: string, reported: "unavailable" }`
+- `FileRef` = `{ file_id, name?: string, url }`; `ExternalLink` = `{ url }` — both stripped of every capability-bearing part (§23)
+- `Participant` = `{ id?, name?: string }`
 
 | Schema | `result` | Sort |
 |---|---|---|
@@ -864,7 +1402,40 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 | `config@1` | `get`: `{ key, value }`; `set`: `{ key, value, previous? }`; `path`: `{ path }` | — |
 | `doctor@1` | `{ identity_selected: bool, checks: [ { name, status: "ok"|"warn"|"fail"|"skipped", message } ], recovered_journals: [id] }` | fixed order |
 | `version@1` | `{ version, commit?, target }` | — |
-| `error@1` | `{ code, message, http_status?: number, server_errors: [string], details: object }` | — |
+| `plan@1` | `{ plan: { plan_id, state: "prepared"|"approved"|"executed"|"expired"|"invalidated", consumer?: string, course_id, course_code?, assignment_id, assignment_name?, kind, baseline_attempt: number, estimated_attempt: number, files: [ { name, size: number, sha256 } ], text?: { input_sha256, transform, sent_sha256 }, url?: string, comment_chars?: number, due_at?: ts, plan_sha256, created_at: ts, expires_at: ts, approval?: Approval, journal_id?, invalidated_reason?: string } }` (§20) | — |
+| `watch@1` | `{ since?: string, cursor?: string, events: number, ticks: number, resync_required: bool, skipped?: "foreground_interest"\|"journal_in_flight", datasets: [ Freshness & { requests: number, error?: string } ] }` (§22) | dataset, scope |
+| `pages@1` | `{ course_id, listing: Listing, pages: [ { id, title?: string, url?: string, updated_at?: ts, published?: bool, front_page?: bool } ] }` | `title` asc, from `sort=title` |
+| `page@1` | `{ page: { id, course_id, title?: string, url?: string, updated_at?: ts, published?: bool, front_page?: bool, locked_for_user?: bool, html_url?: string, body_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink] } }` | — |
+| `syllabus@1` | `{ course_id, syllabus_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink], updated_at?: ts }` | — |
+| `discussions@1` | `{ course_id, listing: Listing, discussions: [ { id, course_id?, title?: string, posted_at?: ts, last_reply_at?: ts, author?: string, read_state?: string, unread_count?: number, reply_count?: number, locked?: bool, pinned?: bool, is_announcement?: bool, require_initial_post?: bool, assignment_id?, points_possible?: number, group_category_id?, html_url?: string } ] }` | as Canvas returns them |
+| `discussion@1` | `{ discussion: <discussions item> & { discussion_type?: string, group_topic_children: [ { id?, group_id? } ], message_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink], replies: [ { id, parent_id?, user_id?, user_name?: string, created_at?: ts, message_markdown?: string, truncated: bool, read_state?: string, replies_count: number } ], replies_page: number, replies_total?: number, replies_coverage: { pages_fetched: number, complete: bool, blocked?: "initial_post_required"\|"page_failed"\|"not_requested" } } }` | replies in the order the reply fetch stored them: every entry page, then the nested replies, then `id` |
+| `inbox@1` | `{ scope, listing: Listing, conversations: [ { id, subject?: string, workflow_state?: string, last_message_at?: ts, message_count?: number, context_name?: string, starred?: bool, participants: [Participant] } ] }` | as Canvas returns them |
+| `conversation@1` | `{ conversation: { id, subject?: string, workflow_state?: string, last_message_at?: ts, context_name?: string, participants: [Participant], messages: [ { id?, author_id?, created_at?: ts, body?: string, truncated: bool, attachments: [ { file_id?, name?: string, size?: number } ] } ], messages_complete: bool } }` | messages as Canvas returns them |
+| `inbox_unread@1` | `{ unread_count?: number }` | — |
+| `error@1` | `{ code, message, http_status?: number, server_errors: [string], details: object }` (exit 8 adds `details.reason`, §14) | — |
+
+**`canvas-cli/event@1` is not a `result`.** It is one self-describing document per line of the `canvas watch --jsonl` stream, with no §7 envelope around it (§22):
+
+```json
+{ "schema": "canvas-cli/event@1", "cursor": "12", "kind": "due.changed",
+  "observed_at": "2026-09-09T17:05:12Z", "observed_at_local": "2026-09-09T13:05:12-04:00",
+  "identity": { "origin": "…", "user_id": "1", "key": "…" },
+  "generation": "01234567-89ab-4cde-8f01-23456789abcd",
+  "dataset": "assignments", "scope": "course:100", "entity_key": "9",
+  "before": { "due_at": "2026-09-10T03:59:00Z" }, "after": { "due_at": "2026-09-12T03:59:00Z" } }
+```
+
+`before` and `after` carry the allowlisted fields of the shape only (§22). `entity_key` is `null` when the event is not about one entity.
+
+**Fields added after v1, all additive, so every schema keeps `@1`:**
+
+| Schema | Added | Package |
+|---|---|---|
+| `Journal`, `receipt@1` | `plan_id?`, `approval?` | M6-a |
+| `submit@1` | `replayed: bool` | M6-a, §20 |
+| `assignment@1` | rubric criterion gains `long_description?`, `criterion_use_range: bool`, `ratings: [ { id, description?: string, long_description?: string, points?: number } ]`; rubric assessment gains `rating_id?` | M8-a |
+| `submission@1` | rubric assessment gains `rating_id?` | M8-a |
+| `discussion@1` | `replies_page`, `replies_total?` | M8-a2, §19 item 28 |
 
 ## Appendix E. Review response ledger
 

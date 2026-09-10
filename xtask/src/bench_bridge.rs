@@ -128,7 +128,7 @@ pub fn measure(binary: &Path, runs: u32) -> Result<Report> {
         follows.push(elapsed);
     }
     follows.sort_by(f64::total_cmp);
-    companion.stop()?;
+    companion.stop(&mut client)?;
 
     Ok(Report {
         here: Latency {
@@ -166,8 +166,15 @@ impl Companion {
         }
     }
 
-    fn stop(&mut self) -> Result<()> {
+    /// Stop answering, and take the extension side back.
+    ///
+    /// The thread is blocked reading the host's pipe, and a flag alone would
+    /// leave it there until a message it has no reason to expect arrives. So
+    /// the flag is set and then one more follow is asked for: the thread
+    /// answers it, sees the flag, and returns.
+    fn stop(&mut self, client: &mut Client) -> Result<()> {
         let _ = self.stop.send(());
+        client.follow(&format!("{ORIGIN}/courses/45679"))?;
         if let Some(worker) = self.worker.take() {
             match worker.join() {
                 Ok(host) => host?.stop(),
@@ -179,12 +186,11 @@ impl Companion {
 }
 
 /// Acknowledge every navigation until the measurement is over.
+///
+/// The stop flag is read after a message is handled, never before one is
+/// waited for, so the last navigation is always answered.
 fn answer_navigations(host: &mut Host, stopped: &Receiver<()>) -> Result<()> {
     loop {
-        match stopped.try_recv() {
-            Ok(()) | Err(TryRecvError::Disconnected) => return Ok(()),
-            Err(TryRecvError::Empty) => {}
-        }
         let message = host.recv()?;
         if message["type"] == "navigate" {
             host.send(&json!({
@@ -193,6 +199,10 @@ fn answer_navigations(host: &mut Host, stopped: &Receiver<()>) -> Result<()> {
                 "accepted": true,
                 "reason": null,
             }))?;
+            match stopped.try_recv() {
+                Ok(()) | Err(TryRecvError::Disconnected) => return Ok(()),
+                Err(TryRecvError::Empty) => {}
+            }
         }
     }
 }

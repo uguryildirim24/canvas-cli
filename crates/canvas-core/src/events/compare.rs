@@ -29,8 +29,16 @@ pub struct Shape {
     pub added: EventKind,
     /// Emitted for an entity that left it, when the dataset has removals.
     pub removed: Option<EventKind>,
-    /// Whether field changes are compared at all.
-    pub compare_fields: bool,
+    /// Emitted when an allowlisted field of a member changed, for a dataset
+    /// that compares fields at all.
+    ///
+    /// `None` turns field comparison off for the whole shape: `missing` and
+    /// `announcements` report that something joined a list, and REPORT §3.6
+    /// names no kind for any change inside one of their rows, not even the
+    /// `due_at` `missing` allowlists for its payload. A dataset that does
+    /// compare fields names the kind its remaining field changes carry, and
+    /// `due_at`, the score, and the grade keep their own kinds inside it.
+    pub changed: Option<EventKind>,
 }
 
 /// Fields that carry their own kind, so `assignment.changed` never repeats them.
@@ -39,9 +47,10 @@ const GRADE_FIELDS: &[&str] = &["score", "grade", "posted_at"];
 
 /// The datasets this package observes.
 ///
-/// `files`, `folders`, `modules`, `courses`, and the grade datasets are not
-/// listed: REPORT §3.6 names no kind for them, and the rule for an undefined
-/// case is to emit fewer events, never to invent one.
+/// `files`, `folders`, `modules`, `courses`, the grade datasets, and the M8-a
+/// read datasets other than `inbox_unread` are not listed: REPORT §3.6 names
+/// no kind for them, and the rule for an undefined case is to emit fewer
+/// events, never to invent one.
 pub const SHAPES: &[Shape] = &[
     Shape {
         dataset: "assignments",
@@ -60,7 +69,7 @@ pub const SHAPES: &[Shape] = &[
         json_keys: &["grade", "posted_at"],
         added: EventKind::AssignmentAdded,
         removed: Some(EventKind::AssignmentRemoved),
-        compare_fields: true,
+        changed: Some(EventKind::AssignmentChanged),
     },
     Shape {
         dataset: "missing",
@@ -71,7 +80,7 @@ pub const SHAPES: &[Shape] = &[
         // An assignment that leaves the missing list was submitted or excused;
         // §3.6 names no kind for that, so none is emitted.
         removed: None,
-        compare_fields: false,
+        changed: None,
     },
     Shape {
         dataset: "announcements",
@@ -80,7 +89,27 @@ pub const SHAPES: &[Shape] = &[
         json_keys: &[],
         added: EventKind::AnnouncementNew,
         removed: None,
-        compare_fields: false,
+        changed: None,
+    },
+    Shape {
+        // The unread count is one row (M8-a `inbox_unread` / `all`). The
+        // payload is the count and nothing else: a conversation subject, a
+        // participant, and a message body never reach the log.
+        dataset: "inbox_unread",
+        table: "conversation_unread",
+        columns: &["unread_count"],
+        json_keys: &[],
+        // `added` is unreachable here, and is named for completeness. The
+        // first complete observation is silent, and `report_gap` deletes the
+        // baseline rather than emptying it, so the observation after a gap is
+        // silent too; the refresh always writes the single row, so no complete
+        // observation ever compares against a baseline that lacks it. It names
+        // the change kind rather than a second one, because a count that
+        // became known again is the same news to a consumer as a count that
+        // changed.
+        added: EventKind::InboxUnreadCount,
+        removed: None,
+        changed: Some(EventKind::InboxUnreadCount),
     },
 ];
 
@@ -117,8 +146,8 @@ pub fn diff(shape: &Shape, baseline: &Members, observed: &Members) -> Vec<Pendin
             });
             continue;
         };
-        if shape.compare_fields {
-            events.extend(field_events(key, before, after));
+        if let Some(changed) = shape.changed {
+            events.extend(field_events(changed, key, before, after));
         }
     }
     if let Some(removed) = shape.removed {
@@ -138,7 +167,16 @@ pub fn diff(shape: &Shape, baseline: &Members, observed: &Members) -> Vec<Pendin
 }
 
 /// Field-level events for one entity present on both sides.
-fn field_events(key: &str, before: &Member, after: &Member) -> Vec<PendingEvent> {
+///
+/// `changed` is the kind the fields that carry no kind of their own report
+/// under. A shape that allowlists neither `due_at` nor a grade field — the
+/// unread count is one — reaches only that last bucket.
+fn field_events(
+    changed_kind: EventKind,
+    key: &str,
+    before: &Member,
+    after: &Member,
+) -> Vec<PendingEvent> {
     let mut events = Vec::new();
     if changed(before, after, DUE_FIELDS) {
         events.push(subset(
@@ -182,13 +220,7 @@ fn field_events(key: &str, before: &Member, after: &Member) -> Vec<PendingEvent>
             .collect();
         names.sort_unstable();
         names.dedup();
-        events.push(subset(
-            EventKind::AssignmentChanged,
-            key,
-            before,
-            after,
-            &names,
-        ));
+        events.push(subset(changed_kind, key, before, after, &names));
     }
     events
 }
