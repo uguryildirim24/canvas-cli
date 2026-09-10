@@ -1,0 +1,917 @@
+---
+source: crates/canvas-cli/src/output/json_schema.rs
+expression: document(entry)
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "command": "calendar",
+  "contract": "canvas-cli/schema@1",
+  "envelope": {
+    "$comment": "One JSON document per invocation (SPEC §7). A command that aborts prints the error branch (SPEC §14).",
+    "oneOf": [
+      {
+        "description": "Single-document JSON envelope for one invocation.",
+        "properties": {
+          "exit": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "freshness": {
+            "items": {
+              "description": "One dataset freshness entry (§7 / Appendix D).",
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "count": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "dataset": {
+                  "type": "string"
+                },
+                "fetched_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "source": {
+                  "description": "Where a freshness row was obtained.",
+                  "enum": [
+                    "cache",
+                    "network"
+                  ],
+                  "type": "string"
+                },
+                "stale": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "complete",
+                "count",
+                "dataset",
+                "fetched_at",
+                "scope",
+                "source",
+                "stale"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "identity": {
+            "description": "Identity reference embedded in envelopes.",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "origin",
+              "user_id"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "outcome": {
+            "description": "Machine-readable process outcome (§7).",
+            "enum": [
+              "ok",
+              "partial",
+              "recovery",
+              "mismatch",
+              "refused",
+              "error"
+            ],
+            "type": "string"
+          },
+          "partial": {
+            "items": {
+              "description": "A scope that returned a partial/denied result.",
+              "properties": {
+                "http_status": {
+                  "format": "uint16",
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "http_status",
+                "message",
+                "scope"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requests": {
+            "description": "Request counters for the invocation.",
+            "properties": {
+              "api": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "cost": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "storage": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "api",
+              "cost",
+              "storage"
+            ],
+            "type": "object"
+          },
+          "result": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "all_day": {
+                      "type": "boolean"
+                    },
+                    "all_day_date": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "course_code": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "course_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "due_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "due_at_local": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "end_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "end_at_local": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "html_url": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "is_deadline": {
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "start_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "start_at_local": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "uid": {
+                      "description": "`canvas-<kind>-<id>@<identity-key>`, the same UID the ICS carries.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "all_day",
+                    "all_day_date",
+                    "course_code",
+                    "course_id",
+                    "due_at",
+                    "due_at_local",
+                    "end_at",
+                    "end_at_local",
+                    "html_url",
+                    "id",
+                    "is_deadline",
+                    "kind",
+                    "start_at",
+                    "start_at_local",
+                    "title",
+                    "uid"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "window": {
+                "description": "Inclusive civil-day window shared by `announcements@1` and `calendar@1`.",
+                "properties": {
+                  "end": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "end",
+                  "start"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "items",
+              "window"
+            ],
+            "title": "CalendarResult",
+            "type": "object"
+          },
+          "schema": {
+            "const": "canvas-cli/calendar@1",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "exit",
+          "freshness",
+          "generated_at",
+          "identity",
+          "outcome",
+          "partial",
+          "profile",
+          "requests",
+          "result",
+          "schema",
+          "warnings"
+        ],
+        "title": "canvas-cli/calendar@1",
+        "type": "object"
+      },
+      {
+        "description": "Single-document JSON envelope for one invocation.",
+        "properties": {
+          "exit": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "freshness": {
+            "items": {
+              "description": "One dataset freshness entry (§7 / Appendix D).",
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "count": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "dataset": {
+                  "type": "string"
+                },
+                "fetched_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "source": {
+                  "description": "Where a freshness row was obtained.",
+                  "enum": [
+                    "cache",
+                    "network"
+                  ],
+                  "type": "string"
+                },
+                "stale": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "complete",
+                "count",
+                "dataset",
+                "fetched_at",
+                "scope",
+                "source",
+                "stale"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "identity": {
+            "description": "Identity reference embedded in envelopes.",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "origin",
+              "user_id"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "outcome": {
+            "description": "Machine-readable process outcome (§7).",
+            "enum": [
+              "ok",
+              "partial",
+              "recovery",
+              "mismatch",
+              "refused",
+              "error"
+            ],
+            "type": "string"
+          },
+          "partial": {
+            "items": {
+              "description": "A scope that returned a partial/denied result.",
+              "properties": {
+                "http_status": {
+                  "format": "uint16",
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "http_status",
+                "message",
+                "scope"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requests": {
+            "description": "Request counters for the invocation.",
+            "properties": {
+              "api": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "cost": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "storage": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "api",
+              "cost",
+              "storage"
+            ],
+            "type": "object"
+          },
+          "result": {
+            "description": "Fatal error payload for `canvas-cli/error@1`.",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "details": true,
+              "http_status": {
+                "format": "uint16",
+                "maximum": 65535,
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "server_errors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "http_status",
+              "message",
+              "server_errors"
+            ],
+            "title": "ErrorResult",
+            "type": "object"
+          },
+          "schema": {
+            "const": "canvas-cli/error@1",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "exit",
+          "freshness",
+          "generated_at",
+          "identity",
+          "outcome",
+          "partial",
+          "profile",
+          "requests",
+          "result",
+          "schema",
+          "warnings"
+        ],
+        "title": "canvas-cli/error@1",
+        "type": "object"
+      }
+    ]
+  },
+  "error": {
+    "description": "Single-document JSON envelope for one invocation.",
+    "properties": {
+      "exit": {
+        "format": "uint8",
+        "maximum": 255,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "freshness": {
+        "items": {
+          "description": "One dataset freshness entry (§7 / Appendix D).",
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "count": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "dataset": {
+              "type": "string"
+            },
+            "fetched_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scope": {
+              "type": "string"
+            },
+            "source": {
+              "description": "Where a freshness row was obtained.",
+              "enum": [
+                "cache",
+                "network"
+              ],
+              "type": "string"
+            },
+            "stale": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "complete",
+            "count",
+            "dataset",
+            "fetched_at",
+            "scope",
+            "source",
+            "stale"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "generated_at": {
+        "type": "string"
+      },
+      "identity": {
+        "description": "Identity reference embedded in envelopes.",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "origin",
+          "user_id"
+        ],
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "outcome": {
+        "description": "Machine-readable process outcome (§7).",
+        "enum": [
+          "ok",
+          "partial",
+          "recovery",
+          "mismatch",
+          "refused",
+          "error"
+        ],
+        "type": "string"
+      },
+      "partial": {
+        "items": {
+          "description": "A scope that returned a partial/denied result.",
+          "properties": {
+            "http_status": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "http_status",
+            "message",
+            "scope"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "profile": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "requests": {
+        "description": "Request counters for the invocation.",
+        "properties": {
+          "api": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cost": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "storage": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "api",
+          "cost",
+          "storage"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Fatal error payload for `canvas-cli/error@1`.",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": true,
+          "http_status": {
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "server_errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "details",
+          "http_status",
+          "message",
+          "server_errors"
+        ],
+        "title": "ErrorResult",
+        "type": "object"
+      },
+      "schema": {
+        "const": "canvas-cli/error@1",
+        "type": "string"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "exit",
+      "freshness",
+      "generated_at",
+      "identity",
+      "outcome",
+      "partial",
+      "profile",
+      "requests",
+      "result",
+      "schema",
+      "warnings"
+    ],
+    "title": "canvas-cli/error@1",
+    "type": "object"
+  },
+  "result": {
+    "properties": {
+      "items": {
+        "items": {
+          "properties": {
+            "all_day": {
+              "type": "boolean"
+            },
+            "all_day_date": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "course_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "course_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "due_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "due_at_local": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "end_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "end_at_local": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "html_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "is_deadline": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "start_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "start_at_local": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "uid": {
+              "description": "`canvas-<kind>-<id>@<identity-key>`, the same UID the ICS carries.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "all_day",
+            "all_day_date",
+            "course_code",
+            "course_id",
+            "due_at",
+            "due_at_local",
+            "end_at",
+            "end_at_local",
+            "html_url",
+            "id",
+            "is_deadline",
+            "kind",
+            "start_at",
+            "start_at_local",
+            "title",
+            "uid"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "window": {
+        "description": "Inclusive civil-day window shared by `announcements@1` and `calendar@1`.",
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "end",
+          "start"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "items",
+      "window"
+    ],
+    "title": "CalendarResult",
+    "type": "object"
+  },
+  "result_source": "result type",
+  "schema": "canvas-cli/calendar@1"
+}

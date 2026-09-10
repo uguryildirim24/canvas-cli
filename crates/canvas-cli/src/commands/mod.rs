@@ -26,6 +26,7 @@ pub mod identity;
 pub mod modules;
 pub mod open;
 pub mod receipts;
+pub mod schema;
 pub mod submission;
 pub mod submit;
 pub mod sync;
