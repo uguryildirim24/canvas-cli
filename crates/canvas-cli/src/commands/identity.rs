@@ -2,9 +2,7 @@
 
 use serde_json::json;
 
-use canvas_core::identity::{
-    remove_identity, IdentityKey, IdentityLock, RemovalCallbacks,
-};
+use canvas_core::identity::{IdentityKey, IdentityLock, RemovalCallbacks, remove_identity};
 
 use crate::cli::{Globals, IdentityCommand};
 use crate::config::Config;
@@ -130,10 +128,7 @@ fn remove(
             .read_line(&mut line)
             .map_err(|e| CliError::local(e.to_string()))?;
         if !matches!(line.trim(), "y" | "Y" | "yes" | "YES") {
-            return Err(CliError::new(
-                crate::exit::ExitKind::Cancelled,
-                "cancelled",
-            ));
+            return Err(CliError::new(crate::exit::ExitKind::Cancelled, "cancelled"));
         }
     }
 
@@ -143,10 +138,11 @@ fn remove(
     let paths_clone = paths.clone();
     let key_clone = key.clone();
     let mut delete_credentials = || {
-        credentials::delete_all_for_identity(&paths_clone, &key_clone)
-            .map_err(|e| canvas_core::identity::IdentityError::Mismatch {
+        credentials::delete_all_for_identity(&paths_clone, &key_clone).map_err(|e| {
+            canvas_core::identity::IdentityError::Mismatch {
                 reason: e.to_string(),
-            })
+            }
+        })
     };
     let mut remove_profiles = || {
         let mut config = Config::load(&paths_clone).map_err(|e| {
@@ -170,11 +166,11 @@ fn remove(
             config.default_profile = None;
             default_cleared = true;
         }
-        config.save(&paths_clone).map_err(|e| {
-            canvas_core::identity::IdentityError::Mismatch {
+        config
+            .save(&paths_clone)
+            .map_err(|e| canvas_core::identity::IdentityError::Mismatch {
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
         Ok(())
     };
     let mut callbacks = RemovalCallbacks {

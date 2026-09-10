@@ -75,10 +75,12 @@ async fn login(
     let key = IdentityKey::compute(&origin, user.id);
 
     let mut config = Config::load(paths)?;
-    let profile_name = globals
-        .profile
-        .clone()
-        .unwrap_or_else(|| config.default_profile.clone().unwrap_or_else(|| "default".into()));
+    let profile_name = globals.profile.clone().unwrap_or_else(|| {
+        config
+            .default_profile
+            .clone()
+            .unwrap_or_else(|| "default".into())
+    });
 
     if let Some(existing) = config.profiles.get(&profile_name) {
         if existing.key != key.as_str() && !replace {
@@ -280,7 +282,10 @@ async fn logout(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
         selected.identity.user_id,
         selected.identity.key.as_str(),
     );
-    let profile = selected.profile_name.clone().unwrap_or_else(|| "default".into());
+    let profile = selected
+        .profile_name
+        .clone()
+        .unwrap_or_else(|| "default".into());
     let result = json!({
         "profile": profile,
         "identity": {

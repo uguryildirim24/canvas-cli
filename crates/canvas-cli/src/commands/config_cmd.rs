@@ -60,9 +60,7 @@ pub async fn run(globals: &Globals, command: ConfigCommand) -> Result<(), CliErr
         }
         ConfigCommand::Edit => {
             if globals.json {
-                return Err(CliError::usage(
-                    "--json cannot be used with config edit",
-                ));
+                return Err(CliError::usage("--json cannot be used with config edit"));
             }
             config::edit_config(&paths)
         }

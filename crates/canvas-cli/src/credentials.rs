@@ -145,7 +145,12 @@ impl CredLock {
 #[must_use]
 pub fn token_sha256(token: &str) -> String {
     let digest = Sha256::digest(token.as_bytes());
-    digest.iter().map(|b| format!("{b:02x}")).collect()
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{b:02x}");
+    }
+    out
 }
 
 /// Whether tests force the file backend.
@@ -225,7 +230,11 @@ impl<T> OptionalExt<T> for Result<T, rusqlite::Error> {
 }
 
 /// Store a token under an identity key.
-pub fn store_token(paths: &CliPaths, key: &IdentityKey, token: &str) -> Result<ActiveSource, CredError> {
+pub fn store_token(
+    paths: &CliPaths,
+    key: &IdentityKey,
+    token: &str,
+) -> Result<ActiveSource, CredError> {
     if keyring_available() {
         match Entry::new(SERVICE, key.as_str()) {
             Ok(entry) => match entry.set_password(token) {
@@ -662,10 +671,7 @@ fn file_read_map(paths: &CliPaths) -> Result<CredentialsFile, CredError> {
 fn file_write_map(paths: &CliPaths, map: &CredentialsFile) -> Result<(), CredError> {
     let path = paths.credentials_file();
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let tmp = parent.join(format!(
-        ".credentials.{}.tmp",
-        std::process::id()
-    ));
+    let tmp = parent.join(format!(".credentials.{}.tmp", std::process::id()));
     {
         use std::os::unix::fs::OpenOptionsExt;
         let mut f = OpenOptions::new()
@@ -708,9 +714,7 @@ fn open_nofollow_read(path: &Path) -> io::Result<File> {
 #[cfg(not(windows))]
 fn check_credentials_meta(path: &Path, file: &File) -> Result<(), CredError> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-    let meta = file
-        .metadata()
-        .map_err(|e| CredError::Io(e.to_string()))?;
+    let meta = file.metadata().map_err(|e| CredError::Io(e.to_string()))?;
     if !meta.file_type().is_file() {
         return Err(CredError::Unsafe(format!(
             "{} is not a regular file",

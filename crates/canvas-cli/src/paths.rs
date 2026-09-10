@@ -24,7 +24,10 @@ impl CliPaths {
             PathBuf::from(dir)
         } else {
             let strategy = choose_base_strategy().map_err(|e| {
-                CliError::new(ExitKind::Local, format!("cannot resolve home directories: {e}"))
+                CliError::new(
+                    ExitKind::Local,
+                    format!("cannot resolve home directories: {e}"),
+                )
             })?;
             strategy.config_dir().join(APP_DIR)
         };
@@ -35,7 +38,10 @@ impl CliPaths {
             #[cfg(windows)]
             {
                 let strategy = choose_base_strategy().map_err(|e| {
-                    CliError::new(ExitKind::Local, format!("cannot resolve home directories: {e}"))
+                    CliError::new(
+                        ExitKind::Local,
+                        format!("cannot resolve home directories: {e}"),
+                    )
                 })?;
                 // SPEC §9: `%LOCALAPPDATA%\canvas-cli\data\`.
                 strategy.cache_dir().join(APP_DIR).join("data")
@@ -43,7 +49,10 @@ impl CliPaths {
             #[cfg(not(windows))]
             {
                 let strategy = choose_base_strategy().map_err(|e| {
-                    CliError::new(ExitKind::Local, format!("cannot resolve home directories: {e}"))
+                    CliError::new(
+                        ExitKind::Local,
+                        format!("cannot resolve home directories: {e}"),
+                    )
                 })?;
                 strategy.data_dir().join(APP_DIR)
             }
