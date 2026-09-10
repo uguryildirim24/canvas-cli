@@ -65,6 +65,7 @@ struct ClientInner {
     token: Secret,
     user_agent: String,
     http: HttpClient,
+    transfer_http: HttpClient,
     governor: Governor,
 }
 
@@ -91,9 +92,22 @@ impl Client {
         user_agent: &str,
         mut governor: GovernorConfig,
     ) -> Result<Self, Error> {
+        if !matches!(origin.scheme(), "http" | "https")
+            || origin.host_str().is_none()
+            || !origin.username().is_empty()
+            || origin.password().is_some()
+            || origin.query().is_some()
+            || origin.fragment().is_some()
+            || origin.path() != "/"
+        {
+            return Err(Error::CrossOrigin);
+        }
+        HeaderValue::from_str(&format!("Bearer {}", token.expose()))
+            .map_err(|_| Error::Unauthorized)?;
         governor.api_concurrency = governor.api_concurrency.clamp(1, 8);
         let http = HttpClient::builder()
             .use_rustls_tls()
+            .no_proxy()
             .gzip(true)
             .brotli(true)
             .redirect(Policy::none())
@@ -103,12 +117,24 @@ impl Client {
             .build()
             .map_err(|_| Error::Network)?;
 
+        let transfer_http = HttpClient::builder()
+            .use_rustls_tls()
+            .no_proxy()
+            .no_gzip()
+            .no_brotli()
+            .redirect(Policy::none())
+            .connect_timeout(Duration::from_secs(10))
+            .read_timeout(Duration::from_secs(60))
+            .user_agent(user_agent)
+            .build()
+            .map_err(|_| Error::Network)?;
         Ok(Self {
             inner: Arc::new(ClientInner {
                 origin,
                 token,
                 user_agent: user_agent.to_owned(),
                 http,
+                transfer_http,
                 governor: Governor::new(governor),
             }),
         })
@@ -253,23 +279,20 @@ impl Client {
         &self.inner.http
     }
 
+    pub(crate) fn transfer_http(&self) -> &HttpClient {
+        &self.inner.transfer_http
+    }
+
     pub(crate) fn same_origin(&self, url: &Url) -> bool {
-        url.scheme() == self.inner.origin.scheme()
+        url.username().is_empty()
+            && url.password().is_none()
+            && url.scheme() == self.inner.origin.scheme()
             && url.host_str() == self.inner.origin.host_str()
             && url.port_or_known_default() == self.inner.origin.port_or_known_default()
     }
 
     fn api_url(&self, path: &str) -> Result<Url, Error> {
-        if path.starts_with("https://") || path.starts_with("http://") {
-            return Url::parse(path).map_err(|_| Error::Network);
-        }
-        let base = self.inner.origin.as_str().trim_end_matches('/');
-        let suffix = if path.starts_with('/') {
-            path.to_owned()
-        } else {
-            format!("/{path}")
-        };
-        Url::parse(&format!("{base}{suffix}")).map_err(|_| Error::Network)
+        self.inner.origin.join(path).map_err(|_| Error::Network)
     }
 
     fn api_url_with_per_page(&self, path: &str) -> Result<Url, Error> {
@@ -281,14 +304,17 @@ impl Client {
         Ok(url)
     }
 
-    pub(crate) async fn send_api<T: DeserializeOwned>(
-        &self,
-        request: ApiRequest,
-    ) -> Result<T, Error> {
-        let (status, _headers, bytes) = request::execute_api(self, request).await?;
+    /// Execute an API-phase builder with the same origin and redirect checks.
+    pub async fn send_api<T: DeserializeOwned>(&self, request: ApiRequest) -> Result<T, Error> {
+        let (status, _headers, bytes, _url) = request::execute_api(self, request).await?;
         if status.is_success() {
+            let bytes = if status == StatusCode::NO_CONTENT {
+                b"null".as_slice()
+            } else {
+                &bytes
+            };
             return serde_util::with_origin(self.origin(), || {
-                serde_json::from_slice(&bytes).map_err(|_| Error::Decode)
+                serde_json::from_slice(bytes).map_err(|_| Error::Decode)
             });
         }
         Err(classify_status(status, &bytes))
@@ -298,14 +324,14 @@ impl Client {
         &self,
         request: ApiRequest,
     ) -> Result<Page<T>, Error> {
-        let (status, headers, bytes) = request::execute_api(self, request).await?;
+        let (status, headers, bytes, url) = request::execute_api(self, request).await?;
         if !status.is_success() {
             return Err(classify_status(status, &bytes));
         }
         let items: Vec<T> = serde_util::with_origin(self.origin(), || {
             serde_json::from_slice(&bytes).map_err(|_| Error::Decode)
         })?;
-        let next = link_next(&headers).transpose()?;
+        let next = link_next(&headers, &url)?;
         if let Some(ref next_url) = next
             && !self.same_origin(next_url)
         {
@@ -318,14 +344,14 @@ impl Client {
         &self,
         request: ApiRequest,
     ) -> Result<Page<T>, Error> {
-        let (status, headers, bytes) = request::execute_api(self, request).await?;
+        let (status, headers, bytes, url) = request::execute_api(self, request).await?;
         if !status.is_success() {
             return Err(classify_status(status, &bytes));
         }
         let wrapped: WrappedCollection<T> = serde_util::with_origin(self.origin(), || {
             serde_json::from_slice(&bytes).map_err(|_| Error::Decode)
         })?;
-        let next = link_next(&headers).transpose()?;
+        let next = link_next(&headers, &url)?;
         if let Some(ref next_url) = next
             && !self.same_origin(next_url)
         {
@@ -340,7 +366,10 @@ impl Client {
     pub(crate) fn auth_header_for(&self, url: &Url) -> Option<HeaderValue> {
         if self.same_origin(url) {
             let value = format!("Bearer {}", self.inner.token.expose());
-            HeaderValue::from_str(&value).ok()
+            HeaderValue::from_str(&value).ok().map(|mut header| {
+                header.set_sensitive(true);
+                header
+            })
         } else {
             None
         }
@@ -437,27 +466,59 @@ fn flatten_errors(value: &serde_json::Value) -> Vec<String> {
     }
 }
 
-fn link_next(headers: &HeaderMap) -> Option<Result<Url, Error>> {
-    let value = headers.get(reqwest::header::LINK)?.to_str().ok()?;
-    for part in value.split(',') {
-        let part = part.trim();
-        let Some((url_part, params)) = part.split_once(';') else {
-            continue;
-        };
-        let is_next = params.split(';').any(|p| {
-            let p = p.trim();
-            p.eq_ignore_ascii_case("rel=\"next\"") || p.eq_ignore_ascii_case("rel=next")
-        });
-        if !is_next {
+fn link_next(headers: &HeaderMap, current: &Url) -> Result<Option<Url>, Error> {
+    for value in headers.get_all(reqwest::header::LINK) {
+        let value = value.to_str().map_err(|_| Error::Decode)?;
+        for part in split_link_values(value, ',')? {
+            let part = part.trim();
+            let (target, params) = part
+                .strip_prefix('<')
+                .and_then(|s| s.split_once('>'))
+                .ok_or(Error::Decode)?;
+            let is_next = split_link_values(params, ';')?.into_iter().any(|param| {
+                let Some((name, value)) = param.trim().split_once('=') else {
+                    return false;
+                };
+                name.trim().eq_ignore_ascii_case("rel")
+                    && value
+                        .trim()
+                        .trim_matches('"')
+                        .split_ascii_whitespace()
+                        .any(|rel| rel.eq_ignore_ascii_case("next"))
+            });
+            if is_next {
+                return current.join(target).map(Some).map_err(|_| Error::Decode);
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn split_link_values(input: &str, delimiter: char) -> Result<Vec<&str>, Error> {
+    let mut parts = Vec::new();
+    let (mut angle, mut quoted, mut escaped, mut start) = (false, false, false, 0);
+    for (i, c) in input.char_indices() {
+        if escaped {
+            escaped = false;
             continue;
         }
-        let url = url_part
-            .trim()
-            .trim_start_matches('<')
-            .trim_end_matches('>');
-        return Some(Url::parse(url).map_err(|_| Error::Decode));
+        match c {
+            '\\' if quoted => escaped = true,
+            '"' if !angle => quoted = !quoted,
+            '<' if !quoted => angle = true,
+            '>' if !quoted => angle = false,
+            c if c == delimiter && !angle && !quoted => {
+                parts.push(&input[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
     }
-    None
+    if angle || quoted {
+        return Err(Error::Decode);
+    }
+    parts.push(&input[start..]);
+    Ok(parts)
 }
 
 impl fmt::Debug for TransferResponse {

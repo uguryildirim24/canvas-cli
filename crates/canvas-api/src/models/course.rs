@@ -49,6 +49,7 @@ pub struct Course {
     pub enrollment_state: Option<String>,
     pub term: Option<Term>,
     pub enrollments: Option<Vec<CourseEnrollment>>,
+    pub teachers: Option<Vec<super::User>>,
     pub is_favorite: Option<bool>,
     pub syllabus_body: Option<String>,
     /// Canvas sets this when the course is not yet available by date.
