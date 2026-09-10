@@ -4,7 +4,7 @@
 //! outcome carries its own schema with `outcome` set. Both are asserted here,
 //! because the exit code alone does not say which of the two happened.
 
-use serde_json::json;
+use serde_json::{Value, json};
 use wiremock::ResponseTemplate;
 
 use crate::harness::{ASSIGNMENT_ID, COURSE_ID, CanvasServer, E2e, Run};
@@ -267,6 +267,32 @@ async fn exit_12_partial() {
         !run.json()["partial"].as_array().unwrap().is_empty(),
         "a partial outcome names its scopes"
     );
+}
+
+/// The other exit-13 cause: the credential store refuses (§14, `Denied`).
+///
+/// The harness always runs on the file store, so the fake keyring is how a
+/// backend that is present and refuses is reached.
+#[tokio::test]
+async fn exit_13_credential_store_denied() {
+    let server = CanvasServer::start().await;
+    let env = E2e::new();
+    env.track_origin(&server.uri());
+    env.run_stdin_local(
+        &["auth", "login", "--host", &server.uri(), "--token-stdin"],
+        crate::harness::TOKEN,
+    )
+    .assert_code(0);
+    env.track_logged_in_identity();
+
+    // Logout clears both stores; the keyring denies its half.
+    let run = env.run_with_keyring_error(&["auth", "logout", "--json"], "denied");
+    expect_abort(&env, "exit_13_credential_denied", &run, 13, "local");
+
+    // The refusal is durable: the token is gone and the flag stays set.
+    let status = env.run_local(&["auth", "status", "--json"]);
+    status.assert_code(0);
+    assert_eq!(status.json()["result"]["token_source"], Value::Null);
 }
 
 #[tokio::test]
