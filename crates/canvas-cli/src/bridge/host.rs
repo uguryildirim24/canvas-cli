@@ -39,7 +39,10 @@ use crate::commands::Globals;
 const IDENTITY_POLL: Duration = Duration::from_secs(2);
 
 /// How long a consumer waits for the extension to re-probe and extract.
-const TEXT_TIMEOUT: Duration = Duration::from_secs(5);
+///
+/// `bridge::client::TIMEOUT` is longer than this on purpose, so the client
+/// hears this host's own answer rather than giving up first.
+pub(crate) const TEXT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Exit codes this process uses. It has no §7 envelope, so these are the
 /// §14 codes it can still express honestly.

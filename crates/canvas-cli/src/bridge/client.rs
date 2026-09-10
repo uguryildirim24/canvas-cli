@@ -12,7 +12,12 @@ use canvas_core::bridge::Endpoint;
 use canvas_core::bridge::ipc::{self, Body, Op, Reason};
 
 /// How long a broker call may take before it is treated as absent.
-const TIMEOUT: Duration = Duration::from_secs(5);
+///
+/// It must exceed the host's own wait for the companion's answer
+/// (`bridge::host::TEXT_TIMEOUT`), or a slow page would race the two clocks
+/// and `canvas here --text` would report `bridge_unavailable` for a broker
+/// that was about to answer `validating`.
+const TIMEOUT: Duration = Duration::from_secs(15);
 
 /// The longest response line the client will read, in bytes.
 ///
@@ -124,6 +129,15 @@ mod tests {
             let mut stream = stream;
             stream.write_all(&out).expect("write");
         });
+    }
+
+    /// The client must outlast the host's own wait for the companion.
+    #[test]
+    fn the_client_waits_longer_than_the_host_waits_for_the_page() {
+        assert!(
+            TIMEOUT > crate::bridge::host::TEXT_TIMEOUT,
+            "a slow page would read as an absent broker"
+        );
     }
 
     #[test]
