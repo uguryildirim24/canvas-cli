@@ -192,7 +192,7 @@ async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
             ActiveSource::None => {}
         }
     }
-    let stray = credentials::stray_sources(paths, &selected.identity.key, row.active_source);
+    let stray = credentials::stray_sources(paths, &selected.identity.key, &row)?;
     let mut pending = Vec::new();
     if row.cleanup_keyring {
         pending.push("keyring");
@@ -333,8 +333,8 @@ async fn token_cmd(globals: &Globals, paths: &CliPaths, reveal: bool) -> Result<
     let open = token::open_store(&selected)?;
     let resolved = token::resolve_token(paths, &open.store, &selected.identity.key)?;
     if reveal {
-        print!("{}", resolved.token);
-        if !resolved.token.ends_with('\n') {
+        print!("{}", resolved.token.expose());
+        if !resolved.token.expose().ends_with('\n') {
             println!();
         }
         return Ok(());
@@ -346,7 +346,7 @@ async fn token_cmd(globals: &Globals, paths: &CliPaths, reveal: bool) -> Result<
     );
     let result = json!({
         "token_source": resolved.source.as_str(),
-        "sha256": credentials::token_sha256(&resolved.token),
+        "sha256": credentials::token_sha256(resolved.token.expose()),
     });
     if globals.json {
         Envelope::new(
@@ -359,7 +359,10 @@ async fn token_cmd(globals: &Globals, paths: &CliPaths, reveal: bool) -> Result<
     } else {
         print_human([
             format!("token source: {}", resolved.source.as_str()),
-            format!("sha256: {}", credentials::token_sha256(&resolved.token)),
+            format!(
+                "sha256: {}",
+                credentials::token_sha256(resolved.token.expose())
+            ),
         ]);
     }
     let _ = TokenSource::Env;
@@ -388,12 +391,7 @@ fn prompt_secret(prompt: &str) -> Result<String, CliError> {
             "token prompt requires a terminal; pass --token-stdin or CANVAS_TOKEN",
         ));
     }
-    eprint!("{prompt}");
-    let _ = io::stderr().flush();
-    // Hidden prompt is best-effort; without a TTY helper we still read a line.
-    let mut line = String::new();
-    io::stdin()
-        .read_line(&mut line)
-        .map_err(|e| CliError::usage(format!("failed to read token: {e}")))?;
-    Ok(line.trim().to_owned())
+    rpassword::prompt_password(prompt)
+        .map(|s| s.trim().to_owned())
+        .map_err(|_| CliError::local("failed to read hidden token from terminal"))
 }

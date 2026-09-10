@@ -16,7 +16,7 @@ const USER_AGENT: &str = concat!("canvas-cli/", env!("CARGO_PKG_VERSION"));
 /// Resolved bearer token and its source label for status.
 #[derive(Debug, Clone)]
 pub struct ResolvedToken {
-    pub token: String,
+    pub token: Secret,
     pub source: TokenSource,
 }
 
@@ -48,7 +48,7 @@ pub fn resolve_token(
     if let Ok(token) = std::env::var("CANVAS_TOKEN") {
         if !token.is_empty() {
             return Ok(ResolvedToken {
-                token,
+                token: Secret::new(token),
                 source: TokenSource::Env,
             });
         }
@@ -77,7 +77,10 @@ pub fn resolve_token(
         ActiveSource::File => TokenSource::File,
         ActiveSource::None => unreachable!(),
     };
-    Ok(ResolvedToken { token, source })
+    Ok(ResolvedToken {
+        token: Secret::new(token),
+        source,
+    })
 }
 
 /// Call `GET /users/self` and map outcomes to exits 3/4.

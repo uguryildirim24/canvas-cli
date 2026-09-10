@@ -83,11 +83,8 @@ pub async fn run(globals: &Globals, network: bool) -> Result<(), CliError> {
                                 "ok"
                             };
                             push_check(&mut checks, "credential_row", status, &msg);
-                            let stray = credentials::stray_sources(
-                                &paths,
-                                &sel.identity.key,
-                                row.active_source,
-                            );
+                            let stray =
+                                credentials::stray_sources(&paths, &sel.identity.key, &row)?;
                             if stray.is_empty() {
                                 push_check(&mut checks, "stray_credentials", "ok", "none");
                             } else {
@@ -123,7 +120,7 @@ pub async fn run(globals: &Globals, network: bool) -> Result<(), CliError> {
                             Ok(resolved) => {
                                 match token::validate_identity_user(
                                     &sel.identity.origin,
-                                    &resolved.token,
+                                    resolved.token.expose(),
                                     sel.identity.user_id,
                                 )
                                 .await

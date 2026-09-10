@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 
 use fs4::fs_std::FileExt;
@@ -80,39 +80,24 @@ pub fn map_keyring_error(err: keyring::Error) -> CredError {
     use keyring::Error;
     match &err {
         Error::NoEntry => CredError::NotFound,
-        Error::NoStorageAccess(_) => CredError::Denied,
-        Error::NoDefaultStore => {
-            if Entry::store_status().is_err() {
-                CredError::Backend("no default credential store".into())
-            } else {
-                CredError::Denied
-            }
-        }
-        Error::PlatformFailure(inner) => {
+        Error::NoStorageAccess(inner) | Error::PlatformFailure(inner) => {
+            // Inspect platform diagnostics only for classification. Never emit them:
+            // even Display on keyring errors can recursively Debug secret data.
             let msg = inner.to_string().to_ascii_lowercase();
-            if msg.contains("lock") {
+            if msg.contains("lock") || msg.contains("interaction is not allowed") {
                 CredError::Locked
-            } else if msg.contains("denied")
-                || msg.contains("permission")
-                || msg.contains("auth")
-                || msg.contains("access")
+            } else if matches!(err, Error::NoStorageAccess(_))
+                || ["denied", "permission", "auth", "access"]
+                    .iter()
+                    .any(|s| msg.contains(s))
             {
                 CredError::Denied
             } else {
-                CredError::Backend(sanitize_keyring_message(&err))
+                CredError::Backend("platform credential operation failed".into())
             }
         }
-        _ => CredError::Backend(sanitize_keyring_message(&err)),
-    }
-}
-
-fn sanitize_keyring_message(err: &keyring::Error) -> String {
-    // Prefer Display; never format Debug (BadEncoding carries secret bytes).
-    let msg = err.to_string();
-    if msg.len() > 200 {
-        format!("{}…", &msg[..200])
-    } else {
-        msg
+        Error::NoDefaultStore if Entry::store_status().is_ok() => CredError::Denied,
+        _ => CredError::Backend("credential store operation failed".into()),
     }
 }
 
@@ -156,7 +141,7 @@ pub fn token_sha256(token: &str) -> String {
 /// Whether tests force the file backend.
 #[must_use]
 pub fn force_file_store() -> bool {
-    std::env::var_os("CANVAS_TEST_FORCE_FILE").is_some_and(|v| v != "0")
+    cfg!(debug_assertions) && std::env::var_os("CANVAS_TEST_FORCE_FILE").is_some_and(|v| v != "0")
 }
 
 /// Whether the platform keyring store is available.
@@ -166,7 +151,9 @@ pub fn keyring_available() -> bool {
 }
 
 fn maybe_crash(step: &str) {
-    if std::env::var("CANVAS_TEST_CRASH_AFTER").ok().as_deref() == Some(step) {
+    if cfg!(debug_assertions)
+        && std::env::var("CANVAS_TEST_CRASH_AFTER").ok().as_deref() == Some(step)
+    {
         eprintln!("CANVAS_TEST_CRASH_AFTER={step}");
         std::process::exit(99);
     }
@@ -235,7 +222,7 @@ pub fn store_token(
     key: &IdentityKey,
     token: &str,
 ) -> Result<ActiveSource, CredError> {
-    if keyring_available() {
+    if !force_file_store() {
         match Entry::new(SERVICE, key.as_str()) {
             Ok(entry) => match entry.set_password(token) {
                 Ok(()) => return Ok(ActiveSource::Keyring),
@@ -265,6 +252,24 @@ pub fn store_token(
     }
     #[cfg(not(windows))]
     {
+        if !force_file_store() {
+            if !io::stdin().is_terminal() {
+                return Err(CredError::Backend(
+                    "file fallback requires explicit confirmation in a terminal".into(),
+                ));
+            }
+            eprint!("Keyring unavailable. Store token in a mode-0600 plaintext file? [y/N] ");
+            io::stderr()
+                .flush()
+                .map_err(|e| CredError::Io(e.to_string()))?;
+            let mut answer = String::new();
+            io::stdin()
+                .read_line(&mut answer)
+                .map_err(|e| CredError::Io(e.to_string()))?;
+            if !matches!(answer.trim(), "y" | "Y" | "yes" | "YES") {
+                return Err(CredError::Backend("file fallback declined".into()));
+            }
+        }
         file_set(paths, key.as_str(), token)?;
         Ok(ActiveSource::File)
     }
@@ -279,6 +284,14 @@ pub fn read_token(
     match source {
         ActiveSource::None => Err(CredError::NotFound),
         ActiveSource::Keyring => {
+            if cfg!(debug_assertions) && force_file_store() {
+                return match std::env::var("CANVAS_TEST_KEYRING_ERROR").ok().as_deref() {
+                    Some("backend") => Err(CredError::Backend("test backend unavailable".into())),
+                    Some("denied") => Err(CredError::Denied),
+                    Some("locked") => Err(CredError::Locked),
+                    _ => Err(CredError::NotFound),
+                };
+            }
             let entry = Entry::new(SERVICE, key.as_str()).map_err(map_keyring_error)?;
             entry.get_password().map_err(map_keyring_error)
         }
@@ -305,6 +318,14 @@ pub fn delete_token(
     match source {
         ActiveSource::None => Ok(()),
         ActiveSource::Keyring => {
+            if cfg!(debug_assertions) && force_file_store() {
+                return match std::env::var("CANVAS_TEST_KEYRING_ERROR").ok().as_deref() {
+                    Some("backend") => Err(CredError::Backend("test backend unavailable".into())),
+                    Some("denied") => Err(CredError::Denied),
+                    Some("locked") => Err(CredError::Locked),
+                    _ => Err(CredError::NotFound),
+                };
+            }
             let entry = Entry::new(SERVICE, key.as_str()).map_err(map_keyring_error)?;
             match entry.delete_credential() {
                 Ok(()) => Ok(()),
@@ -535,7 +556,7 @@ pub fn delete_all_for_identity(paths: &CliPaths, key: &IdentityKey) -> Result<()
     let _lock = CredLock::acquire(paths, key)?;
     let mut errs = Vec::new();
     if let Err(e) = delete_token(paths, key, ActiveSource::Keyring) {
-        if !matches!(e, CredError::NotFound | CredError::Backend(_)) {
+        if !matches!(e, CredError::NotFound) {
             errs.push(e.to_string());
         }
     }
@@ -555,18 +576,26 @@ pub fn delete_all_for_identity(paths: &CliPaths, key: &IdentityKey) -> Result<()
 }
 
 /// Report stray sources relative to the active source.
-pub fn stray_sources(paths: &CliPaths, key: &IdentityKey, active: ActiveSource) -> Vec<String> {
+pub fn stray_sources(
+    paths: &CliPaths,
+    key: &IdentityKey,
+    row: &CredentialRow,
+) -> Result<Vec<String>, CliError> {
     let mut out = Vec::new();
-    if active != ActiveSource::Keyring && keyring_has(key) {
-        out.push("keyring".into());
+    for source in [ActiveSource::Keyring, ActiveSource::File] {
+        match read_token(paths, key, source) {
+            Ok(token)
+                if source != row.active_source
+                    || row.token_sha256.as_deref() != Some(token_sha256(&token).as_str()) =>
+            {
+                out.push(source.as_str().to_owned());
+            }
+            Ok(_) | Err(CredError::NotFound) => {}
+            Err(CredError::Backend(_)) if source != row.active_source => {}
+            Err(e) => return Err(e.into()),
+        }
     }
-    #[cfg(not(windows))]
-    if active != ActiveSource::File && file_has(paths, key.as_str()) {
-        out.push("file".into());
-    }
-    #[cfg(windows)]
-    let _ = paths;
-    out
+    Ok(out)
 }
 
 // --- fallback file (Unix) ---------------------------------------------------
@@ -660,10 +689,15 @@ fn file_read_map(paths: &CliPaths) -> Result<CredentialsFile, CredError> {
             if raw.trim().is_empty() {
                 return Ok(CredentialsFile::default());
             }
-            toml::from_str(&raw).map_err(|e| CredError::Io(e.to_string()))
+            toml::from_str(&raw).map_err(|_| {
+                CredError::Unsafe(format!(
+                    "{} contains invalid credential data",
+                    path.display()
+                ))
+            })
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Err(CredError::NotFound),
-        Err(e) => Err(CredError::Io(e.to_string())),
+        Err(e) => Err(CredError::Unsafe(format!("{}: {e}", path.display()))),
     }
 }
 
@@ -671,7 +705,7 @@ fn file_read_map(paths: &CliPaths) -> Result<CredentialsFile, CredError> {
 fn file_write_map(paths: &CliPaths, map: &CredentialsFile) -> Result<(), CredError> {
     let path = paths.credentials_file();
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let tmp = parent.join(format!(".credentials.{}.tmp", std::process::id()));
+    let tmp = parent.join(format!(".credentials.{}.tmp", uuid::Uuid::new_v4()));
     {
         use std::os::unix::fs::OpenOptionsExt;
         let mut f = OpenOptions::new()
@@ -692,28 +726,20 @@ fn file_write_map(paths: &CliPaths, map: &CredentialsFile) -> Result<(), CredErr
 
 #[cfg(not(windows))]
 fn open_nofollow_read(path: &Path) -> io::Result<File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    // O_NOFOLLOW: macOS/BSD 0x100, Linux 0x20000 (avoid `libc` + keep `unsafe_code = forbid`).
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "dragonfly"
-    ))]
-    const O_NOFOLLOW: i32 = 0x0000_0100;
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    const O_NOFOLLOW: i32 = 0x0002_0000;
-    OpenOptions::new()
-        .read(true)
-        .custom_flags(O_NOFOLLOW)
-        .open(path)
+    use rustix::fs::{Mode, OFlags, open};
+    // NONBLOCK avoids hanging on a FIFO before fstat can reject it.
+    open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(Into::into)
 }
 
 #[cfg(not(windows))]
 fn check_credentials_meta(path: &Path, file: &File) -> Result<(), CredError> {
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::unix::fs::MetadataExt;
     let meta = file.metadata().map_err(|e| CredError::Io(e.to_string()))?;
     if !meta.file_type().is_file() {
         return Err(CredError::Unsafe(format!(
@@ -721,32 +747,19 @@ fn check_credentials_meta(path: &Path, file: &File) -> Result<(), CredError> {
             path.display()
         )));
     }
-    let mode = meta.mode() & 0o777;
+    let mode = meta.mode() & 0o7777;
     if mode != 0o600 {
         return Err(CredError::Unsafe(format!(
             "{} mode is {mode:o}, expected 0600",
             path.display()
         )));
     }
-    // Compare ownership to a file we just created (no `geteuid`; `unsafe_code = forbid`).
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let probe = parent.join(format!(".canvas-cli-uid-probe.{}", std::process::id()));
-    let probe_uid = {
-        let probe_file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&probe)
-            .map_err(|e| CredError::Io(e.to_string()))?;
-        let uid = probe_file
-            .metadata()
-            .map_err(|e| CredError::Io(e.to_string()))?
-            .uid();
-        drop(probe_file);
-        let _ = fs::remove_file(&probe);
-        uid
-    };
-    if meta.uid() != probe_uid {
+    check_owner(path, meta.uid(), rustix::process::geteuid().as_raw())
+}
+
+#[cfg(unix)]
+fn check_owner(path: &Path, actual: u32, expected: u32) -> Result<(), CredError> {
+    if actual != expected {
         return Err(CredError::Unsafe(format!(
             "{} owner does not match the current user",
             path.display()
@@ -775,4 +788,61 @@ pub fn backend_label(source: ActiveSource) -> Option<&'static str> {
 #[must_use]
 pub fn credentials_path(paths: &CliPaths) -> PathBuf {
     paths.credentials_file()
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn wrong_owner_is_unsafe() {
+        let uid = rustix::process::geteuid().as_raw();
+        assert!(matches!(
+            check_owner(Path::new("credentials.toml"), uid.wrapping_add(1), uid),
+            Err(CredError::Unsafe(_))
+        ));
+    }
+
+    #[test]
+    fn keyring_diagnostics_never_format_attached_secret_data() {
+        let sentinel = "SECRET_DIAGNOSTIC_SENTINEL";
+        for err in [
+            keyring::Error::BadEncoding(sentinel.as_bytes().to_vec()),
+            keyring::Error::BadDataFormat(
+                sentinel.as_bytes().to_vec(),
+                io::Error::other(sentinel).into(),
+            ),
+            keyring::Error::Invalid(sentinel.into(), sentinel.into()),
+            keyring::Error::PlatformFailure(io::Error::other(sentinel).into()),
+            keyring::Error::BadStoreFormat("é".repeat(201)),
+        ] {
+            let mapped = map_keyring_error(err);
+            assert!(!mapped.to_string().contains(sentinel));
+            assert!(!format!("{mapped:?}").contains(sentinel));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_keyring_round_trip_opt_in() {
+        if std::env::var("CANVAS_TEST_KEYRING").ok().as_deref() != Some("1") {
+            return;
+        }
+        let account = format!("review-test-{}", uuid::Uuid::new_v4());
+        let entry = Entry::new(SERVICE, &account)
+            .map_err(map_keyring_error)
+            .unwrap();
+        entry
+            .set_password("test-only-token")
+            .map_err(map_keyring_error)
+            .unwrap();
+        let result = entry.get_password().map_err(map_keyring_error);
+        entry
+            .delete_credential()
+            .map_err(map_keyring_error)
+            .unwrap();
+        assert!(result.is_ok_and(|value| value == "test-only-token"));
+        assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
+    }
 }
