@@ -33,7 +33,29 @@
     "selection_bytes": 32,
     "text_bytes": 26,
     "truncated": false,
-    "content_reason": null
+    "content_reason": null,
+    "follow": {
+      "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
+      "url": "https://courses.example.test/courses/45679/assignments/98765",
+      "dispatched": true,
+      "dispatched_at": "2026-09-10T16:04:39Z",
+      "dispatch_ms": 41,
+      "generation": 3,
+      "load": "loaded",
+      "load_at": "2026-09-10T16:04:40Z"
+    },
+    "notes": [
+      {
+        "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
+        "consumer": "mcp:claude-code",
+        "text": "The rubric asks for two sources. See the assignment page.",
+        "source_refs": [
+          "https://courses.example.test/courses/45679/assignments/98765"
+        ],
+        "at": "2026-09-10T16:04:38Z",
+        "generation": 3
+      }
+    ]
   },
   "reason": null
 }

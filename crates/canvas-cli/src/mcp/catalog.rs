@@ -20,16 +20,16 @@ use serde_json::Value;
 use crate::cli::AssignmentBucket;
 use crate::commands::{
     Globals, announcement, announcements, assignment, assignments, bridge, calendar, course,
-    courses, discussions, download, files, grades, handled::Handled, here, inbox, modules, open,
-    pages, receipts, submission, submit, sync, todo,
+    courses, discussions, download, files, grades, handled::Handled, here, inbox, modules, note,
+    open, pages, receipts, submission, submit, sync, todo,
 };
 use crate::output::{
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
     SCHEMA_BRIDGE, SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES,
-    SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_FILES, SCHEMA_GRADES,
-    SCHEMA_HERE, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_PAGE,
-    SCHEMA_PAGES, SCHEMA_PLAN, SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT,
-    SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_TODO,
+    SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_FILES, SCHEMA_FOLLOW,
+    SCHEMA_GRADES, SCHEMA_HERE, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_NOTE,
+    SCHEMA_OPEN, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_PLAN, SCHEMA_RECEIPTS, SCHEMA_RECONCILE,
+    SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_TODO,
 };
 
 /// What a tool does to its environment (§3.5).
@@ -483,6 +483,48 @@ pub struct ContextDetachArgs {
     pub attachment_id: Option<String>,
 }
 
+/// `context.note` shows the person one note in the companion's side panel.
+///
+/// The note is inert. It cannot approve, decline, or cancel a plan, whatever
+/// its text says, because there is no approval operation on the broker
+/// protocol at all (REPORT §3.5).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ContextNoteArgs {
+    /// The attachment to show it on. Omit it to use the one this consumer
+    /// holds.
+    #[serde(default)]
+    pub attachment_id: Option<String>,
+    /// The `navigation_generation` of the bundle this note was written from.
+    /// A note for a page the person has already left is refused, exit 8,
+    /// reason `stale_generation`.
+    pub generation: u64,
+    /// The note, at most 8 KiB, as Markdown source. A sanitized subset is
+    /// rendered: no HTML, no scripts, no images, and no link that is not a
+    /// page of the attached Canvas or a `canvas://` reference.
+    pub text: String,
+    /// Where the note's facts came from. Each must be a page of the attached
+    /// Canvas or a `canvas://` reference; anything else is refused.
+    #[serde(default)]
+    pub source_refs: Vec<String>,
+}
+
+/// `context.follow` navigates the attached tab inside the granted origin.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ContextFollowArgs {
+    /// The attachment to navigate. Omit it to use the one this consumer
+    /// holds.
+    #[serde(default)]
+    pub attachment_id: Option<String>,
+    /// The `navigation_generation` of the bundle this request was made from.
+    /// A stale generation is refused, exit 8, reason `stale_generation`.
+    pub generation: u64,
+    /// A course, a Canvas URL, or an `assignment`/`file`/`announcement`
+    /// target, resolved exactly as `open.url` resolves it.
+    pub target: String,
+}
+
 // ------------------------------------------------------------------ dispatch
 
 /// Every tool this server exposes, in a stable order.
@@ -869,6 +911,37 @@ pub fn specs() -> &'static [ToolSpec] {
             open_world: false,
             input_schema: schema_of::<ContextDetachArgs>,
         },
+        ToolSpec {
+            name: "context.note",
+            title: "Show a note in the panel",
+            description: "Show the person one inert note in the companion's side panel. It is \
+                          rendered as text through a sanitized subset of Markdown, it reaches no \
+                          Canvas page, and it can never approve, decline, or cancel a plan. A \
+                          note written against a page the person has already left is refused.",
+            schema: SCHEMA_NOTE,
+            variant: None,
+            effect: Effect::Organize,
+            // Two identical notes are two rows in the panel, not one.
+            idempotent: false,
+            open_world: false,
+            input_schema: schema_of::<ContextNoteArgs>,
+        },
+        ToolSpec {
+            name: "context.follow",
+            title: "Take the person to a page",
+            description: "Navigate the attached Canvas tab to a target, inside the origin the \
+                          person granted. This is not one of the API previews: the browser loads \
+                          the page and Canvas' own controllers run, so a discussion page marks \
+                          itself read. The result is the dispatch acknowledgement; whether the \
+                          page loaded arrives later, on context.here.",
+            schema: SCHEMA_FOLLOW,
+            variant: None,
+            effect: Effect::Organize,
+            // It moves the person's tab, and the page it lands on may write.
+            idempotent: false,
+            open_world: true,
+            input_schema: schema_of::<ContextFollowArgs>,
+        },
     ]
 }
 
@@ -1148,6 +1221,34 @@ pub async fn dispatch(
             let args: ContextDetachArgs = parse(arguments)?;
             bridge::detach_consumer(globals, args.attachment_id, consumer).into()
         }
+        "context.note" => {
+            let args: ContextNoteArgs = parse(arguments)?;
+            note::handle(
+                globals,
+                args.attachment_id,
+                Some(consumer.to_owned()),
+                // An agent always names the generation it read: it is working
+                // from a bundle, and the bundle may be behind the person.
+                Some(args.generation),
+                args.text,
+                args.source_refs,
+            )
+            .await
+            .into()
+        }
+        "context.follow" => {
+            let args: ContextFollowArgs = parse(arguments)?;
+            open::follow(
+                globals,
+                None,
+                Some(args.target),
+                args.attachment_id,
+                Some(consumer.to_owned()),
+                Some(args.generation),
+            )
+            .await
+            .into()
+        }
         other => return Err(format!("unknown tool {other}")),
     })
 }
@@ -1214,6 +1315,8 @@ mod tests {
             "context.attach",
             "context.here",
             "context.detach",
+            "context.note",
+            "context.follow",
         ];
         let names: Vec<&str> = specs().iter().map(|spec| spec.name).collect();
         assert_eq!(names, expected);

@@ -244,8 +244,35 @@ async fn main() -> ExitCode {
                 Commands::Assignment { target, assignment } => {
                     commands::assignment::run(&m1b_globals(&globals), target, assignment).await
                 }
-                Commands::Open { command, target } => {
-                    commands::open::run(&m1b_globals(&globals), command, target).await
+                Commands::Open {
+                    command,
+                    target,
+                    follow,
+                    attachment,
+                } => {
+                    let globals = m1b_globals(&globals);
+                    if follow {
+                        commands::open::follow(&globals, command, target, attachment, None, None)
+                            .await
+                            .emit(globals.json)
+                    } else {
+                        commands::open::run(&globals, command, target).await
+                    }
+                }
+                Commands::Note {
+                    attachment,
+                    text,
+                    source_refs,
+                    generation,
+                } => {
+                    commands::note::run(
+                        &m1b_globals(&globals),
+                        attachment,
+                        generation,
+                        text,
+                        source_refs,
+                    )
+                    .await
                 }
                 Commands::Grades { course, period } => {
                     commands::grades::run(&m1b_globals(&globals), course, period).await
@@ -495,6 +522,7 @@ mod tests {
             Commands::Open {
                 command: Some(OpenCommand::Assignment { course, assignment }),
                 target: None,
+                ..
             } => {
                 assert_eq!(course, "chem");
                 assert_eq!(assignment, "hw1");

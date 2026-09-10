@@ -54,6 +54,8 @@ const CATALOG: &[&str] = &[
     "context.attach",
     "context.here",
     "context.detach",
+    "context.note",
+    "context.follow",
 ];
 
 struct Fixture {
