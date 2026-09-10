@@ -147,15 +147,21 @@ pub struct Manifest {
     pub pseudonyms: Pseudonyms,
 }
 
-/// The mappings a sanitized set carries forward.
+/// The pseudonyms a sanitized set uses.
+///
+/// Only the issued side is stored. A manifest that also held the real values
+/// it replaced would put the identifying data straight back into the tracked
+/// fixture, which is the opposite of what sanitizing is for. The issued lists
+/// are enough for the one job they have: a value already in them is already a
+/// pseudonym, so a second pass leaves it alone.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Pseudonyms {
-    /// Real ID (as text) to pseudonym ID.
+    /// Every pseudonym ID the set uses, sorted.
     #[serde(default)]
-    pub ids: BTreeMap<String, i64>,
-    /// Real string to pseudonym string, per pseudonymized field kind.
+    pub issued_ids: Vec<i64>,
+    /// Every pseudonym string the set uses, sorted.
     #[serde(default)]
-    pub strings: BTreeMap<String, String>,
+    pub issued_strings: Vec<String>,
 }
 
 /// The name of the manifest inside a set.

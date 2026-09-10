@@ -1,0 +1,57 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses/101/files",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "content-type": "application/pdf",
+      "display_name": "file-5011.pdf",
+      "filename": "file-5011.pdf",
+      "folder_id": 1010,
+      "hidden": false,
+      "id": 5011,
+      "locked_for_user": false,
+      "size": 4194304,
+      "updated_at": "2025-12-16T12:00:00Z",
+      "url": "/bench/blob/5011"
+    },
+    {
+      "content-type": "application/pdf",
+      "display_name": "file-5012.pdf",
+      "filename": "file-5012.pdf",
+      "folder_id": 1010,
+      "hidden": false,
+      "id": 5012,
+      "locked_for_user": false,
+      "size": 3145728,
+      "updated_at": "2025-12-16T12:00:00Z",
+      "url": "/bench/blob/5012"
+    },
+    {
+      "content-type": "application/pdf",
+      "display_name": "file-5013.pdf",
+      "filename": "file-5013.pdf",
+      "folder_id": 1010,
+      "hidden": false,
+      "id": 5013,
+      "locked_for_user": false,
+      "size": 2097152,
+      "updated_at": "2025-12-16T12:00:00Z",
+      "url": "/bench/blob/5013"
+    },
+    {
+      "content-type": "application/pdf",
+      "display_name": "file-5014.pdf",
+      "filename": "file-5014.pdf",
+      "folder_id": 1010,
+      "hidden": false,
+      "id": 5014,
+      "locked_for_user": false,
+      "size": 5242880,
+      "updated_at": "2025-12-16T12:00:00Z",
+      "url": "/bench/blob/5014"
+    }
+  ]
+}

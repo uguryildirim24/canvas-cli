@@ -32,6 +32,9 @@ enum Command {
         /// Report a missed target without failing.
         #[arg(long)]
         no_fail: bool,
+        /// Write the report here instead of `docs/bench.md`.
+        #[arg(long, value_name = "PATH")]
+        doc: Option<PathBuf>,
     },
     /// Record live Canvas API fixtures. Not approved for a real account yet
     /// (SPEC section 19 item 5).
@@ -142,11 +145,13 @@ fn main() -> ExitCode {
             fixture,
             runs,
             no_fail,
+            doc,
         } => {
             let options = bench::Options {
                 fixture,
                 runs,
                 no_fail,
+                doc,
             };
             match bench::run(&options) {
                 Ok(true) => ExitCode::SUCCESS,

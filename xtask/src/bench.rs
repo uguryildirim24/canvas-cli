@@ -25,7 +25,10 @@ use std::process::{Child, Command, Stdio};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
+use canvas_core::identity::{IdentityDocument, Paths};
+use canvas_core::store::OpenIdentity;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use wiremock::matchers::{method as method_matcher, path as path_matcher, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -38,11 +41,16 @@ pub const DEFAULT_SET: &str = "bench-5";
 /// The token the benchmark identity uses. It never leaves the local mock.
 const TOKEN: &str = "bench-fixture-token";
 
+/// The user the fixture set's `users/self` response reports.
+const USER_ID: i64 = 1001;
+
 /// Options of the bench task.
 pub struct Options {
     pub fixture: String,
     pub runs: u32,
     pub no_fail: bool,
+    /// Where the report goes. `None` means `docs/bench.md`.
+    pub doc: Option<PathBuf>,
 }
 
 /// One SPEC §13 target.
@@ -134,14 +142,24 @@ pub fn run(options: &Options) -> Result<bool> {
         let uri = server.uri();
         let runs = options.runs;
         let outcome = tokio::task::spawn_blocking(move || {
-            let mut harness = Harness::new(release, debug, uri)?;
+            let harness = Harness::new(release, debug, uri)?;
             harness.prime()?;
             harness.measure_all(runs)
         })
-        .await??;
+        .await?;
+        // A failure is almost always a request the set does not answer. Name
+        // the requests the server saw, so the cause is visible at once.
+        if outcome.is_err()
+            && let Some(seen) = server.received_requests().await
+        {
+            eprintln!("requests the fixture server received:");
+            for request in seen {
+                eprintln!("  {} {}", request.method, request.url);
+            }
+        }
         // Keep the server alive until the measurements finish.
         drop(server);
-        anyhow::Ok(outcome)
+        anyhow::Ok(outcome?)
     })?;
 
     let passed = report(&root, options, &measurements)?;
@@ -151,10 +169,13 @@ pub fn run(options: &Options) -> Result<bool> {
 // ---------------------------------------------------------------- fixtures
 
 /// Whole days between a set's record date and today.
+///
+/// The difference is taken in seconds. A `Span` between two timestamps
+/// carries its own largest unit, so asking one for hours can answer zero.
 fn day_shift(recorded_at: &str) -> Option<i64> {
     let recorded: jiff::Timestamp = recorded_at.parse().ok()?;
-    let elapsed = jiff::Timestamp::now() - recorded;
-    Some(i64::from(elapsed.get_hours()) / 24)
+    let seconds = jiff::Timestamp::now().as_second() - recorded.as_second();
+    Some(seconds / 86_400)
 }
 
 /// Move every RFC 3339 timestamp in a body forward by `days`.
@@ -231,13 +252,11 @@ async fn mount_blobs(server: &MockServer) {
             .register(
                 Mock::given(method_matcher("GET"))
                     .and(path_matcher(format!("{BLOB_PREFIX}{id}")))
-                    .respond_with(
-                        ResponseTemplate::new(200)
-                            .set_body_bytes(body)
-                            // Slow enough that one download spans the runs it
-                            // is meant to load.
-                            .set_delay(std::time::Duration::from_millis(900)),
-                    ),
+                    // No artificial delay: a stream that spends its time
+                    // waiting would load neither the server nor the client.
+                    // The measurement loop restarts the download whenever it
+                    // finishes, so a stream is always in flight.
+                    .respond_with(ResponseTemplate::new(200).set_body_bytes(body)),
             )
             .await;
     }
@@ -294,13 +313,38 @@ struct Harness {
 }
 
 impl Harness {
+    /// Seed the identity the measured runs use.
+    ///
+    /// A command needs an identity key before it does anything (SPEC §8), and
+    /// `auth login` is interactive, so the benchmark writes the identity
+    /// document and the validated-credential row the same way the end-to-end
+    /// tests do. The token is a local constant and never leaves the mock.
     fn new(release: PathBuf, debug: PathBuf, origin: String) -> Result<Self> {
+        let home = tempfile::tempdir()?;
+        let data_root = home.path().join("data");
+        let document = IdentityDocument::new(&origin, USER_ID, "2026-01-01T00:00:00Z");
+        let paths = Paths::for_identity(&data_root, &document.key);
+        document.write(&paths.identity_json())?;
+        let open = OpenIdentity::open(&paths, &document)?;
+        let key = document.key.to_string();
+        let stored = key.clone();
+        open.store
+            .call_blocking(move |conns| {
+                conns.state.execute(
+                    "INSERT INTO credential (identity_key, token_sha256, validated_at)
+                     VALUES (?1, ?2, '2026-01-01T00:00:00Z')",
+                    rusqlite::params![stored, format!("{:x}", Sha256::digest(TOKEN.as_bytes()))],
+                )?;
+                Ok(())
+            })
+            .context("seed the benchmark credential")?;
+        drop(open);
         Ok(Self {
             release,
             debug,
             origin,
-            home: tempfile::tempdir()?,
-            identity: String::new(),
+            home,
+            identity: key,
         })
     }
 
@@ -327,7 +371,7 @@ impl Harness {
 
     /// Prime the cache: `canvas sync` for the courses and grades datasets,
     /// then one online `todo` for the planner and missing datasets it reads.
-    fn prime(&mut self) -> Result<()> {
+    fn prime(&self) -> Result<()> {
         let output = self
             .command(&self.release.clone(), &self.data_root())
             .args(["sync", "--json", "--color", "never"])
@@ -345,20 +389,26 @@ impl Harness {
                 envelope["result"]
             );
         }
-        envelope["identity"]["key"]
+        let reported = envelope["identity"]["key"]
             .as_str()
-            .context("sync reported no identity")?
-            .clone_into(&mut self.identity);
+            .context("sync reported no identity")?;
+        if reported != self.identity {
+            bail!(
+                "sync bound {reported}, not the seeded identity {}",
+                self.identity
+            );
+        }
 
         let todo = self
             .command(&self.release.clone(), &self.data_root())
-            .args(["todo", "--json", "--color", "never"])
+            .args(["todo", "--json", "--color", "never", "-v"])
             .output()?;
         if !todo.status.success() {
             bail!(
-                "priming todo exited {:?}: {}",
+                "priming todo exited {:?}: {} STDERR {}",
                 todo.status.code(),
-                String::from_utf8_lossy(&todo.stdout).trim()
+                String::from_utf8_lossy(&todo.stdout).trim(),
+                String::from_utf8_lossy(&todo.stderr).trim()
             );
         }
         // The measured runs read the cache only; prove that works before timing it.
@@ -373,7 +423,7 @@ impl Harness {
                 String::from_utf8_lossy(&offline.stderr).trim()
             );
         }
-        Ok(())
+        self.probe_download()
     }
 
     /// One `todo` run: time to the first byte on stdout, and to exit.
@@ -399,10 +449,20 @@ impl Harness {
         Ok((first_output, total))
     }
 
+    /// The quiesced copy every cold run is made from.
+    ///
+    /// Copying the live data root while a download writes to it can race a
+    /// journal file that the downloader removes between the listing and the
+    /// copy. One snapshot, taken before any load starts, also keeps the two
+    /// load groups reading the same bytes.
+    fn snapshot(&self) -> PathBuf {
+        self.home.path().join("cold-source")
+    }
+
     /// One cold start: a fresh copy of the cache and a new process.
     fn cold_once(&self, index: u32) -> Result<f64> {
         let cold = self.home.path().join(format!("cold-{index}"));
-        copy_dir(&self.data_root(), &cold)?;
+        copy_dir(&self.snapshot(), &cold)?;
         let started = Instant::now();
         let output = self
             .command(&self.release, &cold)
@@ -416,8 +476,32 @@ impl Harness {
         Ok(elapsed)
     }
 
+    /// Prove the download path works against this fixture before it is used
+    /// as load. A download that fails at once would leave the "under load"
+    /// group measuring an idle server.
+    fn probe_download(&self) -> Result<()> {
+        let (mut child, dest) = self.start_download()?;
+        let status = child.wait()?;
+        if !status.success() {
+            bail!(
+                "the load download exited {:?}; it cannot load the server",
+                status.code()
+            );
+        }
+        let mut bytes = 0;
+        for entry in walkdir(&dest)? {
+            bytes += entry.metadata()?.len();
+        }
+        let want: u64 = DOWNLOAD_FILES.iter().map(|(_, size)| size).sum();
+        if bytes < want {
+            bail!("the load download wrote {bytes} bytes, expected at least {want}");
+        }
+        std::fs::remove_dir_all(&dest)?;
+        Ok(())
+    }
+
     /// Start a download against the same mock, to load it during a run.
-    fn start_download(&self) -> Result<Child> {
+    fn start_download(&self) -> Result<(Child, PathBuf)> {
         let dest = self.home.path().join(format!(
             "dl-{}",
             std::time::SystemTime::now()
@@ -442,17 +526,26 @@ impl Harness {
             .env("CANVAS_TEST_ALLOW_HTTP", "1")
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        Ok(command.spawn()?)
+        Ok((command.spawn()?, dest))
     }
 
+    /// Runs discarded before each group. The first run after a build pays for
+    /// a cold binary and a cold directory, which is not what §13 describes.
+    const WARMUP: u32 = 2;
+
     fn measure_all(&self, runs: u32) -> Result<Vec<Measured>> {
+        copy_dir(&self.data_root(), &self.snapshot())?;
         let mut out = Vec::new();
         for concurrent in [false, true] {
             let mut load = if concurrent {
-                Some(self.start_download()?)
+                Some(self.start_download()?.0)
             } else {
                 None
             };
+            for _ in 0..Self::WARMUP {
+                self.todo_once(&self.data_root())?;
+            }
+            self.cold_once(u32::MAX)?;
             let mut first = Vec::new();
             let mut total = Vec::new();
             let mut cold = Vec::new();
@@ -462,7 +555,7 @@ impl Harness {
                 {
                     // The stream finished early; start another so every run in
                     // this group carries the same load.
-                    *child = self.start_download()?;
+                    *child = self.start_download()?.0;
                 }
                 let (f, t) = self.todo_once(&self.data_root())?;
                 first.push(f);
@@ -509,6 +602,20 @@ fn percentile(samples: &[f64], q: f64) -> f64 {
     sorted[rank - 1]
 }
 
+/// Every file under a directory tree.
+fn walkdir(dir: &Path) -> Result<Vec<std::fs::DirEntry>> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            out.extend(walkdir(&entry.path())?);
+        } else {
+            out.push(entry);
+        }
+    }
+    Ok(out)
+}
+
 /// Copy a directory tree. The cache is a handful of files; no symlink in it.
 fn copy_dir(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
@@ -547,7 +654,13 @@ fn report(root: &Path, options: &Options, measurements: &[Measured]) -> Result<b
             if m.missed() { "MISS" } else { "ok" }
         );
     }
-    let doc = root.join("docs").join("bench.md");
+    let doc = options
+        .doc
+        .clone()
+        .unwrap_or_else(|| root.join("docs").join("bench.md"));
+    if let Some(parent) = doc.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(&doc, document(options, measurements, passed)?)?;
     println!("\nwrote {}", doc.display());
     if !passed {
@@ -680,6 +793,21 @@ fn document(options: &Options, measurements: &[Measured], passed: bool) -> Resul
          it serves is shifted by whole days to that date, so the planner window \
          holds the same workload whenever the benchmark runs."
     )?;
+    writeln!(
+        out,
+        "- Each group discards {} warm-up runs. The first run after a build \
+         pays for a cold binary and a cold directory, which is not the steady \
+         state §13 describes.",
+        Harness::WARMUP
+    )?;
+    writeln!(
+        out,
+        "- The download load is one `canvas download` of {} files, restarted \
+         whenever it finishes, so a transfer is in flight for every run in the \
+         group. It is run once to completion before the measurements, so a \
+         download that fails cannot be mistaken for an idle server.",
+        DOWNLOAD_FILES.len()
+    )?;
 
     writeln!(out, "\n## Limitations\n")?;
     writeln!(
@@ -763,6 +891,7 @@ mod tests {
             fixture: DEFAULT_SET.to_owned(),
             runs: 3,
             no_fail: false,
+            doc: None,
         };
         let measurements = vec![Measured {
             label: "cached todo, full run",

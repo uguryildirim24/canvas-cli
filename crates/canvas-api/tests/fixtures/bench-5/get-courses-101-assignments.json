@@ -1,0 +1,185 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses/101/assignments",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "course_id": 101,
+      "due_at": "2025-12-29T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10101",
+      "id": 10101,
+      "locked_for_user": false,
+      "name": "Assignment 1",
+      "points_possible": 21.0,
+      "published": true,
+      "submission": {
+        "attempt": 0,
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "score": null,
+        "submitted_at": null,
+        "workflow_state": "unsubmitted"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 101,
+      "due_at": "2026-01-01T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10102",
+      "id": 10102,
+      "locked_for_user": false,
+      "name": "Assignment 2",
+      "points_possible": 22.0,
+      "published": true,
+      "submission": {
+        "attempt": 0,
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "score": null,
+        "submitted_at": null,
+        "workflow_state": "unsubmitted"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 101,
+      "due_at": "2026-01-04T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10103",
+      "id": 10103,
+      "locked_for_user": false,
+      "name": "Assignment 3",
+      "points_possible": 23.0,
+      "published": true,
+      "submission": {
+        "attempt": 1,
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "score": 18.0,
+        "submitted_at": "2026-01-03T14:00:00Z",
+        "workflow_state": "graded"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 101,
+      "due_at": "2026-01-07T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10104",
+      "id": 10104,
+      "locked_for_user": false,
+      "name": "Assignment 4",
+      "points_possible": 24.0,
+      "published": true,
+      "submission": {
+        "attempt": 0,
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "score": null,
+        "submitted_at": null,
+        "workflow_state": "unsubmitted"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 101,
+      "due_at": "2026-01-10T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10105",
+      "id": 10105,
+      "locked_for_user": false,
+      "name": "Assignment 5",
+      "points_possible": 25.0,
+      "published": true,
+      "submission": {
+        "attempt": 0,
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "score": null,
+        "submitted_at": null,
+        "workflow_state": "unsubmitted"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 101,
+      "due_at": "2026-01-13T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10106",
+      "id": 10106,
+      "locked_for_user": false,
+      "name": "Assignment 6",
+      "points_possible": 26.0,
+      "published": true,
+      "submission": {
+        "attempt": 1,
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "score": 18.0,
+        "submitted_at": "2026-01-12T14:00:00Z",
+        "workflow_state": "graded"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 101,
+      "due_at": "2026-01-16T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10107",
+      "id": 10107,
+      "locked_for_user": false,
+      "name": "Assignment 7",
+      "points_possible": 27.0,
+      "published": true,
+      "submission": {
+        "attempt": 0,
+        "excused": false,
+        "late": false,
+        "missing": true,
+        "score": null,
+        "submitted_at": null,
+        "workflow_state": "unsubmitted"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 101,
+      "due_at": "2026-01-19T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10108",
+      "id": 10108,
+      "locked_for_user": false,
+      "name": "Assignment 8",
+      "points_possible": 28.0,
+      "published": true,
+      "submission": {
+        "attempt": 0,
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "score": null,
+        "submitted_at": null,
+        "workflow_state": "unsubmitted"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    }
+  ]
+}

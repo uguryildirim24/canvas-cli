@@ -12,9 +12,10 @@
 //!    paths.
 //!
 //! A second pass over sanitized output is a no-op. Two mechanisms give that:
-//! the output manifest carries every mapping forward, so an already-mapped
-//! value maps to itself; and every pseudonym has a recognizable shape which is
-//! its own fixed point even without a manifest.
+//! the output manifest lists the pseudonyms the set uses, and a value in that
+//! list maps to itself; and every pseudonym has a recognizable shape which is
+//! its own fixed point even without a manifest. The manifest lists only the
+//! issued pseudonyms, never the real values they replaced.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -106,11 +107,10 @@ fn is_url_key(key: &str) -> bool {
 pub struct Sanitizer {
     ids: BTreeMap<String, i64>,
     strings: BTreeMap<String, String>,
-    /// Pseudonyms a previous pass issued. A value already in here is its own
-    /// mapping, and is deliberately not stored again: the manifest must hold
-    /// the same entries after a second pass as after the first.
-    fixed_ids: BTreeSet<i64>,
-    fixed_strings: BTreeSet<String>,
+    /// Every pseudonym this set uses, including the ones a previous pass
+    /// issued. A value in here is its own mapping.
+    issued_ids: BTreeSet<i64>,
+    issued_strings: BTreeSet<String>,
     next_id: i64,
     next_string: u32,
 }
@@ -118,33 +118,33 @@ pub struct Sanitizer {
 impl Sanitizer {
     /// Start from the mappings a previous pass recorded, if any.
     pub fn new(previous: Option<&Pseudonyms>) -> Self {
-        let mut ids = BTreeMap::new();
-        let mut strings = BTreeMap::new();
-        let mut fixed_ids = BTreeSet::new();
-        let mut fixed_strings = BTreeSet::new();
+        let mut issued_ids = BTreeSet::new();
+        let mut issued_strings = BTreeSet::new();
         if let Some(previous) = previous {
-            ids.clone_from(&previous.ids);
-            strings.clone_from(&previous.strings);
-            fixed_ids.extend(previous.ids.values().copied());
-            fixed_strings.extend(previous.strings.values().cloned());
+            issued_ids.extend(previous.issued_ids.iter().copied());
+            issued_strings.extend(previous.issued_strings.iter().cloned());
         }
-        let next_id = ids.values().copied().max().map_or(ID_BASE + 1, |m| m + 1);
-        let next_string = u32::try_from(strings.len()).unwrap_or(0) + 1;
+        let next_id = issued_ids
+            .iter()
+            .copied()
+            .max()
+            .map_or(ID_BASE + 1, |m| m + 1);
+        let next_string = u32::try_from(issued_strings.len()).unwrap_or(0) + 1;
         Self {
-            ids,
-            strings,
-            fixed_ids,
-            fixed_strings,
+            ids: BTreeMap::new(),
+            strings: BTreeMap::new(),
+            issued_ids,
+            issued_strings,
             next_id,
             next_string,
         }
     }
 
-    /// The mappings to store in the output manifest.
+    /// The pseudonyms to store in the output manifest.
     pub fn pseudonyms(&self) -> Pseudonyms {
         Pseudonyms {
-            ids: self.ids.clone(),
-            strings: self.strings.clone(),
+            issued_ids: self.issued_ids.iter().copied().collect(),
+            issued_strings: self.issued_strings.iter().cloned().collect(),
         }
     }
 
@@ -154,15 +154,20 @@ impl Sanitizer {
             return *mapped;
         }
         let parsed = real.parse::<i64>().ok();
-        if let Some(parsed) = parsed
-            && (parsed >= ID_BASE || self.fixed_ids.contains(&parsed))
-        {
-            self.next_id = self.next_id.max(parsed + 1);
-            return parsed;
-        }
-        let assigned = self.next_id;
-        self.next_id += 1;
+        let assigned = match parsed {
+            Some(parsed) if parsed >= ID_BASE || self.issued_ids.contains(&parsed) => {
+                self.next_id = self.next_id.max(parsed + 1);
+                parsed
+            }
+            _ => {
+                let next = self.next_id;
+                self.next_id += 1;
+                next
+            }
+        };
+        // The real value keys the run-local map only; it never reaches disk.
         self.ids.insert(real.to_owned(), assigned);
+        self.issued_ids.insert(assigned);
         assigned
     }
 
@@ -171,13 +176,15 @@ impl Sanitizer {
         if let Some(mapped) = self.strings.get(real) {
             return mapped.clone();
         }
-        if shape.is_pseudonym(real) || self.fixed_strings.contains(real) {
-            return real.to_owned();
-        }
-        let n = self.next_string;
-        self.next_string += 1;
-        let assigned = shape.render(n, real);
+        let assigned = if shape.is_pseudonym(real) || self.issued_strings.contains(real) {
+            real.to_owned()
+        } else {
+            let n = self.next_string;
+            self.next_string += 1;
+            shape.render(n, real)
+        };
         self.strings.insert(real.to_owned(), assigned.clone());
+        self.issued_strings.insert(assigned.clone());
         assigned
     }
 }
