@@ -290,7 +290,6 @@ pub fn data_root() -> Result<PathBuf, SessionError> {
     Ok(strategy.data_dir().join("canvas-cli"))
 }
 
-/// Config directory: etcetera config dir / `canvas-cli`.
 /// Config directory, resolved exactly as [`crate::paths::CliPaths`] does.
 ///
 /// `config path`, `config set` and the credential files go through `CliPaths`,
