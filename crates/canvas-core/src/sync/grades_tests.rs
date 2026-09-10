@@ -424,6 +424,69 @@ fn scoped_enrollment_values_keep_each_period_separate() {
     );
 }
 
+/// SPEC §16: out-of-order P (t=30) then Q (t=20) on the same enrollment.
+/// The composite observation key keeps them apart, so P's newer clock can
+/// never suppress the older Q write.
+#[test]
+fn a_newer_observation_for_one_period_never_suppresses_an_older_one_for_another() {
+    let (_dir, open) = setup();
+    let ttl = Span::new().minutes(10);
+    let p = EnrollmentGradesDataset::new(PeriodKey::Id(5), ttl);
+    let q = EnrollmentGradesDataset::new(PeriodKey::Id(6), ttl);
+    let enrollment = |score: f64| Enrollment {
+        id: 900,
+        course_id: Some(7),
+        computed_current_score: Supplied::Value(score),
+        ..Enrollment::default()
+    };
+
+    // P arrives first and carries the newer clock.
+    ingest(
+        &open,
+        &p,
+        IngestPage {
+            fetched_at: ts(30),
+            entities: vec![enrollment_to_entity(&enrollment(75.0), "5")],
+        },
+    );
+    // Q arrives second with an older clock and must still be written.
+    ingest(
+        &open,
+        &q,
+        IngestPage {
+            fetched_at: ts(20),
+            entities: vec![enrollment_to_entity(&enrollment(80.0), "6")],
+        },
+    );
+
+    let rows: Vec<(String, Option<f64>, String)> = open
+        .store
+        .call_blocking(|conns| {
+            let mut stmt = conns.cache.prepare(
+                "SELECT g.period, g.current_score, o.observed_at
+                 FROM enrollment_grades g
+                 JOIN field_obs o
+                   ON o.entity_kind = 'enrollment_grades'
+                  AND o.entity_key = g.enrollment_id || '|' || g.period
+                  AND o.field = 'current_score'
+                 WHERE g.enrollment_id = 900 ORDER BY g.period",
+            )?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            ("5".to_owned(), Some(75.0), ts(30).to_string()),
+            ("6".to_owned(), Some(80.0), ts(20).to_string()),
+        ],
+        "period Q keeps its own value and its own older clock"
+    );
+}
+
 #[test]
 fn an_older_arrival_does_not_overwrite_a_newer_value_in_the_same_period() {
     let (_dir, open) = setup();
