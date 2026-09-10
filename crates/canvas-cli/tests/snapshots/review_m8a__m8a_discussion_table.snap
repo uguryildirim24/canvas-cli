@@ -1,0 +1,21 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "scrub_text(&f.text(&[\"discussion\", \"5\", \"55\", \"--replies\"], 0).await,\n&server.uri())"
+---
+Topic 55
+by Dr. Reed
+posted 2026-09-01T14:00:00Z
+https://canvas.test/courses/5/discussion_topics/55
+
+What surprised you?
+
+— Student 1 2026-09-02T09:00:00Z
+Reply 1.
+
+— Student 2 2026-09-02T09:00:00Z
+Reply 2.
+
+— Student 3 2026-09-02T09:00:00Z
+Reply 3.
+
+replies: 2 pages fetched, complete=true

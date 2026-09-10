@@ -369,7 +369,10 @@ fn push_reads(out: &mut Vec<Recorded>) {
     out.push(with_query(
         get(
             format!("/api/v1/courses/{course_id}/pages"),
-            json!(vec![page_row(course_id, 1, true), page_row(course_id, 2, false)]),
+            json!(vec![
+                page_row(course_id, 1, true),
+                page_row(course_id, 2, false)
+            ]),
         ),
         &[("sort", "title")],
     ));

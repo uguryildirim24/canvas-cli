@@ -1,0 +1,5 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "scrub_text(&f.text(&[\"inbox\", \"unread-count\"], 0).await, &server.uri())"
+---
+2

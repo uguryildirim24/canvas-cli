@@ -1,0 +1,59 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "normalized(out, &server.uri())"
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "course",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:5",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "<generated_at>",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 2,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course_id": "5",
+    "embedded": [
+      {
+        "kind": "iframe",
+        "reported": "unavailable",
+        "src_origin": "https://player.test"
+      }
+    ],
+    "external_links": [
+      {
+        "url": "https://elsewhere.test/notes"
+      }
+    ],
+    "files": [
+      {
+        "file_id": "42",
+        "name": "handbook",
+        "url": "<origin>/courses/5/files/42"
+      }
+    ],
+    "syllabus_markdown": "Bring a calculator. See the [handbook](<origin>/courses/5/files/42) and [these notes](https://elsewhere.test/notes).\n\n[embedded iframe: unavailable to this tool]",
+    "truncated": false,
+    "updated_at": null
+  },
+  "schema": "canvas-cli/syllabus@1",
+  "warnings": []
+}

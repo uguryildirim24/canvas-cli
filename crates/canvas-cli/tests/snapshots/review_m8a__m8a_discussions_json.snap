@@ -1,0 +1,100 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "normalized(listing, &server.uri())"
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 3,
+      "dataset": "discussions",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:5",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "<generated_at>",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course_id": "5",
+    "discussions": [
+      {
+        "assignment_id": null,
+        "author": "Dr. Reed",
+        "course_id": "5",
+        "group_category_id": null,
+        "html_url": "https://canvas.test/courses/5/discussion_topics/55",
+        "id": "55",
+        "is_announcement": false,
+        "last_reply_at": "2026-09-08T10:00:00Z",
+        "locked": false,
+        "pinned": false,
+        "points_possible": null,
+        "posted_at": "2026-09-01T14:00:00Z",
+        "read_state": "unread",
+        "reply_count": 3,
+        "require_initial_post": false,
+        "title": "Topic 55",
+        "unread_count": 2
+      },
+      {
+        "assignment_id": null,
+        "author": "Dr. Reed",
+        "course_id": "5",
+        "group_category_id": null,
+        "html_url": "https://canvas.test/courses/5/discussion_topics/56",
+        "id": "56",
+        "is_announcement": false,
+        "last_reply_at": "2026-09-08T10:00:00Z",
+        "locked": false,
+        "pinned": false,
+        "points_possible": null,
+        "posted_at": "2026-09-01T14:00:00Z",
+        "read_state": "unread",
+        "reply_count": 3,
+        "require_initial_post": true,
+        "title": "Introduce yourself",
+        "unread_count": 2
+      },
+      {
+        "assignment_id": "2",
+        "author": "Dr. Reed",
+        "course_id": "5",
+        "group_category_id": "9",
+        "html_url": "https://canvas.test/courses/5/discussion_topics/57",
+        "id": "57",
+        "is_announcement": false,
+        "last_reply_at": "2026-09-08T10:00:00Z",
+        "locked": false,
+        "pinned": false,
+        "points_possible": 15.0,
+        "posted_at": "2026-09-01T14:00:00Z",
+        "read_state": "unread",
+        "reply_count": 3,
+        "require_initial_post": false,
+        "title": "Group lab report",
+        "unread_count": 2
+      }
+    ],
+    "listing": {
+      "available": true,
+      "http_status": null
+    }
+  },
+  "schema": "canvas-cli/discussions@1",
+  "warnings": []
+}
