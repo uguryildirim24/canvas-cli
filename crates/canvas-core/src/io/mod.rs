@@ -1,5 +1,7 @@
 //! Blocking I/O bridge onto the async runtime (§13).
 
+pub(crate) mod sqlite;
+
 use std::io::{Read, Write};
 
 use sha2::{Digest, Sha256};
@@ -80,13 +82,77 @@ where
     .await??)
 }
 
+type PermitFuture = std::pin::Pin<
+    Box<
+        dyn std::future::Future<
+                Output = Result<mpsc::OwnedPermit<Vec<u8>>, mpsc::error::SendError<()>>,
+            > + Send,
+    >,
+>;
+
+/// An async writer that enqueues at most 64 KiB per bounded channel slot.
+pub struct ChunkWriter {
+    sender: mpsc::Sender<Vec<u8>>,
+    permit: Option<PermitFuture>,
+}
+impl ChunkWriter {
+    pub fn new(sender: mpsc::Sender<Vec<u8>>) -> Self {
+        Self {
+            sender,
+            permit: None,
+        }
+    }
+}
+impl tokio::io::AsyncWrite for ChunkWriter {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        if buf.is_empty() {
+            return std::task::Poll::Ready(Ok(0));
+        }
+        if self.permit.is_none() {
+            self.permit = Some(Box::pin(self.sender.clone().reserve_owned()));
+        }
+        let permit = std::task::ready!(
+            self.permit
+                .as_mut()
+                .expect("permit future")
+                .as_mut()
+                .poll(cx)
+        );
+        self.permit = None;
+        match permit {
+            Ok(permit) => {
+                let n = buf.len().min(CHUNK_SIZE);
+                permit.send(buf[..n].to_vec());
+                std::task::Poll::Ready(Ok(n))
+            }
+            Err(_) => std::task::Poll::Ready(Err(std::io::ErrorKind::BrokenPipe.into())),
+        }
+    }
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
 /// Async → blocking writer bridge with 64 KiB chunks and backpressure.
 ///
 /// Returns a sender; drop the sender to close. The join handle finishes after EOF.
 pub fn bridge_to_blocking_writer<W>(
     mut writer: W,
 ) -> (
-    mpsc::Sender<Vec<u8>>,
+    ChunkWriter,
     tokio::task::JoinHandle<Result<u64, std::io::Error>>,
 )
 where
@@ -102,7 +168,7 @@ where
         writer.flush()?;
         Ok(total)
     });
-    (tx, handle)
+    (ChunkWriter::new(tx), handle)
 }
 
 /// Blocking reader → async receiver bridge with 64 KiB chunks and backpressure.
@@ -157,8 +223,10 @@ mod tests {
         };
 
         let store = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let (tx, handle) = bridge_to_blocking_writer(Buf(store.clone()));
-        tx.send(data.clone()).await.unwrap();
+        let (mut tx, handle) = bridge_to_blocking_writer(Buf(store.clone()));
+        tokio::io::AsyncWriteExt::write_all(&mut tx, &data)
+            .await
+            .unwrap();
         drop(tx);
         let written = handle.await.unwrap().unwrap();
         assert_eq!(written, data.len() as u64);
@@ -167,5 +235,25 @@ mod tests {
 
         let hash = hash_sha256(data).await.unwrap();
         assert_eq!(&hash[..], &expected[..]);
+    }
+    #[tokio::test]
+    async fn chunk_writer_bounds_each_slot_and_waits_for_capacity() {
+        use tokio::io::AsyncWriteExt;
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut writer = ChunkWriter::new(tx);
+        assert_eq!(
+            writer.write(&vec![7; CHUNK_SIZE * 2]).await.unwrap(),
+            CHUNK_SIZE
+        );
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), writer.write_all(b"x"))
+                .await
+                .is_err()
+        );
+        assert_eq!(rx.recv().await.unwrap().len(), CHUNK_SIZE);
+        writer.write_all(b"y").await.unwrap();
+        assert_eq!(rx.recv().await.unwrap(), b"y");
+        drop(rx);
+        assert!(writer.write_all(b"z").await.is_err());
     }
 }

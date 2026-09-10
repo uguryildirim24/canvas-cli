@@ -1,7 +1,10 @@
 //! Install critical section, clobber table, move protocol, transfer trait.
 
+use crate::io::{CHANNEL_CAPACITY, CHUNK_SIZE, ChunkWriter};
 use std::io::{Read, Seek, Write};
+#[cfg(test)]
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use cap_std::fs::Dir;
 use sha2::{Digest, Sha256};
@@ -101,7 +104,7 @@ pub trait Transfer: Send + Sync {
     fn fetch(
         &self,
         file_id: i64,
-        sink: &mut (dyn Write + Send),
+        sink: &mut (dyn AsyncWrite + Send + Unpin),
         expected_size: u64,
     ) -> impl std::future::Future<Output = Result<u64, TransferError>> + Send;
 }
@@ -117,7 +120,7 @@ impl Transfer for FakeTransfer {
     async fn fetch(
         &self,
         file_id: i64,
-        sink: &mut (dyn Write + Send),
+        sink: &mut (dyn AsyncWrite + Send + Unpin),
         expected_size: u64,
     ) -> Result<u64, TransferError> {
         let bytes = self
@@ -127,7 +130,7 @@ impl Transfer for FakeTransfer {
         if bytes.len() as u64 != expected_size {
             return Err(TransferError::SizeMismatch);
         }
-        sink.write_all(bytes)?;
+        sink.write_all(bytes).await?;
         Ok(bytes.len() as u64)
     }
 }
@@ -147,6 +150,33 @@ pub enum InstallError {
     /// I/O.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("blocking worker failed")]
+    Worker,
+}
+
+impl InstallError {
+    pub const fn action(&self) -> Action {
+        match self {
+            Self::Contain(ContainError::UnsafePath) | Self::Manifest(ManifestError::UnsafePath) => {
+                Action::UnsafePath
+            }
+            _ => Action::Failed,
+        }
+    }
+}
+
+/// Completed-run precedence from §12.3/§14; dry-run never verifies files.
+#[must_use]
+pub fn outcome_exit_code(actions: &[Action], verify_mismatch: bool, dry_run: bool) -> u8 {
+    if dry_run {
+        0
+    } else if verify_mismatch {
+        10
+    } else if outcome_is_partial(actions) {
+        12
+    } else {
+        0
+    }
 }
 
 /// Remote metadata used by the clobber table.
@@ -200,7 +230,7 @@ pub fn classify_clobber(input: &ClassifyInput) -> ClobberDecision {
     let row_at_path = input
         .row_for_file
         .as_ref()
-        .filter(|&r| r.path == input.path);
+        .filter(|&r| r.file_id == input.file_id && r.path == input.path);
 
     // present + no row for this file_id at this path
     // Spec: "Manifest row for file_id at this path"
@@ -277,58 +307,147 @@ pub async fn install_part_file<T: Transfer>(
     remote: &RemoteMeta,
     opts: &InstallOpts,
 ) -> Result<Action, InstallError> {
-    // Classify under lock first (may skip without transfer).
-    {
-        let _lock_guard = dest
-            .acquire_install_lock(crate::download::manifest::LOCK_TIMEOUT)
-            .await?;
-        let decision = classify_at(dest, file_id, rel_path, remote, opts)?;
+    let lock = dest
+        .acquire_install_lock(crate::download::manifest::LOCK_TIMEOUT)
+        .await?;
+    let d = dest.clone();
+    let (path, metadata, options) = (rel_path.to_owned(), remote.clone(), opts.clone());
+    let early = tokio::task::spawn_blocking(move || {
+        let _lock = lock;
+        if resolve_move_inner(&d, file_id, &path, &metadata, options.force)? == MoveOutcome::Moved {
+            return Ok::<_, InstallError>(Some(Action::Moved));
+        }
+        match classify_at(&d, file_id, &path, &metadata, &options)? {
+            ClobberDecision::Skip(action) => Ok(Some(action)),
+            ClobberDecision::Install => Ok(None),
+        }
+    })
+    .await
+    .map_err(|_| InstallError::Worker)??;
+    if let Some(action) = early {
+        return Ok(action);
+    }
+
+    let root = dest.root.clone();
+    let path = rel_path.to_owned();
+    let part = tokio::task::spawn_blocking(move || PartFile::create(&root, &path))
+        .await
+        .map_err(|_| InstallError::Worker)??;
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(CHANNEL_CAPACITY);
+    let expected_size = remote.size;
+    let worker = tokio::task::spawn_blocking(move || {
+        let mut part = part;
+        let mut hasher = Sha256::new();
+        let mut written = 0u64;
+        while let Some(chunk) = rx.blocking_recv() {
+            if written + chunk.len() as u64 > expected_size {
+                return Err(TransferError::SizeMismatch.into());
+            }
+            part.file
+                .as_mut()
+                .expect("part descriptor")
+                .write_all(&chunk)?;
+            hasher.update(&chunk);
+            written += chunk.len() as u64;
+        }
+        part.file.as_ref().expect("part descriptor").sync_all()?;
+        Ok::<_, InstallError>((part, written, hex_sha(&hasher.finalize())))
+    });
+    let mut sink = ChunkWriter::new(tx);
+    let transfer_result = transfer.fetch(file_id, &mut sink, remote.size).await;
+    drop(sink);
+    let (part, actual, sha) = worker.await.map_err(|_| InstallError::Worker)??;
+    let written = transfer_result?;
+    if written != remote.size || actual != remote.size {
+        return Err(TransferError::SizeMismatch.into());
+    }
+
+    let lock = dest
+        .acquire_install_lock(crate::download::manifest::LOCK_TIMEOUT)
+        .await?;
+    let d = dest.clone();
+    let (path, metadata, options) = (rel_path.to_owned(), remote.clone(), opts.clone());
+    tokio::task::spawn_blocking(move || {
+        let _lock = lock;
+        let mut part = part;
+        // Reuse the retained final parent for classification and rename.
+        let fresh = walk_parent(&d.root, &path)?;
+        if !same_parent(&fresh.parent, &part.contained.parent)? {
+            return Err(ContainError::UnsafePath.into());
+        }
+        let decision = classify_at(&d, file_id, &path, &metadata, &options)?;
         if let ClobberDecision::Skip(action) = decision {
             return Ok(action);
         }
-    }
+        install_rename(&part.contained.parent, &part.name, &part.contained.name)?;
+        part.installed = true;
+        d.manifest.upsert(&ManifestRow {
+            file_id,
+            course_id: options.course_id,
+            path,
+            size: actual,
+            sha256: Some(sha),
+            remote_updated_at: metadata.updated_at,
+            installed_at: now_rfc3339(),
+            pending_move_to: None,
+            move_sha256: None,
+        })?;
+        Ok(Action::Downloaded)
+    })
+    .await
+    .map_err(|_| InstallError::Worker)?
+}
 
-    // Transfer outside the mutex into a part file.
-    let contained = walk_parent(&dest.root, rel_path)?;
-    let random = random_token();
-    let (mut part, part_name) = create_part_file(&contained.parent, &contained.name, &random)?;
-    let mut hasher = Sha256::new();
-    let mut counting = HashingWriter {
-        inner: &mut part,
-        hasher: &mut hasher,
-        written: 0,
-    };
-    let written = transfer.fetch(file_id, &mut counting, remote.size).await?;
-    if written != remote.size {
-        let _ = contained.parent.remove_file(&part_name);
-        return Err(TransferError::SizeMismatch.into());
-    }
-    part.sync_all()?;
-    let sha = hex_sha(hasher.finalize().as_slice());
+fn same_parent(a: &Dir, b: &Dir) -> Result<bool, std::io::Error> {
+    use cap_std::fs::MetadataExt;
+    let (a, b) = (a.dir_metadata()?, b.dir_metadata()?);
+    #[cfg(unix)]
+    return Ok(a.dev() == b.dev() && a.ino() == b.ino());
+    #[cfg(windows)]
+    return Ok(
+        a.volume_serial_number() == b.volume_serial_number() && a.file_index() == b.file_index()
+    );
+}
 
-    // Critical section: re-classify, rename, commit.
-    let _lock_guard = dest
-        .acquire_install_lock(crate::download::manifest::LOCK_TIMEOUT)
-        .await?;
-    let decision = classify_at(dest, file_id, rel_path, remote, opts)?;
-    if let ClobberDecision::Skip(action) = decision {
-        let _ = contained.parent.remove_file(&part_name);
-        return Ok(action);
+struct PartFile {
+    contained: std::sync::Arc<crate::download::contain::ContainedPath>,
+    file: Option<cap_std::fs::File>,
+    name: String,
+    installed: bool,
+}
+impl PartFile {
+    fn create(root: &Dir, path: &str) -> Result<Self, InstallError> {
+        let contained = walk_parent(root, path)?;
+        let (file, name) = create_part_file(
+            &contained.parent,
+            &contained.name,
+            &crate::download::manifest::new_dest_id()?,
+        )?;
+        Ok(Self {
+            contained: std::sync::Arc::new(contained),
+            file: Some(file),
+            name,
+            installed: false,
+        })
     }
-    install_rename(&contained.parent, &part_name, &contained.name)?;
-    let row = ManifestRow {
-        file_id,
-        course_id: opts.course_id,
-        path: rel_path.to_string(),
-        size: remote.size,
-        sha256: Some(sha),
-        remote_updated_at: remote.updated_at.clone(),
-        installed_at: now_rfc3339(),
-        pending_move_to: None,
-        move_sha256: None,
-    };
-    dest.manifest.upsert(&row)?;
-    Ok(Action::Downloaded)
+}
+impl Drop for PartFile {
+    fn drop(&mut self) {
+        if !self.installed {
+            let (contained, name, file) =
+                (self.contained.clone(), self.name.clone(), self.file.take());
+            let cleanup = move || {
+                drop(file);
+                let _ = contained.parent.remove_file(&name);
+            };
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                // Drop can run on the async thread when a transfer is cancelled.
+                runtime.spawn_blocking(cleanup);
+            } else {
+                cleanup();
+            }
+        }
+    }
 }
 
 fn classify_at(
@@ -365,7 +484,9 @@ fn inspect_local(
         Err(e) => return Err(e.into()),
     };
     match contained.parent.symlink_metadata(&contained.name) {
-        Ok(meta) if meta.file_type().is_symlink() => Err(ContainError::UnsafePath.into()),
+        Ok(meta) if crate::download::contain::is_link(&meta) => {
+            Err(ContainError::UnsafePath.into())
+        }
         Ok(meta) if meta.is_file() => {
             let file = open_contained_file(&contained, false)?;
             let size = file.metadata()?.len();
@@ -387,7 +508,7 @@ fn hash_file_handle(file: &cap_std::fs::File) -> Result<String, InstallError> {
     // Seek to start.
     f.rewind()?;
     let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 64 * 1024];
+    let mut buf = vec![0u8; CHUNK_SIZE];
     loop {
         let n = f.read(&mut buf)?;
         if n == 0 {
@@ -405,7 +526,26 @@ pub fn hash_path(root: &Dir, rel_path: &str) -> Result<Option<String>, InstallEr
 }
 
 /// Move-protocol resolution when planned path differs from row path.
-pub fn resolve_move(
+pub async fn resolve_move(
+    dest: &Destination,
+    file_id: i64,
+    new_path: &str,
+    remote: &RemoteMeta,
+    force: bool,
+) -> Result<MoveOutcome, InstallError> {
+    let lock = dest
+        .acquire_install_lock(crate::download::manifest::LOCK_TIMEOUT)
+        .await?;
+    let (d, path, remote) = (dest.clone(), new_path.to_owned(), remote.clone());
+    tokio::task::spawn_blocking(move || {
+        let _lock = lock;
+        resolve_move_inner(&d, file_id, &path, &remote, force)
+    })
+    .await
+    .map_err(|_| InstallError::Worker)?
+}
+
+fn resolve_move_inner(
     dest: &Destination,
     file_id: i64,
     new_path: &str,
@@ -419,13 +559,22 @@ pub fn resolve_move(
         return Ok(MoveOutcome::AlreadyThere);
     }
 
-    let old_hash = hash_path(&dest.root, &row.path)?;
+    let old = walk_parent(&dest.root, &row.path)?;
+    let old_file = match open_contained_file(&old, false) {
+        Ok(file) => file,
+        Err(ContainError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(MoveOutcome::DownloadAnew);
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let old_hash = Some(hash_file_handle(&old_file)?);
     let hash_ok = match (&row.sha256, old_hash) {
         (Some(expected), Some(actual)) => expected == &actual,
         _ => false,
     };
     let remote_ok = remote_unchanged(&row, remote);
 
+    let target = walk_parent(&dest.root, new_path)?;
     let (new_present, _, _) = inspect_local(&dest.root, new_path, false)?;
     let new_ok = !new_present || force;
 
@@ -433,7 +582,9 @@ pub fn resolve_move(
         let sha = row.sha256.clone().unwrap_or_default();
         dest.manifest.set_pending_move(file_id, new_path, &sha)?;
         // Rename old → new through containment.
-        rename_rel(&dest.root, &row.path, new_path)?;
+        old.parent.rename(&old.name, &target.parent, &target.name)?;
+        super::contain::sync_dir(&target.parent)?;
+        super::contain::sync_dir(&old.parent)?;
         dest.manifest.finalize_move(file_id, new_path)?;
         return Ok(MoveOutcome::Moved);
     }
@@ -455,18 +606,23 @@ pub enum MoveOutcome {
     DownloadAnew,
 }
 
-fn rename_rel(root: &Dir, from: &str, to: &str) -> Result<(), InstallError> {
-    let from_c = walk_parent(root, from)?;
-    let to_c = walk_parent(root, to)?;
-    // Ensure target parent exists (walk_parent creates dirs).
-    from_c
-        .parent
-        .rename(&from_c.name, &to_c.parent, &to_c.name)?;
-    Ok(())
+/// Recover `pending_move_to` markers at run start.
+pub async fn recover_pending_moves(dest: &Destination) -> Result<Vec<(i64, Action)>, InstallError> {
+    let lock = dest
+        .acquire_install_lock(crate::download::manifest::LOCK_TIMEOUT)
+        .await?;
+    let d = dest.clone();
+    tokio::task::spawn_blocking(move || {
+        let _lock = lock;
+        recover_pending_moves_inner(&d)
+    })
+    .await
+    .map_err(|_| InstallError::Worker)?
 }
 
-/// Recover `pending_move_to` markers at run start.
-pub fn recover_pending_moves(dest: &Destination) -> Result<Vec<(i64, Action)>, InstallError> {
+pub(crate) fn recover_pending_moves_inner(
+    dest: &Destination,
+) -> Result<Vec<(i64, Action)>, InstallError> {
     let mut out = Vec::new();
     for row in dest.manifest.pending_moves()? {
         let Some(new_path) = row.pending_move_to.clone() else {
@@ -477,8 +633,18 @@ pub fn recover_pending_moves(dest: &Destination) -> Result<Vec<(i64, Action)>, I
             out.push((row.file_id, Action::UnresolvedMove));
             continue;
         };
-        let old_hash = hash_path(&dest.root, &row.path)?;
-        let new_hash = hash_path(&dest.root, &new_path)?;
+        let (old_hash, new_hash) = match (
+            hash_path(&dest.root, &row.path),
+            hash_path(&dest.root, &new_path),
+        ) {
+            (Ok(old), Ok(new)) => (old, new),
+            (Err(InstallError::Contain(ContainError::UnsafePath)), _)
+            | (_, Err(InstallError::Contain(ContainError::UnsafePath))) => {
+                out.push((row.file_id, Action::UnsafePath));
+                continue;
+            }
+            (Err(e), _) | (_, Err(e)) => return Err(e),
+        };
         let old_match = old_hash.as_ref() == Some(&expected);
         let new_match = new_hash.as_ref() == Some(&expected);
         match (old_match, new_match) {
@@ -492,8 +658,9 @@ pub fn recover_pending_moves(dest: &Destination) -> Result<Vec<(i64, Action)>, I
             }
             (true, true) => {
                 dest.manifest.finalize_move(row.file_id, &new_path)?;
-                // Old path still exists with same bytes → unmanaged leftover.
+                // Both actions refer to this file; the original row supplies the old path.
                 out.push((row.file_id, Action::Moved));
+                out.push((row.file_id, Action::Unmanaged));
             }
             (false, false) => {
                 dest.manifest.clear_pending_move(row.file_id)?;
@@ -502,24 +669,6 @@ pub fn recover_pending_moves(dest: &Destination) -> Result<Vec<(i64, Action)>, I
         }
     }
     Ok(out)
-}
-
-struct HashingWriter<'a, W: Write> {
-    inner: &'a mut W,
-    hasher: &'a mut Sha256,
-    written: u64,
-}
-
-impl<W: Write> Write for HashingWriter<'_, W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let n = self.inner.write(buf)?;
-        self.hasher.update(&buf[..n]);
-        self.written += n as u64;
-        Ok(n)
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.inner.flush()
-    }
 }
 
 fn hex_sha(bytes: &[u8]) -> String {
@@ -531,13 +680,6 @@ fn hex_sha(bytes: &[u8]) -> String {
     s
 }
 
-fn random_token() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    format!("{nanos:x}")
-}
-
 fn now_rfc3339() -> String {
     jiff::Timestamp::now().to_string()
 }
@@ -546,7 +688,8 @@ fn now_rfc3339() -> String {
 #[allow(clippy::used_underscore_binding, unused_variables)]
 mod tests {
     use super::*;
-    use crate::download::manifest::{ManifestRow, open_destination};
+    use crate::download::manifest::ManifestRow;
+    use crate::download::manifest::test_support::open_destination;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     fn scratch() -> std::path::PathBuf {
@@ -689,6 +832,13 @@ mod tests {
         assert!(!makes_partial(Action::Modified));
         assert!(!makes_partial(Action::Downloaded));
         assert!(outcome_is_partial(&[Action::Skipped, Action::Locked]));
+        assert_eq!(outcome_exit_code(&[Action::Failed], true, false), 10);
+        assert_eq!(outcome_exit_code(&[Action::Failed], true, true), 0);
+        assert_eq!(
+            outcome_exit_code(&[Action::Modified, Action::Unmanaged], false, false),
+            0
+        );
+        assert_eq!(outcome_exit_code(&[Action::Locked], false, false), 12);
     }
 
     #[tokio::test]
@@ -833,15 +983,12 @@ mod tests {
         .await
         .unwrap();
 
-        let lock_guard = dest
-            .acquire_install_lock(std::time::Duration::from_secs(5))
-            .await
-            .unwrap();
         assert_eq!(
-            resolve_move(&dest, 1, "new/name.txt", &remote, false).unwrap(),
+            resolve_move(&dest, 1, "new/name.txt", &remote, false)
+                .await
+                .unwrap(),
             MoveOutcome::Moved
         );
-        drop(lock_guard);
         assert!(path.join("new/name.txt").exists());
         assert!(!path.join("old/name.txt").exists());
 
@@ -850,15 +997,12 @@ mod tests {
             size: 4,
             updated_at: Some("t2".into()),
         };
-        let lock_guard = dest
-            .acquire_install_lock(std::time::Duration::from_secs(5))
-            .await
-            .unwrap();
         assert_eq!(
-            resolve_move(&dest, 1, "newer/name.txt", &remote2, false).unwrap(),
+            resolve_move(&dest, 1, "newer/name.txt", &remote2, false)
+                .await
+                .unwrap(),
             MoveOutcome::DownloadAnew
         );
-        drop(lock_guard);
 
         // Target occupied
         std::fs::create_dir_all(path.join("occ")).unwrap();
@@ -883,10 +1027,6 @@ mod tests {
         )
         .await
         .unwrap();
-        let lock_guard = dest
-            .acquire_install_lock(std::time::Duration::from_secs(5))
-            .await
-            .unwrap();
         assert_eq!(
             resolve_move(
                 &dest,
@@ -898,6 +1038,7 @@ mod tests {
                 },
                 false
             )
+            .await
             .unwrap(),
             MoveOutcome::DownloadAnew
         );
@@ -947,14 +1088,9 @@ mod tests {
                 move_sha256: Some(sha.clone()),
             })
             .unwrap();
-        let lock_guard = dest
-            .acquire_install_lock(std::time::Duration::from_secs(5))
-            .await
-            .unwrap();
-        let recovered = recover_pending_moves(&dest).unwrap();
+        let recovered = recover_pending_moves(&dest).await.unwrap();
         assert_eq!(recovered, vec![(1, Action::Moved)]);
         assert_eq!(dest.manifest.get(1).unwrap().unwrap().path, "b.txt");
-        drop(lock_guard);
 
         // only old matches
         std::fs::write(path.join("old2.txt"), bytes).unwrap();
@@ -971,13 +1107,8 @@ mod tests {
                 move_sha256: Some(sha.clone()),
             })
             .unwrap();
-        let lock_guard = dest
-            .acquire_install_lock(std::time::Duration::from_secs(5))
-            .await
-            .unwrap();
-        let recovered = recover_pending_moves(&dest).unwrap();
+        let recovered = recover_pending_moves(&dest).await.unwrap();
         assert!(recovered.contains(&(2, Action::Skipped)));
-        drop(lock_guard);
 
         // neither matches
         dest.manifest
@@ -993,11 +1124,288 @@ mod tests {
                 move_sha256: Some(sha),
             })
             .unwrap();
-        let lock_guard = dest
-            .acquire_install_lock(std::time::Duration::from_secs(5))
+        let recovered = recover_pending_moves(&dest).await.unwrap();
+        assert!(recovered.contains(&(3, Action::UnresolvedMove)));
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    use crate::download::manifest::test_support::open_destination;
+    use std::path::PathBuf;
+
+    fn scratch() -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "canvas-install-review-{}",
+            crate::download::manifest::new_dest_id().unwrap()
+        ));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+    fn remote() -> RemoteMeta {
+        RemoteMeta {
+            size: 4,
+            updated_at: Some("t1".into()),
+        }
+    }
+    fn opts() -> InstallOpts {
+        InstallOpts {
+            force: false,
+            verify: true,
+            course_id: 1,
+        }
+    }
+    fn fake() -> FakeTransfer {
+        FakeTransfer {
+            files: std::collections::HashMap::from([(1, b"data".to_vec())]),
+        }
+    }
+    fn parts(path: &std::path::Path) -> usize {
+        std::fs::read_dir(path)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".part")
+            })
+            .count()
+    }
+
+    struct BadTransfer(bool);
+    impl Transfer for BadTransfer {
+        async fn fetch(
+            &self,
+            _: i64,
+            sink: &mut (dyn AsyncWrite + Send + Unpin),
+            _: u64,
+        ) -> Result<u64, TransferError> {
+            sink.write_all(b"bad").await?;
+            if self.0 {
+                Ok(4)
+            } else {
+                Err(TransferError::Message("injected".into()))
+            }
+        }
+    }
+    #[tokio::test]
+    async fn failed_or_lying_transfer_never_installs_or_leaves_part() {
+        let path = scratch();
+        let dest = open_destination(&path, "A").unwrap();
+        for lie in [false, true] {
+            assert!(
+                install_part_file(&dest, &BadTransfer(lie), 1, "f", &remote(), &opts())
+                    .await
+                    .is_err()
+            );
+            assert!(!path.join("f").exists());
+            assert!(dest.manifest.get(1).unwrap().is_none());
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                while parts(&path) != 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            })
             .await
             .unwrap();
-        let recovered = recover_pending_moves(&dest).unwrap();
-        assert!(recovered.contains(&(3, Action::UnresolvedMove)));
+        }
+    }
+
+    #[tokio::test]
+    async fn integrated_move_force_and_crash_classification() {
+        let path = scratch();
+        let dest = open_destination(&path, "A").unwrap();
+        assert_eq!(
+            install_part_file(&dest, &fake(), 1, "old", &remote(), &opts())
+                .await
+                .unwrap(),
+            Action::Downloaded
+        );
+        let empty = FakeTransfer {
+            files: std::collections::HashMap::new(),
+        };
+        assert_eq!(
+            install_part_file(&dest, &empty, 1, "new", &remote(), &opts())
+                .await
+                .unwrap(),
+            Action::Moved
+        );
+        assert!(!path.join("old").exists());
+        assert_eq!(std::fs::read(path.join("new")).unwrap(), b"data");
+        // Equal-size replacement after rename but before DB commit.
+        std::fs::write(path.join("new"), b"edit").unwrap();
+        assert_eq!(
+            install_part_file(&dest, &empty, 1, "new", &remote(), &opts())
+                .await
+                .unwrap(),
+            Action::Modified
+        );
+        let mut options = opts();
+        options.verify = false;
+        assert_eq!(
+            install_part_file(&dest, &empty, 1, "new", &remote(), &options)
+                .await
+                .unwrap(),
+            Action::Skipped
+        );
+        options.force = true;
+        options.verify = true;
+        assert_eq!(
+            install_part_file(&dest, &fake(), 1, "new", &remote(), &options)
+                .await
+                .unwrap(),
+            Action::Downloaded
+        );
+        // New install after rename but before row commit.
+        std::fs::write(path.join("uncommitted"), b"data").unwrap();
+        assert_eq!(
+            install_part_file(&dest, &empty, 2, "uncommitted", &remote(), &opts())
+                .await
+                .unwrap(),
+            Action::Unmanaged
+        );
+    }
+
+    #[tokio::test]
+    async fn recovery_reports_both_and_rejects_same_size_wrong_target() {
+        let path = scratch();
+        let dest = open_destination(&path, "A").unwrap();
+        install_part_file(&dest, &fake(), 1, "old", &remote(), &opts())
+            .await
+            .unwrap();
+        let row = dest.manifest.get(1).unwrap().unwrap();
+        std::fs::write(path.join("new"), b"data").unwrap();
+        dest.manifest
+            .set_pending_move(1, "new", row.sha256.as_ref().unwrap())
+            .unwrap();
+        let reopened = open_destination(&path, "A").unwrap();
+        assert_eq!(
+            reopened.recovery_actions,
+            [(1, Action::Moved), (1, Action::Unmanaged)]
+        );
+        assert_eq!(reopened.manifest.get(1).unwrap().unwrap().path, "new");
+        std::fs::write(path.join("wrong"), b"xxxx").unwrap();
+        std::fs::remove_file(path.join("new")).unwrap();
+        reopened
+            .manifest
+            .set_pending_move(1, "wrong", row.sha256.as_ref().unwrap())
+            .unwrap();
+        assert_eq!(
+            recover_pending_moves(&reopened).await.unwrap(),
+            [(1, Action::UnresolvedMove)]
+        );
+        assert_eq!(std::fs::read(path.join("wrong")).unwrap(), b"xxxx");
+        assert_eq!(reopened.manifest.get(1).unwrap().unwrap().path, "new");
+    }
+
+    struct BarrierTransfer {
+        path: PathBuf,
+        label: String,
+    }
+    impl Transfer for BarrierTransfer {
+        async fn fetch(
+            &self,
+            _: i64,
+            sink: &mut (dyn AsyncWrite + Send + Unpin),
+            _: u64,
+        ) -> Result<u64, TransferError> {
+            std::fs::write(self.path.join(format!("ready-{}", self.label)), b"ready")?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while !self.path.join("go").exists() {
+                assert!(std::time::Instant::now() < deadline, "barrier timeout");
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            sink.write_all(b"data").await?;
+            Ok(4)
+        }
+    }
+
+    #[tokio::test]
+    async fn competing_child() {
+        let Ok(base) = std::env::var("CANVAS_REVIEW_CHILD_BASE") else {
+            return;
+        };
+        let label = std::env::var("CANVAS_REVIEW_CHILD_LABEL").unwrap();
+        let base = PathBuf::from(base);
+        let dest = open_destination(&base.join("dest"), "A").unwrap();
+        let transfer = BarrierTransfer {
+            path: base.clone(),
+            label: label.clone(),
+        };
+        let action = install_part_file(&dest, &transfer, 1, "sub/f", &remote(), &opts())
+            .await
+            .unwrap();
+        std::fs::write(base.join(format!("result-{label}")), action.as_str()).unwrap();
+    }
+
+    #[test]
+    fn two_processes_reclassify_after_competing_transfers() {
+        let base = scratch();
+        open_destination(&base.join("dest"), "A").unwrap();
+        let exe = std::env::current_exe().unwrap();
+        let children: Vec<_> = ["a", "b"]
+            .into_iter()
+            .map(|label| {
+                std::process::Command::new(&exe)
+                    .args([
+                        "--exact",
+                        "download::install::review_tests::competing_child",
+                        "--nocapture",
+                    ])
+                    .env("CANVAS_REVIEW_CHILD_BASE", &base)
+                    .env("CANVAS_REVIEW_CHILD_LABEL", label)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !(base.join("ready-a").exists() && base.join("ready-b").exists()) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "children did not both enter transfer"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::fs::write(base.join("go"), b"go").unwrap();
+        for child in children {
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let mut actions: Vec<_> = ["a", "b"]
+            .map(|label| std::fs::read_to_string(base.join(format!("result-{label}"))).unwrap())
+            .into();
+        actions.sort();
+        assert_eq!(actions, ["downloaded", "skipped"]);
+        let dest = open_destination(&base.join("dest"), "A").unwrap();
+        assert_eq!(
+            dest.manifest.get(1).unwrap().unwrap().sha256,
+            hash_path(&dest.root, "sub/f").unwrap()
+        );
+        assert_eq!(parts(&base.join("dest/sub")), 0);
+    }
+    #[tokio::test]
+    async fn forced_install_retires_previous_owner_of_target() {
+        let path = scratch();
+        let dest = open_destination(&path, "A").unwrap();
+        install_part_file(&dest, &fake(), 1, "target", &remote(), &opts())
+            .await
+            .unwrap();
+        let transfer = FakeTransfer {
+            files: std::collections::HashMap::from([(2, b"next".to_vec())]),
+        };
+        let mut options = opts();
+        options.force = true;
+        install_part_file(&dest, &transfer, 2, "target", &remote(), &options)
+            .await
+            .unwrap();
+        assert!(dest.manifest.get(1).unwrap().is_none());
+        assert_eq!(dest.manifest.get(2).unwrap().unwrap().path, "target");
     }
 }
