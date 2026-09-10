@@ -6,6 +6,7 @@ use std::path::Path;
 
 use canvas_api::{Client, get_submission_history};
 use cap_std::fs::Dir;
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::download::contain::{self, ContainError};
@@ -31,7 +32,7 @@ pub enum VerifyOutcome {
 }
 
 /// Per-file verify row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VerifyFileRow {
     pub canvas_file_id: String,
     pub name: Option<String>,
@@ -41,7 +42,7 @@ pub struct VerifyFileRow {
 }
 
 /// Body verify row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VerifyBodyRow {
     pub expected_sha256: Option<String>,
     pub actual_sha256: Option<String>,

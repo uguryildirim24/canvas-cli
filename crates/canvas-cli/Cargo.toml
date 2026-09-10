@@ -15,12 +15,27 @@ path = "src/main.rs"
 anstream.workspace = true
 anstyle.workspace = true
 anyhow.workspace = true
+canvas-api.workspace = true
+canvas-core.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
+comfy-table.workspace = true
+etcetera.workspace = true
+futures-util.workspace = true
+jiff.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
+toml.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
+insta = { workspace = true, features = ["json"] }
+tempfile = "=3.23.0"
 
 [lints]
 workspace = true

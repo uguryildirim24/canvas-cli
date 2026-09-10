@@ -1,5 +1,9 @@
 //! `canvas` command-line entry point.
 
+mod commands;
+mod output;
+mod session;
+
 use clap::{ArgGroup, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
 use std::io;
@@ -27,6 +31,16 @@ enum ColorChoice {
     Auto,
     Always,
     Never,
+}
+
+impl From<ColorChoice> for output::ColorMode {
+    fn from(value: ColorChoice) -> Self {
+        match value {
+            ColorChoice::Auto => Self::Auto,
+            ColorChoice::Always => Self::Always,
+            ColorChoice::Never => Self::Never,
+        }
+    }
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -521,6 +535,14 @@ async fn main() -> ExitCode {
     if let Err(error) = cli.validate() {
         error.exit();
     }
+    let globals = commands::Globals {
+        json: cli.json,
+        color: cli.color.into(),
+        profile: cli.profile.clone(),
+        fresh: cli.fresh,
+        offline: cli.offline,
+        quiet: cli.quiet,
+    };
     match cli.command {
         Commands::Version => {
             println!("{}", env!("CARGO_PKG_VERSION"));
@@ -531,6 +553,60 @@ async fn main() -> ExitCode {
             generate(shell, &mut cmd, "canvas", &mut io::stdout());
             ExitCode::SUCCESS
         }
+        Commands::Submit {
+            target,
+            assignment,
+            files,
+            text,
+            html,
+            url,
+            comment,
+            yes,
+        } => {
+            commands::submit::run(
+                &globals, target, assignment, files, text, html, url, comment, yes,
+            )
+            .await
+        }
+        Commands::Submission {
+            command,
+            target,
+            history,
+        } => {
+            let cmd = match command {
+                Some(SubmissionCommand::Verify { receipt_id }) => {
+                    commands::submission::SubmissionCmd::Verify { receipt_id }
+                }
+                Some(SubmissionCommand::Reconcile {
+                    journal_id,
+                    assume_not_submitted,
+                }) => commands::submission::SubmissionCmd::Reconcile {
+                    journal_id,
+                    assume_not_submitted,
+                },
+                None => commands::submission::SubmissionCmd::Show {
+                    course: target[0].clone(),
+                    assignment: target[1].clone(),
+                    history,
+                },
+            };
+            commands::submission::run(&globals, cmd).await
+        }
+        Commands::Receipts { command } => {
+            let cmd = match command {
+                ReceiptsCommand::List { course, state } => {
+                    commands::receipts::ReceiptsCmd::List { course, state }
+                }
+                ReceiptsCommand::Show { id } => commands::receipts::ReceiptsCmd::Show { id },
+                ReceiptsCommand::Export { receipt_id, out } => {
+                    commands::receipts::ReceiptsCmd::Export { receipt_id, out }
+                }
+                ReceiptsCommand::Acknowledge { journal_id } => {
+                    commands::receipts::ReceiptsCmd::Acknowledge { journal_id }
+                }
+            };
+            commands::receipts::run(&globals, cmd)
+        }
         Commands::Auth { .. }
         | Commands::Identity { .. }
         | Commands::Courses { .. }
@@ -538,9 +614,6 @@ async fn main() -> ExitCode {
         | Commands::Todo { .. }
         | Commands::Assignments { .. }
         | Commands::Assignment { .. }
-        | Commands::Submit { .. }
-        | Commands::Submission { .. }
-        | Commands::Receipts { .. }
         | Commands::Grades { .. }
         | Commands::Files { .. }
         | Commands::Download { .. }

@@ -83,9 +83,18 @@ fn fresh_conflicts_with_offline() {
     );
 }
 
+fn canvas() -> Command {
+    let mut cmd = Command::cargo_bin("canvas").unwrap();
+    cmd.env_remove("CANVAS_TOKEN")
+        .env_remove("CANVAS_HOST")
+        .env_remove("CANVAS_IDENTITY_KEY")
+        .env_remove("CANVAS_PROFILE")
+        .env_remove("CANVAS_DATA_ROOT");
+    cmd
+}
+
 fn assert_stub(args: &[&str]) {
-    Command::cargo_bin("canvas")
-        .unwrap()
+    canvas()
         .args(args)
         .assert()
         .code(1)
@@ -94,12 +103,7 @@ fn assert_stub(args: &[&str]) {
 }
 
 fn assert_usage_error(args: &[&str]) {
-    let assert = Command::cargo_bin("canvas")
-        .unwrap()
-        .args(args)
-        .assert()
-        .code(2)
-        .stdout("");
+    let assert = canvas().args(args).assert().code(2).stdout("");
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(stderr.contains("error:"), "stderr={stderr:?}");
     assert!(
@@ -108,19 +112,36 @@ fn assert_usage_error(args: &[&str]) {
     );
 }
 
+fn assert_exit(args: &[&str], code: i32) {
+    let assert = canvas().args(args).assert().code(code);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    if code != 0 {
+        assert!(
+            !stderr.is_empty() || !stdout.is_empty(),
+            "expected stderr or stdout for exit {code}, args={args:?}"
+        );
+    }
+}
+
 #[test]
 fn mixed_commands_accept_typed_and_positional_forms() {
-    for args in [
-        vec!["submission", "chem", "123", "--history", "--fresh"],
-        vec!["submission", "verify", "receipt-1", "--fresh"],
-        vec!["submission", "--fresh", "verify", "receipt-1"],
-        vec!["submission", "chem", "verify"],
-        vec![
+    // Wired M2-b paths (no identity → auth/usage exits, not stub).
+    assert_exit(&["submission", "chem", "123", "--history", "--fresh"], 2);
+    assert_exit(&["submission", "verify", "receipt-1", "--fresh"], 3);
+    assert_exit(&["submission", "--fresh", "verify", "receipt-1"], 3);
+    assert_exit(&["submission", "chem", "verify"], 2);
+    assert_exit(
+        &[
             "submission",
             "reconcile",
             "journal-1",
             "--assume-not-submitted",
         ],
+        3,
+    );
+
+    for args in [
         vec!["open", "chem", "--offline"],
         vec!["open", "https://canvas.example.test/courses/1", "--offline"],
         vec!["open", "assignment", "chem", "123"],
@@ -193,15 +214,16 @@ fn submission_accepts_options_between_operands() {
         let mut args = vec!["submission", "chem"];
         args.extend(options);
         args.push("123");
-        assert_stub(&args);
+        // Non-numeric course → usage (M1-c resolution pending).
+        assert_exit(&args, 2);
     }
     assert_usage_error(&["submission", "chem", "--fresh", "123", "--offline"]);
     assert_usage_error(&["--offline", "submission", "chem", "--fresh", "123"]);
     assert_usage_error(&["submission", "chem", "--fresh"]);
     assert_usage_error(&["submission", "chem", "--fresh", "123", "extra"]);
     // Escape a subcommand name when it follows an option.
-    assert_stub(&["submission", "chem", "--fresh", "--", "verify"]);
-    assert_stub(&["submission", "--", "verify", "123"]);
+    assert_exit(&["submission", "chem", "--fresh", "--", "verify"], 2);
+    assert_exit(&["submission", "--", "verify", "123"], 2);
 }
 
 #[test]
@@ -210,11 +232,7 @@ fn mixed_command_help_lists_real_operands() {
         ("submission", vec!["COURSE", "ASSIGNMENT", "--history"]),
         ("open", vec!["TARGET"]),
     ] {
-        let assert = Command::cargo_bin("canvas")
-            .unwrap()
-            .args([command, "--help"])
-            .assert()
-            .success();
+        let assert = canvas().args([command, "--help"]).assert().success();
         let help = String::from_utf8_lossy(&assert.get_output().stdout);
         for operand in expected {
             assert!(help.contains(operand), "help={help}");
@@ -277,6 +295,11 @@ fn command_choices_accept_documented_forms() {
             "2",
             "3",
         ],
+    ] {
+        assert_stub(&args);
+    }
+    // Submit accepts clap forms; non-numeric targets exit 2 (M1-c).
+    for args in [
         vec![
             "submit", "chem", "123", "--file", "a.txt", "--file", "b.txt",
         ],
@@ -290,7 +313,7 @@ fn command_choices_accept_documented_forms() {
             "a.txt",
         ],
     ] {
-        assert_stub(&args);
+        assert_exit(&args, 2);
     }
 }
 
@@ -317,11 +340,12 @@ fn raw_output_rejects_json_at_every_command_level() {
 
 #[test]
 fn nonraw_variants_continue_to_accept_json() {
-    for args in [
-        vec!["auth", "token", "--json"],
-        vec!["calendar", "--ics", "calendar.ics", "--json"],
-        vec!["receipts", "export", "receipt-1", "--json"],
-        vec![
+    assert_stub(&["auth", "token", "--json"]);
+    assert_stub(&["calendar", "--ics", "calendar.ics", "--json"]);
+    // Receipts is wired: no identity → exit 3.
+    assert_exit(&["receipts", "export", "receipt-1", "--json"], 3);
+    assert_exit(
+        &[
             "receipts",
             "export",
             "receipt-1",
@@ -329,9 +353,8 @@ fn nonraw_variants_continue_to_accept_json() {
             "receipt.json",
             "--json",
         ],
-    ] {
-        assert_stub(&args);
-    }
+        3,
+    );
 }
 
 #[test]
@@ -346,11 +369,7 @@ fn nested_help_lists_registered_commands() {
         ("alias", vec!["set", "list", "remove"]),
         ("open", vec!["assignment", "file", "announcement"]),
     ] {
-        let assert = Command::cargo_bin("canvas")
-            .unwrap()
-            .args([parent, "--help"])
-            .assert()
-            .success();
+        let assert = canvas().args([parent, "--help"]).assert().success();
         let help = String::from_utf8_lossy(&assert.get_output().stdout);
         let commands = help.split("\nOptions:").next().unwrap();
         for name in names {
@@ -382,14 +401,6 @@ fn every_v1_stub_is_callable() {
             "assignment",
             "https://canvas.example.test/courses/1/assignments/2",
         ],
-        &["submit", "chem", "123", "--file", "a.txt"],
-        &["submission", "chem", "123", "--history"],
-        &["submission", "verify", "receipt-1"],
-        &["submission", "reconcile", "journal-1"],
-        &["receipts", "list"],
-        &["receipts", "show", "receipt-1"],
-        &["receipts", "export", "receipt-1"],
-        &["receipts", "acknowledge", "journal-1"],
         &["grades"],
         &["files", "chem"],
         &["download", "chem"],
@@ -425,10 +436,44 @@ fn every_v1_stub_is_callable() {
 }
 
 #[test]
+fn m2b_wired_commands_are_callable() {
+    assert_exit(&["submit", "chem", "123", "--file", "a.txt"], 2);
+    assert_exit(
+        &[
+            "submit",
+            "101",
+            "202",
+            "--url",
+            "https://example.test",
+            "--yes",
+        ],
+        3,
+    );
+    assert_exit(
+        &[
+            "submit",
+            "101",
+            "202",
+            "--url",
+            "https://example.test",
+            "--yes",
+            "--offline",
+        ],
+        2,
+    );
+    assert_exit(&["submission", "101", "202"], 1);
+    assert_exit(&["submission", "verify", "receipt-1"], 3);
+    assert_exit(&["submission", "reconcile", "journal-1"], 3);
+    assert_exit(&["receipts", "list"], 3);
+    assert_exit(&["receipts", "show", "receipt-1"], 3);
+    assert_exit(&["receipts", "export", "receipt-1"], 3);
+    assert_exit(&["receipts", "acknowledge", "journal-1"], 3);
+}
+
+#[test]
 fn completions_support_every_documented_shell() {
     for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
-        let assert = Command::cargo_bin("canvas")
-            .unwrap()
+        let assert = canvas()
             .args(["completions", shell])
             .assert()
             .success()

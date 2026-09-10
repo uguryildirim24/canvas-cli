@@ -1,0 +1,26 @@
+//! JSON envelope, schema registry, and human renderer base (§7).
+
+#![allow(dead_code, unused_imports)]
+
+mod color;
+mod envelope;
+mod now;
+mod registry;
+mod render;
+
+pub use color::{ColorMode, resolve_color, should_use_color, should_use_color_with_env};
+pub use envelope::{
+    Envelope, ErrorResult, Freshness, FreshnessSource, IdentityRef, Outcome, PartialScope,
+    Requests, error_envelope,
+};
+pub use now::{generated_at_now, now_timestamp};
+pub use registry::{
+    SCHEMA_CONFIG, SCHEMA_DOCTOR, SCHEMA_ERROR, SCHEMA_IDENTITY, SCHEMA_RECEIPT, SCHEMA_RECEIPTS,
+    SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_VERIFY, SCHEMA_VERSION, SchemaEntry,
+    SubmitCandidateJson, SubmitFileJson, SubmitResult, SubmitTextJson, all_schemas, rejects_json,
+};
+pub use render::{
+    StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,
+    format_local_datetime_at, format_relative_suffix, format_relative_suffix_at, new_table, paint,
+    status_label, style_dim, style_due_soon, style_missing, style_overdue, style_submitted,
+};
