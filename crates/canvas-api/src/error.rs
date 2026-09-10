@@ -1,9 +1,10 @@
 //! Canvas API error variants (SPEC §11).
 
+use std::fmt;
 use thiserror::Error;
 
 /// Errors returned by the Canvas API client.
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub enum Error {
     /// Missing or rejected credentials.
     #[error("unauthorized")]
@@ -76,4 +77,12 @@ pub enum Error {
     /// Response body could not be decoded.
     #[error("decode")]
     Decode,
+}
+
+// Keep diagnostics limited to Display's safe metadata. Server-supplied bodies
+// and validation messages can contain credentials and signed transfer URLs.
+impl fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
 }
