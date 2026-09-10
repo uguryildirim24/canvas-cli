@@ -1,0 +1,29 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses/101/discussion_topics/10192",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": {
+    "context_code": "course_101",
+    "discussion_subentry_count": 3,
+    "discussion_type": "threaded",
+    "html_url": "https://canvas.example.edu/courses/101/discussion_topics/10192",
+    "id": 10192,
+    "is_announcement": false,
+    "last_reply_at": "2026-01-03T13:00:00Z",
+    "locked": false,
+    "locked_for_user": false,
+    "message": "<p>What did you make of week 2?</p>",
+    "pinned": false,
+    "posted_at": "2025-12-22T14:00:00Z",
+    "published": true,
+    "read_state": "unread",
+    "require_initial_post": true,
+    "subscribed": true,
+    "title": "Introduce yourself",
+    "unread_count": 0,
+    "user_can_see_posts": false,
+    "user_name": "Prof. Ada"
+  }
+}
