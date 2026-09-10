@@ -346,7 +346,9 @@ impl ServerHandler for CanvasServer {
             // record an approval against a call that never asked for one.
             if name != APPROVAL_TOOL {
                 return Err(ErrorData::invalid_params(
-                    format!("{name} never asks for an approval: `requestState` belongs to {APPROVAL_TOOL}"),
+                    format!(
+                        "{name} never asks for an approval: `requestState` belongs to {APPROVAL_TOOL}"
+                    ),
                     Some(serde_json::json!({ "tool": name })),
                 ));
             }

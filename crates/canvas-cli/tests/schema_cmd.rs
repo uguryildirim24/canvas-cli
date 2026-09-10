@@ -20,7 +20,10 @@ fn the_list_names_every_registered_schema() {
         // after the subcommand that prints it: `receipts show`, not a second
         // indistinguishable `receipts`.
         assert!(
-            command == base || command.strip_prefix(&base).is_some_and(|v| v.starts_with(' ')),
+            command == base
+                || command
+                    .strip_prefix(&base)
+                    .is_some_and(|v| v.starts_with(' ')),
             "{line} does not name {base}"
         );
         // Every row must name a different command, or a caller cannot ask for
