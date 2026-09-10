@@ -82,6 +82,24 @@ pub async fn run(
     } else {
         InputKind::OnlineTextEntry
     };
+    // REPORT §3.6: foreground submission interest, registered before the first
+    // pre-flight request and held until this command finishes. While it is
+    // registered `watch` admits no new polling request and holds no slot, so
+    // the person waiting on a deadline is never queued behind a poll. A
+    // coordinator that cannot record it costs priority, not the submission.
+    let _interest = match session
+        .open
+        .store
+        .coordinator()
+        .register_interest(canvas_core::coord::InterestKind::Submit, assignment_id)
+    {
+        Ok(interest) => interest,
+        Err(error) => {
+            tracing::debug!(%error, "cannot register foreground submission interest");
+            None
+        }
+    };
+
     // The human flow is the plan flow: freeze and store a plan, record the
     // decision as an approval, then execute the approved plan (REPORT §3.5).
     let request = PrepareRequest {
