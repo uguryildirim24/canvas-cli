@@ -24,6 +24,10 @@ pub struct Globals {
 }
 
 impl Globals {
+    pub fn open_local_session(&self) -> Result<Session, SessionError> {
+        Session::open(self.profile.as_deref(), true)
+    }
+
     /// Open a session with these globals.
     pub fn open_session(&self) -> Result<Session, SessionError> {
         Session::open(self.profile.as_deref(), self.offline)

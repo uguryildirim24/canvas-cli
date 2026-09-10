@@ -23,7 +23,7 @@ pub enum AliasCmd {
 
 /// Run `canvas alias …`.
 pub async fn run(globals: &Globals, command: AliasCmd) -> ExitCode {
-    let session = match globals.open_session() {
+    let session = match globals.open_local_session() {
         Ok(s) => s,
         Err(e) => return session_error(globals.json, e, globals.profile.clone()),
     };
@@ -50,22 +50,7 @@ async fn set(globals: &Globals, session: &Session, name: String, course: String)
         .await
     {
         Ok(Ok(r)) => r,
-        Ok(Err(e)) => {
-            let message = match &e {
-                ResolveError::NeedIdOrUrl => "use a numeric ID or a URL".to_owned(),
-                ResolveError::NotFound { .. } => "course not found".to_owned(),
-                ResolveError::Ambiguous { .. } => "ambiguous course".to_owned(),
-                other => other.to_string(),
-            };
-            return emit_error(
-                globals.json,
-                "resolution",
-                &message,
-                6,
-                session.profile.clone(),
-                Some(session.identity_ref()),
-            );
-        }
+        Ok(Err(e)) => return super::emit::resolve_error(globals, session, &e),
         Err(e) => {
             return emit_error(
                 globals.json,

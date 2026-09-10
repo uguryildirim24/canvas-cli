@@ -56,12 +56,45 @@ pub async fn run(globals: &Globals, all: bool, term: Option<String>, favorites: 
         }
     };
 
+    let rows_for_freshness = rows.clone();
+    let offline = globals.offline;
+    let mut grades_freshness = match session
+        .open
+        .store
+        .call(move |conns| {
+            super::course_load::grade_freshness(
+                conns,
+                &rows_for_freshness,
+                now_timestamp(),
+                offline,
+            )
+        })
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => return refresh_exit(globals, &session, RefreshFail::Db(e)),
+    };
+    if outcome.freshness.source == canvas_core::sync::FreshnessSource::Network {
+        for row in &mut grades_freshness {
+            row.source = crate::output::FreshnessSource::Network;
+        }
+    }
     let result = CoursesResult {
-        courses: rows.iter().map(CourseRow::to_course_json).collect(),
+        courses: rows
+            .iter()
+            .map(|row| {
+                let mut c = row.to_course_json();
+                if c.html_url.is_empty() {
+                    c.html_url = format!("{}/courses/{}", session.identity.origin, row.id);
+                }
+                c
+            })
+            .collect(),
     };
     let mut envelope = base_envelope(SCHEMA_COURSES, &session, result);
     envelope.freshness.push(outcome_freshness(&outcome));
-    envelope.requests.api = u64::from(outcome.requests);
+    envelope.freshness.extend(grades_freshness);
+    envelope.requests = session.requests();
     if outcome.freshness.stale {
         envelope.warnings.push("served stale courses cache".into());
     }
@@ -95,12 +128,7 @@ async fn load_filtered(
             if favorites {
                 rows.retain(|r| r.is_favorite);
             }
-            rows.sort_by(|a, b| {
-                a.code
-                    .to_lowercase()
-                    .cmp(&b.code.to_lowercase())
-                    .then_with(|| a.id.cmp(&b.id))
-            });
+            rows.sort_by(|a, b| a.code.cmp(&b.code).then_with(|| a.id.cmp(&b.id)));
             Ok(rows)
         })
         .await
@@ -115,7 +143,7 @@ fn print_table(result: &CoursesResult) -> io::Result<()> {
             .current_grade
             .clone()
             .or_else(|| c.grades.current_score.map(|s| format!("{s}")))
-            .unwrap_or_default();
+            .unwrap_or_else(|| "unavailable".into());
         table.add_row(Row::from(vec![
             c.code.clone(),
             c.name.clone(),
@@ -145,14 +173,7 @@ fn refresh_exit(globals: &Globals, session: &Session, err: RefreshFail) -> ExitC
             session.profile.clone(),
             Some(session.identity_ref()),
         ),
-        RefreshFail::Sync(e) => emit_error(
-            globals.json,
-            "sync",
-            &e.to_string(),
-            sync_exit(&e),
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
+        RefreshFail::Sync(e) => super::emit::sync_error(globals, session, &e),
         RefreshFail::Db(e) => emit_error(
             globals.json,
             "local",
@@ -161,13 +182,5 @@ fn refresh_exit(globals: &Globals, session: &Session, err: RefreshFail) -> ExitC
             session.profile.clone(),
             Some(session.identity_ref()),
         ),
-    }
-}
-
-fn sync_exit(err: &SyncError) -> u8 {
-    match err {
-        SyncError::OfflineMiss => 7,
-        SyncError::Api(_) => 4,
-        SyncError::Db(_) | SyncError::Ingest(_) => 13,
     }
 }

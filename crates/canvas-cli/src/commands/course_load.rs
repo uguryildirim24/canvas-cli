@@ -34,12 +34,6 @@ pub async fn ensure_courses(
     fresh: bool,
     offline: bool,
 ) -> Result<RefreshOutcome, RefreshFail> {
-    if let Some(client) = &session.client {
-        return refresh_courses(client, &session.open.store, scope, ttl, now, fresh, offline)
-            .await
-            .map_err(RefreshFail::Sync);
-    }
-
     let dataset = CoursesDataset::new(scope, ttl);
     let lookup = session
         .open
@@ -51,20 +45,36 @@ pub async fn ensure_courses(
         .await
         .map_err(RefreshFail::Db)?;
 
-    if let LookupResult::Hit(row) = &lookup
-        && !fresh
-    {
-        return Ok(cache_outcome(row, false));
+    let grades_stale = session
+        .open
+        .store
+        .call(move |conns| {
+            let rows = load_courses_for_scope(conns, scope.as_str())?;
+            Ok(grade_freshness(conns, &rows, now, false)?
+                .iter()
+                .any(|f| f.stale))
+        })
+        .await
+        .map_err(RefreshFail::Db)?;
+    if let Some(outcome) = cached_outcome(lookup, fresh || grades_stale, offline)? {
+        return Ok(outcome);
     }
-
-    if offline {
-        return match complete_row(lookup) {
-            Some(row) => Ok(cache_outcome(&row, true)),
-            None => Err(RefreshFail::OfflineMiss),
-        };
-    }
-
-    Err(RefreshFail::NeedAuth)
+    session
+        .validate_network_token()
+        .await
+        .map_err(RefreshFail::Sync)?;
+    let client = session.client.as_ref().ok_or(RefreshFail::NeedAuth)?;
+    refresh_courses(
+        client,
+        &session.open.store,
+        scope,
+        ttl,
+        now,
+        fresh || grades_stale,
+        false,
+    )
+    .await
+    .map_err(RefreshFail::Sync)
 }
 
 fn complete_row(lookup: LookupResult) -> Option<FetchLogRow> {
@@ -138,6 +148,7 @@ pub struct CourseRow {
     pub current_grade: Option<String>,
     pub final_score: Option<f64>,
     pub final_grade: Option<String>,
+    pub period_mode: String,
     pub period_id: Option<String>,
     pub period_title: Option<String>,
 }
@@ -155,6 +166,7 @@ type CourseSqlRow = (
     Option<f64>,
     Option<String>,
     Option<f64>,
+    Option<String>,
     Option<String>,
     Option<String>,
 );
@@ -175,6 +187,7 @@ fn map_sql_row(row: CourseSqlRow) -> CourseRow {
         final_score,
         final_grade,
         totals_raw,
+        period_mode,
     ) = row;
     let data_json: Value =
         serde_json::from_str(&data_raw).unwrap_or_else(|_| Value::Object(Map::default()));
@@ -206,6 +219,7 @@ fn map_sql_row(row: CourseSqlRow) -> CourseRow {
         current_grade,
         final_score,
         final_grade,
+        period_mode: period_mode.unwrap_or_else(|| "all".into()),
         period_id,
         period_title,
     }
@@ -227,22 +241,23 @@ fn read_course_columns(r: &rusqlite::Row<'_>) -> Result<CourseSqlRow, rusqlite::
         r.get(11)?,
         r.get(12)?,
         r.get(13)?,
+        r.get(14)?,
     ))
 }
 
 const COURSE_SELECT: &str =
     "SELECT c.id, c.course_code, c.name, c.html_url, c.term_id, c.data_json,
                 t.name, t.start_at, t.end_at,
-                ct.current_score, ct.current_grade, ct.final_score, ct.final_grade, ct.data_json";
+                ct.current_score, ct.current_grade, ct.final_score, ct.final_grade, ct.data_json, ct.mode";
 
-/// Load membership courses for a scope, with term and totals (mode `all`).
+/// Load membership courses for a scope, with term and totals for the default period mode.
 pub fn load_courses_for_scope(conns: &StoreConns, scope: &str) -> Result<Vec<CourseRow>, DbError> {
     let sql = format!(
         "{COURSE_SELECT}
          FROM membership m
          INNER JOIN courses c ON c.id = CAST(m.entity_id AS INTEGER)
          LEFT JOIN terms t ON t.id = c.term_id
-         LEFT JOIN course_totals ct ON ct.course_id = c.id AND ct.mode = 'all'
+         LEFT JOIN course_totals ct ON ct.course_id = c.id AND ct.mode = CASE WHEN json_extract(c.data_json, '$.has_grading_periods') = 1 OR EXISTS (SELECT 1 FROM course_totals current WHERE current.course_id=c.id AND current.mode='current' AND json_extract(current.data_json,'$.period_id') IS NOT NULL) THEN 'current' ELSE 'all' END
          WHERE m.dataset = 'courses' AND m.scope = ?1 AND m.entity_kind = 'course'"
     );
     let mut stmt = conns.cache.prepare(&sql)?;
@@ -258,7 +273,7 @@ pub fn load_course_by_id(conns: &StoreConns, id: i64) -> Result<Option<CourseRow
         "{COURSE_SELECT}
          FROM courses c
          LEFT JOIN terms t ON t.id = c.term_id
-         LEFT JOIN course_totals ct ON ct.course_id = c.id AND ct.mode = 'all'
+         LEFT JOIN course_totals ct ON ct.course_id = c.id AND ct.mode = CASE WHEN json_extract(c.data_json, '$.has_grading_periods') = 1 OR EXISTS (SELECT 1 FROM course_totals current WHERE current.course_id=c.id AND current.mode='current' AND json_extract(current.data_json,'$.period_id') IS NOT NULL) THEN 'current' ELSE 'all' END
          WHERE c.id = ?1"
     );
     let row = conns
@@ -288,7 +303,7 @@ fn period_meta(totals_raw: Option<&str>) -> (Option<String>, Option<String>) {
 }
 
 impl CourseRow {
-    /// Convert to list JSON with grades period mode `all`.
+    /// Convert to list JSON with the course's default grade period.
     #[must_use]
     pub fn to_course_json(&self) -> CourseJson {
         CourseJson {
@@ -305,20 +320,20 @@ impl CourseRow {
             is_favorite: self.is_favorite,
             restricted: self.restricted,
             html_url: self.html_url.clone(),
-            grades: self.grades_all(),
+            grades: self.grades(),
         }
     }
 
-    /// Grades from `course_totals` mode `all`.
+    /// Grades from the selected `course_totals` mode.
     #[must_use]
-    pub fn grades_all(&self) -> GradeJson {
+    pub fn grades(&self) -> GradeJson {
         GradeJson {
             current_score: self.current_score,
             current_grade: self.current_grade.clone(),
             final_score: self.final_score,
             final_grade: self.final_grade.clone(),
             period: PeriodJson {
-                mode: "all".into(),
+                mode: self.period_mode.clone(),
                 id: self.period_id.clone(),
                 title: self.period_title.clone(),
             },
@@ -410,4 +425,45 @@ pub fn fetch_log_freshness(
             stale: row.stale,
         }),
     )
+}
+
+pub fn cached_outcome(
+    lookup: LookupResult,
+    fresh: bool,
+    offline: bool,
+) -> Result<Option<RefreshOutcome>, RefreshFail> {
+    if let LookupResult::Hit(row) = &lookup
+        && !fresh
+        && !offline
+    {
+        return Ok(Some(cache_outcome(row, false)));
+    }
+    if offline {
+        return complete_row(lookup)
+            .map(|row| Some(cache_outcome(&row, true)))
+            .ok_or(RefreshFail::OfflineMiss);
+    }
+    Ok(None)
+}
+
+/// Totals have a shorter TTL and independent observation clocks from the course list.
+pub fn grade_freshness(
+    conns: &StoreConns,
+    rows: &[CourseRow],
+    now: Timestamp,
+    offline: bool,
+) -> Result<Vec<Freshness>, DbError> {
+    use canvas_core::sync::CourseTotalsDataset;
+    let ttl = crate::session::ttl_grades();
+    rows.iter().map(|row| {
+        let dataset = CourseTotalsDataset::new(row.id, ttl);
+        let lookup = lookup_dataset(conns, &dataset, now, None)?;
+        let (log, hit) = match lookup { LookupResult::Hit(log) => (Some(log), true), LookupResult::Stale(log) => (Some(log), false), LookupResult::Miss => (None, false) };
+        let key = format!("{}|{}", row.id, row.period_mode);
+        let oldest: Option<String> = conns.cache.query_row("SELECT MIN(observed_at) FROM field_obs WHERE entity_kind='course_totals' AND entity_key=?1", [key], |r| r.get(0))?;
+        let has_values = row.current_score.is_some() || row.current_grade.is_some() || row.final_score.is_some() || row.final_grade.is_some();
+        let fields_fresh = if let Some(raw) = oldest { let at: Timestamp = raw.parse().map_err(|_| DbError::Message("invalid grade observation timestamp".into()))?; at <= now && at.checked_add(ttl).is_ok_and(|expiry| now <= expiry) } else { !has_values };
+        Ok(Freshness { dataset: "course_totals".into(), scope: format!("course:{}",row.id), source: FreshnessSource::Cache,
+            fetched_at: log.as_ref().map(|l| l.fetched_at.to_string()), complete: log.as_ref().is_some_and(|l| l.complete), count: log.as_ref().and_then(|l| u64_count(l.count)), stale: offline || !hit || !fields_fresh })
+    }).collect()
 }
