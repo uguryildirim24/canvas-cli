@@ -85,6 +85,12 @@ fn all_store_handles_use_one_worker_and_survive_panics() {
         .call_blocking(|_| Ok(std::thread::current().id()))
         .unwrap();
     assert_eq!(a, b);
+    let manifest_thread =
+        crate::io::sqlite::call(&paths.state_db, |_| Ok(std::thread::current().id())).unwrap();
+    assert_eq!(a, manifest_thread);
+    assert!(
+        crate::io::sqlite::call::<()>(&paths.state_db, |_| panic!("manifest job panic")).is_err()
+    );
     assert!(matches!(
         first.call_blocking::<_, ()>(|_| panic!("job panic")),
         Err(DbError::WorkerPanicked)
