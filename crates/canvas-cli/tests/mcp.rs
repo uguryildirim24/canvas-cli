@@ -59,6 +59,11 @@ const CATALOG: &[&str] = &[
     "operation.reconcile",
     "receipts.acknowledge",
     "open.url",
+    "context.attach",
+    "context.here",
+    "context.detach",
+    "context.note",
+    "context.follow",
 ];
 
 struct Fixture {
@@ -1237,8 +1242,11 @@ async fn every_tool_returns_the_envelope_the_cli_prints() {
     let covered: Vec<&str> = EQUIVALENTS.iter().map(|(tool, ..)| *tool).collect();
     let mut expected: Vec<&str> = CATALOG.to_vec();
     // Every execute is left out: it needs a recorded approval, and the CLI
-    // has no equivalent that runs one without a person.
-    expected.retain(|name| !name.ends_with(".execute"));
+    // has no equivalent that runs one without a person. The three `context.*`
+    // tools name the calling consumer and the CLI does not, so their documents
+    // differ by design; `tests/bridge.rs` and `tests/m7b.rs` cover them
+    // against a live broker.
+    expected.retain(|name| !name.ends_with(".execute") && !name.starts_with("context."));
     assert_eq!(covered, expected, "a tool has no command behind it");
 
     for (tool, arguments, args) in EQUIVALENTS {
@@ -1682,19 +1690,38 @@ async fn resources_are_private_to_the_identity_generation() {
     let refused = mcp.primary("resources/read", json!({ "uri": foreign }));
     assert!(refused["result"].is_null(), "{refused}");
 
-    // The consumer bridge is a later package: the resource exists and says so.
+    // Reading the resource attaches nothing. No broker is running here, so
+    // the bundle is the `here@1` refusal, not an error and not a bundle.
+    // The handle is this session's own: `consumer_of` spells it from the
+    // client name in `_meta`.
     let context = mcp.primary(
         "resources/read",
-        json!({ "uri": format!("{prefix}context/some-consumer") }),
+        json!({ "uri": format!("{prefix}context/mcp:test-host") }),
     );
     let text = context["result"]["contents"][0]["text"].as_str().unwrap();
     let document: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(document["schema"], "canvas-cli/here@1");
     assert_eq!(document["outcome"], "refused");
     assert_eq!(document["exit"], 8);
-    // The reason travels in `reason`, as every §3.2 refusal does.
-    assert_eq!(document["result"]["code"], "refused");
-    assert_eq!(document["result"]["details"]["reason"], "not_attached");
+    assert_eq!(document["result"]["reason"], "bridge_unavailable");
+    assert_eq!(document["result"]["state"], "not_attached");
+    assert!(document["result"]["browser"].is_null(), "{document}");
+    // Browser context is an observation: it is never cacheable.
     assert_eq!(context["result"]["ttlMs"], 0);
+
+    // Another consumer's handle is served the same shape, so the URI cannot
+    // be used to tell one consumer's state from another's.
+    let foreign = mcp.primary(
+        "resources/read",
+        json!({ "uri": format!("{prefix}context/some-consumer") }),
+    );
+    let text = foreign["result"]["contents"][0]["text"].as_str().unwrap();
+    let document: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(document["schema"], "canvas-cli/here@1");
+    assert_eq!(document["outcome"], "refused");
+    assert_eq!(document["exit"], 8);
+    assert_eq!(document["result"]["reason"], "not_attached");
+    assert!(document["result"]["browser"].is_null(), "{document}");
     mcp.stop();
 }
 

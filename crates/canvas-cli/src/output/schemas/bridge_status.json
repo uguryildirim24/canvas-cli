@@ -1,0 +1,26 @@
+{
+  "endpoint": "/Users/rolf/.local/share/canvas-cli/bridge/courses.example.test-12345-3f9a1c2e.sock",
+  "manifest": {
+    "browser": "chrome",
+    "path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+    "present": true,
+    "host_name": "com.canvas_cli.bridge",
+    "extension_id": "abcdefghijklmnopabcdefghijklmnop"
+  },
+  "owner": {
+    "live": true,
+    "pid": 40312,
+    "started_at": "2026-09-10T16:00:00Z"
+  },
+  "attachments": [
+    {
+      "state": "attached",
+      "origin": "https://courses.example.test",
+      "account_user_id": "12345",
+      "zone": "open",
+      "consumers": ["mcp:claude-code"],
+      "attached_at": "2026-09-10T16:03:11Z",
+      "navigation_generation": 3
+    }
+  ]
+}

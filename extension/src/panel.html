@@ -1,0 +1,96 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>canvas-cli</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  body {
+    margin: 0;
+    padding: 12px;
+  }
+  h1 {
+    font-size: 15px;
+    margin: 0 0 4px;
+    overflow-wrap: anywhere;
+  }
+  h2 {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.6;
+    margin: 20px 0 6px;
+  }
+  h3 {
+    font-size: 13px;
+    margin: 0 0 4px;
+  }
+  p {
+    margin: 0 0 4px;
+    overflow-wrap: anywhere;
+  }
+  .quiet {
+    opacity: 0.65;
+  }
+  .state {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+  }
+  .digest,
+  .file,
+  .ref {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    opacity: 0.75;
+  }
+  .warn {
+    color: #a15c00;
+  }
+  .blocked {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+  article {
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 6px;
+    padding: 8px;
+    margin: 0 0 8px;
+  }
+  article.plan {
+    border-color: #a15c00;
+  }
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+    margin: 4px 0;
+  }
+  .actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  button {
+    font: inherit;
+    padding: 4px 10px;
+  }
+  .markdown ul,
+  .markdown ol {
+    margin: 4px 0;
+    padding-left: 18px;
+  }
+  blockquote {
+    margin: 4px 0;
+    padding-left: 8px;
+    border-left: 2px solid rgba(128, 128, 128, 0.4);
+  }
+</style>
+<body>
+  <main id="panel"></main>
+  <script src="shared.js"></script>
+  <script src="sanitize.js"></script>
+  <script src="markdown.js"></script>
+  <script src="panel_view.js"></script>
+  <script src="panel.js"></script>
+</body>

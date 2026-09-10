@@ -94,6 +94,12 @@ const SHAPES: &[Shape] = shapes![
     ("canvas-cli/error@1", "error.json"),
     ("canvas-cli/watch@1", "watch.json"),
     ("canvas-cli/event@1", "event.json"),
+    ("canvas-cli/here@1", "here.json"),
+    ("canvas-cli/note@1", "note.json"),
+    ("canvas-cli/follow@1", "follow.json"),
+    ("canvas-cli/bridge@1", "bridge_status.json"),
+    ("canvas-cli/bridge@1", "bridge_install.json"),
+    ("canvas-cli/bridge@1", "bridge_detach.json"),
 ];
 
 /// Appendix D `T?` fields whose fixture shows an example value instead of null.
@@ -164,6 +170,24 @@ const NULLABLE_WITH_EXAMPLE: &[&str] = &[
     "canvas-cli/todo@1:items[].scheduled_at_local",
     "canvas-cli/todo@1:items[].status.graded",
     "canvas-cli/todo@1:items[].status.submitted",
+    // `here@1` = `ContextBundle@1` (REPORT §3.3). Every one of these is
+    // absent when the answer does not carry it, and the fixture shows the
+    // populated form so the shape stays described.
+    "canvas-cli/here@1:attachment",
+    "canvas-cli/here@1:browser",
+    "canvas-cli/here@1:browser.page_kind",
+    "canvas-cli/here@1:browser.course_id",
+    "canvas-cli/here@1:browser.assignment_id",
+    "canvas-cli/here@1:browser.url",
+    "canvas-cli/here@1:browser.title",
+    "canvas-cli/here@1:browser.selection",
+    "canvas-cli/here@1:browser.text",
+    "canvas-cli/here@1:consumer",
+    "canvas-cli/bridge@1:manifest.extension_id",
+    "canvas-cli/bridge@1:manifest.path",
+    "canvas-cli/bridge@1:owner.pid",
+    "canvas-cli/bridge@1:owner.started_at",
+    "canvas-cli/bridge@1:attachment_id",
 ];
 
 /// Fields whose Appendix D type is whatever the underlying value is.

@@ -16,6 +16,7 @@ Commands (v1):
   grades, files, download, modules
   announcements, announcement, calendar
   open, open assignment|file|announcement
+  bridge install|host|status|detach, here, note
   sync, watch, notify, cache stats|clear|path
   config path|edit|get|set
   alias set|list|remove
@@ -27,6 +28,31 @@ pub enum ColorChoice {
     Auto,
     Always,
     Never,
+}
+
+/// A Chromium-family browser `bridge install` can register the host with.
+///
+/// The per-user `NativeMessagingHosts` directory of each lives in
+/// `crate::bridge::manifest`; the enum is here because it is part of the
+/// command tree `xtask dist-assets` renders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lower")]
+pub enum Browser {
+    Chrome,
+    Chromium,
+    Edge,
+}
+
+impl Browser {
+    /// The name printed in messages and in `bridge@1`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Chrome => "chrome",
+            Self::Chromium => "chromium",
+            Self::Edge => "edge",
+        }
+    }
 }
 
 #[derive(Debug, Clone, ValueEnum, serde::Deserialize, schemars::JsonSchema)]
@@ -346,6 +372,45 @@ pub enum Commands {
         /// Course id, code, alias, or a Canvas URL.
         #[arg(required = true)]
         target: Option<String>,
+        /// Navigate the attached Canvas tab instead of opening a new window.
+        ///
+        /// This is not a preview: Canvas' own page controllers run, and a
+        /// discussion page marks itself read when it loads.
+        #[arg(long)]
+        follow: bool,
+        /// The attachment to navigate. The sole one is used when omitted.
+        #[arg(long, value_name = "ID", requires = "follow")]
+        attachment: Option<String>,
+    },
+    /// Set up and inspect the browser companion broker.
+    Bridge {
+        #[command(subcommand)]
+        command: BridgeCommand,
+    },
+    /// Show the attached Canvas page as a context bundle.
+    Here {
+        /// The attachment to read. The sole one is used when it is omitted.
+        #[arg(long, value_name = "ID")]
+        attachment: Option<String>,
+        /// Also ask for the selected passage and the visible excerpt.
+        #[arg(long)]
+        text: bool,
+    },
+    /// Show one inert note in the companion's side panel.
+    Note {
+        /// The attachment to show it on. The sole one is used when omitted.
+        #[arg(long, value_name = "ID")]
+        attachment: Option<String>,
+        /// The note, as Markdown source. A sanitized subset of it is rendered.
+        #[arg(long, required = true)]
+        text: String,
+        /// A page of the attached Canvas, or a `canvas://` reference.
+        #[arg(long = "source-ref", value_name = "REF")]
+        source_refs: Vec<String>,
+        /// Refuse the note unless the tab is still on this navigation
+        /// generation. `canvas here` reports the current one.
+        #[arg(long, value_name = "N")]
+        generation: Option<u64>,
     },
     /// Refresh cached datasets.
     Sync {
@@ -509,6 +574,38 @@ pub enum OpenCommand {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum BridgeCommand {
+    /// Write the Chrome native-messaging host manifest for this user.
+    Install {
+        /// The extension id Chrome shows for the unpacked companion.
+        #[arg(long, value_name = "ID")]
+        extension_id: Option<String>,
+        /// Which Chromium-family browser to install for.
+        #[arg(long, value_enum)]
+        browser: Option<Browser>,
+    },
+    /// Speak Chrome native messaging on stdin and stdout.
+    ///
+    /// Chrome starts this; it is not an interactive command.
+    Host {
+        /// The caller origin Chrome passes as the first argument.
+        #[arg(value_name = "CALLER_ORIGIN")]
+        caller_origin: Option<String>,
+        /// Chrome passes this on Windows. It is accepted and ignored.
+        #[arg(long, value_name = "HANDLE")]
+        parent_window: Option<String>,
+    },
+    /// Report the manifest, the broker owner, and the attachment.
+    Status,
+    /// Ask the live owner to drop the attachment.
+    Detach {
+        /// The attachment to drop. The sole one is used when it is omitted.
+        #[arg(long, value_name = "ID")]
+        attachment: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum InboxCommand {
     /// Show one conversation and its messages.
     Show {
@@ -635,6 +732,15 @@ pub enum AliasCommand {
     Remove { name: String },
 }
 
+/// Whether an argument is the caller origin Chrome passes a native host.
+///
+/// Chrome always spells it `chrome-extension://<id>/`; the id itself is
+/// checked against the configured one before a message is read.
+#[must_use]
+pub fn is_native_messaging_caller(argument: &str) -> bool {
+    argument.starts_with("chrome-extension://")
+}
+
 impl Cli {
     pub fn validate(&self) -> Result<(), clap::Error> {
         // Clap checks each command level before propagating global values.
@@ -660,6 +766,7 @@ impl Cli {
                 Commands::Open {
                     command: Some(_),
                     target: Some(_),
+                    ..
                 } => Some("an open target cannot be used with an open subcommand"),
                 Commands::Discussion {
                     command: Some(_),
@@ -692,7 +799,12 @@ impl Cli {
 impl Commands {
     pub fn has_raw_output(&self) -> bool {
         match self {
-            Self::Completions { .. }
+            // `bridge host` speaks Chrome's native-messaging framing on
+            // stdout, not the §7 output contract (REPORT §3.2).
+            Self::Bridge {
+                command: BridgeCommand::Host { .. },
+            }
+            | Self::Completions { .. }
             // Notify posts derived alerts, not a query result, so it has no
             // §7 payload and no Appendix D row (REPORT §3.6).
             | Self::Notify { .. }

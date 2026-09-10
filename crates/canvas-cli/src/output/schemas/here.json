@@ -1,0 +1,61 @@
+{
+  "attachment": "0f3c9a1b2d4e5f60718293a4b5c6d7e8",
+  "state": "attached",
+  "consumer": "mcp:claude-code",
+  "identity": {
+    "key": "courses.example.test-12345-3f9a1c2e",
+    "generation": "01932f3a-7a1b-7c3d-8e90-123456789abc"
+  },
+  "api": {
+    "course": null,
+    "assignment": null,
+    "announcement": null
+  },
+  "browser": {
+    "origin": "https://courses.example.test",
+    "account": { "user_id": "12345", "observed_at": "2026-09-10T16:04:40Z" },
+    "zone": "open",
+    "page_kind": "assignment",
+    "course_id": "45679",
+    "assignment_id": "98765",
+    "topic_id": null,
+    "quiz_id": null,
+    "page_url": null,
+    "url": "https://courses.example.test/courses/45679/assignments/98765",
+    "title": "Essay 1",
+    "document_id": "6C1F7A2E9B3D4A58",
+    "frame_id": 0,
+    "navigation_generation": 3,
+    "observed_at": "2026-09-10T16:04:40Z",
+    "ttl_ms": 0,
+    "selection": "the passage the reader pointed at",
+    "text": "the visible editor excerpt",
+    "selection_bytes": 32,
+    "text_bytes": 26,
+    "truncated": false,
+    "content_reason": null,
+    "follow": {
+      "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
+      "url": "https://courses.example.test/courses/45679/assignments/98765",
+      "dispatched": true,
+      "dispatched_at": "2026-09-10T16:04:39Z",
+      "dispatch_ms": 41,
+      "generation": 3,
+      "load": "loaded",
+      "load_at": "2026-09-10T16:04:40Z"
+    },
+    "notes": [
+      {
+        "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
+        "consumer": "mcp:claude-code",
+        "text": "The rubric asks for two sources. See the assignment page.",
+        "source_refs": [
+          "https://courses.example.test/courses/45679/assignments/98765"
+        ],
+        "at": "2026-09-10T16:04:38Z",
+        "generation": 3
+      }
+    ]
+  },
+  "reason": null
+}

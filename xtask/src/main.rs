@@ -1,6 +1,7 @@
 //! Workspace automation tasks.
 
 mod bench;
+mod bench_bridge;
 mod bench_fixture;
 mod bench_mcp;
 mod dist_assets;
@@ -33,6 +34,9 @@ enum Command {
         /// Also measure the agent surface (`canvas mcp`).
         #[arg(long)]
         mcp: bool,
+        /// Also measure the browser companion's broker (`canvas bridge host`).
+        #[arg(long)]
+        bridge: bool,
         /// Report a missed target without failing.
         #[arg(long)]
         no_fail: bool,
@@ -152,6 +156,7 @@ fn main() -> ExitCode {
             fixture,
             runs,
             mcp,
+            bridge,
             no_fail,
             watch,
             doc,
@@ -161,6 +166,7 @@ fn main() -> ExitCode {
                 runs,
                 no_fail,
                 mcp,
+                bridge,
                 watch,
                 doc,
             };

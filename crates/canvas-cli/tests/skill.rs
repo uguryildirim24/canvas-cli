@@ -51,6 +51,11 @@ const CATALOG: &[&str] = &[
     "operation.reconcile",
     "receipts.acknowledge",
     "open.url",
+    "context.attach",
+    "context.here",
+    "context.detach",
+    "context.note",
+    "context.follow",
 ];
 
 /// The two tools that can send a submission to Canvas.
