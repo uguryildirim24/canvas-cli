@@ -128,6 +128,9 @@ fn load_items(
         "SELECT id, title, position, content_id, \"type\", data_json
          FROM module_items
          WHERE course_id = ?1 AND module_id = ?2
+           AND id IN (SELECT CAST(entity_id AS INTEGER) FROM membership
+                      WHERE dataset = 'module_items' AND entity_kind = 'module_item'
+                        AND scope = 'course:' || ?1 || ':module:' || ?2)
          ORDER BY position, id",
     )?;
     let rows = stmt.query_map(params![course_id, module_id], |r| {

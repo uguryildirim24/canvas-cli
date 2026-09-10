@@ -341,7 +341,14 @@ fn upsert_module(
         applied.status,
     )?;
     if let Some(payload) = split.items_payload {
-        write_items_side_effect(tx, &payload, fetched_at)?;
+        write_items_side_effect(
+            tx,
+            &payload,
+            fetched_at,
+            split.course_id,
+            id,
+            applied.fields.contains(&"items_complete"),
+        )?;
     }
     Ok(())
 }
@@ -445,6 +452,9 @@ fn write_items_side_effect(
     tx: &Transaction<'_>,
     payload: &str,
     fetched_at: Timestamp,
+    course_id: i64,
+    module_id: i64,
+    replace_membership: bool,
 ) -> Result<(), IngestError> {
     let items: Vec<Value> = serde_json::from_str(payload).map_err(|e| {
         DbError::Sqlite(rusqlite::Error::FromSqlConversionFailure(
@@ -453,11 +463,25 @@ fn write_items_side_effect(
             Box::new(e),
         ))
     })?;
-    for item in items {
+    let scope = format!("course:{course_id}:module:{module_id}");
+    if replace_membership {
+        tx.execute(
+            "DELETE FROM membership WHERE dataset = 'module_items' AND scope = ?1",
+            params![scope],
+        )?;
+    }
+    for (position, item) in items.into_iter().enumerate() {
         let key = item
             .get("entity_key")
             .and_then(Value::as_str)
             .ok_or_else(|| DbError::Message("items payload missing entity_key".into()))?;
+        if replace_membership {
+            tx.execute(
+                "INSERT OR IGNORE INTO membership (dataset, scope, entity_kind, entity_id, position)
+                 VALUES ('module_items', ?1, 'module_item', ?2, ?3)",
+                params![scope, key, i64::try_from(position).unwrap_or(i64::MAX)],
+            )?;
+        }
         let field_map = item
             .get("fields")
             .and_then(Value::as_object)
