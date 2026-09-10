@@ -47,18 +47,23 @@ pub async fn run(globals: &Globals, full: bool) -> ExitCode {
         );
     };
 
+    if let Err(e) = session.validate_network_token().await {
+        return super::emit::sync_error(globals, &session, &e);
+    }
+
     let mut warnings = Vec::new();
     if full {
         warnings.push("--full is assembled in M4-b; refreshing M1-b datasets only".into());
     }
 
-    let datasets = match refresh_all(globals, &session, client).await {
+    let refreshed = match refresh_all(globals, &session, client).await {
         Ok(d) => d,
         Err(code) => return code,
     };
 
-    let api: u64 = datasets.iter().map(|d| d.requests).sum();
-    let result = SyncResult { datasets };
+    let result = SyncResult {
+        datasets: refreshed.datasets,
+    };
     let mut envelope = base_envelope(SCHEMA_SYNC, &session, result);
     envelope.freshness = envelope
         .result
@@ -66,21 +71,33 @@ pub async fn run(globals: &Globals, full: bool) -> ExitCode {
         .iter()
         .map(SyncDatasetJson::to_freshness)
         .collect();
-    envelope.requests.api = api;
+    envelope.requests = session.requests();
+    envelope.partial = refreshed.partial;
+    if !envelope.partial.is_empty() {
+        envelope.outcome = crate::output::Outcome::Partial;
+        envelope.exit = 12;
+    }
     envelope.warnings = warnings;
 
     emit(globals.json, &envelope, || print_table(&envelope.result))
 }
 
+struct Refreshed {
+    datasets: Vec<SyncDatasetJson>,
+    partial: Vec<crate::output::PartialScope>,
+}
+
+#[allow(clippy::too_many_lines)]
 async fn refresh_all(
     globals: &Globals,
     session: &Session,
     client: &canvas_api::Client,
-) -> Result<Vec<SyncDatasetJson>, ExitCode> {
+) -> Result<Refreshed, ExitCode> {
     let now = now_timestamp();
     let ttl_c = ttl_courses();
     let ttl_g = ttl_grades();
     let mut datasets = Vec::new();
+    let mut partial = Vec::new();
 
     let courses = refresh_courses(
         client,
@@ -88,7 +105,7 @@ async fn refresh_all(
         CoursesScope::Active,
         ttl_c,
         now,
-        globals.fresh,
+        true,
         false,
     )
     .await
@@ -101,7 +118,7 @@ async fn refresh_all(
         PeriodKey::None,
         ttl_g,
         now,
-        globals.fresh,
+        true,
         false,
     )
     .await
@@ -130,21 +147,78 @@ async fn refresh_all(
         })?;
 
     for course_id in course_ids {
-        let outcome = refresh_grading_periods(
+        let before = client.telemetry().api;
+        match refresh_grading_periods(
             client,
             &session.open.store,
             course_id,
             ttl_g,
             now,
-            globals.fresh,
+            true,
             false,
         )
         .await
-        .map_err(|e| sync_err(globals, session, &e))?;
-        datasets.push(to_dataset(&outcome));
+        {
+            Ok(outcome) => datasets.push(to_dataset(&outcome)),
+            Err(e) if e.classification().1 == 8 || e.classification().1 == 6 => {
+                partial.push(crate::output::PartialScope {
+                    scope: format!("grading_periods:course:{course_id}"),
+                    http_status: e.classification().2,
+                    message: e.safe_message(),
+                });
+                datasets.push(SyncDatasetJson {
+                    dataset: "grading_periods".into(),
+                    scope: format!("course:{course_id}"),
+                    source: FreshnessSource::Network,
+                    fetched_at: None,
+                    complete: false,
+                    count: None,
+                    stale: true,
+                    requests: client.telemetry().api.saturating_sub(before),
+                    error: Some(e.safe_message()),
+                });
+            }
+            Err(e) => return Err(sync_err(globals, session, &e)),
+        }
     }
+    let derived = session.open.store.call(|conns| {
+        let mut stmt = conns.cache.prepare("SELECT dataset,scope FROM fetch_log WHERE (dataset='terms' AND scope='active') OR (dataset='course_totals' AND scope IN (SELECT 'course:' || entity_id FROM membership WHERE dataset='courses' AND scope='active'))")?;
+        let keys = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
+        keys.into_iter().map(|(d,s)| super::course_load::fetch_log_freshness(conns, &d, &s)).collect::<Result<Vec<_>,_>>()
+    }).await.map_err(|e| sync_err(globals, session, &SyncError::Db(e)))?;
+    for row in derived.into_iter().flatten() {
+        datasets.push(SyncDatasetJson {
+            dataset: row.dataset,
+            scope: row.scope,
+            source: if courses.error.is_some() {
+                FreshnessSource::Cache
+            } else {
+                FreshnessSource::Network
+            },
+            fetched_at: row.fetched_at,
+            complete: row.complete,
+            count: row.count,
+            stale: courses.freshness.stale || row.stale,
+            requests: 0,
+            error: courses.error.clone(),
+        });
+    }
+    datasets.sort_by(|a, b| (&a.dataset, &a.scope).cmp(&(&b.dataset, &b.scope)));
 
-    Ok(datasets)
+    for dataset in &datasets {
+        let scope = format!("{}:{}", dataset.dataset, dataset.scope);
+        if let Some(message) = &dataset.error
+            && !partial.iter().any(|p| p.scope == scope)
+        {
+            partial.push(crate::output::PartialScope {
+                scope,
+                http_status: None,
+                message: message.clone(),
+            });
+        }
+    }
+    partial.sort_by(|a, b| a.scope.cmp(&b.scope));
+    Ok(Refreshed { datasets, partial })
 }
 
 fn print_table(result: &SyncResult) -> io::Result<()> {
@@ -185,17 +259,5 @@ fn to_dataset(outcome: &RefreshOutcome) -> SyncDatasetJson {
 }
 
 fn sync_err(globals: &Globals, session: &Session, err: &SyncError) -> ExitCode {
-    let (code, exit) = match err {
-        SyncError::OfflineMiss => ("offline", 7),
-        SyncError::Api(_) => ("network", 4),
-        SyncError::Db(_) | SyncError::Ingest(_) => ("local", 13),
-    };
-    emit_error(
-        globals.json,
-        code,
-        &err.to_string(),
-        exit,
-        session.profile.clone(),
-        Some(session.identity_ref()),
-    )
+    super::emit::sync_error(globals, session, err)
 }

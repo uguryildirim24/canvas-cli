@@ -24,7 +24,7 @@ pub enum CacheCmd {
 
 /// Run `canvas cache …`.
 pub async fn run(globals: &Globals, command: CacheCmd) -> ExitCode {
-    let session = match globals.open_session() {
+    let session = match globals.open_local_session() {
         Ok(s) => s,
         Err(e) => return session_error(globals.json, e, globals.profile.clone()),
     };

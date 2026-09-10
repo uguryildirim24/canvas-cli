@@ -76,6 +76,7 @@ fn courses_json_snapshot_from_fixture_cache() {
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
+        .env("TZ", "America/New_York")
         .env_remove("CANVAS_TOKEN")
         .args(["courses", "--offline", "--json", "--color", "never"])
         .output()

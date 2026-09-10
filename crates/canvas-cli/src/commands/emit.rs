@@ -6,8 +6,7 @@ use std::process::ExitCode;
 use serde::Serialize;
 
 use crate::output::{
-    Envelope, ErrorResult, IdentityRef, Outcome, Requests, SCHEMA_ERROR, error_envelope,
-    generated_at_now,
+    Envelope, ErrorResult, IdentityRef, Outcome, SCHEMA_ERROR, error_envelope, generated_at_now,
 };
 use crate::session::{Session, SessionError};
 
@@ -23,6 +22,9 @@ pub fn emit<T: Serialize>(
             return ExitCode::from(1);
         }
         return envelope.exit_code();
+    }
+    for warning in &envelope.warnings {
+        let _ = writeln!(io::stderr(), "warning: {warning}");
     }
     if let Err(e) = human() {
         let _ = writeln!(io::stderr(), "{e}");
@@ -41,7 +43,7 @@ pub fn emit_error(
     identity: Option<IdentityRef>,
 ) -> ExitCode {
     let mut env = error_envelope(code, message, None, serde_json::json!({}), exit);
-    env.profile = profile;
+    env.profile = if identity.is_some() { profile } else { None };
     env.identity = identity;
     if json {
         let _ = env.write_json(io::stdout());
@@ -54,6 +56,7 @@ pub fn emit_error(
 /// Map [`SessionError`] to an exit.
 pub fn session_error(json: bool, err: SessionError, profile: Option<String>) -> ExitCode {
     match err {
+        SessionError::Usage(message) => emit_error(json, "usage", &message, 2, profile, None),
         SessionError::Auth(message) => emit_error(json, "auth", &message, 3, profile, None),
         SessionError::Local(message) => emit_error(json, "local", &message, 13, profile, None),
     }
@@ -68,7 +71,7 @@ pub fn base_envelope<T>(schema: &str, session: &Session, result: T) -> Envelope<
         profile: session.profile.clone(),
         identity: Some(session.identity_ref()),
         freshness: Vec::new(),
-        requests: Requests::default(),
+        requests: session.requests(),
         partial: Vec::new(),
         warnings: Vec::new(),
         outcome: Outcome::Ok,
@@ -95,4 +98,68 @@ pub fn error_result(code: &str, message: &str) -> ErrorResult {
 #[allow(dead_code)]
 pub fn error_schema() -> &'static str {
     SCHEMA_ERROR
+}
+
+/// Keep API variants, status, and invocation telemetry on every abort.
+pub fn sync_error(
+    globals: &super::Globals,
+    session: &Session,
+    err: &canvas_core::sync::SyncError,
+) -> ExitCode {
+    let (code, exit, status) = err.classification();
+    let mut env = error_envelope(
+        code,
+        err.safe_message(),
+        status,
+        serde_json::json!({}),
+        exit,
+    );
+    env.profile.clone_from(&session.profile);
+    env.identity = Some(session.identity_ref());
+    env.requests = session.requests();
+    emit(globals.json, &env, || {
+        writeln!(io::stderr(), "{}", env.result.message)
+    })
+}
+
+pub fn resolve_error(
+    globals: &super::Globals,
+    session: &Session,
+    err: &canvas_core::resolve::ResolveError,
+) -> ExitCode {
+    use canvas_core::resolve::ResolveError;
+    let candidates: Vec<_> = match err {
+        ResolveError::NotFound { candidates } | ResolveError::Ambiguous { candidates } => {
+            candidates
+                .iter()
+                .map(
+                    |c| serde_json::json!({"id": c.id.to_string(), "code": c.code, "name": c.name}),
+                )
+                .collect()
+        }
+        _ => Vec::new(),
+    };
+    let mut env = error_envelope(
+        "resolution",
+        err.to_string(),
+        None,
+        serde_json::json!({"candidates": candidates}),
+        6,
+    );
+    env.profile.clone_from(&session.profile);
+    env.identity = Some(session.identity_ref());
+    env.requests = session.requests();
+    emit(globals.json, &env, || {
+        writeln!(io::stderr(), "{err}")?;
+        for c in &candidates {
+            writeln!(
+                io::stderr(),
+                "{}  {}  {}",
+                c["id"].as_str().unwrap_or(""),
+                c["code"].as_str().unwrap_or(""),
+                c["name"].as_str().unwrap_or("")
+            )?;
+        }
+        Ok(())
+    })
 }

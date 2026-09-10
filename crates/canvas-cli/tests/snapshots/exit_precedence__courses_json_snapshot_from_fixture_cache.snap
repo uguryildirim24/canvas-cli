@@ -12,7 +12,16 @@ expression: value
       "fetched_at": "2026-09-09T16:00:00Z",
       "scope": "active",
       "source": "cache",
-      "stale": false
+      "stale": true
+    },
+    {
+      "complete": false,
+      "count": null,
+      "dataset": "course_totals",
+      "fetched_at": null,
+      "scope": "course:101",
+      "source": "cache",
+      "stale": true
     }
   ],
   "generated_at": "2026-09-09T17:05:12Z",
@@ -60,5 +69,7 @@ expression: value
     ]
   },
   "schema": "canvas-cli/courses@1",
-  "warnings": []
+  "warnings": [
+    "served stale courses cache"
+  ]
 }
