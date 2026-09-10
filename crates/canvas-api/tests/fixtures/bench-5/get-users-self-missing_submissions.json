@@ -1,0 +1,64 @@
+{
+  "method": "GET",
+  "path": "/api/v1/users/self/missing_submissions",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "course_id": 101,
+      "due_at": "2026-01-02T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10107",
+      "id": 10107,
+      "name": "Assignment 7",
+      "points_possible": 40.0,
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 102,
+      "due_at": "2026-01-02T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/102/assignments/10207",
+      "id": 10207,
+      "name": "Assignment 7",
+      "points_possible": 40.0,
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 103,
+      "due_at": "2026-01-02T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/103/assignments/10307",
+      "id": 10307,
+      "name": "Assignment 7",
+      "points_possible": 40.0,
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 104,
+      "due_at": "2026-01-02T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/104/assignments/10407",
+      "id": 10407,
+      "name": "Assignment 7",
+      "points_possible": 40.0,
+      "submission_types": [
+        "online_upload"
+      ]
+    },
+    {
+      "course_id": 105,
+      "due_at": "2026-01-02T16:00:00Z",
+      "html_url": "https://canvas.example.edu/courses/105/assignments/10507",
+      "id": 10507,
+      "name": "Assignment 7",
+      "points_possible": 40.0,
+      "submission_types": [
+        "online_upload"
+      ]
+    }
+  ]
+}
