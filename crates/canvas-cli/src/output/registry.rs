@@ -39,6 +39,12 @@ pub const SCHEMA_ERROR: &str = "canvas-cli/error@1";
 #[derive(Debug, Clone, Copy)]
 pub struct SchemaEntry {
     pub id: &'static str,
+    /// Which Appendix D `result` shape this fixture is.
+    ///
+    /// `None` for a schema with one shape. A schema whose Appendix D row lists
+    /// several — `receipts@1`, `cache@1`, `config@1`, `identity@1` — has one
+    /// entry per shape, named after the subcommand that emits it.
+    pub variant: Option<&'static str>,
     pub fixture: &'static str,
 }
 
@@ -49,123 +55,193 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
     &[
         SchemaEntry {
             id: SCHEMA_COURSES,
+            variant: None,
             fixture: include_str!("schemas/courses.json"),
         },
         SchemaEntry {
             id: SCHEMA_COURSE,
+            variant: None,
             fixture: include_str!("schemas/course.json"),
         },
         SchemaEntry {
             id: SCHEMA_TODO,
+            variant: None,
             fixture: include_str!("schemas/todo.json"),
         },
         SchemaEntry {
             id: SCHEMA_ASSIGNMENTS,
+            variant: None,
             fixture: include_str!("schemas/assignments.json"),
         },
         SchemaEntry {
             id: SCHEMA_ASSIGNMENT,
+            variant: None,
             fixture: include_str!("schemas/assignment.json"),
         },
         SchemaEntry {
             id: SCHEMA_SUBMIT,
+            variant: None,
             fixture: include_str!("schemas/submit.json"),
         },
         SchemaEntry {
             id: SCHEMA_SUBMISSION,
+            variant: None,
             fixture: include_str!("schemas/submission.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECEIPT,
+            variant: None,
             fixture: include_str!("schemas/receipt.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECEIPTS,
+            variant: Some("list"),
             fixture: include_str!("schemas/receipts.json"),
         },
         SchemaEntry {
             id: SCHEMA_VERIFY,
+            variant: None,
             fixture: include_str!("schemas/verify.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECONCILE,
+            variant: None,
             fixture: include_str!("schemas/reconcile.json"),
         },
         SchemaEntry {
             id: SCHEMA_GRADES,
+            variant: None,
             fixture: include_str!("schemas/grades.json"),
         },
         SchemaEntry {
             id: SCHEMA_FILES,
+            variant: None,
             fixture: include_str!("schemas/files.json"),
         },
         SchemaEntry {
             id: SCHEMA_MODULES,
+            variant: None,
             fixture: include_str!("schemas/modules.json"),
         },
         SchemaEntry {
             id: SCHEMA_DOWNLOAD,
+            variant: None,
             fixture: include_str!("schemas/download.json"),
         },
         SchemaEntry {
             id: SCHEMA_ANNOUNCEMENTS,
+            variant: None,
             fixture: include_str!("schemas/announcements.json"),
         },
         SchemaEntry {
             id: SCHEMA_ANNOUNCEMENT,
+            variant: None,
             fixture: include_str!("schemas/announcement.json"),
         },
         SchemaEntry {
             id: SCHEMA_CALENDAR,
+            variant: None,
             fixture: include_str!("schemas/calendar.json"),
         },
         SchemaEntry {
             id: SCHEMA_OPEN,
+            variant: None,
             fixture: include_str!("schemas/open.json"),
         },
         SchemaEntry {
             id: SCHEMA_SYNC,
+            variant: None,
             fixture: include_str!("schemas/sync.json"),
         },
         SchemaEntry {
             id: SCHEMA_CACHE,
-            fixture: include_str!("schemas/cache.json"),
+            variant: Some("stats"),
+            fixture: include_str!("schemas/cache_stats.json"),
         },
         SchemaEntry {
             id: SCHEMA_ALIAS,
+            variant: None,
             fixture: include_str!("schemas/alias.json"),
         },
         SchemaEntry {
             id: SCHEMA_AUTH_STATUS,
+            variant: None,
             fixture: include_str!("schemas/auth_status.json"),
         },
         SchemaEntry {
             id: SCHEMA_AUTH_LOGIN,
+            variant: None,
             fixture: include_str!("schemas/auth_login.json"),
         },
         SchemaEntry {
             id: SCHEMA_AUTH_LOGOUT,
+            variant: None,
             fixture: include_str!("schemas/auth_logout.json"),
         },
         SchemaEntry {
             id: SCHEMA_IDENTITY,
+            variant: Some("list"),
             fixture: include_str!("schemas/identity.json"),
         },
         SchemaEntry {
             id: SCHEMA_CONFIG,
+            variant: Some("get"),
             fixture: include_str!("schemas/config.json"),
         },
         SchemaEntry {
             id: SCHEMA_DOCTOR,
+            variant: None,
             fixture: include_str!("schemas/doctor.json"),
         },
         SchemaEntry {
             id: SCHEMA_VERSION,
+            variant: None,
             fixture: include_str!("schemas/version.json"),
         },
         SchemaEntry {
             id: SCHEMA_ERROR,
+            variant: None,
             fixture: include_str!("schemas/error.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_RECEIPTS,
+            variant: Some("show"),
+            fixture: include_str!("schemas/receipts_show.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_RECEIPTS,
+            variant: Some("export"),
+            fixture: include_str!("schemas/receipts_export.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_RECEIPTS,
+            variant: Some("acknowledge"),
+            fixture: include_str!("schemas/receipts_acknowledge.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_CACHE,
+            variant: Some("clear"),
+            fixture: include_str!("schemas/cache_clear.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_CACHE,
+            variant: Some("path"),
+            fixture: include_str!("schemas/cache_path.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_CONFIG,
+            variant: Some("set"),
+            fixture: include_str!("schemas/config_set.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_CONFIG,
+            variant: Some("path"),
+            fixture: include_str!("schemas/config_path.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_IDENTITY,
+            variant: Some("remove"),
+            fixture: include_str!("schemas/identity_remove.json"),
         },
     ]
 }
@@ -601,7 +677,12 @@ mod tests {
             let mut rendered = Vec::new();
             let mut ids = std::collections::HashSet::new();
             for entry in all_schemas() {
-                assert!(ids.insert(entry.id), "duplicate schema {}", entry.id);
+                assert!(
+                    ids.insert((entry.id, entry.variant)),
+                    "duplicate schema {} variant {:?}",
+                    entry.id,
+                    entry.variant
+                );
                 let result: serde_json::Value =
                     serde_json::from_str(entry.fixture).unwrap_or_else(|e| {
                         panic!("fixture for {} is not JSON: {e}", entry.id);

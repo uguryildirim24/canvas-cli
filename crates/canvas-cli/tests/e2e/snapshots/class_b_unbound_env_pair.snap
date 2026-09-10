@@ -3,11 +3,11 @@ source: crates/canvas-cli/tests/e2e/harness.rs
 expression: value
 ---
 {
-  "exit": 0,
+  "exit": 3,
   "freshness": [],
   "generated_at": "2026-09-09T17:05:12Z",
   "identity": null,
-  "outcome": "ok",
+  "outcome": "error",
   "partial": [],
   "profile": null,
   "requests": {
@@ -16,18 +16,12 @@ expression: value
     "storage": 0
   },
   "result": {
-    "identities": [
-      {
-        "journals_pending": 0,
-        "key": "<identity>",
-        "name": null,
-        "origin": "<origin>",
-        "profiles": [],
-        "size_bytes": 0,
-        "user_id": "1"
-      }
-    ]
+    "code": "auth",
+    "details": {},
+    "http_status": null,
+    "message": "no identity selected; set CANVAS_IDENTITY_KEY, --profile, or default_profile",
+    "server_errors": []
   },
-  "schema": "canvas-cli/identity@1",
+  "schema": "canvas-cli/error@1",
   "warnings": []
 }

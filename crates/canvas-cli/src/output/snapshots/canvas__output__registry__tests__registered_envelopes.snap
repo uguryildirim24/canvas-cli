@@ -1373,6 +1373,9 @@ expression: rendered
         "origin": "https://example.instructure.com",
         "user_id": "1"
       },
+      "pending_cleanup": [
+        "keyring"
+      ],
       "profile": "default",
       "stray_sources": [],
       "token_source": "keyring",
@@ -1545,6 +1548,302 @@ expression: rendered
       "server_errors": []
     },
     "schema": "canvas-cli/error@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "journal": {
+        "acknowledged_at": null,
+        "assignment_id": "202",
+        "assignment_name": "Essay 1",
+        "baseline_attempt": 0,
+        "course_code": "CS-101",
+        "course_id": "101",
+        "created_at": "2026-09-09T16:04:58Z",
+        "error": null,
+        "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+        "kind": "online_upload",
+        "not_submitted_evidence": null,
+        "owner": "n/a",
+        "post_status": 201,
+        "posted": {
+          "attachments": [
+            {
+              "content_type": "application/pdf",
+              "display_name": "essay.pdf",
+              "id": "55001",
+              "size": 24576
+            }
+          ],
+          "attempt": 1,
+          "body_sha256": null,
+          "evidence": "post-response",
+          "excused": false,
+          "late": false,
+          "missing": false,
+          "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "submission_id": "9001",
+          "submission_type": "online_upload",
+          "submitted_at": "2026-09-09T16:05:00Z",
+          "submitted_at_local": "2026-09-09T12:05:00-04:00",
+          "url": null,
+          "workflow_state": "submitted"
+        },
+        "readback": null,
+        "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+        "response_kind": null,
+        "server_match": null,
+        "state": "submitted",
+        "superseded": false,
+        "updated_at": "2026-09-09T16:05:01Z",
+        "uploaded_file_ids": [
+          "55001"
+        ]
+      },
+      "receipt": {
+        "assignment_id": "202",
+        "assignment_name": "Essay 1",
+        "attribution": "observed",
+        "baseline_attempt": 0,
+        "cli_version": "0.1.0",
+        "course_code": "CS-101",
+        "course_id": "101",
+        "created_at": "2026-09-09T16:04:58Z",
+        "due_at": "2026-09-15T23:59:59Z",
+        "files": [
+          {
+            "canvas_file_id": "55001",
+            "name": "essay.pdf",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size": 24576
+          }
+        ],
+        "identity": {
+          "key": "example.instructure.com-1-deadbeef",
+          "origin": "https://example.instructure.com",
+          "user_id": "1"
+        },
+        "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+        "kind": "online_upload",
+        "posted": {
+          "attachments": [
+            {
+              "content_type": "application/pdf",
+              "display_name": "essay.pdf",
+              "id": "55001",
+              "size": 24576
+            }
+          ],
+          "attempt": 1,
+          "body_sha256": null,
+          "evidence": "post-response",
+          "excused": false,
+          "late": false,
+          "missing": false,
+          "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "submission_id": "9001",
+          "submission_type": "online_upload",
+          "submitted_at": "2026-09-09T16:05:00Z",
+          "submitted_at_local": "2026-09-09T12:05:00-04:00",
+          "url": null,
+          "workflow_state": "submitted"
+        },
+        "readback": {
+          "attachments": [
+            {
+              "content_type": "application/pdf",
+              "display_name": "essay.pdf",
+              "id": "55001",
+              "size": 24576
+            }
+          ],
+          "body_sha256": null,
+          "late": false,
+          "submitted_at": "2026-09-09T16:05:00Z",
+          "submitted_at_local": "2026-09-09T12:05:00-04:00"
+        },
+        "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+        "text": null,
+        "url": null
+      }
+    },
+    "schema": "canvas-cli/receipts@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "bytes": 1024,
+      "path": "/home/ada/receipt.json",
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde"
+    },
+    "schema": "canvas-cli/receipts@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "acknowledged_at": "2026-09-09T16:20:00Z",
+      "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd"
+    },
+    "schema": "canvas-cli/receipts@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "cleared": true,
+      "rows_deleted": 12
+    },
+    "schema": "canvas-cli/cache@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "path": "/tmp/canvas-cli/cache"
+    },
+    "schema": "canvas-cli/cache@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": null,
+    "outcome": "ok",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "key": "default_profile",
+      "previous": null,
+      "value": "default"
+    },
+    "schema": "canvas-cli/config@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": null,
+    "outcome": "ok",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "path": "/home/ada/.config/canvas-cli/config.toml"
+    },
+    "schema": "canvas-cli/config@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": null,
+    "outcome": "ok",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "default_profile_cleared": true,
+      "key": "example.instructure.com-1-deadbeef",
+      "profiles_removed": [
+        "default"
+      ],
+      "removed": true
+    },
+    "schema": "canvas-cli/identity@1",
     "warnings": []
   }
 ]

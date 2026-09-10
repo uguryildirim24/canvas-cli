@@ -54,8 +54,8 @@ expression: value
       "comments": [
         {
           "author": "Ada",
-          "created_at": null,
-          "created_at_local": null,
+          "created_at": "<clock>",
+          "created_at_local": "2026-09-09T11:00:00-04:00",
           "id": "1",
           "text": "nice"
         }
