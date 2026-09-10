@@ -68,6 +68,7 @@ struct ClientInner {
     user_agent: String,
     http: HttpClient,
     transfer_http: HttpClient,
+    upload_http: HttpClient,
     governor: Governor,
 }
 
@@ -132,6 +133,16 @@ impl Client {
             .build()
             .map_err(|_| Error::Network)?;
 
+        let upload_http = HttpClient::builder()
+            .use_rustls_tls()
+            .no_proxy()
+            .no_gzip()
+            .no_brotli()
+            .redirect(Policy::none())
+            .connect_timeout(Duration::from_secs(10))
+            .user_agent(user_agent)
+            .build()
+            .map_err(|_| Error::Network)?;
         Ok(Self {
             inner: Arc::new(ClientInner {
                 origin,
@@ -139,6 +150,7 @@ impl Client {
                 user_agent: user_agent.to_owned(),
                 http,
                 transfer_http,
+                upload_http,
                 governor: Governor::new(governor),
             }),
         })
@@ -281,6 +293,10 @@ impl Client {
 
     pub(crate) fn http(&self) -> &HttpClient {
         &self.inner.http
+    }
+
+    pub(crate) fn upload_http(&self) -> &HttpClient {
+        &self.inner.upload_http
     }
 
     pub(crate) fn transfer_http(&self) -> &HttpClient {
@@ -532,3 +548,6 @@ impl fmt::Debug for TransferResponse {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod transfer_tests;
