@@ -247,7 +247,11 @@ fn check_envelope(name: &str, envelope: &Value) {
     check_ids_and_local_siblings(name, &envelope["result"]);
 }
 
-/// Ids are decimal strings and every `ts+local` field has its sibling (§7).
+/// Ids are decimal strings, and no `_local` field stands without its base (§7).
+///
+/// The other half of the `ts+local` rule — every field Appendix D marks
+/// `ts+local` really carries a `_local` sibling — is enforced by [`compare`],
+/// which requires the live key set to equal the fixture's in both directions.
 fn check_ids_and_local_siblings(name: &str, value: &Value) {
     match value {
         Value::Object(map) => {
@@ -264,11 +268,6 @@ fn check_ids_and_local_siblings(name: &str, value: &Value) {
                         !entry.is_number(),
                         "{name}: {key} is a number; §7 makes ids strings"
                     );
-                }
-                if let Some(base) = key.strip_suffix("_at")
-                    && map.contains_key(&format!("{key}_local"))
-                {
-                    let _ = base;
                 }
                 check_ids_and_local_siblings(name, entry);
             }

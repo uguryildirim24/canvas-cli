@@ -56,6 +56,37 @@ async fn doctor() {
     snapshot_both(&env, "doctor", &["doctor", "--network"], 0);
 }
 
+/// Without `--network`, the network checks are reported as `skipped` (§5).
+///
+/// `doctor` is the one command whose two forms produce different check lists,
+/// and the local form is the one a class-B invocation actually runs.
+#[tokio::test]
+async fn doctor_without_network() {
+    let server = CanvasServer::start().await;
+    let env = E2e::with_server(&server);
+    env.set_default_profile("default");
+    snapshot_both(&env, "doctor_local", &["doctor"], 0);
+
+    let run = env.run(&["doctor", "--json"]);
+    let value = run.json();
+    let checks = value["result"]["checks"].as_array().expect("checks");
+    for name in [
+        "network_users_self",
+        "network_rate_limit",
+        "network_clock_skew",
+    ] {
+        let check = checks
+            .iter()
+            .find(|c| c["name"] == name)
+            .unwrap_or_else(|| panic!("{name} is still reported"));
+        assert_eq!(check["status"], "skipped", "{name} without --network");
+    }
+    assert_eq!(
+        value["requests"]["api"], 0,
+        "the local form opens no connection"
+    );
+}
+
 // ------------------------------------------------------------------ auth ---
 
 #[tokio::test]
