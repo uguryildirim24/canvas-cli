@@ -16,7 +16,7 @@ use comfy_table::Row;
 use super::Globals;
 use super::course::{refresh_fail, resolve_with_refresh};
 use super::course_load::{
-    CourseRow, RefreshFail, cached_outcome, ensure_courses, load_course_by_id,
+    CourseRow, RefreshFail, cached_outcome, ensure_courses, grade_freshness, load_course_by_id,
     load_courses_for_scope, outcome_freshness,
 };
 use super::emit::{base_envelope, emit, emit_error, session_error};
@@ -158,6 +158,23 @@ async fn build(
         && by_course.is_empty()
     {
         return Err(unknown_period(globals, session, id));
+    }
+
+    // The default modes read `course_totals`, whose TTL and per-field clocks
+    // run independently of the course list, so the envelope declares that
+    // dataset too (SPEC §7 freshness, §10).
+    if let Some(mode) = period.totals_mode() {
+        let rows_for_freshness = rows.clone();
+        let offline = globals.offline;
+        let totals_freshness = session
+            .open
+            .store
+            .call(move |conns| {
+                grade_freshness(conns, &rows_for_freshness, now, offline, Some(mode))
+            })
+            .await
+            .map_err(|e| local_error(globals, session, &e.to_string()))?;
+        envelope.freshness.extend(totals_freshness);
     }
 
     let mut courses = Vec::new();

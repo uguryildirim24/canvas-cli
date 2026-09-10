@@ -35,6 +35,15 @@ expression: v
     {
       "complete": true,
       "count": 2,
+      "dataset": "course_totals",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "course:101",
+      "source": "cache",
+      "stale": true
+    },
+    {
+      "complete": true,
+      "count": 2,
       "dataset": "assignment_groups",
       "fetched_at": "2026-09-09T16:00:00Z",
       "scope": "course:101:period:none",

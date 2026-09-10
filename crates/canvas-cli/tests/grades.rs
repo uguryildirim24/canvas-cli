@@ -700,6 +700,8 @@ fn offline_with_coverage_serves_the_cache_without_requests() {
         .collect();
     assert!(datasets.contains(&"courses"), "{datasets:?}");
     assert!(datasets.contains(&"enrollment_grades"), "{datasets:?}");
+    // The default modes read `course_totals`, so it is declared too.
+    assert!(datasets.contains(&"course_totals"), "{datasets:?}");
     // Offline coverage is served stale.
     for row in v["freshness"].as_array().unwrap() {
         assert_eq!(row["source"], "cache", "{row}");
