@@ -3,6 +3,7 @@
 use std::io::{self, Write};
 use std::process::ExitCode;
 
+use super::handled::Handled;
 use crate::output::{Envelope, SCHEMA_VERSION};
 
 /// Crate version of the running binary.
@@ -14,14 +15,19 @@ pub const COMMIT: Option<&str> = option_env!("CANVAS_COMMIT");
 /// Target triple the binary was built for.
 pub const TARGET: &str = env!("CANVAS_BUILD_TARGET");
 
-/// Emit `version@1`: version, commit, target.
+/// Run `canvas version` for the CLI: one envelope, one exit code.
 pub fn run(json: bool) -> ExitCode {
+    handle().emit(json)
+}
+
+/// Build `version@1`: version, commit, target.
+pub fn handle() -> Handled {
     let envelope = Envelope::new(SCHEMA_VERSION, None, None).with_result(serde_json::json!({
         "version": VERSION,
         "commit": COMMIT,
         "target": TARGET,
     }));
-    super::emit::emit(json, &envelope, || {
+    Handled::new(envelope, |_| {
         let mut stdout = io::stdout().lock();
         match COMMIT {
             Some(commit) => writeln!(stdout, "{VERSION} ({commit}, {TARGET})"),

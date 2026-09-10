@@ -189,14 +189,16 @@ async fn main() -> ExitCode {
                 } => {
                     commands::submit::run(
                         &m1b_globals(&globals),
-                        target,
-                        assignment,
-                        files,
-                        text,
-                        html,
-                        url,
-                        comment,
-                        yes,
+                        commands::submit::SubmitArgs {
+                            target,
+                            assignment,
+                            files,
+                            text,
+                            html,
+                            url,
+                            comment,
+                            yes,
+                        },
                     )
                     .await
                 }

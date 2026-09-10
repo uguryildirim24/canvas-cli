@@ -1,5 +1,6 @@
 //! `canvas todo` (class C).
-use super::emit::{base_envelope, emit, emit_error, session_error, sync_error};
+use super::emit::{base_envelope, emit_error, session_error, sync_error};
+use super::handled::Handled;
 use super::{Globals, assignment_read as read};
 use crate::output::{SCHEMA_TODO, now_timestamp};
 use crate::session::{ttl_assignments, ttl_courses};
@@ -11,6 +12,7 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 #[allow(clippy::too_many_lines)]
+/// Run `canvas todo` for the CLI: one envelope, one exit code.
 pub async fn run(
     globals: &Globals,
     days: Option<u32>,
@@ -18,9 +20,21 @@ pub async fn run(
     missing: bool,
     course: Option<String>,
 ) -> ExitCode {
+    handle(globals, days, all, missing, course)
+        .await
+        .emit(globals.json)
+}
+
+pub async fn handle(
+    globals: &Globals,
+    days: Option<u32>,
+    all: bool,
+    missing: bool,
+    course: Option<String>,
+) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let days = days.unwrap_or(14);
     if days == 0
@@ -31,7 +45,6 @@ pub async fn run(
             .is_err()
     {
         return emit_error(
-            globals.json,
             "usage",
             "days must be positive and fit the supported date range",
             2,
@@ -77,7 +90,7 @@ pub async fn run(
     let mut outcomes = Vec::new();
     match courses {
         Ok(o) => outcomes.push(o),
-        Err(e) => return sync_error(globals, &session, &e),
+        Err(e) => return sync_error(&session, &e),
     }
     let planner_scope = match read::planner(&session, globals, window.clone()).await {
         Ok(o) => {
@@ -85,11 +98,11 @@ pub async fn run(
             outcomes.push(o);
             scope
         }
-        Err(e) => return sync_error(globals, &session, &e),
+        Err(e) => return sync_error(&session, &e),
     };
     match read::missing(&session, globals).await {
         Ok(o) => outcomes.push(o),
-        Err(e) => return sync_error(globals, &session, &e),
+        Err(e) => return sync_error(&session, &e),
     }
     let mut resolver_freshness = Vec::new();
     let course_id = if let Some(course) = course {
@@ -106,12 +119,12 @@ pub async fn run(
     let active=match session.open.store.call(|conns|{
         let mut stmt=conns.cache.prepare("SELECT CAST(entity_id AS INTEGER) FROM membership WHERE dataset='courses' AND scope='active' AND entity_kind='course'")?;
         Ok(stmt.query_map([],|r|r.get::<_,i64>(0))?.collect::<Result<Vec<_>,_>>()?)
-    }).await{Ok(ids)=>ids,Err(e)=>return sync_error(globals,&session,&e.into())};
+    }).await{Ok(ids)=>ids,Err(e)=>return sync_error(&session,&e.into())};
     if all {
         for id in &active {
             match read::assignments(&session, globals, *id).await {
                 Ok(o) => outcomes.push(o),
-                Err(e) => return sync_error(globals, &session, &e),
+                Err(e) => return sync_error(&session, &e),
             }
         }
     }
@@ -124,7 +137,7 @@ pub async fn run(
     .await
     {
         Ok(o) => outcomes.extend(o),
-        Err(e) => return sync_error(globals, &session, &e),
+        Err(e) => return sync_error(&session, &e),
     }
     let view=session.open.store.call({let window=window.clone();let todo_window=todo_window.clone();let zone=zone.clone();move|conns|{
         let mut planner=todo::load_planner_rows(conns,&planner_scope)?;
@@ -157,7 +170,7 @@ pub async fn run(
     }}).await;
     let (items, counts) = match view {
         Ok(v) => v,
-        Err(e) => return sync_error(globals, &session, &e.into()),
+        Err(e) => return sync_error(&session, &e.into()),
     };
     let result = json!({"window":{"start":todo_window.start.to_string(),"end":todo_window.end.to_string(),"days":days},"items":items.iter().map(|i|item_json(i,&zone)).collect::<Vec<_>>(),"counts":{"missing":counts.missing,"due_today":counts.due_today,"due_week":counts.due_week,"hidden":counts.hidden}});
     let mut envelope = base_envelope(SCHEMA_TODO, &session, result);
@@ -177,7 +190,8 @@ pub async fn run(
     envelope
         .warnings
         .extend(outcomes.into_iter().filter_map(|o| o.error));
-    emit(globals.json, &envelope, || {
+    let color = read::use_color(globals);
+    Handled::new(envelope, move |_| {
         writeln!(
             io::stdout(),
             "missing={} due_today={} due_week={} hidden={}",
@@ -186,11 +200,7 @@ pub async fn run(
             counts.due_week,
             counts.hidden
         )?;
-        writeln!(
-            io::stdout(),
-            "{}",
-            read::human_todo(&items, &zone, read::use_color(globals))
-        )
+        writeln!(io::stdout(), "{}", read::human_todo(&items, &zone, color))
     })
 }
 fn item_json(item: &TodoItem, zone: &jiff::tz::TimeZone) -> Value {
