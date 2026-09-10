@@ -724,6 +724,18 @@ pub async fn agent_execute(globals: &Globals, plan_id: &str, consumer: &str) -> 
         Ok(plan) => plan,
         Err(e) => return Admitted::Done(map_plan_error(&session, e)),
     };
+    // The mirror of the guard `operation::agent_execute` carries. A discussion
+    // or inbox plan is admitted by `canvas_core::operations::execute`, which
+    // revalidates its own target; sending one down the submission road would
+    // otherwise take the assignment admission lock and re-read assignment 0
+    // before the plan layer refused it.
+    if plan.kind.is_operation() {
+        return Admitted::Done(plan_refusal(
+            &session,
+            "invalidated",
+            "this plan is a discussion or inbox write; use its own execute tool",
+        ));
+    }
     // A plan that already admitted a journal replays it, and that is a local
     // read: it answers even when the network is gone (SPEC §19 item 17).
     if plan.state == PlanState::Executed {

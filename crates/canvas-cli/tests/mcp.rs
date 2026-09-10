@@ -811,6 +811,20 @@ async fn a_write_tool_asks_for_an_approval_and_replies_once() {
     assert_eq!(plan["operation"]["kind"], "discussion_reply");
     assert_eq!(posts(&server).await, 0, "prepare sent something");
 
+    // A write plan is never admitted by the submission road, and the other
+    // way round: each execute refuses the kind that is not its own.
+    let crossed = mcp.eliciting(
+        "tools/call",
+        json!({
+            "name": "submission.execute",
+            "arguments": { "plan_id": plan["plan_id"] },
+        }),
+    );
+    let envelope = &crossed["result"]["structuredContent"];
+    assert_eq!(envelope["exit"], 8, "{crossed}");
+    assert_eq!(envelope["result"]["details"]["reason"], "invalidated");
+    assert_eq!(posts(&server).await, 0, "a misrouted plan sent something");
+
     // Executing asks, and asking still sends nothing.
     let asked = mcp.eliciting(
         "tools/call",
