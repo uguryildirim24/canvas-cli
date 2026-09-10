@@ -53,13 +53,32 @@ pub async fn run(
     let now = now_timestamp();
     let zone = read::zone(&session);
     let today = now.to_zoned(zone.clone()).date();
-    let window = PlannerWindow::todo_default(today, days);
+    let window = since_window(today, days);
     let cutoff = cutoff.and_then(|span| now.checked_sub(span).ok());
 
     let mut freshness = Vec::new();
-    let course_ids = match courses_in_scope(globals, &session, course, &mut freshness).await {
+    // The fetch always covers the active courses, so every invocation shares
+    // one cached window (§12.6); `<course>` filters what is shown.
+    let course_ids = match active_course_ids(globals, &session, &mut freshness).await {
         Ok(ids) => ids,
         Err(code) => return code,
+    };
+    let only_course = if let Some(course) = course {
+        match super::course::resolve_with_refresh(globals, &session, &course).await {
+            Ok((resolved, rows, _)) => {
+                for row in rows {
+                    if !freshness.iter().any(|f: &crate::output::Freshness| {
+                        f.dataset == row.dataset && f.scope == row.scope
+                    }) {
+                        freshness.push(row);
+                    }
+                }
+                Some(resolved.id)
+            }
+            Err(code) => return code,
+        }
+    } else {
+        None
     };
 
     let context_window = ContextWindow::courses(window.clone(), &course_ids);
@@ -91,6 +110,7 @@ pub async fn run(
 
     let mut items: Vec<AnnouncementJson> = rows
         .iter()
+        .filter(|row| only_course.is_none_or(|id| row.course_id == Some(id)))
         .filter(|row| cutoff.is_none_or(|at| row.posted_at.is_none_or(|posted| posted >= at)))
         .map(|row| row.to_json(&zone))
         .collect();
@@ -115,7 +135,7 @@ pub async fn run(
             .warnings
             .push("served stale announcements cache".into());
     }
-    let codes = course_codes(&envelope.result.announcements);
+    let codes = course_labels(&session, &batch.denials).await;
     for scope in denial_scopes(&batch.denials, &codes) {
         envelope.warnings.push(scope.message.clone());
         envelope.partial.push(scope);
@@ -126,6 +146,14 @@ pub async fn run(
     emit(globals.json, &envelope, || {
         print_table(&envelope.result.announcements, &zone)
     })
+}
+
+/// `--since` looks back: the window ends today and starts `days` before it.
+fn since_window(today: Date, days: u32) -> PlannerWindow {
+    let start = today
+        .checked_sub(Span::new().days(i64::from(days)))
+        .unwrap_or(today);
+    PlannerWindow { start, end: today }
 }
 
 /// Days of coverage and the exact cutoff `--since` asks for.
@@ -142,22 +170,12 @@ fn window_span(since: Option<&str>) -> Option<(u32, Option<Span>)> {
     }
 }
 
-/// The course ids the fetch covers: one named course, or every active course.
-async fn courses_in_scope(
+/// Every active course: the fetch set for the window (§12.6).
+async fn active_course_ids(
     globals: &Globals,
     session: &Session,
-    course: Option<String>,
     freshness: &mut Vec<crate::output::Freshness>,
 ) -> Result<Vec<i64>, ExitCode> {
-    if let Some(course) = course {
-        let (resolved, rows, _) =
-            match super::course::resolve_with_refresh(globals, session, &course).await {
-                Ok(v) => v,
-                Err(code) => return Err(code),
-            };
-        freshness.extend(rows);
-        return Ok(vec![resolved.id]);
-    }
     let courses = match super::course_load::ensure_courses(
         session,
         CoursesScope::Active,
@@ -283,15 +301,41 @@ pub(crate) fn denial_scopes(
         .collect()
 }
 
-fn course_codes(items: &[AnnouncementJson]) -> HashMap<String, String> {
-    items
+/// Course codes for the denied courses, so `partial[]` names them the way
+/// the student sees them.
+pub(crate) async fn course_labels(
+    session: &Session,
+    denials: &[ContextDenial],
+) -> HashMap<String, String> {
+    let ids: Vec<i64> = denials
         .iter()
-        .filter_map(|item| {
-            let id = item.course_id.clone()?;
-            let code = item.course_code.clone()?;
-            Some((id, code))
+        .filter_map(ContextDenial::course_id)
+        .collect();
+    if ids.is_empty() {
+        return HashMap::new();
+    }
+    session
+        .open
+        .store
+        .call(move |conns| {
+            use rusqlite::OptionalExtension;
+            let mut out = HashMap::new();
+            for id in ids {
+                let code: Option<String> = conns
+                    .cache
+                    .query_row("SELECT course_code FROM courses WHERE id = ?1", [id], |r| {
+                        r.get(0)
+                    })
+                    .optional()?
+                    .flatten();
+                if let Some(code) = code {
+                    out.insert(id.to_string(), code);
+                }
+            }
+            Ok(out)
         })
-        .collect()
+        .await
+        .unwrap_or_default()
 }
 
 /// Appendix D: `posted_at` descending, then `id`.
