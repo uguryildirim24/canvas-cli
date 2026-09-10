@@ -953,6 +953,137 @@ A read goes through the same command core the matching tool uses, so a resource 
 
 `docs/agent-hosts.md` records which hosts were actually run against a build on the owner's machine, what each negotiated, and what stayed untested. It is evidence, not a claim: a host that is not in its table was not exercised. The two third-party hosts that connected both negotiated `2025-11-25`; the primary revision is exercised only by the project's own clients, and the approval round trip is verified only against the project's own client.
 
+## 22. Coordinator, events, `watch`, `notify`
+
+Built by M6-c (`docs/reviews/code-M6-c.md`), M6-c2 (`docs/reviews/code-M6-c2.md`), and M8-a3 (`docs/reviews/code-M8-a3.md`), from `docs/agent-ux/REPORT.md` §3.6 and §3.4. Every CLI, `watch`, and `mcp` process that binds one identity shares its network work through the identity directory and `state.sqlite`. There is no daemon.
+
+### 22.1 The coordinator
+
+Four shared things, all per identity:
+
+| Purpose | Where |
+|---|---|
+| Cross-process request permit | `<identity dir>/locks/api-slot-<n>.lock`, one file for each `0 <= n < api_concurrency` |
+| Dataset scope refresh single-flight | `<identity dir>/locks/refresh-<dataset>-<scope>.lock` |
+| Foreground submission interest | `<identity dir>/locks/interest-assignment-<id>.lock` and the `interest` table |
+| The shared §11 governor | the `governor` table |
+
+Lock files are created with `create_new` when absent, locked with `fs4`, and **never deleted**; only `identity remove` removes them (§3.4). The root identity lock keeps its §9 path and is never deleted either.
+
+**Permits.** An admitted API request holds one slot file for its whole duration, so the §11 concurrency cap is the same number whether one process or five are running, and a process that dies frees its slot with its descriptor. `flock` is per open file description, so the cap also holds between tasks inside one process. While every slot is taken the waiter polls between 2 ms and 40 ms. If the lock directory fails for longer than 5 seconds the request is admitted without a cross-process slot: a broken directory degrades to this process's own cap and says so, instead of hanging the command. Storage transfers keep a per-process semaphore.
+
+**The shared governor row.** `governor` holds one row (`id = 1`) with the §11 `estimate`, `watermark`, `cooldown_until`, `refill`, and `updated_at`. It is read before an admission decision and merged back under `BEGIN IMMEDIATE`. Two merge rules, because §11 has two:
+
+- **Before an admission decision**, the conservative rule applies: a lower stored estimate always wins, a higher one only above the watermark, and a live cooldown is adopted.
+- **Right after this process applied a response sample**, only a strictly newer row may displace that sample. In process, §11 already lets a header replace the estimate outright; without this rule the shared estimate would fall by one pre-charge per request and never recover, and a cooldown could never end.
+
+The per-process issue counter is realigned above any watermark this process adopts, so a process that adopts another's watermark can still apply its own later sample. The §11 header-silence reset belongs to the row, not to one process: a process that has read a live row does not reset the estimate to full from its own clock.
+
+The coordinator reads and writes the row through its own `state.sqlite` connection, outside the store's single SQLite thread, so the request path never queues behind a command's own database work. §19 item 22 records what that costs.
+
+**Refresh single-flight.** One process fetches a dataset scope; the others wait on its lock and then re-read the cache. The lock file name encodes the dataset and the scope: every byte outside `[a-z0-9._]` becomes `~<two lower-case hex digits>`, including `~` itself and every upper-case letter, so the encoding is injective, contains no `-` of its own, and cannot be folded by a case-insensitive filesystem. A name over 200 characters is replaced by a digest of the same two components.
+
+A waiter gives up after 30 seconds. It then serves the coverage the cache already holds with honest §7 metadata — `source: "cache"`, `stale: true`, and the row's own `complete` and `error` — and makes no second fetch. With nothing usable it reports the §14 exit 13 lock timeout. A `--fresh` waiter accepts the holder's row only when its `fetched_at` is at or after the waiter's own start. §19 item 25 records the cold-cache case.
+
+**Foreground interest and priority.** `canvas submit` and `plan execute` register interest before their first pre-flight request and hold it until the command returns. The row lives in `interest(assignment_id, kind, registered_at)` with `kind ∈ {submit, plan_execute}`; liveness is the matching lock file, so a registrant that dies frees its interest with its descriptor and polling can never be starved by a crash.
+
+While a live registration exists, or while any journal is in state `planned`, `uploading`, `uploaded`, or `posting` (§10's pending hook), `watch` admits no new polling request and holds no slot. `watch` re-reads that state before it polls each refresh, so interest that arrives during a tick stops the rest of that tick. A terminal `outcome_unknown` journal is **not** in flight: polling continues, so its readback can still happen. A refresh already admitted finishes its own pagination; §19 item 23 records that bound, and §19 item 29 records where `submit` registers.
+
+No network wait ever happens inside a database transaction.
+
+### 22.2 Events
+
+Migration `0003_events` on `state.sqlite` adds `governor`, `interest`, `observations`, `baselines`, `events`, and `consumer_cursor`. `cache clear` touches only the cache connection, so it is structurally incapable of reaching any of them.
+
+**The observation protocol.** A cache commit and a state transaction cannot be one transaction, so the sequence is built to survive a kill between them:
+
+1. A refresh commits its pages to `cache.sqlite`.
+2. A `pending` `observations` row names the exact cache row it saw. The observation id is `<dataset>:<scope>:<fetch_log rowid>:<fetched_at>`, so a cache row that was removed or refreshed again no longer matches.
+3. One state transaction compares that row against the baseline and commits the cursor, the baseline, and the events together, keyed by the observation id.
+
+A kill between 1 and 2 leaves the baseline untouched: the next refresh reports the same difference, one refresh later. A kill between 2 and 3 leaves a `pending` row that the next `watch` tick picks up. If the cache row it named is gone or has been overwritten, the gap is real and is reported once as `resync_required`. A restart never pretends the gap did not happen, and re-applying an `applied` observation emits nothing.
+
+**Baseline rules.**
+
+- Only a `fetch_log` row with `complete = 1` and `stale = 0` is observed at all, so a partial or failed page can never imply a removal.
+- The first complete observation of a dataset scope sets the baseline and emits nothing.
+- Only the same complete scope is compared. `removed` means absent from that membership.
+- `baselines(dataset, scope, observation_id, observed_at, members_json)` holds one row per dataset scope.
+
+**Shapes.** A dataset produces events only when it has a shape, and a shape names the table, the allowlisted columns, the allowlisted `data_json` keys, and the kinds it may emit.
+
+| Dataset | Table | Allowlisted payload | added | removed | changed |
+|---|---|---|---|---|---|
+| `assignments` | `assignments` | `name`, `due_at`, `points_possible`, `submitted`, `graded`, `score`, `missing`, `workflow_state`, `attempt`, `grade`, `posted_at` | `assignment.added` | `assignment.removed` | `assignment.changed` |
+| `missing` | `assignments` | `name`, `due_at`, `points_possible` | `missing.new` | — | — |
+| `announcements` | `announcements` | `title`, `posted_at` | `announcement.new` | — | — |
+| `inbox_unread` | `conversation_unread` | `unread_count` | `inbox.unread_count` | — | `inbox.unread_count` |
+
+Within a changed entity the fields are split: a changed `due_at` is `due.changed`; a `posted_at` that goes from null to non-null is `grade.posted`; a changed `score` or `grade` without that evidence is `grade.changed`; everything else is the shape's own change kind. A published grade is reported once, not twice.
+
+The unread count has no removal kind and its `added` kind is unreachable: one row is the whole membership, a failed read is not observed, and a gap deletes the baseline rather than emptying it. A count that became known again is the same news to a consumer as a count that changed.
+
+**Journal events.** `submission.state` is written inside the journal's own transaction (§12.2), with `dataset: "submission_journal"` and `scope: "assignment:<id>"`, so either both land or neither does.
+
+**Kinds.** `assignment.added`, `assignment.changed`, `assignment.removed`, `due.changed`, `grade.changed`, `grade.posted`, `announcement.new`, `missing.new`, `submission.state`, `inbox.unread_count`, `resync_required`.
+
+**The log.** `events(cursor INTEGER PRIMARY KEY AUTOINCREMENT, observation_id, kind, observed_at, identity_key, generation, dataset, scope, entity_key, before, after)`. `AUTOINCREMENT` keeps `sqlite_sequence`, so retention never hands a deleted cursor to a second event — which is what a consumer's deduplication key relies on.
+
+**Retention.** 30 days. Expiry deletes rows in one `BEGIN IMMEDIATE`; it never removes the database file.
+
+**Cursors.** Replay is at least once, in cursor order; consumers deduplicate by cursor. A cursor below the log's low water mark, or from another identity generation, cannot be replayed: it emits one `resync_required` document and the run closes normally with exit 0. `consumer_cursor(consumer, cursor, updated_at)` holds a derived consumer's durable position; `set_consumer_cursor` never moves a position backwards, and only an unreplayable **stored** position is replaced with the log's high water mark.
+
+**§15.** An event payload is the allowlisted cache columns and nothing else. No token, signed URL, message body, conversation subject, participant, or DOM text can reach a row.
+
+### 22.3 `canvas watch`
+
+`canvas watch [--jsonl] [--since CURSOR] [--once]`. Network-required (class D): `--offline` is a usage error, exit 2. `--json` is refused with exit 2 and names `--jsonl`, because the stream is its own contract and §7's one-document rule is unchanged.
+
+`watch` is a resident consumer: it holds the shared identity lock for its whole life, so `identity remove` reports busy (§3.4).
+
+Each tick, in order: expire the retention window; apply any observation an earlier run left pending; refresh the §10 datasets whose TTL has run out and whose backoff allows it; then emit exactly the rows the event log gained, in cursor order. Nothing is invented.
+
+The refresh order is `courses:active`, `enrollment_grades:none`, `assignments:course:<id>` for each course, `missing:self`, `planner:default`, `announcements:courses`, and `inbox_unread:all` last. The unread count is last because it is the cheapest and least urgent dataset, so a slow inbox never delays what a deadline depends on.
+
+Ticks are 30 seconds apart. A scope that fails backs off from 30 seconds, doubling to a ceiling of 15 minutes, so a broken scope is still retried. The TTLs do the staggering: `watch` promises no universal freshness and no 60-second guarantee (§3.6).
+
+With no `--since`, `watch` replays the whole retained log before streaming live events; §19 item 24 records that reading. One replay read takes 500 rows.
+
+`--jsonl` prints one complete `canvas-cli/event@1` document per line. `--once` runs one tick and closes with one `canvas-cli/watch@1` envelope reporting `since`, `cursor`, `events`, `ticks`, `resync_required`, `skipped`, and the `sync@1` dataset rows. `skipped` is `foreground_interest`, `journal_in_flight`, or `null`.
+
+### 22.4 `canvas notify`
+
+`canvas notify [--since CURSOR] [--stdout]`. Identity-bound and local (class B): it reads the event log only. It needs no token, opens no network connection, and refreshes no dataset.
+
+It reads the events after its cursor, groups them by event-kind group (`assignments`, `grades`, `announcements`, `missing`, `submission`, `inbox`, `resync`), and writes one line per group. The position is durable in `consumer_cursor` under the consumer name `notify` and moves only **after** the lines are written, so a failed run repeats them rather than dropping them; a second run posts nothing the first one posted. Alerts are deduplicated by cursor, never by content. `--since` overrides the stored position for one run and never touches it.
+
+`notify` is a raw-output command: it has no §7 payload, no Appendix D row, and `--json` is a usage error (exit 2).
+
+`--stdout` is the only backend. Without it the command writes the same lines to stdout and warns on stderr that no desktop backend is available, so it never claims a notification it did not post. §19 item 34 owns that gap.
+
+### 22.5 MCP subscriptions
+
+`canvas mcp` implements `subscriptions/listen` over the same log (M6-c2). A host may name a cursor in `_meta` under `dev.canvas-cli/cursor`; without one, the durable consumer position is used, which is what a reconnecting host wants.
+
+Every notification comes from the log in `state.sqlite`. There is no in-memory event source. The position advances only after a batch's notifications are sent, so a stream that dies mid-batch replays that batch rather than dropping it.
+
+A row invalidates a resource of this binding only when it names that resource's scope — either because the scope changed, or because a `resync_required` row says an observation of it was lost:
+
+| Dataset | Invalidates |
+|---|---|
+| `assignments`, scope `course:<id>` | `course/<id>/assignments` and `todo` |
+| `missing` | `todo` |
+| `submission_journal` | `receipts` |
+| everything else | nothing |
+
+A batch invalidates each URI once. A row from another identity key or generation invalidates nothing.
+
+`context/<consumer-handle>` is readable but **not subscribable**: REPORT §3.2 forbids implicit sharing from resource subscriptions, and a host holding one would be told on a resync that a consumer context it does not own changed. A filter entry naming a foreign key, another generation, an unknown path, or a name no event can reach is dropped rather than refused, so the host keeps the part of its subscription that can be served.
+
+A resync invalidates every subscribed resource once and then follows the log from its high water mark. A cursor the **host** named is the host's own position and never replaces the stored one; only an unreplayable stored position is reset.
+
+The subscription holds a shared identity lease for the life of the stream, which makes a subscribed host a resident consumer under §3.4. It writes nothing but cursor rows and needs no token and no network. The SDK answers the first request of a connection inline, so a connection whose *first* request is `subscriptions/listen` gets no other answer while the stream is open.
+
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
 | Crate | Version | Role |
