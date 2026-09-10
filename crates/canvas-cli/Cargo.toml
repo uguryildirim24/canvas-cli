@@ -69,7 +69,7 @@ rustix = { version = "=1.1.4", features = ["fs", "process"] }
 
 [dev-dependencies]
 assert_cmd.workspace = true
-canvas-core.workspace = true
+canvas-core = { workspace = true, features = ["test-support"] }
 insta = { workspace = true, features = ["json"] }
 predicates.workspace = true
 serde_json.workspace = true

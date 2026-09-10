@@ -268,10 +268,13 @@ pub fn data_root() -> Result<PathBuf, SessionError> {
 }
 
 /// Config directory: etcetera config dir / `canvas-cli`.
+/// Config directory, resolved exactly as [`crate::paths::CliPaths`] does.
+///
+/// `config path`, `config set` and the credential files go through `CliPaths`,
+/// so profile and TTL reads must honour `CANVAS_CONFIG_DIR` the same way; a
+/// second resolution here would read a different file than `config set` wrote.
 fn config_dir() -> Option<PathBuf> {
-    choose_base_strategy()
-        .ok()
-        .map(|s| s.config_dir().join("canvas-cli"))
+    crate::paths::CliPaths::resolve().ok().map(|p| p.config_dir)
 }
 
 fn config_path() -> Option<PathBuf> {
