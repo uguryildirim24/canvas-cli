@@ -1,0 +1,579 @@
+{
+  "method": "GET",
+  "path": "/api/v1/planner/items",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "course_id": 101,
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10101",
+      "plannable": {
+        "due_at": "2026-01-03T18:00:00Z",
+        "id": 10101,
+        "points_possible": 20.0,
+        "title": "Assignment 1"
+      },
+      "plannable_date": "2026-01-03T18:00:00Z",
+      "plannable_id": 10101,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 101,
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10102",
+      "plannable": {
+        "due_at": "2026-01-05T18:00:00Z",
+        "id": 10102,
+        "points_possible": 20.0,
+        "title": "Assignment 2"
+      },
+      "plannable_date": "2026-01-05T18:00:00Z",
+      "plannable_id": 10102,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 101,
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10103",
+      "plannable": {
+        "due_at": "2026-01-07T18:00:00Z",
+        "id": 10103,
+        "points_possible": 20.0,
+        "title": "Assignment 3"
+      },
+      "plannable_date": "2026-01-07T18:00:00Z",
+      "plannable_id": 10103,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 101,
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10104",
+      "plannable": {
+        "due_at": "2026-01-09T18:00:00Z",
+        "id": 10104,
+        "points_possible": 20.0,
+        "title": "Assignment 4"
+      },
+      "plannable_date": "2026-01-09T18:00:00Z",
+      "plannable_id": 10104,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 101,
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10105",
+      "plannable": {
+        "due_at": "2026-01-11T18:00:00Z",
+        "id": 10105,
+        "points_possible": 20.0,
+        "title": "Assignment 5"
+      },
+      "plannable_date": "2026-01-11T18:00:00Z",
+      "plannable_id": 10105,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 101,
+      "html_url": "https://canvas.example.edu/courses/101/assignments/10106",
+      "plannable": {
+        "due_at": "2026-01-13T18:00:00Z",
+        "id": 10106,
+        "points_possible": 20.0,
+        "title": "Assignment 6"
+      },
+      "plannable_date": "2026-01-13T18:00:00Z",
+      "plannable_id": 10106,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 102,
+      "html_url": "https://canvas.example.edu/courses/102/assignments/10201",
+      "plannable": {
+        "due_at": "2026-01-03T18:00:00Z",
+        "id": 10201,
+        "points_possible": 20.0,
+        "title": "Assignment 1"
+      },
+      "plannable_date": "2026-01-03T18:00:00Z",
+      "plannable_id": 10201,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 102,
+      "html_url": "https://canvas.example.edu/courses/102/assignments/10202",
+      "plannable": {
+        "due_at": "2026-01-05T18:00:00Z",
+        "id": 10202,
+        "points_possible": 20.0,
+        "title": "Assignment 2"
+      },
+      "plannable_date": "2026-01-05T18:00:00Z",
+      "plannable_id": 10202,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 102,
+      "html_url": "https://canvas.example.edu/courses/102/assignments/10203",
+      "plannable": {
+        "due_at": "2026-01-07T18:00:00Z",
+        "id": 10203,
+        "points_possible": 20.0,
+        "title": "Assignment 3"
+      },
+      "plannable_date": "2026-01-07T18:00:00Z",
+      "plannable_id": 10203,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 102,
+      "html_url": "https://canvas.example.edu/courses/102/assignments/10204",
+      "plannable": {
+        "due_at": "2026-01-09T18:00:00Z",
+        "id": 10204,
+        "points_possible": 20.0,
+        "title": "Assignment 4"
+      },
+      "plannable_date": "2026-01-09T18:00:00Z",
+      "plannable_id": 10204,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 102,
+      "html_url": "https://canvas.example.edu/courses/102/assignments/10205",
+      "plannable": {
+        "due_at": "2026-01-11T18:00:00Z",
+        "id": 10205,
+        "points_possible": 20.0,
+        "title": "Assignment 5"
+      },
+      "plannable_date": "2026-01-11T18:00:00Z",
+      "plannable_id": 10205,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 102,
+      "html_url": "https://canvas.example.edu/courses/102/assignments/10206",
+      "plannable": {
+        "due_at": "2026-01-13T18:00:00Z",
+        "id": 10206,
+        "points_possible": 20.0,
+        "title": "Assignment 6"
+      },
+      "plannable_date": "2026-01-13T18:00:00Z",
+      "plannable_id": 10206,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 103,
+      "html_url": "https://canvas.example.edu/courses/103/assignments/10301",
+      "plannable": {
+        "due_at": "2026-01-03T18:00:00Z",
+        "id": 10301,
+        "points_possible": 20.0,
+        "title": "Assignment 1"
+      },
+      "plannable_date": "2026-01-03T18:00:00Z",
+      "plannable_id": 10301,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 103,
+      "html_url": "https://canvas.example.edu/courses/103/assignments/10302",
+      "plannable": {
+        "due_at": "2026-01-05T18:00:00Z",
+        "id": 10302,
+        "points_possible": 20.0,
+        "title": "Assignment 2"
+      },
+      "plannable_date": "2026-01-05T18:00:00Z",
+      "plannable_id": 10302,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 103,
+      "html_url": "https://canvas.example.edu/courses/103/assignments/10303",
+      "plannable": {
+        "due_at": "2026-01-07T18:00:00Z",
+        "id": 10303,
+        "points_possible": 20.0,
+        "title": "Assignment 3"
+      },
+      "plannable_date": "2026-01-07T18:00:00Z",
+      "plannable_id": 10303,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 103,
+      "html_url": "https://canvas.example.edu/courses/103/assignments/10304",
+      "plannable": {
+        "due_at": "2026-01-09T18:00:00Z",
+        "id": 10304,
+        "points_possible": 20.0,
+        "title": "Assignment 4"
+      },
+      "plannable_date": "2026-01-09T18:00:00Z",
+      "plannable_id": 10304,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 103,
+      "html_url": "https://canvas.example.edu/courses/103/assignments/10305",
+      "plannable": {
+        "due_at": "2026-01-11T18:00:00Z",
+        "id": 10305,
+        "points_possible": 20.0,
+        "title": "Assignment 5"
+      },
+      "plannable_date": "2026-01-11T18:00:00Z",
+      "plannable_id": 10305,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 103,
+      "html_url": "https://canvas.example.edu/courses/103/assignments/10306",
+      "plannable": {
+        "due_at": "2026-01-13T18:00:00Z",
+        "id": 10306,
+        "points_possible": 20.0,
+        "title": "Assignment 6"
+      },
+      "plannable_date": "2026-01-13T18:00:00Z",
+      "plannable_id": 10306,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 104,
+      "html_url": "https://canvas.example.edu/courses/104/assignments/10401",
+      "plannable": {
+        "due_at": "2026-01-03T18:00:00Z",
+        "id": 10401,
+        "points_possible": 20.0,
+        "title": "Assignment 1"
+      },
+      "plannable_date": "2026-01-03T18:00:00Z",
+      "plannable_id": 10401,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 104,
+      "html_url": "https://canvas.example.edu/courses/104/assignments/10402",
+      "plannable": {
+        "due_at": "2026-01-05T18:00:00Z",
+        "id": 10402,
+        "points_possible": 20.0,
+        "title": "Assignment 2"
+      },
+      "plannable_date": "2026-01-05T18:00:00Z",
+      "plannable_id": 10402,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 104,
+      "html_url": "https://canvas.example.edu/courses/104/assignments/10403",
+      "plannable": {
+        "due_at": "2026-01-07T18:00:00Z",
+        "id": 10403,
+        "points_possible": 20.0,
+        "title": "Assignment 3"
+      },
+      "plannable_date": "2026-01-07T18:00:00Z",
+      "plannable_id": 10403,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 104,
+      "html_url": "https://canvas.example.edu/courses/104/assignments/10404",
+      "plannable": {
+        "due_at": "2026-01-09T18:00:00Z",
+        "id": 10404,
+        "points_possible": 20.0,
+        "title": "Assignment 4"
+      },
+      "plannable_date": "2026-01-09T18:00:00Z",
+      "plannable_id": 10404,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 104,
+      "html_url": "https://canvas.example.edu/courses/104/assignments/10405",
+      "plannable": {
+        "due_at": "2026-01-11T18:00:00Z",
+        "id": 10405,
+        "points_possible": 20.0,
+        "title": "Assignment 5"
+      },
+      "plannable_date": "2026-01-11T18:00:00Z",
+      "plannable_id": 10405,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 104,
+      "html_url": "https://canvas.example.edu/courses/104/assignments/10406",
+      "plannable": {
+        "due_at": "2026-01-13T18:00:00Z",
+        "id": 10406,
+        "points_possible": 20.0,
+        "title": "Assignment 6"
+      },
+      "plannable_date": "2026-01-13T18:00:00Z",
+      "plannable_id": 10406,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 105,
+      "html_url": "https://canvas.example.edu/courses/105/assignments/10501",
+      "plannable": {
+        "due_at": "2026-01-03T18:00:00Z",
+        "id": 10501,
+        "points_possible": 20.0,
+        "title": "Assignment 1"
+      },
+      "plannable_date": "2026-01-03T18:00:00Z",
+      "plannable_id": 10501,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 105,
+      "html_url": "https://canvas.example.edu/courses/105/assignments/10502",
+      "plannable": {
+        "due_at": "2026-01-05T18:00:00Z",
+        "id": 10502,
+        "points_possible": 20.0,
+        "title": "Assignment 2"
+      },
+      "plannable_date": "2026-01-05T18:00:00Z",
+      "plannable_id": 10502,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 105,
+      "html_url": "https://canvas.example.edu/courses/105/assignments/10503",
+      "plannable": {
+        "due_at": "2026-01-07T18:00:00Z",
+        "id": 10503,
+        "points_possible": 20.0,
+        "title": "Assignment 3"
+      },
+      "plannable_date": "2026-01-07T18:00:00Z",
+      "plannable_id": 10503,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    },
+    {
+      "course_id": 105,
+      "html_url": "https://canvas.example.edu/courses/105/assignments/10504",
+      "plannable": {
+        "due_at": "2026-01-09T18:00:00Z",
+        "id": 10504,
+        "points_possible": 20.0,
+        "title": "Assignment 4"
+      },
+      "plannable_date": "2026-01-09T18:00:00Z",
+      "plannable_id": 10504,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 105,
+      "html_url": "https://canvas.example.edu/courses/105/assignments/10505",
+      "plannable": {
+        "due_at": "2026-01-11T18:00:00Z",
+        "id": 10505,
+        "points_possible": 20.0,
+        "title": "Assignment 5"
+      },
+      "plannable_date": "2026-01-11T18:00:00Z",
+      "plannable_id": 10505,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": false,
+        "missing": false,
+        "submitted": false
+      }
+    },
+    {
+      "course_id": 105,
+      "html_url": "https://canvas.example.edu/courses/105/assignments/10506",
+      "plannable": {
+        "due_at": "2026-01-13T18:00:00Z",
+        "id": 10506,
+        "points_possible": 20.0,
+        "title": "Assignment 6"
+      },
+      "plannable_date": "2026-01-13T18:00:00Z",
+      "plannable_id": 10506,
+      "plannable_type": "assignment",
+      "submissions": {
+        "excused": false,
+        "graded": true,
+        "missing": false,
+        "submitted": true
+      }
+    }
+  ]
+}

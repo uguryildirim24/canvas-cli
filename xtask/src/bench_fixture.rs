@@ -28,14 +28,24 @@ pub const COURSES: [i64; 5] = [101, 102, 103, 104, 105];
 pub const DOWNLOAD_COURSE: i64 = 101;
 
 /// Files of [`DOWNLOAD_COURSE`], and the size each one serves.
+/// Large enough that one download keeps the server streaming across a run.
 pub const DOWNLOAD_FILES: [(i64, u64); 4] = [
-    (5011, 3_145_728),
-    (5012, 2_097_152),
-    (5013, 1_048_576),
-    (5014, 4_194_304),
+    (5011, 4_194_304),
+    (5012, 3_145_728),
+    (5013, 2_097_152),
+    (5014, 5_242_880),
 ];
 
 const CODES: [&str; 5] = ["BIO-110", "CHEM-101", "HIST-240", "MATH-201", "PHYS-150"];
+
+/// The host every link in the set points at.
+///
+/// Only the file `url` stays relative, because that one is fetched and must
+/// resolve to the mock server (SPEC §11: a relative URL resolves against the
+/// client origin). Every other link is decoration, and one of them must be
+/// absolute: `canvas-core` decodes planner items from a raw value outside the
+/// origin scope, so a relative `html_url` there does not resolve.
+const LINK_HOST: &str = "https://canvas.example.edu";
 const ASSIGNMENTS_PER_COURSE: i64 = 8;
 
 fn base() -> jiff::Timestamp {
@@ -107,7 +117,7 @@ fn assignment(course_id: i64, n: i64) -> Value {
         "submission_types": ["online_upload"],
         "published": true,
         "locked_for_user": false,
-        "html_url": format!("/courses/{course_id}/assignments/{id}"),
+        "html_url": format!("{LINK_HOST}/courses/{course_id}/assignments/{id}"),
         "submission": {
             "workflow_state": if n % 3 == 0 { "graded" } else { "unsubmitted" },
             "attempt": i64::from(n % 3 == 0),
@@ -139,7 +149,7 @@ fn planner_item(course_id: i64, n: i64) -> Value {
             "missing": false,
             "excused": false
         },
-        "html_url": format!("/courses/{course_id}/assignments/{id}")
+        "html_url": format!("{LINK_HOST}/courses/{course_id}/assignments/{id}")
     })
 }
 
@@ -206,7 +216,7 @@ pub fn responses() -> Vec<Recorded> {
                 "due_at": at(-3, 4),
                 "points_possible": 40.0,
                 "submission_types": ["online_upload"],
-                "html_url": format!("/courses/{course_id}/assignments/{}", course_id * 100 + 7)
+                "html_url": format!("{LINK_HOST}/courses/{course_id}/assignments/{}", course_id * 100 + 7)
             })
         })
         .collect();
@@ -394,21 +404,101 @@ mod tests {
         assert_eq!(planner.body.as_array().unwrap().len(), 30);
     }
 
+    /// The generated bodies must decode with the models the binary uses.
+    /// A fixture the client cannot parse turns into an unexplained `decode`
+    /// error deep inside a benchmark run.
     #[test]
-    fn file_urls_stay_relative_so_any_mock_address_works() {
-        for recorded in responses() {
-            let text = recorded.body.to_string();
-            assert!(
-                !text.contains("http://"),
-                "{} has an absolute URL",
-                recorded.path
-            );
-            assert!(
-                !text.contains("https://"),
-                "{} has an absolute URL",
-                recorded.path
-            );
+    fn every_body_decodes_with_the_real_models() {
+        use canvas_api::models::{
+            Assignment, Course, Enrollment, File, Folder, GradingPeriod, MissingSubmission, Module,
+            PlannerItem, User, WrappedCollection,
+        };
+        let origin: reqwest::Url = "https://canvas.example.edu".parse().unwrap();
+        fn check<T: serde::de::DeserializeOwned>(path: &str, body: &Value) {
+            serde_json::from_value::<T>(body.clone())
+                .unwrap_or_else(|e| panic!("{path} does not decode: {e}"));
         }
+        canvas_api::serde_util::with_origin(&origin, || {
+            for recorded in responses() {
+                let path = recorded.path.as_str();
+                let body = &recorded.body;
+                if path == "/api/v1/users/self" {
+                    check::<User>(path, body);
+                } else if path == "/api/v1/courses" {
+                    check::<Vec<Course>>(path, body);
+                } else if path == "/api/v1/users/self/enrollments" {
+                    check::<Vec<Enrollment>>(path, body);
+                } else if path == "/api/v1/planner/items" {
+                    check::<Vec<PlannerItem>>(path, body);
+                } else if path == "/api/v1/users/self/missing_submissions" {
+                    check::<Vec<MissingSubmission>>(path, body);
+                } else if path.ends_with("/grading_periods") {
+                    check::<WrappedCollection<GradingPeriod>>(path, body);
+                } else if path.ends_with("/assignments") {
+                    check::<Vec<Assignment>>(path, body);
+                } else if path.ends_with("/folders") {
+                    check::<Vec<Folder>>(path, body);
+                } else if path.ends_with("/files") {
+                    check::<Vec<File>>(path, body);
+                } else if path.ends_with("/modules") {
+                    check::<Vec<Module>>(path, body);
+                } else if path.starts_with("/api/v1/files/") {
+                    check::<File>(path, body);
+                } else {
+                    panic!("{path} is not covered by the decode check");
+                }
+            }
+        });
+    }
+
+    /// Only the file `url` is fetched, so only it must stay relative; every
+    /// other link is decoration that points at a placeholder host.
+    /// `canvas-core` decodes planner items from a raw value, outside the
+    /// origin scope every other model is decoded in. The set must survive that.
+    #[test]
+    fn planner_items_decode_without_an_origin() {
+        use canvas_api::models::PlannerItem;
+        let planner = responses()
+            .into_iter()
+            .find(|r| r.path == "/api/v1/planner/items")
+            .expect("planner items");
+        for item in planner.body.as_array().expect("array") {
+            serde_json::from_value::<PlannerItem>(item.clone())
+                .unwrap_or_else(|e| panic!("planner item does not decode: {e}\n{item}"));
+        }
+    }
+
+    #[test]
+    fn fetched_file_urls_stay_relative_so_any_mock_address_works() {
+        fn check(path: &str, value: &Value) {
+            match value {
+                Value::Object(map) => {
+                    for (key, child) in map {
+                        if key == "url"
+                            && let Some(text) = child.as_str()
+                        {
+                            assert!(
+                                text.starts_with(BLOB_PREFIX),
+                                "{path}: a fetched url must be relative, got {text}"
+                            );
+                        }
+                        check(path, child);
+                    }
+                }
+                Value::Array(items) => {
+                    for item in items {
+                        check(path, item);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut seen = 0;
+        for recorded in responses() {
+            check(&recorded.path, &recorded.body);
+            seen += usize::from(recorded.path.starts_with("/api/v1/files/"));
+        }
+        assert_eq!(seen, DOWNLOAD_FILES.len());
     }
 
     #[test]

@@ -14,12 +14,14 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 canvas-api.workspace = true
+canvas-core.workspace = true
 canvas-lms-cli = { path = "../crates/canvas-cli" }
 clap.workspace = true
 clap_complete.workspace = true
 clap_mangen.workspace = true
 jiff.workspace = true
 reqwest.workspace = true
+rusqlite.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
 sha2.workspace = true
@@ -28,6 +30,9 @@ tokio = { workspace = true, features = ["rt-multi-thread", "process", "io-util"]
 url = "=2.5.8"
 wiremock.workspace = true
 
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [lints]
 workspace = true

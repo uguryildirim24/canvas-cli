@@ -1,0 +1,19 @@
+{
+  "method": "GET",
+  "path": "/api/v1/files/5014",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": {
+    "content-type": "application/pdf",
+    "display_name": "file-5014.pdf",
+    "filename": "file-5014.pdf",
+    "folder_id": 1010,
+    "hidden": false,
+    "id": 5014,
+    "locked_for_user": false,
+    "size": 5242880,
+    "updated_at": "2025-12-16T12:00:00Z",
+    "url": "/bench/blob/5014"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "method": "GET",
+  "path": "/api/v1/users/self/enrollments",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "course_id": 101,
+      "enrollment_state": "active",
+      "grades": {
+        "current_grade": "B+",
+        "current_score": 88.0,
+        "final_grade": "B",
+        "final_score": 85.0
+      },
+      "id": 800,
+      "type": "StudentEnrollment"
+    },
+    {
+      "course_id": 102,
+      "enrollment_state": "active",
+      "grades": {
+        "current_grade": "B+",
+        "current_score": 89.0,
+        "final_grade": "B",
+        "final_score": 86.0
+      },
+      "id": 801,
+      "type": "StudentEnrollment"
+    },
+    {
+      "course_id": 103,
+      "enrollment_state": "active",
+      "grades": {
+        "current_grade": "B+",
+        "current_score": 90.0,
+        "final_grade": "B",
+        "final_score": 87.0
+      },
+      "id": 802,
+      "type": "StudentEnrollment"
+    },
+    {
+      "course_id": 104,
+      "enrollment_state": "active",
+      "grades": {
+        "current_grade": "B+",
+        "current_score": 91.0,
+        "final_grade": "B",
+        "final_score": 88.0
+      },
+      "id": 803,
+      "type": "StudentEnrollment"
+    },
+    {
+      "course_id": 105,
+      "enrollment_state": "active",
+      "grades": {
+        "current_grade": "B+",
+        "current_score": 92.0,
+        "final_grade": "B",
+        "final_score": 89.0
+      },
+      "id": 804,
+      "type": "StudentEnrollment"
+    }
+  ]
+}
