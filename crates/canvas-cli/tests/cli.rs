@@ -373,8 +373,6 @@ fn every_v1_stub_is_callable() {
         &["auth", "token", "--reveal"],
         &["identity", "list"],
         &["identity", "remove", "identity-1"],
-        &["courses"],
-        &["course", "chem"],
         &["todo"],
         &["assignments", "chem"],
         &["assignment", "chem", "123"],
@@ -406,21 +404,52 @@ fn every_v1_stub_is_callable() {
         &["open", "assignment", "chem", "123"],
         &["open", "file", "123"],
         &["open", "announcement", "chem", "123"],
-        &["sync"],
-        &["cache", "stats"],
-        &["cache", "clear"],
-        &["cache", "path"],
         &["config", "path"],
         &["config", "edit"],
         &["config", "get", "key"],
         &["config", "set", "key", "value"],
-        &["alias", "set", "chem", "123"],
-        &["alias", "list"],
-        &["alias", "remove", "chem"],
         &["doctor"],
     ];
     for args in cases {
         assert_stub(args);
+    }
+}
+
+/// M1-b commands need an identity; without one they exit 3 with an error envelope.
+#[test]
+fn m1b_commands_exit_auth_without_identity() {
+    let empty = tempfile::TempDir::new().unwrap();
+    for args in [
+        vec!["courses"],
+        vec!["course", "chem"],
+        vec!["alias", "list"],
+        vec!["alias", "set", "chem", "123"],
+        vec!["alias", "remove", "chem"],
+        vec!["sync"],
+        vec!["cache", "stats"],
+        vec!["cache", "clear"],
+        vec!["cache", "path"],
+    ] {
+        let assert = Command::cargo_bin("canvas")
+            .unwrap()
+            .env("CANVAS_DATA_ROOT", empty.path())
+            .env_remove("CANVAS_IDENTITY_KEY")
+            .env_remove("CANVAS_TOKEN")
+            .env_remove("HOME")
+            .args(&args)
+            .args(["--json", "--color", "never"])
+            .assert()
+            .code(3);
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+        assert!(
+            stdout.contains("\"schema\":\"canvas-cli/error@1\"")
+                || stdout.contains("\"schema\": \"canvas-cli/error@1\""),
+            "args={args:?} stdout={stdout}"
+        );
+        assert!(
+            stdout.contains("\"code\":\"auth\"") || stdout.contains("\"code\": \"auth\""),
+            "args={args:?} stdout={stdout}"
+        );
     }
 }
 

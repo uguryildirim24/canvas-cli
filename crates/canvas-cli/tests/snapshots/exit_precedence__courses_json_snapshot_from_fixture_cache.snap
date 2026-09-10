@@ -1,0 +1,64 @@
+---
+source: crates/canvas-cli/tests/exit_precedence.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "active",
+      "source": "cache",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "lasell.instructure.com-12345-f1e3cb02",
+    "origin": "https://lasell.instructure.com",
+    "user_id": "12345"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "courses": [
+      {
+        "code": "CS-101",
+        "enrollment_state": "active",
+        "grades": {
+          "current_grade": "A-",
+          "current_score": 92.5,
+          "final_grade": null,
+          "final_score": null,
+          "period": {
+            "id": null,
+            "mode": "all",
+            "title": null
+          }
+        },
+        "html_url": "https://lasell.instructure.com/courses/101",
+        "id": "101",
+        "is_favorite": true,
+        "name": "Intro to Computing",
+        "restricted": false,
+        "term": {
+          "end_at": "2026-12-15T05:00:00Z",
+          "id": "7",
+          "name": "Fall 2026",
+          "start_at": "2026-08-25T04:00:00Z"
+        }
+      }
+    ]
+  },
+  "schema": "canvas-cli/courses@1",
+  "warnings": []
+}

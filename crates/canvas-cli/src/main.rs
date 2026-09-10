@@ -1,5 +1,9 @@
 //! `canvas` command-line entry point.
 
+mod commands;
+mod output;
+mod session;
+
 use clap::{ArgGroup, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
 use std::io;
@@ -27,6 +31,16 @@ enum ColorChoice {
     Auto,
     Always,
     Never,
+}
+
+impl From<ColorChoice> for output::ColorMode {
+    fn from(value: ColorChoice) -> Self {
+        match value {
+            ColorChoice::Auto => Self::Auto,
+            ColorChoice::Always => Self::Always,
+            ColorChoice::Never => Self::Never,
+        }
+    }
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -521,6 +535,14 @@ async fn main() -> ExitCode {
     if let Err(error) = cli.validate() {
         error.exit();
     }
+    let globals = commands::Globals {
+        json: cli.json,
+        color: cli.color.into(),
+        profile: cli.profile.clone(),
+        fresh: cli.fresh,
+        offline: cli.offline,
+        quiet: cli.quiet,
+    };
     match cli.command {
         Commands::Version => {
             println!("{}", env!("CARGO_PKG_VERSION"));
@@ -531,10 +553,33 @@ async fn main() -> ExitCode {
             generate(shell, &mut cmd, "canvas", &mut io::stdout());
             ExitCode::SUCCESS
         }
+        Commands::Courses {
+            all,
+            term,
+            favorites,
+        } => commands::courses::run(&globals, all, term, favorites).await,
+        Commands::Course { course } => commands::course::run(&globals, course).await,
+        Commands::Alias { command } => {
+            let cmd = match command {
+                AliasCommand::Set { name, course } => {
+                    commands::alias::AliasCmd::Set { name, course }
+                }
+                AliasCommand::List => commands::alias::AliasCmd::List,
+                AliasCommand::Remove { name } => commands::alias::AliasCmd::Remove { name },
+            };
+            commands::alias::run(&globals, cmd).await
+        }
+        Commands::Sync { full } => commands::sync::run(&globals, full).await,
+        Commands::Cache { command } => {
+            let cmd = match command {
+                CacheCommand::Stats => commands::cache::CacheCmd::Stats,
+                CacheCommand::Clear => commands::cache::CacheCmd::Clear,
+                CacheCommand::Path => commands::cache::CacheCmd::Path,
+            };
+            commands::cache::run(&globals, cmd).await
+        }
         Commands::Auth { .. }
         | Commands::Identity { .. }
-        | Commands::Courses { .. }
-        | Commands::Course { .. }
         | Commands::Todo { .. }
         | Commands::Assignments { .. }
         | Commands::Assignment { .. }
@@ -549,10 +594,7 @@ async fn main() -> ExitCode {
         | Commands::Announcement { .. }
         | Commands::Calendar { .. }
         | Commands::Open { .. }
-        | Commands::Sync { .. }
-        | Commands::Cache { .. }
         | Commands::Config { .. }
-        | Commands::Alias { .. }
         | Commands::Doctor { .. } => not_implemented(),
     }
 }
