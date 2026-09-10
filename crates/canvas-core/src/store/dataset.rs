@@ -131,7 +131,10 @@ pub trait Dataset {
         opts: &IngestOpts<'_>,
         conns: &mut super::db::StoreConns,
     ) -> Result<(), IngestError> {
-        if !opts.complete || opts.stale || opts.error.is_some() {
+        // Only folders/files 403/404 denials are successful coverage with an error.
+        let recorded_denial = matches!(self.name(), "files" | "folders")
+            && matches!(opts.error, Some("unavailable:403" | "unavailable:404"));
+        if !opts.complete || opts.stale || (opts.error.is_some() && !recorded_denial) {
             return mark_refresh_failed(self, opts.error.unwrap_or("refresh incomplete"), conns);
         }
         let result = commit_refresh(self, pages, opts, conns);
@@ -159,7 +162,11 @@ fn mark_refresh_failed<D: Dataset + ?Sized>(
         .cache
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     tx.execute(
-        "UPDATE fetch_log SET stale = 1, error = ?1 WHERE dataset = ?2 AND scope = ?3",
+        "UPDATE fetch_log SET stale = 1,
+             error = CASE WHEN dataset IN ('files', 'folders')
+                               AND error IN ('unavailable:403', 'unavailable:404')
+                          THEN error ELSE ?1 END
+         WHERE dataset = ?2 AND scope = ?3",
         params![error, dataset.name(), dataset.scope_key()],
     )?;
     tx.commit()?;

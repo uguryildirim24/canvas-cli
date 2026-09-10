@@ -148,6 +148,14 @@ async fn main() -> ExitCode {
                     };
                     commands::cache::run(&m1b_globals(&globals), cmd).await
                 }
+                Commands::Files {
+                    course,
+                    tree,
+                    search,
+                } => commands::files::run(&m1b_globals(&globals), course, tree, search).await,
+                Commands::Modules { course, items } => {
+                    commands::modules::run(&m1b_globals(&globals), course, items).await
+                }
                 Commands::Todo { .. }
                 | Commands::Assignments { .. }
                 | Commands::Assignment { .. }
@@ -157,12 +165,10 @@ async fn main() -> ExitCode {
                 | Commands::Announcement { .. }
                 | Commands::Calendar { .. }
                 | Commands::Open { .. } => not_implemented(globals.json),
-                // Round-3 peer-lane stubs (M2-b / M3-a): exit 2.
+                // Round-3 peer-lane stubs (M2-b): exit 2.
                 Commands::Submit { .. }
                 | Commands::Submission { .. }
-                | Commands::Receipts { .. }
-                | Commands::Files { .. }
-                | Commands::Modules { .. } => not_implemented_r3(globals.json),
+                | Commands::Receipts { .. } => not_implemented_r3(globals.json),
             }
         })
     })
