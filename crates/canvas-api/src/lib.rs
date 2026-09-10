@@ -65,6 +65,7 @@ struct ClientInner {
     token: Secret,
     user_agent: String,
     http: HttpClient,
+    transfer_http: HttpClient,
     governor: Governor,
 }
 
@@ -91,9 +92,22 @@ impl Client {
         user_agent: &str,
         mut governor: GovernorConfig,
     ) -> Result<Self, Error> {
+        if !matches!(origin.scheme(), "http" | "https")
+            || origin.host_str().is_none()
+            || !origin.username().is_empty()
+            || origin.password().is_some()
+            || origin.query().is_some()
+            || origin.fragment().is_some()
+            || origin.path() != "/"
+        {
+            return Err(Error::CrossOrigin);
+        }
+        HeaderValue::from_str(&format!("Bearer {}", token.expose()))
+            .map_err(|_| Error::Unauthorized)?;
         governor.api_concurrency = governor.api_concurrency.clamp(1, 8);
         let http = HttpClient::builder()
             .use_rustls_tls()
+            .no_proxy()
             .gzip(true)
             .brotli(true)
             .redirect(Policy::none())
@@ -103,12 +117,24 @@ impl Client {
             .build()
             .map_err(|_| Error::Network)?;
 
+        let transfer_http = HttpClient::builder()
+            .use_rustls_tls()
+            .no_proxy()
+            .no_gzip()
+            .no_brotli()
+            .redirect(Policy::none())
+            .connect_timeout(Duration::from_secs(10))
+            .read_timeout(Duration::from_secs(60))
+            .user_agent(user_agent)
+            .build()
+            .map_err(|_| Error::Network)?;
         Ok(Self {
             inner: Arc::new(ClientInner {
                 origin,
                 token,
                 user_agent: user_agent.to_owned(),
                 http,
+                transfer_http,
                 governor: Governor::new(governor),
             }),
         })
@@ -253,23 +279,20 @@ impl Client {
         &self.inner.http
     }
 
+    pub(crate) fn transfer_http(&self) -> &HttpClient {
+        &self.inner.transfer_http
+    }
+
     pub(crate) fn same_origin(&self, url: &Url) -> bool {
-        url.scheme() == self.inner.origin.scheme()
+        url.username().is_empty()
+            && url.password().is_none()
+            && url.scheme() == self.inner.origin.scheme()
             && url.host_str() == self.inner.origin.host_str()
             && url.port_or_known_default() == self.inner.origin.port_or_known_default()
     }
 
     fn api_url(&self, path: &str) -> Result<Url, Error> {
-        if path.starts_with("https://") || path.starts_with("http://") {
-            return Url::parse(path).map_err(|_| Error::Network);
-        }
-        let base = self.inner.origin.as_str().trim_end_matches('/');
-        let suffix = if path.starts_with('/') {
-            path.to_owned()
-        } else {
-            format!("/{path}")
-        };
-        Url::parse(&format!("{base}{suffix}")).map_err(|_| Error::Network)
+        self.inner.origin.join(path).map_err(|_| Error::Network)
     }
 
     fn api_url_with_per_page(&self, path: &str) -> Result<Url, Error> {
@@ -281,14 +304,17 @@ impl Client {
         Ok(url)
     }
 
-    pub(crate) async fn send_api<T: DeserializeOwned>(
-        &self,
-        request: ApiRequest,
-    ) -> Result<T, Error> {
-        let (status, _headers, bytes) = request::execute_api(self, request).await?;
+    /// Execute an API-phase builder with the same origin and redirect checks.
+    pub async fn send_api<T: DeserializeOwned>(&self, request: ApiRequest) -> Result<T, Error> {
+        let (status, _headers, bytes, _url) = request::execute_api(self, request).await?;
         if status.is_success() {
+            let bytes = if status == StatusCode::NO_CONTENT {
+                b"null".as_slice()
+            } else {
+                &bytes
+            };
             return serde_util::with_origin(self.origin(), || {
-                serde_json::from_slice(&bytes).map_err(|_| Error::Decode)
+                serde_json::from_slice(bytes).map_err(|_| Error::Decode)
             });
         }
         Err(classify_status(status, &bytes))
@@ -298,7 +324,7 @@ impl Client {
         &self,
         request: ApiRequest,
     ) -> Result<Page<T>, Error> {
-        let (status, headers, bytes) = request::execute_api(self, request).await?;
+        let (status, headers, bytes, _url) = request::execute_api(self, request).await?;
         if !status.is_success() {
             return Err(classify_status(status, &bytes));
         }
@@ -318,7 +344,7 @@ impl Client {
         &self,
         request: ApiRequest,
     ) -> Result<Page<T>, Error> {
-        let (status, headers, bytes) = request::execute_api(self, request).await?;
+        let (status, headers, bytes, _url) = request::execute_api(self, request).await?;
         if !status.is_success() {
             return Err(classify_status(status, &bytes));
         }
@@ -340,7 +366,10 @@ impl Client {
     pub(crate) fn auth_header_for(&self, url: &Url) -> Option<HeaderValue> {
         if self.same_origin(url) {
             let value = format!("Bearer {}", self.inner.token.expose());
-            HeaderValue::from_str(&value).ok()
+            HeaderValue::from_str(&value).ok().map(|mut header| {
+                header.set_sensitive(true);
+                header
+            })
         } else {
             None
         }
