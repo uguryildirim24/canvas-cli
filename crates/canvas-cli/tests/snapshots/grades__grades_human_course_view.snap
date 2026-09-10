@@ -2,14 +2,17 @@
 source: crates/canvas-cli/tests/grades.rs
 expression: stdout
 ---
-  CODE      NAME                  PERIOD    GRADE  
-  CS-101    Intro to Computing    all       B+     
+CS-101  Intro to Computing
 
 Homework  (40%)
+  drop lowest 1 · never drop 31
   ASSIGNMENT       SCORE    OUT OF    STATUS   
   Problem Set 1    23       25        graded   
   Problem Set 2    —        25        missing  
   subtotal: 23 / 50
 
 Exams  (60%)
-  ASSIGNMENT    SCORE    OUT OF    STATUS
+  ASSIGNMENT    SCORE    OUT OF    STATUS  
+
+  CODE      NAME                  PERIOD    GRADE  
+  CS-101    Intro to Computing    all       B+
