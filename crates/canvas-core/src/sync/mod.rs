@@ -91,3 +91,5 @@ pub use assignment_detail::{AssignmentDetailDataset, refresh_assignment};
 
 #[cfg(test)]
 mod m1c_review_tests;
+#[cfg(test)]
+mod m4b_tests;
