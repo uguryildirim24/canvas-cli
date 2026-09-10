@@ -726,6 +726,8 @@ An owner adds the interface (enum variant, schema entry, migration) that the oth
 4. Default download destination: suggest `~/School/<term>`; confirm.
 5. Fixture recording: OK to record sanitized API responses from the owner's account for tests?
 6. After M5: local grade estimator, or `inbox`/`notify` first?
+7. **Env override token validation (§8, raised by the M0-c code review 2026-09-09).** `credential.token_sha256` both authorizes the active stored token and records successful validation. If stored token A is active and an env token B validates for the same user, recording B there makes A unusable once the override disappears. Options: a separate validated-hash column, or an explicit exception that env overrides are never recorded. Current code: env pairs are validated per request, an identity mismatch is rejected, and the active store and hash stay unchanged (no persistent first-seen record for env tokens).
+8. **`doctor --network --offline` (§5 versus §8, same review).** The `doctor` note says network checks are `skipped` with `--offline`; the class table makes `doctor --network` class D, whose offline rule is exit 2 before any I/O. Current code keeps exit 2. Decide which rule wins.
 
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
