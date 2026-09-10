@@ -407,7 +407,7 @@ mod tests {
                 );
                 let mut env = Envelope::new(
                     entry.id,
-                    if local { None } else { Some("default".into()) },
+                    if local { None } else { Some("default") },
                     if local {
                         None
                     } else {
@@ -486,7 +486,7 @@ mod tests {
                 serde_json::from_str(include_str!("schemas/courses.json")).unwrap();
             let mut env = Envelope::new(
                 SCHEMA_COURSES,
-                Some("lasell".into()),
+                Some("lasell"),
                 Some(IdentityRef {
                     origin: "https://courses.example.test".into(),
                     user_id: "12345".into(),

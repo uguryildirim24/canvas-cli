@@ -17,6 +17,17 @@ pub use record::{
 };
 pub use state::{NotSubmittedEvidence, OwnerStatus, ResponseKind, State};
 
+use crate::store::Store;
+
+/// Doctor extension point from M0-c.
+///
+/// Full owner-absent recovery for a known journal id is [`recover_if_owner_absent`].
+/// Doctor still calls this scan entry; returning an empty list keeps the M0-c
+/// "skipped until wired" check until doctor passes an identity directory.
+pub fn recover_owner_absent(_store: &Store) -> Vec<String> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod crash_tests;
 #[cfg(test)]

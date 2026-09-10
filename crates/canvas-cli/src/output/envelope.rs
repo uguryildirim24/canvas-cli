@@ -27,6 +27,18 @@ pub struct IdentityRef {
     pub key: String,
 }
 
+impl IdentityRef {
+    /// Build from origin, numeric user id, and key.
+    #[must_use]
+    pub fn new(origin: impl Into<String>, user_id: i64, key: impl Into<String>) -> Self {
+        Self {
+            origin: origin.into(),
+            user_id: user_id.to_string(),
+            key: key.into(),
+        }
+    }
+}
+
 /// Where a freshness row was obtained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -97,13 +109,13 @@ impl Envelope<serde_json::Value> {
     #[must_use]
     pub fn new(
         schema: impl Into<String>,
-        profile: Option<String>,
+        profile: Option<&str>,
         identity: Option<IdentityRef>,
     ) -> Self {
         Self {
             schema: schema.into(),
             generated_at: generated_at_now(),
-            profile,
+            profile: profile.map(str::to_owned),
             identity,
             freshness: Vec::new(),
             requests: Requests::default(),
@@ -113,6 +125,27 @@ impl Envelope<serde_json::Value> {
             exit: 0,
             result: serde_json::json!({}),
         }
+    }
+
+    /// Build a `canvas-cli/error@1` envelope with a JSON-object result.
+    #[must_use]
+    pub fn error(
+        code: &str,
+        message: &str,
+        exit: u8,
+        http_status: Option<u16>,
+        profile: Option<&str>,
+        identity: Option<IdentityRef>,
+    ) -> Self {
+        Self::new(SCHEMA_ERROR, profile, identity)
+            .with_result(serde_json::json!({
+                "code": code,
+                "message": message,
+                "http_status": http_status,
+                "server_errors": [],
+                "details": {},
+            }))
+            .with_outcome("error", exit)
     }
 }
 
@@ -146,10 +179,50 @@ impl<T> Envelope<T> {
         Ok(())
     }
 
+    /// Print the envelope as one pretty JSON document on stdout.
+    pub fn print_json(&self)
+    where
+        T: Serialize,
+    {
+        match serde_json::to_string_pretty(self) {
+            Ok(s) => println!("{s}"),
+            Err(e) => eprintln!("failed to encode JSON envelope: {e}"),
+        }
+    }
+
+    /// Record API request count.
+    #[must_use]
+    pub fn with_api_requests(mut self, api: u64) -> Self {
+        self.requests.api = api;
+        self
+    }
+
+    /// Set outcome from a `snake_case` label and exit code.
+    #[must_use]
+    pub fn with_outcome(mut self, outcome: &str, exit: u8) -> Self {
+        self.outcome = match outcome {
+            "ok" => Outcome::Ok,
+            "partial" => Outcome::Partial,
+            "recovery" => Outcome::Recovery,
+            "mismatch" => Outcome::Mismatch,
+            "refused" => Outcome::Refused,
+            _ => Outcome::Error,
+        };
+        self.exit = exit;
+        self
+    }
+
     /// Process exit code carried by this envelope.
     #[must_use]
     pub fn exit_code(&self) -> ExitCode {
         ExitCode::from(self.exit)
+    }
+}
+
+/// Print human text when not in `--json` mode.
+pub fn print_human(lines: impl IntoIterator<Item = impl AsRef<str>>) {
+    for line in lines {
+        println!("{}", line.as_ref());
     }
 }
 
@@ -191,7 +264,7 @@ mod tests {
     #[test]
     fn envelope_new_honors_canvas_now() {
         with_canvas_now("2026-09-09T17:05:12Z", || {
-            let env = Envelope::new("canvas-cli/courses@1", Some("lasell".into()), None);
+            let env = Envelope::new("canvas-cli/courses@1", Some("lasell"), None);
             assert_eq!(env.schema, "canvas-cli/courses@1");
             assert_eq!(env.generated_at, "2026-09-09T17:05:12Z");
             assert_eq!(env.profile.as_deref(), Some("lasell"));
