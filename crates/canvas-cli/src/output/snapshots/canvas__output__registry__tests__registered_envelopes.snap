@@ -1,6 +1,5 @@
 ---
 source: crates/canvas-cli/src/output/registry.rs
-assertion_line: 426
 expression: rendered
 ---
 [
@@ -466,13 +465,27 @@ expression: rendered
           "attachments": [
             {
               "content_type": "application/pdf",
+              "display_name": "draft.pdf",
+              "id": "55000",
+              "size": 1024
+            }
+          ],
+          "attempt": 1,
+          "score": null,
+          "submitted_at": "2026-09-08T12:00:00Z",
+          "submitted_at_local": "2026-09-08T08:00:00-04:00"
+        },
+        {
+          "attachments": [
+            {
+              "content_type": "application/pdf",
               "display_name": "essay.pdf",
               "id": "55001",
               "size": 24576
             }
           ],
-          "attempt": 1,
-          "score": null,
+          "attempt": 2,
+          "score": 8.5,
           "submitted_at": "2026-09-09T16:05:00Z",
           "submitted_at_local": "2026-09-09T12:05:00-04:00"
         }
@@ -487,25 +500,39 @@ expression: rendered
             "size": 24576
           }
         ],
-        "attempt": 1,
+        "attempt": 2,
         "body_sha256": null,
-        "comments": [],
+        "comments": [
+          {
+            "author": "Prof. Ada",
+            "created_at": "2026-09-09T16:40:00Z",
+            "created_at_local": "2026-09-09T12:40:00-04:00",
+            "id": "9",
+            "text": "Nice work."
+          }
+        ],
         "excused": false,
-        "grade": null,
-        "graded": false,
+        "grade": "8.5",
+        "graded": true,
         "late": false,
         "missing": false,
         "pending": false,
-        "posted_at": null,
-        "rubric_assessed": false,
-        "rubric_assessment": [],
-        "score": null,
+        "posted_at": "2026-09-09T16:30:00Z",
+        "rubric_assessed": true,
+        "rubric_assessment": [
+          {
+            "comments": "Clear reasoning.",
+            "criterion_id": "c1",
+            "points": 8.5
+          }
+        ],
+        "score": 8.5,
         "submission_type": "online_upload",
         "submitted": true,
         "submitted_at": "2026-09-09T16:05:00Z",
         "submitted_at_local": "2026-09-09T12:05:00-04:00",
         "url": null,
-        "workflow_state": "submitted"
+        "workflow_state": "graded"
       }
     },
     "schema": "canvas-cli/submission@1",

@@ -6,12 +6,22 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// Publish a handshake file atomically.
+///
+/// The parent polls for the file's existence, so a plain `write` would let it
+/// read a created-but-empty file and mistake a published journal for none.
+fn publish(path: impl AsRef<Path>, contents: &str) {
+    let path = path.as_ref();
+    let temporary = path.with_extension("partial");
+    std::fs::write(&temporary, contents).unwrap();
+    std::fs::rename(&temporary, path).unwrap();
+}
+
 pub(super) fn checkpoint(phase: &str, jid: &str) {
     if std::env::var("CANVAS_JOURNAL_PHASE").as_deref() != Ok(phase) {
         return;
     }
-    let ready = std::env::var("CANVAS_JOURNAL_READY").unwrap();
-    std::fs::write(ready, jid).unwrap();
+    publish(std::env::var("CANVAS_JOURNAL_READY").unwrap(), jid);
     loop {
         std::thread::park_timeout(Duration::from_secs(1));
     }
@@ -47,14 +57,14 @@ fn helper() {
     let mode = std::env::var("CANVAS_JOURNAL_MODE").unwrap_or_default();
     if mode == "compete" {
         let result = std::env::var("CANVAS_JOURNAL_READY").unwrap();
-        std::fs::write(&result, "ready").unwrap();
+        publish(&result, "ready");
         while !Path::new(&root).join("start").exists() {
             std::thread::sleep(Duration::from_millis(2));
         }
         let admission = match AdmissionLock::try_acquire(&paths.identity_dir, 42) {
             Ok(lock) => lock,
             Err(LockError::InProgress) => {
-                std::fs::write(result, "blocked").unwrap();
+                publish(result, "blocked");
                 return;
             }
             Err(e) => panic!("{e}"),
@@ -62,13 +72,13 @@ fn helper() {
         match create(&store, &paths.identity_dir, &admission, &opts(&doc)) {
             Ok((_jid, _owner)) => {
                 drop(admission);
-                std::fs::write(result, "created").unwrap();
+                publish(result, "created");
                 loop {
                     std::thread::park_timeout(Duration::from_secs(1));
                 }
             }
             Err(JournalError::InProgress) => {
-                std::fs::write(result, "blocked").unwrap();
+                publish(result, "blocked");
                 return;
             }
             Err(e) => panic!("{e}"),
@@ -348,7 +358,7 @@ fn simultaneous_processes_publish_only_one_active_journal() {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(5));
     }
-    std::fs::write(root.path().join("start"), "go").unwrap();
+    publish(root.path().join("start"), "go");
     loop {
         let a = std::fs::read_to_string(&a_ready).unwrap();
         let b = std::fs::read_to_string(&b_ready).unwrap();

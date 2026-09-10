@@ -464,6 +464,10 @@ async fn text_verify_and_readback_retry_are_attempt_bound_and_idempotent() {
     }
 }
 
+/// Each storage response is held this long, so a transfer that has started
+/// cannot finish while the test samples how many are in flight.
+const UPLOAD_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+
 #[tokio::test]
 async fn uploads_are_bounded_and_changed_input_never_posts() {
     use canvas_api::test_support::{TestServer, test_client};
@@ -508,7 +512,7 @@ async fn uploads_are_bounded_and_changed_input_never_posts() {
                 } else {
                     ResponseTemplate::new(201)
                         .set_body_json(json!({"id":777+n}))
-                        .set_delay(std::time::Duration::from_millis(150))
+                        .set_delay(UPLOAD_DELAY)
                 })
                 .mount(&server)
                 .await;
@@ -529,19 +533,33 @@ async fn uploads_are_bounded_and_changed_input_never_posts() {
         let run = execute(&client, &open.store, &paths, &owner, &jid, &frozen);
         tokio::pin!(run);
         if scenario == "success" {
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(80), &mut run)
+            // Drive the upload until two transfers are in flight. Each storage
+            // response is held open, so the third cannot start while both run:
+            // observing exactly two proves the concurrency bound of two.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            loop {
+                let started = server
+                    .received_requests()
                     .await
-                    .is_err()
-            );
-            let requests = server.received_requests().await.unwrap();
-            assert_eq!(
-                requests
+                    .unwrap()
                     .iter()
                     .filter(|r| r.url.path().contains("/storage/"))
-                    .count(),
-                2
-            );
+                    .count();
+                assert!(started <= 2, "upload concurrency reached {started}");
+                if started == 2 {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "uploads never reached the concurrency bound"
+                );
+                assert!(
+                    tokio::time::timeout(std::time::Duration::from_millis(5), &mut run)
+                        .await
+                        .is_err(),
+                    "execute finished before both uploads started"
+                );
+            }
         }
         let result = run.await;
         let state = get_journal(&open.store, &jid).unwrap().unwrap().state;

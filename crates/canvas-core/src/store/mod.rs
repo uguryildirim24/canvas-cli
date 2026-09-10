@@ -20,7 +20,7 @@ pub use db::{DbError, Store, StoreConns};
 pub use ops::{
     CACHE_TABLES, CacheStats, EpochAbort, FetchLogRow, LookupQuery, WindowQuery, bump_epochs,
     cache_clear, cache_path, cache_stats, load_fetch_log, lookup, lookup_dataset,
-    pending_for_assignment, read_scope_epoch,
+    pending_for_assignment, pending_journals_for_assignment, read_scope_epoch,
 };
 
 use crate::identity::{IdentityDocument, IdentityError, IdentityLock, Paths};

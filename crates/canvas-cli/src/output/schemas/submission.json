@@ -1,17 +1,17 @@
 {
   "submission": {
     "submitted": true,
-    "graded": false,
-    "score": null,
-    "grade": null,
+    "graded": true,
+    "score": 8.5,
+    "grade": "8.5",
     "late": false,
     "missing": false,
     "excused": false,
-    "workflow_state": "submitted",
+    "workflow_state": "graded",
     "submitted_at": "2026-09-09T16:05:00Z",
     "submitted_at_local": "2026-09-09T12:05:00-04:00",
-    "attempt": 1,
-    "posted_at": null,
+    "attempt": 2,
+    "posted_at": "2026-09-09T16:30:00Z",
     "pending": false,
     "submission_type": "online_upload",
     "body_sha256": null,
@@ -24,16 +24,44 @@
         "content_type": "application/pdf"
       }
     ],
-    "comments": [],
-    "rubric_assessed": false,
-    "rubric_assessment": []
+    "comments": [
+      {
+        "id": "9",
+        "author": "Prof. Ada",
+        "created_at": "2026-09-09T16:40:00Z",
+        "created_at_local": "2026-09-09T12:40:00-04:00",
+        "text": "Nice work."
+      }
+    ],
+    "rubric_assessed": true,
+    "rubric_assessment": [
+      {
+        "criterion_id": "c1",
+        "points": 8.5,
+        "comments": "Clear reasoning."
+      }
+    ]
   },
   "history": [
     {
       "attempt": 1,
+      "submitted_at": "2026-09-08T12:00:00Z",
+      "submitted_at_local": "2026-09-08T08:00:00-04:00",
+      "score": null,
+      "attachments": [
+        {
+          "id": "55000",
+          "display_name": "draft.pdf",
+          "size": 1024,
+          "content_type": "application/pdf"
+        }
+      ]
+    },
+    {
+      "attempt": 2,
       "submitted_at": "2026-09-09T16:05:00Z",
       "submitted_at_local": "2026-09-09T12:05:00-04:00",
-      "score": null,
+      "score": 8.5,
       "attachments": [
         {
           "id": "55001",
