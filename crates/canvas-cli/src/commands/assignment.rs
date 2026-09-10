@@ -1,5 +1,6 @@
 //! `canvas assignment` (class C).
-use super::emit::{base_envelope, emit, emit_error, session_error, sync_error};
+use super::emit::{base_envelope, emit_error, session_error, sync_error};
+use super::handled::Handled;
 use super::{Globals, assignment_read as read};
 use crate::output::{SCHEMA_ASSIGNMENT, now_timestamp};
 use crate::session::ttl_assignments;
@@ -8,14 +9,18 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 #[allow(clippy::too_many_lines)]
+/// Run `canvas assignment` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, target: String, assignment: Option<String>) -> ExitCode {
+    handle(globals, target, assignment).await.emit(globals.json)
+}
+
+pub async fn handle(globals: &Globals, target: String, assignment: Option<String>) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     if assignment.is_none() && !target.contains("://") {
         return emit_error(
-            globals.json,
             "usage",
             "assignment requires a course and assignment or a URL",
             2,
@@ -36,7 +41,7 @@ pub async fn run(globals: &Globals, target: String, assignment: Option<String>) 
     };
     match read::detail(&session, globals, course.id, id).await {
         Ok(o) => outcomes.push(o),
-        Err(e) => return sync_error(globals, &session, &e),
+        Err(e) => return sync_error(&session, &e),
     }
     let now = now_timestamp();
     let item = match session
@@ -48,8 +53,8 @@ pub async fn run(globals: &Globals, target: String, assignment: Option<String>) 
         .await
     {
         Ok(Some(i)) => i,
-        Ok(None) => return sync_error(globals, &session, &canvas_api::Error::Decode.into()),
-        Err(e) => return sync_error(globals, &session, &e.into()),
+        Ok(None) => return sync_error(&session, &canvas_api::Error::Decode.into()),
+        Err(e) => return sync_error(&session, &e.into()),
     };
     let mut rubric_assessed = false;
     let mut rubric_assessment = Vec::<Value>::new();
@@ -71,16 +76,16 @@ pub async fn run(globals: &Globals, target: String, assignment: Option<String>) 
                             .unwrap_or_default();
                         comments_count = v["submission_comments_json"].as_array().map(Vec::len);
                     }
-                    Err(e) => return sync_error(globals, &session, &e.into()),
+                    Err(e) => return sync_error(&session, &e.into()),
                 }
             }
-            Err(e) => return sync_error(globals, &session, &e),
+            Err(e) => return sync_error(&session, &e),
         }
     }
     let description = match item.details.description.as_deref() {
         Some(html) => match canvas_core::markdown::html_to_markdown(html).await {
             Ok(md) => Some(md),
-            Err(_) => return sync_error(globals, &session, &canvas_api::Error::Decode.into()),
+            Err(_) => return sync_error(&session, &canvas_api::Error::Decode.into()),
         },
         None => None,
     };
@@ -94,11 +99,12 @@ pub async fn run(globals: &Globals, target: String, assignment: Option<String>) 
     envelope
         .warnings
         .extend(outcomes.into_iter().filter_map(|o| o.error));
-    emit(globals.json, &envelope, || {
+    let color = read::use_color(globals);
+    Handled::new(envelope, move |_| {
         writeln!(
             io::stdout(),
             "{}",
-            read::human_table(std::slice::from_ref(&item), &zone, read::use_color(globals))
+            read::human_table(std::slice::from_ref(&item), &zone, color)
         )?;
         if let Some(md) = &description {
             writeln!(io::stdout(), "\n{md}")?;

@@ -11,17 +11,23 @@ use super::Globals;
 use super::course_load::{
     CourseRow, RefreshFail, ensure_courses, load_course_by_id, outcome_freshness, scope_from_str,
 };
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use crate::output::{
     CourseDetailJson, CourseResult, Freshness, SCHEMA_COURSE, TermJson, now_timestamp,
 };
 use crate::session::{Session, ttl_courses};
 
-/// Run `canvas course <course>`.
+/// Run `canvas course` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, course: String) -> ExitCode {
+    handle(globals, course).await.emit(globals.json)
+}
+
+/// Run `canvas course <course>`.
+pub async fn handle(globals: &Globals, course: String) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     let (resolved, mut freshness, _api_requests) =
@@ -32,7 +38,7 @@ pub async fn run(globals: &Globals, course: String) -> ExitCode {
 
     let outcome = match ensure_detail(globals, &session, resolved.id).await {
         Ok(outcome) => outcome,
-        Err(error) => return refresh_fail(globals, &session, error),
+        Err(error) => return refresh_fail(&session, error),
     };
     freshness.push(outcome_freshness(&outcome));
 
@@ -58,7 +64,6 @@ pub async fn run(globals: &Globals, course: String) -> ExitCode {
         Ok((Some(row), freshness)) => (detail_from_row(row), freshness),
         Ok((None, _)) => {
             return emit_error(
-                globals.json,
                 "offline",
                 "no cached course detail",
                 7,
@@ -68,7 +73,6 @@ pub async fn run(globals: &Globals, course: String) -> ExitCode {
         }
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -95,7 +99,7 @@ pub async fn run(globals: &Globals, course: String) -> ExitCode {
         envelope.warnings.push("served stale course detail".into());
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_human(&envelope.result.course)
     })
 }
@@ -105,7 +109,7 @@ pub(crate) async fn resolve_with_refresh(
     globals: &Globals,
     session: &Session,
     course: &str,
-) -> Result<(ResolvedCourse, Vec<Freshness>, u64), ExitCode> {
+) -> Result<(ResolvedCourse, Vec<Freshness>, u64), Handled> {
     let mut freshness = Vec::new();
     let mut api_requests = 0u64;
     let mut refreshed = std::collections::HashSet::new();
@@ -115,7 +119,7 @@ pub(crate) async fn resolve_with_refresh(
             Ok(Ok(r)) => {
                 let used = resolver_freshness(session, course, r.id, globals.offline)
                     .await
-                    .map_err(|e| refresh_fail(globals, session, RefreshFail::Db(e)))?;
+                    .map_err(|e| refresh_fail(session, RefreshFail::Db(e)))?;
                 for row in used {
                     if !freshness
                         .iter()
@@ -138,14 +142,13 @@ pub(crate) async fn resolve_with_refresh(
                     globals.offline,
                 )
                 .await
-                .map_err(|e| refresh_fail(globals, session, e))?;
+                .map_err(|e| refresh_fail(session, e))?;
                 api_requests += u64::from(outcome.requests);
                 freshness.push(outcome_freshness(&outcome));
             }
-            Ok(Err(e)) => return Err(resolve_exit(globals, session, &e)),
+            Ok(Err(e)) => return Err(resolve_exit(session, &e)),
             Err(e) => {
                 return Err(emit_error(
-                    globals.json,
                     "local",
                     &e.to_string(),
                     13,
@@ -255,10 +258,9 @@ fn detail_from_row(row: CourseRow) -> CourseDetailJson {
     }
 }
 
-pub(crate) fn refresh_fail(globals: &Globals, session: &Session, err: RefreshFail) -> ExitCode {
+pub(crate) fn refresh_fail(session: &Session, err: RefreshFail) -> Handled {
     match err {
         RefreshFail::OfflineMiss | RefreshFail::Sync(SyncError::OfflineMiss) => emit_error(
-            globals.json,
             "offline",
             "offline and no complete courses cache coverage",
             7,
@@ -266,16 +268,14 @@ pub(crate) fn refresh_fail(globals: &Globals, session: &Session, err: RefreshFai
             Some(session.identity_ref()),
         ),
         RefreshFail::NeedAuth => emit_error(
-            globals.json,
             "auth",
             "no token; set CANVAS_TOKEN or run auth login",
             3,
             session.profile.clone(),
             Some(session.identity_ref()),
         ),
-        RefreshFail::Sync(e) => super::emit::sync_error(globals, session, &e),
+        RefreshFail::Sync(e) => super::emit::sync_error(session, &e),
         RefreshFail::Db(e) => emit_error(
-            globals.json,
             "local",
             &e.to_string(),
             13,
@@ -309,8 +309,8 @@ fn print_human(c: &CourseDetailJson) -> io::Result<()> {
     Ok(())
 }
 
-fn resolve_exit(globals: &Globals, session: &Session, err: &ResolveError) -> ExitCode {
-    super::emit::resolve_error(globals, session, err)
+fn resolve_exit(session: &Session, err: &ResolveError) -> Handled {
+    super::emit::resolve_error(session, err)
 }
 
 async fn resolver_freshness(

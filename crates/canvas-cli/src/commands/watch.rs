@@ -30,7 +30,8 @@ use jiff::tz::TimeZone;
 
 use super::Globals;
 use super::course_load::{load_courses_for_scope, map_source, u64_count};
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use crate::output::{
     EventJson, SCHEMA_EVENT, SCHEMA_WATCH, SyncDatasetJson, WatchResult, now_timestamp,
 };
@@ -47,11 +48,18 @@ const BACKOFF_MAX: Duration = Duration::from_secs(900);
 /// How many replayed events one read takes.
 const REPLAY_BATCH: usize = 500;
 
-/// Run `canvas watch`.
+/// Run `canvas watch` for the CLI: the stream, then one exit code.
+///
+/// The machine-readable form is `--jsonl`, not `--json` (§7 is unchanged), so
+/// that flag also selects the form an aborted run reports itself in.
 pub async fn run(globals: &Globals, jsonl: bool, since: Option<String>, once: bool) -> ExitCode {
+    handle(globals, jsonl, since, once).await.emit(jsonl)
+}
+
+/// Stream events until `--once` or SIGINT ends the run.
+async fn handle(globals: &Globals, jsonl: bool, since: Option<String>, once: bool) -> Handled {
     if globals.offline {
         return emit_error(
-            globals.json,
             "usage",
             "watch cannot be used with --offline",
             2,
@@ -63,33 +71,26 @@ pub async fn run(globals: &Globals, jsonl: bool, since: Option<String>, once: bo
         None => None,
         Some(Ok(cursor)) => Some(cursor),
         Some(Err(message)) => {
-            return emit_error(
-                globals.json,
-                "usage",
-                &message,
-                2,
-                globals.profile.clone(),
-                None,
-            );
+            return emit_error("usage", &message, 2, globals.profile.clone(), None);
         }
     };
 
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let client = match super::emit::require_client(globals, &session) {
         Ok(client) => client.clone(),
-        Err(code) => return code,
+        Err(handled) => return handled,
     };
     if let Err(e) = session.validate_network_token().await {
-        return super::emit::sync_error(globals, &session, &e);
+        return super::emit::sync_error(&session, &e);
     }
 
     let mut stream = Stream::new(jsonl, &session);
-    match watch(globals, &session, &client, &mut stream, since, once).await {
-        Ok(result) => finish(globals, &session, &mut stream, result),
-        Err(code) => code,
+    match watch(&session, &client, &mut stream, since, once).await {
+        Ok(result) => finish(&session, &mut stream, result),
+        Err(handled) => handled,
     }
 }
 
@@ -181,13 +182,12 @@ struct Summary {
 
 /// Replay, then tick until `--once` or SIGINT ends the run.
 async fn watch(
-    globals: &Globals,
     session: &Session,
     client: &canvas_api::Client,
     stream: &mut Stream,
     since: Option<i64>,
     once: bool,
-) -> Result<Summary, ExitCode> {
+) -> Result<Summary, Handled> {
     let mut summary = Summary {
         since,
         ..Summary::default()
@@ -211,14 +211,14 @@ async fn watch(
     if let Some(since) = since {
         let check = {
             let generation = generation.clone();
-            store_call(globals, session, move |conns| {
+            store_call(session, move |conns| {
                 check_cursor(&conns.state, since, &generation)
             })?
         };
         if check == CursorCheck::Resync {
             summary.resync = true;
             let record = resync_record(session, since, &generation);
-            write(globals, session, stream, &record)?;
+            write(session, stream, &record)?;
             return Ok(summary);
         }
     }
@@ -226,32 +226,32 @@ async fn watch(
     // Replay is at least once, in cursor order; consumers deduplicate.
     let mut cursor = since.unwrap_or(0);
     loop {
-        let batch = store_call(globals, session, move |conns| {
+        let batch = store_call(session, move |conns| {
             read_after(&conns.state, cursor, REPLAY_BATCH)
         })?;
         if batch.is_empty() {
             break;
         }
         for record in &batch {
-            write(globals, session, stream, record)?;
+            write(session, stream, record)?;
             cursor = record.cursor;
         }
     }
 
     let mut backoff: BTreeMap<(String, String), (Instant, Duration)> = BTreeMap::new();
     loop {
-        tick(globals, session, client, &mut summary, &mut backoff).await?;
+        tick(session, client, &mut summary, &mut backoff).await?;
         summary.ticks += 1;
         // Whatever the tick observed is already in the log; drain it in order.
         loop {
-            let batch = store_call(globals, session, move |conns| {
+            let batch = store_call(session, move |conns| {
                 read_after(&conns.state, cursor, REPLAY_BATCH)
             })?;
             if batch.is_empty() {
                 break;
             }
             for record in &batch {
-                write(globals, session, stream, record)?;
+                write(session, stream, record)?;
                 cursor = record.cursor;
             }
         }
@@ -271,25 +271,24 @@ async fn watch(
 
 /// One tick: retention, pending observations, then the due refreshes.
 async fn tick(
-    globals: &Globals,
     session: &Session,
     client: &canvas_api::Client,
     summary: &mut Summary,
     backoff: &mut BTreeMap<(String, String), (Instant, Duration)>,
-) -> Result<(), ExitCode> {
+) -> Result<(), Handled> {
     let now = now_timestamp();
-    store_call(globals, session, move |conns| {
+    store_call(session, move |conns| {
         expire(&mut conns.state, now).map(|_| ())
     })?;
     canvas_core::events::apply_pending(&session.open.store)
         .await
-        .map_err(|e| db_error(globals, session, &e))?;
+        .map_err(|e| db_error(session, &e))?;
 
-    summary.skipped = skip_reason(globals, session)?;
+    summary.skipped = skip_reason(session)?;
     if summary.skipped.is_some() {
         return Ok(());
     }
-    refresh_due(globals, session, client, summary, backoff, now).await
+    refresh_due(session, client, summary, backoff, now).await
 }
 
 /// Why this tick admits no polling request, or `None` when it may poll.
@@ -298,13 +297,13 @@ async fn tick(
 /// what bounds a submission's wait at `api_concurrency = 1`. An in-flight
 /// journal is the §10 pending hook. A terminal `outcome_unknown` journal is
 /// neither: polling continues, so its readback can still happen.
-fn skip_reason(globals: &Globals, session: &Session) -> Result<Option<String>, ExitCode> {
+fn skip_reason(session: &Session) -> Result<Option<String>, Handled> {
     match session.open.store.coordinator().foreground_interest() {
         Ok(true) => return Ok(Some("foreground_interest".to_owned())),
         Ok(false) => {}
         Err(error) => tracing::debug!(%error, "cannot read foreground interest"),
     }
-    let in_flight: i64 = store_call(globals, session, |conns| {
+    let in_flight: i64 = store_call(session, |conns| {
         Ok(conns.state.query_row(
             "SELECT COUNT(*) FROM submission_journal
              WHERE state IN ('planned','uploading','uploaded','posting')",
@@ -317,13 +316,12 @@ fn skip_reason(globals: &Globals, session: &Session) -> Result<Option<String>, E
 
 /// Refresh every §10 dataset whose TTL has run out and whose backoff allows it.
 async fn refresh_due(
-    globals: &Globals,
     session: &Session,
     client: &canvas_api::Client,
     summary: &mut Summary,
     backoff: &mut BTreeMap<(String, String), (Instant, Duration)>,
     now: jiff::Timestamp,
-) -> Result<(), ExitCode> {
+) -> Result<(), Handled> {
     let store = &session.open.store;
     let record = |summary: &mut Summary, outcome: &RefreshOutcome| {
         let row = to_dataset(outcome);
@@ -333,7 +331,6 @@ async fn refresh_due(
     };
 
     if let Some(outcome) = attempt(
-        globals,
         session,
         summary,
         backoff,
@@ -353,7 +350,6 @@ async fn refresh_due(
         record(summary, &outcome);
     }
     if let Some(outcome) = attempt(
-        globals,
         session,
         summary,
         backoff,
@@ -373,7 +369,7 @@ async fn refresh_due(
         record(summary, &outcome);
     }
 
-    let course_ids: Vec<i64> = store_call(globals, session, |conns| {
+    let course_ids: Vec<i64> = store_call(session, |conns| {
         Ok(load_courses_for_scope(conns, "active")?
             .into_iter()
             .map(|c| c.id)
@@ -381,7 +377,6 @@ async fn refresh_due(
     })?;
     for course_id in course_ids.iter().copied() {
         if let Some(outcome) = attempt(
-            globals,
             session,
             summary,
             backoff,
@@ -403,7 +398,6 @@ async fn refresh_due(
     }
 
     if let Some(outcome) = attempt(
-        globals,
         session,
         summary,
         backoff,
@@ -416,7 +410,6 @@ async fn refresh_due(
     }
     let window = PlannerWindow::todo_default(now.to_zoned(session.time_zone()).date(), 14);
     if let Some(outcome) = attempt(
-        globals,
         session,
         summary,
         backoff,
@@ -436,7 +429,6 @@ async fn refresh_due(
         record(summary, &outcome);
     }
     let announcements = attempt(
-        globals,
         session,
         summary,
         backoff,
@@ -469,13 +461,12 @@ async fn refresh_due(
 /// authentication failure is different — no wait fixes it — so it ends the run
 /// with the §14 exit its classification names.
 async fn attempt<F>(
-    globals: &Globals,
     session: &Session,
     summary: &mut Summary,
     backoff: &mut BTreeMap<(String, String), (Instant, Duration)>,
     key: (&str, &str),
     future: F,
-) -> Result<Option<RefreshOutcome>, ExitCode>
+) -> Result<Option<RefreshOutcome>, Handled>
 where
     F: std::future::Future<Output = Result<RefreshOutcome, SyncError>>,
 {
@@ -485,7 +476,7 @@ where
     // as the foreground waits, and lets only the request already in flight
     // finish. `future` has not been polled yet, so nothing has been admitted.
     if summary.skipped.is_none() {
-        summary.skipped = skip_reason(globals, session)?;
+        summary.skipped = skip_reason(session)?;
     }
     if summary.skipped.is_some() {
         return Ok(None);
@@ -503,7 +494,7 @@ where
         }
         Err(error) => {
             if error.classification().1 == 3 {
-                return Err(ExitCode::from(3));
+                return Err(super::emit::sync_error(session, &error));
             }
             let wait = backoff
                 .get(&key)
@@ -516,7 +507,7 @@ where
 }
 
 /// Write the closing `watch@1` document and exit 0.
-fn finish(globals: &Globals, session: &Session, stream: &mut Stream, summary: Summary) -> ExitCode {
+fn finish(session: &Session, stream: &mut Stream, summary: Summary) -> Handled {
     let datasets: Vec<SyncDatasetJson> = summary.datasets.into_values().collect();
     let result = WatchResult {
         since: summary.since.map(|c| c.to_string()),
@@ -535,8 +526,7 @@ fn finish(globals: &Globals, session: &Session, stream: &mut Stream, summary: Su
         .map(SyncDatasetJson::to_freshness)
         .collect();
     envelope.requests = session.requests();
-    let _ = globals;
-    emit(stream.jsonl, &envelope, || {
+    Handled::new(envelope, |envelope| {
         let mut out = io::stdout().lock();
         writeln!(
             out,
@@ -567,15 +557,9 @@ fn resync_record(session: &Session, since: i64, generation: &str) -> EventRecord
     }
 }
 
-fn write(
-    globals: &Globals,
-    session: &Session,
-    stream: &mut Stream,
-    record: &EventRecord,
-) -> Result<(), ExitCode> {
+fn write(session: &Session, stream: &mut Stream, record: &EventRecord) -> Result<(), Handled> {
     stream.write(record).map_err(|e| {
         emit_error(
-            globals.json,
             "local",
             &e.to_string(),
             13,
@@ -586,7 +570,7 @@ fn write(
 }
 
 /// Run one store job, mapping a database failure to the §14 exit 13.
-fn store_call<T, F>(globals: &Globals, session: &Session, f: F) -> Result<T, ExitCode>
+fn store_call<T, F>(session: &Session, f: F) -> Result<T, Handled>
 where
     F: FnOnce(&mut canvas_core::store::StoreConns) -> Result<T, canvas_core::store::DbError>
         + Send
@@ -597,12 +581,11 @@ where
         .open
         .store
         .call_blocking(f)
-        .map_err(|e| db_error(globals, session, &e))
+        .map_err(|e| db_error(session, &e))
 }
 
-fn db_error(globals: &Globals, session: &Session, error: &canvas_core::store::DbError) -> ExitCode {
+fn db_error(session: &Session, error: &canvas_core::store::DbError) -> Handled {
     emit_error(
-        globals.json,
         "local",
         &error.to_string(),
         13,

@@ -26,8 +26,9 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use super::Globals;
 use super::course::{refresh_fail, resolve_with_refresh};
 use super::course_load::{ensure_courses, load_courses_for_scope, outcome_freshness};
-use super::emit::{base_envelope, emit, emit_error, session_error, sync_error};
+use super::emit::{base_envelope, emit_error, session_error, sync_error};
 use super::files::{ensure_files, ensure_folders, ensure_modules};
+use super::handled::Handled;
 use crate::config::Config;
 use crate::output::{
     DownloadCourseJson, DownloadFileJson, DownloadResult, DownloadTotalsJson, Freshness, Outcome,
@@ -50,11 +51,15 @@ pub struct DownloadArgs {
     pub verify: bool,
 }
 
-/// Run `canvas download`.
+/// Run `canvas download` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
+    handle(globals, args).await.emit(globals.json)
+}
+
+/// Run `canvas download`.
+pub async fn handle(globals: &Globals, args: DownloadArgs) -> Handled {
     if globals.offline {
         return emit_error(
-            globals.json,
             "usage",
             "download cannot be used with --offline",
             2,
@@ -65,12 +70,11 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
 
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     let Some(client) = session.client.clone() else {
         return emit_error(
-            globals.json,
             "auth",
             "no token; set CANVAS_TOKEN or run auth login",
             3,
@@ -83,7 +87,6 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
         Ok(c) => c,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -97,7 +100,6 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
         Ok(p) => p,
         Err(msg) => {
             return emit_error(
-                globals.json,
                 "usage",
                 &msg,
                 2,
@@ -109,7 +111,7 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
     let jobs = args.jobs.unwrap_or(config.download.jobs).max(1) as usize;
 
     if let Err(e) = session.validate_network_token().await {
-        return sync_error(globals, &session, &e);
+        return sync_error(&session, &e);
     }
 
     let (courses, mut freshness) = match select_courses(globals, &session, &args).await {
@@ -148,10 +150,9 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
         .await
         {
             Ok(Ok(d)) => Some(d),
-            Ok(Err(e)) => return manifest_abort(globals, &session, e),
+            Ok(Err(e)) => return manifest_abort(&session, e),
             Err(_) => {
                 return emit_error(
-                    globals.json,
                     "local",
                     "blocking worker failed",
                     13,
@@ -350,7 +351,7 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
         envelope.freshness = freshness;
         envelope.partial = partial;
         envelope.warnings = warnings;
-        return emit(globals.json, &envelope, || {
+        return Handled::new(envelope, move |_| {
             writeln!(io::stderr(), "{}", error.message)
         });
     }
@@ -366,7 +367,7 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
         _ => Outcome::Ok,
     };
 
-    emit(globals.json, &envelope, || print_human(&envelope.result))
+    Handled::new(envelope, move |envelope| print_human(&envelope.result))
 }
 
 fn recovery_results(
@@ -769,13 +770,12 @@ fn expand_tilde(raw: &str) -> PathBuf {
     PathBuf::from(raw)
 }
 
-fn manifest_abort(globals: &Globals, session: &Session, err: ManifestError) -> ExitCode {
+fn manifest_abort(session: &Session, err: ManifestError) -> Handled {
     let code = match &err {
         ManifestError::IdentityMismatch { .. } | ManifestError::UnregisteredRoot(_) => "refused",
         _ => "local",
     };
     emit_error(
-        globals.json,
         code,
         &err.to_string(),
         err.exit_code(),
@@ -788,7 +788,7 @@ async fn select_courses(
     globals: &Globals,
     session: &Session,
     args: &DownloadArgs,
-) -> Result<(Vec<ResolvedCourse>, Vec<Freshness>), ExitCode> {
+) -> Result<(Vec<ResolvedCourse>, Vec<Freshness>), Handled> {
     if args.all_courses {
         let outcome = match ensure_courses(
             session,
@@ -801,7 +801,7 @@ async fn select_courses(
         .await
         {
             Ok(outcome) => outcome,
-            Err(e) => return Err(refresh_fail(globals, session, e)),
+            Err(e) => return Err(refresh_fail(session, e)),
         };
         let rows = session
             .open
@@ -810,7 +810,6 @@ async fn select_courses(
             .await
             .map_err(|e| {
                 emit_error(
-                    globals.json,
                     "local",
                     &e.to_string(),
                     13,
@@ -839,18 +838,18 @@ async fn prepare_course(
     session: &Session,
     course: &ResolvedCourse,
     args: &DownloadArgs,
-) -> Result<(Vec<PlannedFile>, Vec<Freshness>, Vec<PartialScope>), ExitCode> {
+) -> Result<(Vec<PlannedFile>, Vec<Freshness>, Vec<PartialScope>), Handled> {
     let mut freshness = Vec::new();
     let mut partial = Vec::new();
     let folders = ensure_folders(globals, session, course.id)
         .await
-        .map_err(|e| refresh_fail(globals, session, e))?;
+        .map_err(|e| refresh_fail(session, e))?;
     let files = ensure_files(globals, session, course.id)
         .await
-        .map_err(|e| refresh_fail(globals, session, e))?;
+        .map_err(|e| refresh_fail(session, e))?;
     let modules = ensure_modules(globals, session, course.id)
         .await
-        .map_err(|e| refresh_fail(globals, session, e))?;
+        .map_err(|e| refresh_fail(session, e))?;
     for outcome in [&folders, &files, &modules] {
         freshness.push(outcome_freshness(outcome));
         if let Some(status) = outcome
@@ -882,7 +881,6 @@ async fn prepare_course(
         .await
         .map_err(|e| {
             emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -893,7 +891,6 @@ async fn prepare_course(
 
     let mut planned = plan_course(&input).map_err(|e| {
         emit_error(
-            globals.json,
             "local",
             &e.to_string(),
             13,

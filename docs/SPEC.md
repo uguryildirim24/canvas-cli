@@ -738,6 +738,10 @@ An owner adds the interface (enum variant, schema entry, migration) that the oth
 15. **Plan retention (§12.2 versus REPORT §3.5, raised by the M6-a code review 2026-09-10).** `plans` rows keep the full outbound bytes of every prepared submission, including declined ones; `expire` and `invalidate` change the state and leave the payload, and nothing prunes them. Before M6-a `submit` never persisted content it did not send. Decide whether expired and invalidated plans are pruned (suggested: payload cleared at the 15-minute expiry, row kept 30 days like events) and whether `doctor` reports the backlog.
 16. **Blocking wait on a contended admission lock (§12.2 step 2 versus REPORT §3.5, same review).** §12.2 takes admission non-blocking and reports `in_progress`; `plan::execute` waits up to 5 s for the same plan's concurrent execute to publish its journal, then returns that journal (never a second one). A different submit still gets `in_progress` at once. Decide whether §12.2 should describe the wait or whether the two cases must be told apart without blocking.
 17. **Outcome for "this plan already has a journal" (REPORT §3.2 exit table, same review).** §3.5 says a replayed acceptance returns the existing journal, but no outcome, reason, or exit is defined. Coordinator reading applied for M6-b until the owner rules: `submission.execute` on an executed plan returns the linked journal's `submit@1` envelope with that journal's own `outcome` and exit, plus `replayed: true`; the human `submit` cannot reach it.
+18. **`chrono` arrives transitively through `rmcp` (Appendix A, raised by the M6-b code review 2026-09-10).** §7 timestamps use `jiff`; the workspace otherwise has no `chrono`. Accept two time libraries in the lock file as an appendix exception, or ask upstream for a feature that drops it.
+19. **MCP catalog size (REPORT §3.2, same review).** `tools/list` costs about 41 900 tokens because every tool's output schema inlines the whole §7 envelope in both shapes (a host validator reads a definition on its own). `docs/bench.md` records it as the number to beat. Options: `$ref`s a host may not resolve, a smaller catalog, or a compact envelope schema per tool.
+20. **`schema@1` has no registry row (REPORT §3.2, same review).** The `canvas schema` document is raw output with no §7 envelope, so `all_schemas()` cannot carry a `schema@1` row and `canvas schema schema` exits 6; REPORT §3.2's table implies a row. Decide whether the table entry is documentation only (reviewer's reading) or the document must be self-describing through the registry.
+21. **Agent-surface annotations and bounds (REPORT §3.2, same review).** `download.plan` and `open.url` carry `readOnlyHint: true` because their effect is a dry run and a resolution (REPORT: annotations describe effects), though the same sentence lists downloads and navigation among non-reads; and `download.run` keeps the unbounded v1 `jobs` argument. Confirm the effect reading and say whether agent-facing `jobs` should be clamped.
 
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
@@ -764,6 +768,8 @@ An owner adds the interface (enum variant, schema entry, migration) that the oth
 | html2text or htmd | latest (pick in M1-c) | HTML → text |
 | tracing / tracing-subscriber | latest | logs |
 | thiserror / anyhow | 2.0.20 / 1.0.104 | errors |
+| rmcp (`=3.2.0`, `server`, `transport-io`, `local`: the command cores are `!Send`, so the service runs in a `LocalSet`) | 3.2.0 | `canvas mcp` (M6-b); brings `chrono` transitively, see §19 item 18 |
+| schemars (`=1.2.2`) | 1.2.2 | JSON Schema for `canvas schema` and the MCP tool schemas (M6-b) |
 | dev: wiremock, assert_cmd, predicates, insta | 0.6.5, 2.2.2, 3.1.4, 1.48.0 | tests |
 | tools: cargo-nextest, cargo-deny, cargo-dist, release-plz | 0.9.143, 0.20.2, 0.32.0, 0.3.164 | CI, release |
 

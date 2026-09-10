@@ -33,6 +33,7 @@ use wiremock::matchers::{method as method_matcher, path as path_matcher, query_p
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::bench_fixture::{self, BLOB_PREFIX, DOWNLOAD_COURSE, DOWNLOAD_FILES};
+use crate::bench_mcp;
 use crate::fixture::{Recorded, load_manifest, load_set};
 
 /// The set `bench` uses when none is named.
@@ -49,6 +50,8 @@ pub struct Options {
     pub fixture: String,
     pub runs: u32,
     pub no_fail: bool,
+    /// Also measure the agent surface (`canvas mcp`).
+    pub mcp: bool,
     /// Measure one `watch` tick, and the §13 targets with `watch` running.
     pub watch: bool,
     /// Where the report goes. `None` means `docs/bench.md`.
@@ -112,6 +115,16 @@ impl SetShape {
     }
 }
 
+/// One measured metric under one load condition.
+struct Measured {
+    label: &'static str,
+    load: Load,
+    p50: f64,
+    p95: f64,
+    target_p50: Option<f64>,
+    target_p95: f64,
+}
+
 /// What else was running while a metric was measured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Load {
@@ -133,16 +146,6 @@ impl Load {
     }
 }
 
-/// One measured metric under one load condition.
-struct Measured {
-    label: &'static str,
-    load: Load,
-    p50: f64,
-    p95: f64,
-    target_p50: Option<f64>,
-    target_p95: f64,
-}
-
 /// One `canvas watch --jsonl --once` tick.
 struct Tick {
     p50: f64,
@@ -153,7 +156,7 @@ struct Tick {
     requests: u64,
 }
 
-/// Everything one bench run measured.
+/// Everything one bench run measured, apart from the agent surface.
 struct Measurements {
     targets: Vec<Measured>,
     tick: Option<Tick>,
@@ -215,11 +218,18 @@ pub fn run(options: &Options) -> Result<bool> {
         mount_blobs(&server).await;
         let uri = server.uri();
         let runs = options.runs;
+        let mcp = options.mcp;
         let watch = options.watch;
         let outcome = tokio::task::spawn_blocking(move || {
             let harness = Harness::new(release, debug, uri)?;
             harness.prime()?;
-            harness.measure_all(runs, watch)
+            let measured = harness.measure_all(runs, watch)?;
+            let agent = if mcp {
+                Some(harness.measure_mcp(runs)?)
+            } else {
+                None
+            };
+            anyhow::Ok((measured, agent))
         })
         .await?;
         // A failure is almost always a request the set does not answer. Name
@@ -237,7 +247,8 @@ pub fn run(options: &Options) -> Result<bool> {
         anyhow::Ok(outcome?)
     })?;
 
-    let passed = report(&root, options, &shape, &measurements)?;
+    let (measurements, agent) = measurements;
+    let passed = report(&root, options, &shape, &measurements, agent.as_ref())?;
     Ok(passed || options.no_fail)
 }
 
@@ -674,6 +685,21 @@ impl Harness {
     /// a cold binary and a cold directory, which is not what §13 describes.
     const WARMUP: u32 = 2;
 
+    /// Measure the agent surface over a real stdio pipe.
+    ///
+    /// The cache is already primed, and the server runs `--offline`, so the
+    /// numbers bound the client's own work: the schema it hands a host, and
+    /// the round trip of one warm tool call.
+    fn measure_mcp(&self, runs: u32) -> Result<bench_mcp::Report> {
+        let data_root = self.data_root();
+        let factory = || {
+            let mut command = self.command(&self.release, &data_root);
+            command.args(["--offline", "--color", "never"]);
+            command
+        };
+        bench_mcp::measure(&factory, runs, DOWNLOAD_COURSE, DOWNLOAD_COURSE * 100 + 1)
+    }
+
     fn measure_all(&self, runs: u32, watch: bool) -> Result<Measurements> {
         copy_dir(&self.data_root(), &self.snapshot())?;
         let mut out = Vec::new();
@@ -757,7 +783,7 @@ impl Harness {
 }
 
 /// Nearest-rank percentile in milliseconds.
-fn percentile(samples: &[f64], q: f64) -> f64 {
+pub(crate) fn percentile(samples: &[f64], q: f64) -> f64 {
     if samples.is_empty() {
         return f64::NAN;
     }
@@ -809,6 +835,7 @@ fn report(
     options: &Options,
     shape: &SetShape,
     measurements: &Measurements,
+    agent: Option<&bench_mcp::Report>,
 ) -> Result<bool> {
     let mut passed = true;
     println!(
@@ -835,6 +862,26 @@ fn report(
             "watch tick", "idle", tick.p50, tick.p95, "none", "—"
         );
     }
+    if let Some(agent) = agent {
+        if agent.missed() {
+            passed = false;
+        }
+        println!(
+            "{:<28} {:<10} {:>9.1} {:>9.1} {:>12.0} {:>7}",
+            "warm todo.list over stdio",
+            "mcp",
+            agent.latency.p50,
+            agent.latency.p95,
+            bench_mcp::ROUND_TRIP_P95_MS,
+            if agent.missed() { "MISS" } else { "ok" }
+        );
+        println!(
+            "\ncatalog: {} tools, {} bytes, ~{} tokens per `tools/list`",
+            agent.catalog.len(),
+            agent.catalog_bytes(),
+            agent.catalog_tokens()
+        );
+    }
     let doc = options
         .doc
         .clone()
@@ -842,7 +889,7 @@ fn report(
     if let Some(parent) = doc.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&doc, document(options, shape, measurements, passed)?)?;
+    std::fs::write(&doc, document(options, shape, measurements, agent, passed)?)?;
     println!("\nwrote {}", doc.display());
     if !passed {
         eprintln!("a SPEC section 13 target was missed");
@@ -898,6 +945,7 @@ fn document(
     options: &Options,
     shape: &SetShape,
     measurements: &Measurements,
+    agent: Option<&bench_mcp::Report>,
     passed: bool,
 ) -> Result<String> {
     use std::fmt::Write as _;
@@ -905,7 +953,8 @@ fn document(
     writeln!(out, "# Benchmarks\n")?;
     writeln!(
         out,
-        "Generated by `cargo xtask bench --runs {}`. Do not edit by hand.\n",
+        "Generated by `cargo xtask bench{} --runs {}`. Do not edit by hand.\n",
+        if options.mcp { " --mcp" } else { "" },
         options.runs
     )?;
     writeln!(out, "| | |")?;
@@ -990,6 +1039,119 @@ fn document(
             "\nThe `watch` rows of the table above are the §13 `todo` targets \
              measured while that resident `watch` was running, which is the \
              REPORT §4 acceptance condition for M6-c."
+        )?;
+    } else {
+        writeln!(out, "\n## Watch\n")?;
+        writeln!(
+            out,
+            "Not measured in this run. `cargo xtask bench --watch` adds one \
+             `canvas watch --jsonl --once` tick and repeats the §13 targets \
+             with a resident `watch` on the same identity."
+        )?;
+    }
+
+    if let Some(agent) = agent {
+        writeln!(out, "\n## Agent surface (`canvas mcp`)\n")?;
+        writeln!(
+            out,
+            "Measured over a real stdio pipe with hand-written JSON-RPC on \
+             protocol `2026-07-28`, against the same primed cache, with the \
+             server run `--offline`.\n"
+        )?;
+        writeln!(out, "| Metric | p50 ms | p95 ms | Target p95 | Verdict |")?;
+        writeln!(out, "|---|---:|---:|---:|---|")?;
+        writeln!(
+            out,
+            "| warm `todo.list` round trip | {:.1} | {:.1} | {:.0} | {} |",
+            agent.latency.p50,
+            agent.latency.p95,
+            bench_mcp::ROUND_TRIP_P95_MS,
+            if agent.missed() { "**miss**" } else { "ok" }
+        )?;
+        writeln!(
+            out,
+            "\n{} timed calls after {} warm-up calls, on one long-lived \
+             connection. The round trip is the time from writing the request \
+             line to reading the response line, so it carries the process's \
+             own work and the pipe, and no model time.\n",
+            agent.latency.runs,
+            bench_mcp::WARMUP
+        )?;
+
+        writeln!(out, "### Schema cost per tool\n")?;
+        writeln!(
+            out,
+            "The bytes each tool definition puts on the wire in `tools/list`, \
+             which a host pays once per session before the model has read \
+             anything. The token column is an estimate: one token per {} \
+             bytes of UTF-8. That is a rule of thumb for JSON with English \
+             identifiers, not a tokenizer run; the byte column is exact.\n\n\
+             Most of each row is the output schema, which is the whole §7 \
+             envelope in both shapes: the command's result and the `error@1` \
+             branch. Both are self-contained, with every sub-schema inlined, \
+             because a host validator reads a tool definition on its own. \
+             That is why the total is what it is, and it is the number to \
+             beat if the catalog is ever trimmed.\n",
+            bench_mcp::BYTES_PER_TOKEN
+        )?;
+        writeln!(out, "| Tool | Bytes | ~Tokens |")?;
+        writeln!(out, "|---|---:|---:|")?;
+        for tool in &agent.catalog {
+            writeln!(
+                out,
+                "| `{}` | {} | {} |",
+                tool.name, tool.bytes, tool.tokens
+            )?;
+        }
+        writeln!(
+            out,
+            "| **{} tools** | **{}** | **~{}** |",
+            agent.catalog.len(),
+            agent.catalog_bytes(),
+            agent.catalog_tokens()
+        )?;
+
+        writeln!(out, "\n### Round trips per workflow\n")?;
+        writeln!(
+            out,
+            "One row per workflow of the shipped skill \
+             (`skill/canvas-cli/`). Each round trip is one host turn, so the \
+             call count is what a workflow costs in conversation. `outcome \
+             (exit)` is what each call reported against this fixture.\n"
+        )?;
+        writeln!(out, "| Workflow | Calls | Measured ms | Sequence |")?;
+        writeln!(out, "|---|---:|---:|---|")?;
+        for workflow in &agent.workflows {
+            let sequence: Vec<String> = workflow
+                .calls
+                .iter()
+                .map(|(tool, outcome)| format!("`{tool}` {outcome}"))
+                .collect();
+            writeln!(
+                out,
+                "| {} | {} | {:.1} | {} |",
+                workflow.name,
+                workflow.total_calls(),
+                workflow.total_ms,
+                sequence.join(" → ")
+            )?;
+        }
+        for workflow in &agent.workflows {
+            if workflow.unmeasured > 0 {
+                writeln!(
+                    out,
+                    "\n- **{}** costs {} more call(s) this run did not issue: {}.",
+                    workflow.name, workflow.unmeasured, workflow.unmeasured_note
+                )?;
+            }
+        }
+    } else {
+        writeln!(out, "\n## Agent surface (`canvas mcp`)\n")?;
+        writeln!(
+            out,
+            "Not measured in this run. `cargo xtask bench --mcp` adds the \
+             schema cost per tool, the warm `todo.list` round trip over \
+             stdio, and the round trips per skill workflow."
         )?;
     }
 
@@ -1089,6 +1251,7 @@ mod tests {
         let options = Options {
             fixture: "recorded-3".to_owned(),
             runs: 3,
+            mcp: false,
             no_fail: false,
             watch: false,
             doc: None,
@@ -1101,7 +1264,7 @@ mod tests {
             targets: Vec::new(),
             tick: None,
         };
-        let doc = document(&options, &shape, &empty, true).unwrap();
+        let doc = document(&options, &shape, &empty, None, true).unwrap();
         assert!(doc.contains("Courses in set | 3"), "{doc}");
         assert!(doc.contains("fixture set: 3 courses"), "{doc}");
         assert!(doc.contains("not comparable with a 5-course run"), "{doc}");
@@ -1185,6 +1348,7 @@ mod tests {
         let options = Options {
             fixture: DEFAULT_SET.to_owned(),
             runs: 3,
+            mcp: false,
             no_fail: false,
             watch: false,
             doc: None,
@@ -1204,7 +1368,7 @@ mod tests {
             courses: 5,
             extra_pages: 0,
         };
-        let doc = document(&options, &shape, &measurements, true).unwrap();
+        let doc = document(&options, &shape, &measurements, None, true).unwrap();
         assert!(doc.contains("# Benchmarks"));
         assert!(doc.contains("bench-5"));
         assert!(doc.contains("Courses in set | 5"));
@@ -1221,6 +1385,7 @@ mod tests {
         let options = Options {
             fixture: DEFAULT_SET.to_owned(),
             runs: 3,
+            mcp: false,
             no_fail: false,
             watch: true,
             doc: None,
@@ -1245,7 +1410,7 @@ mod tests {
             courses: 5,
             extra_pages: 0,
         };
-        let doc = document(&options, &shape, &measurements, true).unwrap();
+        let doc = document(&options, &shape, &measurements, None, true).unwrap();
         assert!(doc.contains("## Watch"), "{doc}");
         assert!(
             doc.contains("watch tick, full refresh | 90.0 | 130.0"),
@@ -1265,7 +1430,8 @@ mod tests {
             targets: Vec::new(),
             tick: None,
         };
-        let doc = document(&quiet, &shape, &without, true).unwrap();
-        assert!(!doc.contains("## Watch"), "{doc}");
+        let doc = document(&quiet, &shape, &without, None, true).unwrap();
+        assert!(doc.contains("Not measured in this run."), "{doc}");
+        assert!(!doc.contains("watch tick, full refresh"), "{doc}");
     }
 }

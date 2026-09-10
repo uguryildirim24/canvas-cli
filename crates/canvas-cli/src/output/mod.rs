@@ -4,6 +4,7 @@
 
 mod color;
 mod envelope;
+mod json_schema;
 mod now;
 mod registry;
 mod render;
@@ -12,6 +13,10 @@ pub use color::{ColorMode, resolve_color, should_use_color, should_use_color_wit
 pub use envelope::{
     Envelope, ErrorResult, Freshness, FreshnessSource, IdentityRef, Outcome, PartialScope,
     Requests, error_envelope, print_human,
+};
+pub use json_schema::{
+    SCHEMA_SCHEMA, command_name, document_for_command, document_for_schema, entry_command,
+    list as schema_list,
 };
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
@@ -31,7 +36,7 @@ pub use registry::{
     SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO, SCHEMA_VERIFY, SCHEMA_VERSION, SCHEMA_WATCH,
     SchemaEntry, SubmissionStatusJson, SubmitCandidateJson, SubmitFileJson, SubmitResult,
     SubmitTextJson, SyncDatasetJson, SyncResult, TeacherJson, TermJson, WatchResult, WindowJson,
-    all_schemas, rejects_json,
+    all_schemas, entry_for_command, entry_for_schema, rejects_json,
 };
 pub use render::{
     StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,

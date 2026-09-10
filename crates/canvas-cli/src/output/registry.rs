@@ -264,6 +264,48 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
     ]
 }
 
+/// The registered schema a command name belongs to.
+///
+/// The name is the command path with any separator: `auth status`,
+/// `auth_status`, and `auth-status` all name `canvas-cli/auth_status@1`.
+///
+/// A schema with several result shapes has one entry per shape, named after
+/// the subcommand that emits it, so `receipts show` finds the `show` entry.
+/// A bare `receipts` finds the first entry, which is what the bare command
+/// prints.
+#[must_use]
+pub fn entry_for_command(name: &str) -> Option<&'static SchemaEntry> {
+    let wanted = normalize_command(name);
+    all_schemas()
+        .iter()
+        .find(|entry| normalize_command(&crate::output::entry_command(entry)) == wanted)
+        .or_else(|| {
+            all_schemas()
+                .iter()
+                .find(|entry| normalize_command(&crate::output::command_name(entry.id)) == wanted)
+        })
+}
+
+/// The entry for one schema id and one of its result shapes.
+///
+/// `None` takes the first entry of that id, which is the shape the bare
+/// command prints. A variant that is not registered resolves to nothing
+/// rather than silently describing another shape.
+#[must_use]
+pub fn entry_for_schema(id: &str, variant: Option<&str>) -> Option<&'static SchemaEntry> {
+    all_schemas()
+        .iter()
+        .find(|entry| entry.id == id && (variant.is_none() || entry.variant == variant))
+}
+
+fn normalize_command(name: &str) -> String {
+    name.trim()
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
 /// Raw-output commands reject `--json` (SPEC §7):
 /// `completions`, `notify`, `auth token --reveal`, `config edit`,
 /// `calendar --ics -`, and `receipts export --out -`.
@@ -279,7 +321,7 @@ pub fn rejects_json(command_is_raw: bool) -> bool {
 
 // --- M1-b typed result payloads (Appendix D) ---
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TermJson {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -287,14 +329,14 @@ pub struct TermJson {
     pub end_at: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PeriodJson {
     pub mode: String,
     pub id: Option<String>,
     pub title: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GradeJson {
     pub current_score: Option<f64>,
     pub current_grade: Option<String>,
@@ -303,7 +345,7 @@ pub struct GradeJson {
     pub period: PeriodJson,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CourseJson {
     pub id: String,
     pub code: String,
@@ -316,13 +358,13 @@ pub struct CourseJson {
     pub grades: GradeJson,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TeacherJson {
     pub id: String,
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CourseDetailJson {
     pub id: String,
     pub code: String,
@@ -339,29 +381,29 @@ pub struct CourseDetailJson {
     pub modules_count: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CoursesResult {
     pub courses: Vec<CourseJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CourseResult {
     pub course: CourseDetailJson,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AliasJson {
     pub name: String,
     pub course_id: String,
     pub course_code: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AliasResult {
     pub aliases: Vec<AliasJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SyncDatasetJson {
     pub dataset: String,
     pub scope: String,
@@ -390,7 +432,7 @@ impl SyncDatasetJson {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SyncResult {
     pub datasets: Vec<SyncDatasetJson>,
 }
@@ -400,7 +442,7 @@ pub struct SyncResult {
 /// A stream line is self-describing: it names its own schema, so a consumer
 /// that reads `canvas watch --jsonl` needs no envelope around it. §7 is
 /// unchanged — this is the streaming contract, not a `--json` invocation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EventJson {
     pub schema: String,
     pub cursor: String,
@@ -417,7 +459,7 @@ pub struct EventJson {
 }
 
 /// The `canvas watch --once` summary (`canvas-cli/watch@1`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WatchResult {
     /// The `--since` cursor the run replayed from, or null.
     pub since: Option<String>,
@@ -435,13 +477,13 @@ pub struct WatchResult {
     pub datasets: Vec<SyncDatasetJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CacheTableJson {
     pub name: String,
     pub rows: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CacheStatsResult {
     pub path: String,
     pub size_bytes: u64,
@@ -449,20 +491,20 @@ pub struct CacheStatsResult {
     pub datasets: Vec<Freshness>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CacheClearResult {
     pub cleared: bool,
     pub rows_deleted: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CachePathResult {
     pub path: String,
 }
 
 // --- M2-b typed result payloads (Appendix D) ---
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SubmitCandidateJson {
     pub attempt: i64,
     pub submitted_at: Option<String>,
@@ -471,7 +513,7 @@ pub struct SubmitCandidateJson {
     pub attachment_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SubmitFileJson {
     pub name: String,
     pub size: u64,
@@ -480,18 +522,25 @@ pub struct SubmitFileJson {
     pub canvas_file_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SubmitTextJson {
     pub input_sha256: String,
     pub transform: String,
     pub sent_sha256: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SubmitResult {
     pub outcome: String,
     pub state: String,
     pub journal_id: String,
+    /// True when this envelope reports a journal that already existed.
+    ///
+    /// `submission.execute` on a plan that is already executed returns the
+    /// linked journal rather than a second one (SPEC §19 item 17). The human
+    /// `submit` never reaches that path, so it always reports `false`.
+    #[serde(default)]
+    pub replayed: bool,
     #[serde(default)]
     pub receipt_id: Option<String>,
     #[serde(default)]
@@ -514,13 +563,13 @@ pub struct SubmitResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FilesListingJson {
     pub available: bool,
     pub http_status: Option<u16>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FileEntryJson {
     pub id: String,
     /// `"listing"` or `"module"`.
@@ -537,14 +586,14 @@ pub struct FileEntryJson {
     pub lock_explanation: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FilesResult {
     pub course_id: String,
     pub listing: FilesListingJson,
     pub files: Vec<FileEntryJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModuleItemJson {
     pub id: String,
     #[serde(rename = "type")]
@@ -558,7 +607,7 @@ pub struct ModuleItemJson {
     pub html_url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModuleEntryJson {
     pub id: String,
     pub name: String,
@@ -569,7 +618,7 @@ pub struct ModuleEntryJson {
     pub items: Vec<ModuleItemJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModulesResult {
     pub course_id: String,
     pub modules: Vec<ModuleEntryJson>,
@@ -578,7 +627,7 @@ pub struct ModulesResult {
 // --- M4-a grades payloads (Appendix D `grades@1`) ---
 
 /// Shared Appendix D `Course` object (grades are a sibling, not a member).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CourseBaseJson {
     pub id: String,
     pub code: String,
@@ -591,7 +640,7 @@ pub struct CourseBaseJson {
 }
 
 /// Appendix D `SubmissionStatus`; `missing` and `pending` are never null.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SubmissionStatusJson {
     pub submitted: Option<bool>,
     pub graded: Option<bool>,
@@ -609,7 +658,7 @@ pub struct SubmissionStatusJson {
 }
 
 /// One course row of the grades overview.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GradesCourseJson {
     pub course: CourseBaseJson,
     pub grades: GradeJson,
@@ -618,7 +667,7 @@ pub struct GradesCourseJson {
 }
 
 /// Canvas drop rules; `never_drop` is an array, never null.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GroupRulesJson {
     pub drop_lowest: Option<u32>,
     pub drop_highest: Option<u32>,
@@ -626,13 +675,13 @@ pub struct GroupRulesJson {
 }
 
 /// Group subtotal, present only when the API supplied one (SPEC §12.4).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GroupSubtotalJson {
     pub score: Option<f64>,
     pub possible: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GroupAssignmentJson {
     pub id: String,
     pub name: String,
@@ -641,7 +690,7 @@ pub struct GroupAssignmentJson {
     pub status: SubmissionStatusJson,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AssignmentGroupJson {
     pub id: String,
     pub name: String,
@@ -652,7 +701,7 @@ pub struct AssignmentGroupJson {
     pub assignments: Vec<GroupAssignmentJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GradingPeriodJson {
     pub id: String,
     pub title: String,
@@ -662,13 +711,13 @@ pub struct GradingPeriodJson {
 }
 
 /// The `grades <course>` course view.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GradesCourseViewJson {
     pub groups: Vec<AssignmentGroupJson>,
     pub periods: Vec<GradingPeriodJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GradesResult {
     /// The selected period mode: `all`, `current`, or `id`.
     pub period_mode: String,
@@ -677,7 +726,7 @@ pub struct GradesResult {
     pub course: Option<GradesCourseViewJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DownloadFileJson {
     pub id: String,
     pub path: String,
@@ -692,14 +741,14 @@ pub struct DownloadFileJson {
     pub verify: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DownloadCourseJson {
     pub course_id: String,
     pub course_code: String,
     pub files: Vec<DownloadFileJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DownloadTotalsJson {
     pub planned: u64,
     pub downloaded: u64,
@@ -716,7 +765,7 @@ pub struct DownloadTotalsJson {
     pub bytes: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DownloadResult {
     pub dest: String,
     pub dry_run: bool,
@@ -725,7 +774,7 @@ pub struct DownloadResult {
 }
 
 /// One frozen upload on a `plan@1` document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanFileJson {
     pub name: String,
     pub size: u64,
@@ -736,7 +785,7 @@ pub struct PlanFileJson {
 ///
 /// The digests only. `plan@1` never carries the outbound bytes: `sent_sha256`
 /// is what the approval binds, and §12.2 step 8 verifies it from the stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanTextJson {
     pub input_sha256: String,
     pub transform: String,
@@ -744,7 +793,7 @@ pub struct PlanTextJson {
 }
 
 /// The approval audit on a `plan@1` document; `null` before approval.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanApprovalJson {
     pub channel: String,
     pub at: String,
@@ -753,7 +802,7 @@ pub struct PlanApprovalJson {
 }
 
 /// A frozen plan (REPORT §3.5).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanJson {
     pub plan_id: String,
     pub state: String,
@@ -779,7 +828,7 @@ pub struct PlanJson {
 }
 
 /// `plan@1` result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanResult {
     pub plan: PlanJson,
 }
@@ -842,13 +891,13 @@ impl PlanJson {
 // --- M4-b typed result payloads (Appendix D) ---
 
 /// Inclusive civil-day window shared by `announcements@1` and `calendar@1`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WindowJson {
     pub start: String,
     pub end: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AnnouncementJson {
     pub id: String,
     pub course_id: Option<String>,
@@ -861,26 +910,26 @@ pub struct AnnouncementJson {
     pub html_url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AnnouncementsResult {
     pub window: WindowJson,
     pub announcements: Vec<AnnouncementJson>,
 }
 
 /// `announcement@1`: an `announcements@1` item plus the message.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AnnouncementDetailJson {
     #[serde(flatten)]
     pub item: AnnouncementJson,
     pub message_markdown: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AnnouncementResult {
     pub announcement: AnnouncementDetailJson,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CalendarItemJson {
     /// `canvas-<kind>-<id>@<identity-key>`, the same UID the ICS carries.
     pub uid: String,
@@ -901,7 +950,7 @@ pub struct CalendarItemJson {
     pub html_url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CalendarResult {
     pub window: WindowJson,
     pub items: Vec<CalendarItemJson>,

@@ -36,14 +36,14 @@ pub async fn run(globals: &Globals, since: Option<String>, stdout: bool) -> Exit
         None => None,
         Some(Ok(cursor)) => Some(cursor),
         Some(Err(message)) => {
-            return emit_error(false, "usage", &message, 2, globals.profile.clone(), None);
+            return emit_error("usage", &message, 2, globals.profile.clone(), None).emit(false);
         }
     };
 
     // Notify reads the local log, so it needs no token and no network.
     let session = match globals.open_local_session() {
         Ok(s) => s,
-        Err(e) => return session_error(false, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()).emit(false),
     };
     let generation = session.identity.generation.to_string();
 
@@ -171,5 +171,5 @@ fn parse_cursor(raw: &str) -> Result<i64, String> {
 }
 
 fn local_error(globals: &Globals, message: &str) -> ExitCode {
-    emit_error(false, "local", message, 13, globals.profile.clone(), None)
+    emit_error("local", message, 13, globals.profile.clone(), None).emit(false)
 }
