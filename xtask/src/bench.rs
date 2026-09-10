@@ -1,0 +1,783 @@
+//! `cargo xtask bench [--fixture SET] [--runs N] [--no-fail]`.
+//!
+//! Measures the SPEC §13 targets against a five-course fixture set served by
+//! `wiremock`, with a release build of `canvas`. Appendix A pins no benchmark
+//! crate, so the timing is `std::time::Instant` around repeated runs of the
+//! real binary, which is also what §13 describes.
+//!
+//! Two limitations are inherent and are repeated in `docs/bench.md`:
+//!
+//! - **Cold start.** Dropping the operating-system page cache needs root. The
+//!   benchmark emulates a cold start with a fresh copy of the cache files and
+//!   a new process, so the `SQLite` page cache, the connection, and the process
+//!   itself are cold. The file bytes may still sit in the OS cache, so the
+//!   measured number is a lower bound.
+//! - **The concurrent download.** A transfer over plain `http` is refused
+//!   unless the binary was built with debug assertions (SPEC §11 keeps the
+//!   `https` rule in release builds), and `wiremock` serves no TLS. The
+//!   measured `todo` runs therefore use the release binary, while the
+//!   download that loads the server alongside them uses a debug build.
+
+use std::collections::BTreeMap;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::Instant;
+
+use anyhow::{Context, Result, bail};
+use serde_json::Value;
+use wiremock::matchers::{method as method_matcher, path as path_matcher, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+use crate::bench_fixture::{self, BLOB_PREFIX, DOWNLOAD_COURSE, DOWNLOAD_FILES};
+use crate::fixture::{Recorded, load_manifest, load_set};
+
+/// The set `bench` uses when none is named.
+pub const DEFAULT_SET: &str = "bench-5";
+
+/// The token the benchmark identity uses. It never leaves the local mock.
+const TOKEN: &str = "bench-fixture-token";
+
+/// Options of the bench task.
+pub struct Options {
+    pub fixture: String,
+    pub runs: u32,
+    pub no_fail: bool,
+}
+
+/// One SPEC §13 target.
+struct Target {
+    metric: &'static str,
+    label: &'static str,
+    p50_ms: Option<f64>,
+    p95_ms: f64,
+}
+
+const TARGETS: [Target; 3] = [
+    Target {
+        metric: "todo_first_output",
+        label: "cached todo, first output",
+        p50_ms: Some(50.0),
+        p95_ms: 150.0,
+    },
+    Target {
+        metric: "todo_total",
+        label: "cached todo, full run",
+        p50_ms: None,
+        p95_ms: 250.0,
+    },
+    Target {
+        metric: "cold_start",
+        label: "cold start",
+        p50_ms: None,
+        p95_ms: 400.0,
+    },
+];
+
+/// One measured metric under one load condition.
+struct Measured {
+    label: &'static str,
+    concurrent: bool,
+    p50: f64,
+    p95: f64,
+    target_p50: Option<f64>,
+    target_p95: f64,
+}
+
+impl Measured {
+    fn missed(&self) -> bool {
+        self.p95 > self.target_p95 || self.target_p50.is_some_and(|t| self.p50 > t)
+    }
+}
+
+/// Run the bench task. `Ok(false)` means a target was missed.
+pub fn run(options: &Options) -> Result<bool> {
+    if options.runs == 0 {
+        bail!("--runs must be at least 1");
+    }
+    let root = workspace_root()?;
+    let set_dir = root
+        .join(crate::fixture::TRACKED_FIXTURES)
+        .join(&options.fixture);
+    if !set_dir.exists() {
+        if options.fixture != DEFAULT_SET {
+            bail!(
+                "fixture set {} does not exist; record one, or use the generated {DEFAULT_SET}",
+                set_dir.display()
+            );
+        }
+        let count = bench_fixture::generate(&set_dir)?;
+        eprintln!(
+            "generated {count} synthetic responses in {}",
+            set_dir.display()
+        );
+    }
+    let entries = load_set(&set_dir)?;
+    let manifest = load_manifest(&set_dir)?;
+    let shift = manifest
+        .as_ref()
+        .filter(|m| m.synthetic)
+        .and_then(|m| day_shift(&m.recorded_at))
+        .unwrap_or(0);
+
+    eprintln!("building canvas (release, and debug for the download load)");
+    let release = build_binary(&root, true)?;
+    let debug = build_binary(&root, false)?;
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let measurements = runtime.block_on(async move {
+        let server = MockServer::start().await;
+        mount_set(&server, &entries, shift).await;
+        mount_blobs(&server).await;
+        let uri = server.uri();
+        let runs = options.runs;
+        let outcome = tokio::task::spawn_blocking(move || {
+            let mut harness = Harness::new(release, debug, uri)?;
+            harness.prime()?;
+            harness.measure_all(runs)
+        })
+        .await??;
+        // Keep the server alive until the measurements finish.
+        drop(server);
+        anyhow::Ok(outcome)
+    })?;
+
+    let passed = report(&root, options, &measurements)?;
+    Ok(passed || options.no_fail)
+}
+
+// ---------------------------------------------------------------- fixtures
+
+/// Whole days between a set's record date and today.
+fn day_shift(recorded_at: &str) -> Option<i64> {
+    let recorded: jiff::Timestamp = recorded_at.parse().ok()?;
+    let elapsed = jiff::Timestamp::now() - recorded;
+    Some(i64::from(elapsed.get_hours()) / 24)
+}
+
+/// Move every RFC 3339 timestamp in a body forward by `days`.
+fn shift_days(value: &Value, days: i64) -> Value {
+    match value {
+        Value::String(text) => match text.parse::<jiff::Timestamp>() {
+            Ok(t) if looks_like_timestamp(text) => {
+                Value::String((t + jiff::SignedDuration::from_hours(days * 24)).to_string())
+            }
+            _ => value.clone(),
+        },
+        Value::Array(items) => Value::Array(items.iter().map(|i| shift_days(i, days)).collect()),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), shift_days(v, days)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// `jiff` parses more shapes than Canvas sends; require the wire form.
+fn looks_like_timestamp(text: &str) -> bool {
+    text.len() >= 20
+        && text.as_bytes()[4] == b'-'
+        && text.as_bytes()[10] == b'T'
+        && (text.ends_with('Z') || text.contains('+'))
+}
+
+/// Mount every recorded response.
+///
+/// The match is method plus path, narrowed by the query pairs that separate
+/// two calls to the same path. `per_page` and `include[]` are boilerplate the
+/// client adds, and the planner window moves with the clock, so neither can
+/// take part in the match.
+async fn mount_set(server: &MockServer, entries: &[(String, Recorded)], shift: i64) {
+    for (_, recorded) in entries {
+        let mut mock = Mock::given(method_matcher(recorded.method.as_str()))
+            .and(path_matcher(recorded.path.clone()));
+        for (key, value) in &recorded.query {
+            if key == "per_page"
+                || key.starts_with("include[")
+                || key == "start_date"
+                || key == "end_date"
+            {
+                continue;
+            }
+            mock = mock.and(query_param(key.clone(), value.clone()));
+        }
+        let body = if shift == 0 {
+            recorded.body.clone()
+        } else {
+            shift_days(&recorded.body, shift)
+        };
+        let mut response = ResponseTemplate::new(recorded.status).set_body_json(body);
+        for (name, value) in &recorded.headers {
+            if name == "link" {
+                // A recorded `Link` points at the recorded host; a replay would
+                // send the client off-origin. Pagination is not part of what the
+                // benchmark measures, so the header is dropped.
+                continue;
+            }
+            response = response.append_header(name.as_str(), value.as_str());
+        }
+        server.register(mock.respond_with(response)).await;
+    }
+}
+
+/// Mount the file bodies the download load streams.
+async fn mount_blobs(server: &MockServer) {
+    for (id, size) in DOWNLOAD_FILES {
+        let body = vec![b'c'; usize::try_from(size).unwrap_or(0)];
+        server
+            .register(
+                Mock::given(method_matcher("GET"))
+                    .and(path_matcher(format!("{BLOB_PREFIX}{id}")))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .set_body_bytes(body)
+                            // Slow enough that one download spans the runs it
+                            // is meant to load.
+                            .set_delay(std::time::Duration::from_millis(900)),
+                    ),
+            )
+            .await;
+    }
+}
+
+// ---------------------------------------------------------------- building
+
+/// The workspace root, from this crate's manifest directory.
+fn workspace_root() -> Result<PathBuf> {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest
+        .parent()
+        .map(Path::to_path_buf)
+        .context("xtask has no parent directory")
+}
+
+/// Build `canvas` and return the path cargo reports.
+fn build_binary(root: &Path, release: bool) -> Result<PathBuf> {
+    let mut command = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+    command
+        .current_dir(root)
+        .args(["build", "--bin", "canvas", "--message-format", "json"]);
+    if release {
+        command.arg("--release");
+    }
+    let output = command.stderr(Stdio::inherit()).output()?;
+    if !output.status.success() {
+        bail!("cargo build failed");
+    }
+    let mut found = None;
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Ok(message) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if message["reason"] == "compiler-artifact"
+            && let Some(path) = message["executable"].as_str()
+            && path.ends_with("canvas")
+        {
+            found = Some(PathBuf::from(path));
+        }
+    }
+    found.context("cargo did not report a canvas executable")
+}
+
+// ------------------------------------------------------------- measurement
+
+/// Everything a measured run needs.
+struct Harness {
+    release: PathBuf,
+    debug: PathBuf,
+    origin: String,
+    home: tempfile::TempDir,
+    identity: String,
+}
+
+impl Harness {
+    fn new(release: PathBuf, debug: PathBuf, origin: String) -> Result<Self> {
+        Ok(Self {
+            release,
+            debug,
+            origin,
+            home: tempfile::tempdir()?,
+            identity: String::new(),
+        })
+    }
+
+    fn data_root(&self) -> PathBuf {
+        self.home.path().join("data")
+    }
+
+    fn command(&self, binary: &Path, data_root: &Path) -> Command {
+        let mut command = Command::new(binary);
+        command
+            .env("CANVAS_DATA_ROOT", data_root)
+            .env("XDG_CONFIG_HOME", self.home.path().join("config"))
+            .env("CANVAS_HOST", &self.origin)
+            .env("CANVAS_TOKEN", TOKEN)
+            .env("TZ", "UTC")
+            .env("COLUMNS", "100")
+            .env_remove("CANVAS_PROFILE")
+            .env_remove("CANVAS_NOW");
+        if !self.identity.is_empty() {
+            command.env("CANVAS_IDENTITY_KEY", &self.identity);
+        }
+        command
+    }
+
+    /// Prime the cache: `canvas sync` for the courses and grades datasets,
+    /// then one online `todo` for the planner and missing datasets it reads.
+    fn prime(&mut self) -> Result<()> {
+        let output = self
+            .command(&self.release.clone(), &self.data_root())
+            .args(["sync", "--json", "--color", "never"])
+            .output()?;
+        let envelope: Value = serde_json::from_slice(&output.stdout).with_context(|| {
+            format!(
+                "sync produced no JSON envelope: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )
+        })?;
+        if !output.status.success() {
+            bail!(
+                "sync exited {:?}: {}",
+                output.status.code(),
+                envelope["result"]
+            );
+        }
+        envelope["identity"]["key"]
+            .as_str()
+            .context("sync reported no identity")?
+            .clone_into(&mut self.identity);
+
+        let todo = self
+            .command(&self.release.clone(), &self.data_root())
+            .args(["todo", "--json", "--color", "never"])
+            .output()?;
+        if !todo.status.success() {
+            bail!(
+                "priming todo exited {:?}: {}",
+                todo.status.code(),
+                String::from_utf8_lossy(&todo.stdout).trim()
+            );
+        }
+        // The measured runs read the cache only; prove that works before timing it.
+        let offline = self
+            .command(&self.release.clone(), &self.data_root())
+            .args(["todo", "--offline", "--color", "never"])
+            .output()?;
+        if !offline.status.success() {
+            bail!(
+                "cached todo exited {:?}: {}",
+                offline.status.code(),
+                String::from_utf8_lossy(&offline.stderr).trim()
+            );
+        }
+        Ok(())
+    }
+
+    /// One `todo` run: time to the first byte on stdout, and to exit.
+    fn todo_once(&self, data_root: &Path) -> Result<(f64, f64)> {
+        let started = Instant::now();
+        let mut child = self
+            .command(&self.release, data_root)
+            .args(["todo", "--offline", "--color", "never"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let mut stdout = child.stdout.take().context("no stdout pipe")?;
+        let mut first = [0u8; 1];
+        let read = stdout.read(&mut first)?;
+        let first_output = started.elapsed().as_secs_f64() * 1000.0;
+        let mut rest = Vec::new();
+        stdout.read_to_end(&mut rest)?;
+        let status = child.wait()?;
+        let total = started.elapsed().as_secs_f64() * 1000.0;
+        if !status.success() || read == 0 {
+            bail!("todo exited {:?} with {read} bytes read", status.code());
+        }
+        Ok((first_output, total))
+    }
+
+    /// One cold start: a fresh copy of the cache and a new process.
+    fn cold_once(&self, index: u32) -> Result<f64> {
+        let cold = self.home.path().join(format!("cold-{index}"));
+        copy_dir(&self.data_root(), &cold)?;
+        let started = Instant::now();
+        let output = self
+            .command(&self.release, &cold)
+            .args(["todo", "--offline", "--color", "never"])
+            .output()?;
+        let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+        if !output.status.success() {
+            bail!("cold todo exited {:?}", output.status.code());
+        }
+        std::fs::remove_dir_all(&cold)?;
+        Ok(elapsed)
+    }
+
+    /// Start a download against the same mock, to load it during a run.
+    fn start_download(&self) -> Result<Child> {
+        let dest = self.home.path().join(format!(
+            "dl-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dest)?;
+        let mut command = self.command(&self.debug, &self.data_root());
+        command
+            .arg("download")
+            .arg(DOWNLOAD_COURSE.to_string())
+            .arg("--dest")
+            .arg(&dest)
+            .args(["--jobs", "1", "--color", "never"]);
+        for (id, _) in DOWNLOAD_FILES {
+            command.args(["--file", &id.to_string()]);
+        }
+        // The transfer rules refuse plain `http` unless the build carries debug
+        // assertions and the caller opts in; both hold only for this child.
+        command
+            .env("CANVAS_TEST_ALLOW_HTTP", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        Ok(command.spawn()?)
+    }
+
+    fn measure_all(&self, runs: u32) -> Result<Vec<Measured>> {
+        let mut out = Vec::new();
+        for concurrent in [false, true] {
+            let mut load = if concurrent {
+                Some(self.start_download()?)
+            } else {
+                None
+            };
+            let mut first = Vec::new();
+            let mut total = Vec::new();
+            let mut cold = Vec::new();
+            for index in 0..runs {
+                if let Some(child) = load.as_mut()
+                    && child.try_wait()?.is_some()
+                {
+                    // The stream finished early; start another so every run in
+                    // this group carries the same load.
+                    *child = self.start_download()?;
+                }
+                let (f, t) = self.todo_once(&self.data_root())?;
+                first.push(f);
+                total.push(t);
+                cold.push(self.cold_once(index)?);
+            }
+            if let Some(mut child) = load {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            for target in &TARGETS {
+                let samples = match target.metric {
+                    "todo_first_output" => &first,
+                    "todo_total" => &total,
+                    _ => &cold,
+                };
+                out.push(Measured {
+                    label: target.label,
+                    concurrent,
+                    p50: percentile(samples, 0.50),
+                    p95: percentile(samples, 0.95),
+                    target_p50: target.p50_ms,
+                    target_p95: target.p95_ms,
+                });
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// Nearest-rank percentile in milliseconds.
+fn percentile(samples: &[f64], q: f64) -> f64 {
+    if samples.is_empty() {
+        return f64::NAN;
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    let rank = ((q * sorted.len() as f64).ceil() as usize).clamp(1, sorted.len());
+    sorted[rank - 1]
+}
+
+/// Copy a directory tree. The cache is a handful of files; no symlink in it.
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- reporting
+
+/// Print the table and write `docs/bench.md`. Returns false on a missed target.
+fn report(root: &Path, options: &Options, measurements: &[Measured]) -> Result<bool> {
+    let mut passed = true;
+    println!(
+        "{:<28} {:<10} {:>9} {:>9} {:>12} {:>7}",
+        "metric", "load", "p50 ms", "p95 ms", "target p95", "verdict"
+    );
+    for m in measurements {
+        if m.missed() {
+            passed = false;
+        }
+        println!(
+            "{:<28} {:<10} {:>9.1} {:>9.1} {:>12.0} {:>7}",
+            m.label,
+            if m.concurrent { "download" } else { "idle" },
+            m.p50,
+            m.p95,
+            m.target_p95,
+            if m.missed() { "MISS" } else { "ok" }
+        );
+    }
+    let doc = root.join("docs").join("bench.md");
+    std::fs::write(&doc, document(options, measurements, passed)?)?;
+    println!("\nwrote {}", doc.display());
+    if !passed {
+        eprintln!("a SPEC section 13 target was missed");
+    }
+    Ok(passed)
+}
+
+/// The commit the numbers belong to.
+fn commit(root: &Path) -> String {
+    Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map_or_else(
+            || "unknown".to_owned(),
+            |o| String::from_utf8_lossy(&o.stdout).trim().to_owned(),
+        )
+}
+
+/// A one-line machine description.
+fn machine() -> String {
+    let mut parts = BTreeMap::new();
+    for (label, program, args) in [("os", "uname", vec!["-sr"]), ("arch", "uname", vec!["-m"])] {
+        if let Ok(out) = Command::new(program).args(&args).output()
+            && out.status.success()
+        {
+            parts.insert(
+                label,
+                String::from_utf8_lossy(&out.stdout).trim().to_owned(),
+            );
+        }
+    }
+    let cpu = Command::new("sysctl")
+        .args(["-n", "machdep.cpu.brand_string"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        .unwrap_or_default();
+    let os = parts.get("os").cloned().unwrap_or_default();
+    let arch = parts.get("arch").cloned().unwrap_or_default();
+    if cpu.is_empty() {
+        format!("{os} {arch}").trim().to_owned()
+    } else {
+        format!("{cpu}, {os} {arch}")
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn document(options: &Options, measurements: &[Measured], passed: bool) -> Result<String> {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    writeln!(out, "# Benchmarks\n")?;
+    writeln!(
+        out,
+        "Generated by `cargo xtask bench --runs {}`. Do not edit by hand.\n",
+        options.runs
+    )?;
+    writeln!(out, "| | |")?;
+    writeln!(out, "|---|---|")?;
+    writeln!(out, "| Date | {} |", jiff::Timestamp::now())?;
+    writeln!(out, "| Commit | `{}` |", commit(&workspace_root()?))?;
+    writeln!(out, "| Machine | {} |", machine())?;
+    writeln!(out, "| Fixture set | `{}` |", options.fixture)?;
+    writeln!(out, "| Runs per metric | {} |", options.runs)?;
+    writeln!(
+        out,
+        "| Verdict | {} |\n",
+        if passed {
+            "every target met"
+        } else {
+            "a target was missed"
+        }
+    )?;
+
+    writeln!(out, "## Targets and measurements\n")?;
+    writeln!(
+        out,
+        "Targets are SPEC §13: cached `todo` first output p50 < 50 ms and \
+         p95 < 150 ms; full cached `todo` p95 < 250 ms; cold start p95 < 400 ms. \
+         Every metric is measured twice, once idle and once while one `download` \
+         stream runs against the same mock server.\n"
+    )?;
+    writeln!(
+        out,
+        "| Metric | Load | p50 ms | p95 ms | Target p50 | Target p95 | Verdict |"
+    )?;
+    writeln!(out, "|---|---|---:|---:|---:|---:|---|")?;
+    for m in measurements {
+        writeln!(
+            out,
+            "| {} | {} | {:.1} | {:.1} | {} | {:.0} | {} |",
+            m.label,
+            if m.concurrent { "download" } else { "idle" },
+            m.p50,
+            m.p95,
+            m.target_p50
+                .map_or_else(|| "—".to_owned(), |t| format!("{t:.0}")),
+            m.target_p95,
+            if m.missed() { "**miss**" } else { "ok" }
+        )?;
+    }
+
+    writeln!(out, "\n## Method\n")?;
+    writeln!(
+        out,
+        "- `wiremock` serves the `{}` fixture set: five courses, their \
+         assignments, files, folders, modules, and grading periods, plus the \
+         planner and missing-submission lists.",
+        options.fixture
+    )?;
+    writeln!(
+        out,
+        "- The cache is primed with `canvas sync` and one online `canvas todo`, \
+         which is the dataset pair the measured command reads."
+    )?;
+    writeln!(
+        out,
+        "- Each measured run is `canvas todo --offline`, timed with \
+         `std::time::Instant`. First output is the time until the first byte \
+         reaches stdout; the full run is the time until the process exits. \
+         Percentiles are nearest-rank."
+    )?;
+    writeln!(
+        out,
+        "- A synthetic fixture set carries a record date, and every timestamp \
+         it serves is shifted by whole days to that date, so the planner window \
+         holds the same workload whenever the benchmark runs."
+    )?;
+
+    writeln!(out, "\n## Limitations\n")?;
+    writeln!(
+        out,
+        "- **Cold start is a lower bound.** Dropping the operating-system page \
+         cache needs root. Each cold run instead gets a fresh copy of the cache \
+         files and a new process, so the process, the SQLite connection, and \
+         the SQLite page cache are cold, but the file bytes can still be in the \
+         operating-system cache."
+    )?;
+    writeln!(
+        out,
+        "- **The concurrent download uses a debug build.** SPEC §11 refuses a \
+         transfer over plain `http` in a release build, and `wiremock` serves \
+         no TLS. The measured `todo` runs use the release binary; only the \
+         download that loads the server alongside them is a debug build with \
+         `CANVAS_TEST_ALLOW_HTTP=1`."
+    )?;
+    writeln!(
+        out,
+        "- **The numbers are local.** They measure this machine with a local \
+         mock server and no network latency. They bound the client's own work, \
+         not a session against a real Canvas instance."
+    )?;
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn percentiles_use_the_nearest_rank() {
+        let samples = [10.0, 20.0, 30.0, 40.0];
+        assert!((percentile(&samples, 0.50) - 20.0).abs() < f64::EPSILON);
+        assert!((percentile(&samples, 0.95) - 40.0).abs() < f64::EPSILON);
+        assert!((percentile(&[7.0], 0.95) - 7.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn a_shift_moves_timestamps_and_leaves_everything_else_alone() {
+        let body = json!({
+            "due_at": "2026-01-05T12:00:00Z",
+            "name": "Assignment 1",
+            "id": 5,
+            "points_possible": 20.0,
+            "nested": [{"start_date": "2026-01-05T12:00:00Z"}]
+        });
+        let out = shift_days(&body, 10);
+        assert_eq!(out["due_at"], json!("2026-01-15T12:00:00Z"));
+        assert_eq!(
+            out["nested"][0]["start_date"],
+            json!("2026-01-15T12:00:00Z")
+        );
+        assert_eq!(out["name"], json!("Assignment 1"));
+        assert_eq!(out["id"], json!(5));
+        assert_eq!(out["points_possible"], json!(20.0));
+        // A zero shift is the identity.
+        assert_eq!(shift_days(&body, 0), body);
+    }
+
+    #[test]
+    fn a_missed_target_is_reported_for_either_percentile() {
+        let make = |p50: f64, p95: f64| Measured {
+            label: "cached todo, first output",
+            concurrent: false,
+            p50,
+            p95,
+            target_p50: Some(50.0),
+            target_p95: 150.0,
+        };
+        assert!(!make(10.0, 20.0).missed());
+        assert!(make(60.0, 20.0).missed());
+        assert!(make(10.0, 200.0).missed());
+    }
+
+    #[test]
+    fn the_document_records_the_run_and_both_limitations() {
+        let options = Options {
+            fixture: DEFAULT_SET.to_owned(),
+            runs: 3,
+            no_fail: false,
+        };
+        let measurements = vec![Measured {
+            label: "cached todo, full run",
+            concurrent: true,
+            p50: 12.0,
+            p95: 18.0,
+            target_p50: None,
+            target_p95: 250.0,
+        }];
+        let doc = document(&options, &measurements, true).unwrap();
+        assert!(doc.contains("# Benchmarks"));
+        assert!(doc.contains("bench-5"));
+        assert!(doc.contains("Runs per metric | 3"));
+        assert!(doc.contains("Cold start is a lower bound"));
+        assert!(doc.contains("debug build"));
+        assert!(doc.contains("cached todo, full run | download | 12.0 | 18.0"));
+    }
+}
