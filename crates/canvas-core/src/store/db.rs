@@ -238,10 +238,8 @@ fn open_db(
             | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
-    conn.execute_batch(
-        "PRAGMA journal_mode=WAL;
-         PRAGMA foreign_keys=ON;",
-    )?;
+    enable_wal(&conn)?;
+    conn.execute_batch("PRAGMA foreign_keys=ON;")?;
     let found: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if found > supported {
         return Err(DbError::NewerSchema { found, supported });
@@ -263,4 +261,33 @@ fn open_db(
         tx.commit()?;
     }
     Ok(conn)
+}
+
+// Changing the journal mode can return BUSY without invoking SQLite's busy
+// handler when two fresh openers upgrade their locks at once. Retry that
+// idempotent initialization within the same five-second contention budget.
+fn enable_wal(conn: &Connection) -> Result<(), DbError> {
+    use std::time::{Duration, Instant};
+    let budget = Duration::from_secs(5);
+    let started = Instant::now();
+    loop {
+        conn.busy_timeout(budget.saturating_sub(started.elapsed()))?;
+        match conn.query_row("PRAGMA journal_mode=WAL", [], |r| r.get::<_, String>(0)) {
+            Ok(mode) if mode.eq_ignore_ascii_case("wal") => break,
+            Ok(_) => return Err(DbError::Message("could not enable WAL".into())),
+            Err(error)
+                if matches!(
+                    error.sqlite_error_code(),
+                    Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+                ) && started.elapsed() < budget =>
+            {
+                thread::sleep(
+                    Duration::from_millis(10).min(budget.saturating_sub(started.elapsed())),
+                );
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    conn.busy_timeout(budget)?;
+    Ok(())
 }
