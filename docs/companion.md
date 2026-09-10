@@ -262,7 +262,7 @@ the pipe's owner and `SY`.
 | `stale_generation` | 8 | The page moved on; call `here` again and work from the new bundle. |
 | `note_too_large` | 8 | The note is over 8 KiB. Nothing was held. Shorten it. |
 | `source_ref_rejected` | 8 | A source ref is not `canvas://` or `https` on the attached origin. Nothing was held. |
-| `note_rejected` | 8 | The note was refused for another named bound. Nothing was held. |
+| `note_rejected` | 8 | The note was empty, carried more than 16 refs, or the attachment already holds its 32. Nothing was held. |
 | `origin_mismatch` | 8 | The follow target is not inside the granted origin. |
 | `navigation_timeout` | 8 | The companion did not acknowledge in two seconds. The tab may still have moved. |
 | `zone_opaque` | 0 | The attachment is healthy and this page carries nothing. Not a refusal. |
@@ -308,8 +308,12 @@ the attachment. A note is inert:
 A note is at most 8 KiB and carries at most 16 source refs, each either
 `canvas://…` or an `https` URL on the attached origin. Breaking either bound
 refuses the whole note; nothing is truncated and nothing partial is shown.
-Notes are held for the attachment's lifetime, survive a navigation and a
-pause, and are erased on detach.
+One attachment holds at most 32 notes at a time, and the note over that bound
+is refused as `note_rejected` rather than pushing an older one out: every
+panel push carries every held note, a native message stops at 1 MiB, and a
+feed that quietly forgot what it had shown you would be worse than one that
+says it is full. Notes are held for the attachment's lifetime, survive a
+navigation and a pause, and are erased on detach.
 
 ### Follow
 
@@ -422,8 +426,12 @@ anything, and the panel never shows more certainty than the journal holds.**
 15. **A handle is compared in constant time**, and the panel's echo *selects*
     a stored row rather than supplying one. Echoing a digest is not proof of
     holding a handle, and the digest is checked separately anyway.
-16. **An oversize note is refused, never truncated.** A note cut in half
-    changes what it says, and the person cannot tell that it was cut.
+16. **An oversize note is refused, never truncated, and so is the
+    thirty-third.** A note cut in half changes what it says, and the person
+    cannot tell that it was cut. The count is bounded for a second reason:
+    the panel push carries every held note, and a host that cannot send a
+    message treats the pipe as lost and stops. Refusing the new note keeps
+    the notes the person was already shown.
 17. **A source ref must be `canvas://` or `https` on the granted origin, with
     no username and no password.** `Url::origin()` ignores credentials, so a
     URL like `https://you@canvas.example/…` has the right origin and reads
