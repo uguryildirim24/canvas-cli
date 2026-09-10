@@ -59,7 +59,7 @@ pub async fn run_list(globals: &Globals, scope: Option<String>) -> ExitCode {
         Ok(o) => o,
         Err(e) => return refresh_fail(globals, &session, e),
     };
-    let mut freshness = vec![outcome_freshness(&outcome)];
+    let freshness = vec![outcome_freshness(&outcome)];
 
     let key = format!("scope:{}", scope.as_str());
     let rows = match session
@@ -82,7 +82,6 @@ pub async fn run_list(globals: &Globals, scope: Option<String>) -> ExitCode {
         conversations: rows.iter().map(ConversationRow::summary).collect(),
     };
     let mut envelope = base_envelope(SCHEMA_INBOX, &session, result);
-    freshness.dedup_by(|a, b| a.dataset == b.dataset && a.scope == b.scope);
     envelope.freshness = freshness;
     envelope.requests = session.requests();
     if outcome.freshness.stale {
