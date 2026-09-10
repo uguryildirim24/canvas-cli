@@ -159,6 +159,7 @@ impl CanvasServer {
         this.mount_grades().await;
         this.mount_files_and_modules().await;
         this.mount_announcements_and_calendar().await;
+        this.mount_inbox_unread().await;
         this.mount_submit().await;
         this
     }
@@ -294,6 +295,18 @@ impl CanvasServer {
         self.json(
             "/api/v1/calendar_events",
             json!([Fixtures::calendar_event()]),
+        )
+        .await;
+    }
+
+    /// The unread-conversation count (M8-a `inbox_unread`).
+    ///
+    /// A `watch` tick refreshes it, so the event stream needs it mounted.
+    /// Canvas documents the value as a string.
+    async fn mount_inbox_unread(&self) {
+        self.json(
+            "/api/v1/conversations/unread_count",
+            json!({ "unread_count": "2" }),
         )
         .await;
     }

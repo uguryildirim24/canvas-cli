@@ -130,7 +130,10 @@ pub fn invalidated(binding: &Binding, record: &EventRecord) -> Vec<String> {
         // A journal transition changes the local receipts, and only those:
         // nothing about the deadline window was observed on Canvas.
         "submission_journal" => uris.push(binding.uri("receipts")),
-        // `announcements` has an event kind but no resource, and no other dataset writes events, so nothing else is invalidated.
+        // `announcements` and `inbox_unread` have event kinds but no resource
+        // that reads them, so nothing else is invalidated. A dataset that
+        // starts writing events needs a row here only when a resource of this
+        // binding answers from it.
         _ => {}
     }
     uris
