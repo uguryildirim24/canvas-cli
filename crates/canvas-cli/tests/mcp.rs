@@ -1540,16 +1540,20 @@ async fn an_event_invalidates_the_matching_resource_and_no_other() {
     let course_2 = format!("{prefix}course/2/assignments");
     let receipts = format!("{prefix}receipts");
     let foreign = "canvas://other.test-9-99999999/11111111-1111-4111-8111-111111111111/todo";
+    // A consumer context is served by a read, but no event names it and it is
+    // another consumer's routing, so it is never subscribable (REPORT §3.2).
+    let context = format!("{prefix}context/other-consumer");
 
     let id = mcp.send(
         "subscriptions/listen",
         json!({ "notifications": {
-            "resourceSubscriptions": [&todo, &course_1, &course_2, foreign],
+            "resourceSubscriptions": [&todo, &course_1, &course_2, foreign, &context],
         }}),
     );
 
     // The acknowledgment names the subscription and only the URIs this
-    // instance serves: another identity addresses nothing here.
+    // instance can invalidate: another identity, and another consumer's
+    // context, address nothing here.
     let ack = mcp.wait_for("notifications/subscriptions/acknowledged");
     assert_eq!(
         ack["params"]["notifications"]["resourceSubscriptions"],
@@ -1593,6 +1597,7 @@ async fn an_event_invalidates_the_matching_resource_and_no_other() {
     assert_eq!(seen, vec![course_1, todo], "{seen:?}");
     assert!(!seen.contains(&receipts), "{seen:?}");
     assert!(!seen.contains(&course_2), "{seen:?}");
+    assert!(!seen.contains(&context), "{seen:?}");
     mcp.stop();
 }
 

@@ -33,7 +33,7 @@ use rmcp::service::SubscriptionContext;
 use rusqlite::Connection;
 
 use crate::commands::Globals;
-use crate::mcp::resources::Binding;
+use crate::mcp::resources::{Binding, Target};
 
 /// The `_meta` key a host uses to name the cursor it resumes from.
 ///
@@ -67,16 +67,32 @@ pub fn start(state: &Connection, since: i64, generation: &str) -> Result<Start, 
     }
 }
 
+/// Whether an event on this log can ever invalidate the target.
+///
+/// `context/<consumer-handle>` is a name this server reads, but no event names
+/// it, and it addresses another consumer's routing. REPORT §3.2 keeps that out
+/// of resource subscriptions — "no implicit sharing from resource
+/// subscriptions" — so it is not subscribable: a host that held one would be
+/// told on a resync that a consumer context it does not own changed, which
+/// nothing observed.
+fn subscribable(target: &Target) -> bool {
+    match target {
+        Target::Todo | Target::Receipts | Target::CourseAssignments(_) => true,
+        Target::Context(_) => false,
+    }
+}
+
 /// The resource URIs of a requested filter this instance can invalidate.
 ///
-/// A foreign identity key, another generation, and an unknown path all address
-/// nothing here, so they are dropped instead of refused: the host keeps the
-/// part of its subscription that can actually be served.
+/// A foreign identity key, another generation, an unknown path, and a name no
+/// event can reach all address nothing here, so they are dropped instead of
+/// refused: the host keeps the part of its subscription that can actually be
+/// served.
 #[must_use]
 pub fn served(binding: &Binding, requested: &[String]) -> Vec<String> {
     requested
         .iter()
-        .filter(|uri| binding.serves(uri))
+        .filter(|uri| binding.target(uri).as_ref().is_some_and(subscribable))
         .cloned()
         .collect()
 }
@@ -369,13 +385,15 @@ mod tests {
             binding.uri("todo"),
             binding.uri("receipts"),
             binding.uri("course/1/assignments"),
-            binding.uri("context/consumer-1"),
-            // Not served: an unknown path, another generation, another
-            // identity, and something that is not even this scheme.
+            // Not subscribable: an unknown path, another generation, another
+            // identity, something that is not even this scheme, and a
+            // consumer context, which no event names and which belongs to
+            // another consumer's routing (REPORT §3.2).
             binding.uri("auth/token"),
             other.uri("todo"),
             foreign.uri("todo"),
             "file:///etc/passwd".to_owned(),
+            binding.uri("context/consumer-1"),
         ];
         assert_eq!(
             served(&binding, &requested),
@@ -383,7 +401,6 @@ mod tests {
                 binding.uri("todo"),
                 binding.uri("receipts"),
                 binding.uri("course/1/assignments"),
-                binding.uri("context/consumer-1"),
             ]
         );
     }
