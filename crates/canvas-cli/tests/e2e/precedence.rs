@@ -58,12 +58,10 @@ async fn usage_before_resolution() {
 
 /// 3 before 13: credential resolution runs before the store is opened.
 ///
-/// Ignored: the CLI opens the identity store first, so a store this binary
-/// cannot read reports exit 13 and the missing credential is never looked for.
-/// The order is structural — the credential row lives in that same store — so
-/// the fix is not a local one.
+/// A store this binary cannot read is exit 13 on its own — `local_before_*`
+/// below assert that — but an invocation that also has no token anywhere
+/// reports the token, which is the earlier condition.
 #[tokio::test]
-#[ignore = "session.rs opens the identity store before resolving credentials,             so exit 13 wins over exit 3 (SPEC §14 requires 3 first)"]
 async fn auth_before_local() {
     let server = CanvasServer::start().await;
     let env = E2e::with_server(&server);

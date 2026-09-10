@@ -24,10 +24,9 @@ cargo nextest run --all-features -E 'binary(e2e)'
 # one module, or one test
 cargo nextest run --all-features -E 'binary(e2e) and test(commands)'
 cargo nextest run --all-features -E 'binary(e2e) and test(exit_9)'
-
-# the tests that are ignored because a product defect blocks them
-cargo nextest run --all-features -E 'binary(e2e)' --run-ignored all
 ```
+
+No test in the suite is `#[ignore]`d.
 
 Every test builds its own [`E2e`](../crates/canvas-cli/tests/e2e/harness.rs):
 a private config root, a private data root, the file credential store, and the
@@ -150,10 +149,6 @@ so a pair is only assertable when one invocation can be in both states at once.
 pair no invocation can hold: a request that never connects cannot also come
 back rate limited, and the first dataset failure ends the command before a
 second route is asked.
-
-`precedence::auth_before_local` is **ignored**: the CLI opens the identity
-store before it resolves a credential, so a store this binary cannot read
-reports exit 13 where §14 puts exit 3 first.
 
 The **completed-command order** — 9 > 10 > 8 > 12 > 11 > 0 — has the same
 limit and a tighter one: 9, 8 and 11 are terminal for the command that can
