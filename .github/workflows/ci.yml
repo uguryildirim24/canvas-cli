@@ -17,11 +17,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.98.0"
           components: rustfmt, clippy
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: nextest,cargo-deny
+          tool: cargo-nextest@0.9.143,cargo-deny@0.20.2
 
       - name: fmt
         run: cargo fmt --all --check
@@ -34,3 +35,10 @@ jobs:
 
       - name: deny
         run: cargo deny check
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88"
+
+      - name: msrv
+        run: cargo +1.88 check --workspace --all-targets
