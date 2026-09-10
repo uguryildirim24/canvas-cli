@@ -259,51 +259,28 @@ pub fn bump_epochs(scopes: &[&str], state_tx: &Transaction<'_>) -> Result<(), Db
 /// `outcome_unknown` and neither superseded nor acknowledged.
 pub fn pending_for_assignment(state: &Connection, assignment_id: i64) -> Result<bool, DbError> {
     let mut stmt = state.prepare(
-        "SELECT journal_id, state, created_at, acknowledged_at
-         FROM submission_journal WHERE assignment_id = ?1",
+        "SELECT state, created_at, acknowledged_at FROM submission_journal WHERE assignment_id = ?1",
     )?;
-    let rows: Vec<(String, String, String, Option<String>)> = stmt
+    let rows: Vec<(String, Timestamp, Option<String>)> = stmt
         .query_map(params![assignment_id], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            Ok((r.get(0)?, parse_ts(&r.get::<_, String>(1)?)?, r.get(2)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-
-    for (journal_id, state_name, created_at, acknowledged_at) in &rows {
+    for (state_name, created_at, acknowledged_at) in &rows {
         match state_name.as_str() {
             "planned" | "uploading" | "uploaded" | "posting" => return Ok(true),
-            "outcome_unknown" => {
-                if acknowledged_at.is_some() {
-                    continue;
+            "outcome_unknown" if acknowledged_at.is_none() => {
+                let superseded = rows.iter().any(|(later_state, later_at, _)| {
+                    later_at > created_at && matches!(later_state.as_str(), "submitted" | "matched")
+                });
+                if !superseded {
+                    return Ok(true);
                 }
-                if is_superseded(state, assignment_id, created_at)? {
-                    continue;
-                }
-                let _ = journal_id;
-                return Ok(true);
             }
             _ => {}
         }
     }
     Ok(false)
-}
-
-fn is_superseded(
-    state: &Connection,
-    assignment_id: i64,
-    created_at: &str,
-) -> Result<bool, DbError> {
-    let found: Option<i64> = state
-        .query_row(
-            "SELECT 1 FROM submission_journal
-             WHERE assignment_id = ?1
-               AND created_at > ?2
-               AND state IN ('submitted', 'matched')
-             LIMIT 1",
-            params![assignment_id, created_at],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(found.is_some())
 }
 
 /// `cache stats`: row counts per cache table.
