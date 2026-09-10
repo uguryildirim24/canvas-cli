@@ -48,6 +48,7 @@ pub async fn run(globals: &Globals, course: String) -> ExitCode {
                     row.as_slice(),
                     now_timestamp(),
                     offline,
+                    None,
                 )?;
                 Ok((row, freshness))
             }
@@ -177,7 +178,7 @@ async fn ensure_detail(
         .call(move |conns| {
             let row = load_course_by_id(conns, id)?;
             Ok(
-                super::course_load::grade_freshness(conns, row.as_slice(), now, false)?
+                super::course_load::grade_freshness(conns, row.as_slice(), now, false, None)?
                     .iter()
                     .any(|f| f.stale),
             )

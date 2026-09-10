@@ -425,9 +425,9 @@ fn nested_help_lists_registered_commands() {
 fn every_v1_stub_is_callable() {
     // Implemented by M0-c (auth/identity/config/doctor), M1-b
     // (courses/course/alias/sync/cache), M1-c (todo/assignments/assignment/open),
-    // M3-a (files/modules), and M3-b (download): covered elsewhere.
+    // M3-a (files/modules), M3-b (download), and M4-a (grades): covered
+    // elsewhere.
     let own_stubs: &[&[&str]] = &[
-        &["grades"],
         &["announcements"],
         &["announcement", "chem", "123"],
         &[

@@ -1,0 +1,60 @@
+# release-plz 0.3.164. Versions and the changelog come from conventional
+# commits; nothing is published. `cargo publish` stays off because every crate
+# in this workspace sets `publish = false` (docs/release.md).
+[workspace]
+allow_dirty = false
+changelog_update = true
+git_release_enable = false
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+publish = false
+# One version for the whole workspace: the binary is the product, and the two
+# library crates only exist to build it.
+dependencies_update = false
+release_always = false
+semver_check = false
+
+[changelog]
+protect_breaking_commits = true
+sort_commits = "oldest"
+# `git-cliff` syntax. One section per conventional-commit type, in the order a
+# reader cares about.
+commit_parsers = [
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^perf", group = "Performance" },
+    { message = "^refactor", group = "Changed" },
+    { message = "^docs", group = "Documentation" },
+    { message = "^test", group = "Testing" },
+    { message = "^review", skip = true },
+    { message = "^chore", skip = true },
+    { message = "^ci", skip = true },
+    { message = "^build", skip = true },
+    { message = "^style", skip = true },
+    { message = "^merge", skip = true },
+    { message = "^Merge", skip = true },
+    { message = ".*", group = "Other" },
+]
+
+# Only the binary crate is released. The libraries move with it and get no
+# changelog or tag of their own.
+[[package]]
+name = "canvas-lms-cli"
+changelog_path = "CHANGELOG.md"
+changelog_update = true
+git_tag_enable = true
+publish = false
+
+[[package]]
+name = "canvas-api"
+changelog_update = false
+git_tag_enable = false
+publish = false
+release = false
+
+[[package]]
+name = "canvas-core"
+changelog_update = false
+git_tag_enable = false
+publish = false
+release = false

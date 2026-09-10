@@ -67,6 +67,7 @@ pub async fn run(globals: &Globals, all: bool, term: Option<String>, favorites: 
                 &rows_for_freshness,
                 now_timestamp(),
                 offline,
+                None,
             )
         })
         .await
