@@ -16,11 +16,7 @@ fn resolve_fail(
     session: &crate::session::Session,
     err: ResolveError,
 ) -> ExitCode {
-    let (code, exit) = match err {
-        ResolveError::NeedIdOrUrl => ("usage", 6),
-        ResolveError::OriginMismatch => ("usage", 6),
-        _ => ("usage", 6),
-    };
+    let (code, exit) = ("resolution", 6);
     let message = err.to_string();
     emit_error(
         globals.json,
@@ -132,15 +128,9 @@ pub async fn run(
                 );
             };
             if target.contains("://") {
-                if !target.starts_with(&origin) {
-                    return emit_error(
-                        globals.json,
-                        "usage",
-                        "foreign origin refused",
-                        6,
-                        session.profile.clone(),
-                        Some(session.identity_ref()),
-                    );
+                match canvas_core::resolve::canvas_url(&target, &origin) {
+                    Ok(Some(_)) => {}
+                    _ => return resolve_fail(globals, &session, ResolveError::OriginMismatch),
                 }
                 ("url", target.clone(), target)
             } else {
@@ -175,4 +165,29 @@ pub async fn run(
     emit(globals.json, &envelope, || {
         writeln!(io::stdout(), "{kind} {url} launched={launched}")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn browser_urls_require_exact_origin() {
+        let origin = "https://canvas.example.test";
+        for bad in [
+            "https://canvas.example.test.evil.test/courses/1",
+            "https://canvas.example.test@evil.test/courses/1",
+            "https://canvas.example.test:444/courses/1",
+            "http://canvas.example.test/courses/1",
+            "https://user@canvas.example.test/courses/1",
+        ] {
+            assert!(
+                canvas_core::resolve::canvas_url(bad, origin).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(
+            canvas_core::resolve::canvas_url("HTTPS://CANVAS.EXAMPLE.TEST:443/courses/1", origin)
+                .unwrap()
+                .is_some()
+        );
+    }
 }

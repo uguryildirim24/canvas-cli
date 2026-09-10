@@ -440,8 +440,11 @@ fn load_assignment(
     Ok(row)
 }
 
-/// Parse and canonicalize URL origins before inspecting path segments.
-fn canvas_url(input: &str, identity_origin: &str) -> Result<Option<reqwest::Url>, ResolveError> {
+/// Parse and validate a browser URL against the identity origin, rejecting userinfo.
+pub fn canvas_url(
+    input: &str,
+    identity_origin: &str,
+) -> Result<Option<reqwest::Url>, ResolveError> {
     let Ok(url) = reqwest::Url::parse(input) else {
         return Ok(None);
     };
