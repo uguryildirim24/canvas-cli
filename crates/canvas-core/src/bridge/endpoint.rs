@@ -38,6 +38,14 @@ pub const DIR_MODE: u32 = 0o700;
 /// The mode of the endpoint on Unix.
 pub const SOCKET_MODE: u32 = 0o600;
 
+/// The longest Unix socket path this code will try to bind.
+///
+/// `sockaddr_un.sun_path` holds 104 bytes on macOS and 108 on Linux, and the
+/// terminating NUL is one of them. The smaller of the two, less one, is the
+/// bound that holds everywhere, and a path over it is a plain local failure
+/// with an obvious fix rather than an opaque `bind` error.
+pub const MAX_SOCKET_PATH: usize = 103;
+
 impl Endpoint {
     /// Build the endpoint paths for one identity under `data_root`.
     #[must_use]
@@ -59,6 +67,14 @@ impl Endpoint {
         } else {
             self.socket.display().to_string()
         }
+    }
+
+    /// Whether the endpoint path fits in a `sockaddr_un`.
+    ///
+    /// Windows named pipes carry no such bound, so this is a Unix question.
+    #[must_use]
+    pub fn path_fits(&self) -> bool {
+        cfg!(windows) || self.socket.as_os_str().len() <= MAX_SOCKET_PATH
     }
 }
 

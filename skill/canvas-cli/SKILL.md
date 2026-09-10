@@ -88,6 +88,34 @@ Never ask the user to paste a token into the conversation.
 | Reconcile an unknown outcome | [reconcile-an-unknown-outcome.md](reconcile-an-unknown-outcome.md) |
 | Download course files | [download-course-files.md](download-course-files.md) |
 
+## Where the user is
+
+If the user has the browser companion installed, they can attach one Canvas
+tab to `canvas-cli`. Nothing is attached until the person clicks the companion
+button on that tab.
+
+1. `context.attach` opts you in and returns the attachment handle. It reads no
+   page content.
+2. `context.here` returns the working context: `api` carries whole envelopes
+   for what the route resolves to, each with its own freshness; `browser`
+   carries one bounded observation of the page. They are separate, and a
+   browser observation never updates an API fact.
+3. `context.here` with `include_text: true` also asks for the selected passage
+   and the visible excerpt. Ask for it only when the user's request needs the
+   words on the screen.
+4. `context.detach` gives up your share. The tab stays attached for the user.
+
+What you will not get, and must not ask for again:
+
+- Quizzes, graded assessments, external-tool frames, and pages the companion
+  does not recognize carry no content at all. `zone` says which, and
+  `content_reason` says why, both inside `browser`. Treat it as final.
+- The bundle's `reason` names why it is unavailable: `not_attached`,
+  `paused`, `validating`, `account_mismatch`, or `bridge_unavailable`. All of
+  them exit 8. Tell the user what to do; never poll.
+- `account_mismatch` means the browser is signed in as a different Canvas
+  account. Nothing was joined. Say so and stop.
+
 ## Exit codes and what to do
 
 | Exit | Meaning | What to do |
@@ -133,9 +161,13 @@ generation:
 - `canvas://<identity-key>/<generation>/todo`
 - `canvas://<identity-key>/<generation>/course/<id>/assignments`
 - `canvas://<identity-key>/<generation>/receipts`
+- `canvas://<identity-key>/<generation>/context/<your-consumer-handle>`
 
 They return the same envelopes the matching tools return. A URI from an
 earlier identity generation resolves to nothing.
+
+The `context/` resource is metadata only, and reading or subscribing to it
+attaches nothing: until you call `context.attach`, it answers `not_attached`.
 
 ## MCP setup
 

@@ -42,6 +42,9 @@ const CATALOG: &[&str] = &[
     "submission.reconcile",
     "receipts.acknowledge",
     "open.url",
+    "context.attach",
+    "context.here",
+    "context.detach",
 ];
 
 struct Fixture {
@@ -827,7 +830,11 @@ async fn every_tool_returns_the_envelope_the_cli_prints() {
 
     let covered: Vec<&str> = EQUIVALENTS.iter().map(|(tool, ..)| *tool).collect();
     let mut expected: Vec<&str> = CATALOG.to_vec();
-    expected.retain(|name| *name != "submission.execute");
+    // `submission.execute` needs a bound approval, so it is exercised by the
+    // approval tests instead. The three `context.*` tools name the calling
+    // consumer and the CLI does not, so their documents differ by design:
+    // `tests/bridge.rs` covers them against a live broker.
+    expected.retain(|name| *name != "submission.execute" && !name.starts_with("context."));
     assert_eq!(covered, expected, "a tool has no command behind it");
 
     for (tool, arguments, args) in EQUIVALENTS {
@@ -1009,18 +1016,21 @@ async fn resources_are_private_to_the_identity_generation() {
     let refused = mcp.primary("resources/read", json!({ "uri": foreign }));
     assert!(refused["result"].is_null(), "{refused}");
 
-    // The consumer bridge is a later package: the resource exists and says so.
+    // Reading the resource attaches nothing. No broker is running here, so
+    // the bundle is the `here@1` refusal, not an error and not a bundle.
     let context = mcp.primary(
         "resources/read",
         json!({ "uri": format!("{prefix}context/some-consumer") }),
     );
     let text = context["result"]["contents"][0]["text"].as_str().unwrap();
     let document: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(document["schema"], "canvas-cli/here@1");
     assert_eq!(document["outcome"], "refused");
     assert_eq!(document["exit"], 8);
-    // The reason travels in `reason`, as every §3.2 refusal does.
-    assert_eq!(document["result"]["code"], "refused");
-    assert_eq!(document["result"]["details"]["reason"], "not_attached");
+    assert_eq!(document["result"]["reason"], "bridge_unavailable");
+    assert_eq!(document["result"]["state"], "not_attached");
+    assert!(document["result"]["browser"].is_null(), "{document}");
+    // Browser context is an observation: it is never cacheable.
     assert_eq!(context["result"]["ttlMs"], 0);
     mcp.stop();
 }

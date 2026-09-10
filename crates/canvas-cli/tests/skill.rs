@@ -35,6 +35,9 @@ const CATALOG: &[&str] = &[
     "submission.reconcile",
     "receipts.acknowledge",
     "open.url",
+    "context.attach",
+    "context.here",
+    "context.detach",
 ];
 
 /// The two tools that can send anything to Canvas.

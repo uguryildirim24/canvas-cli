@@ -365,14 +365,46 @@ impl Broker {
         }
     }
 
+    /// Give up one consumer's opt-in, leaving the attachment alone.
+    ///
+    /// A consumer that never attached is `NotAttached`, so `context.detach`
+    /// cannot be used to learn whether some other consumer is attached.
+    pub fn detach_consumer(
+        &mut self,
+        attachment_id: Option<&str>,
+        consumer: &str,
+    ) -> Result<(), Reason> {
+        let Some(current) = self.attachment.as_mut() else {
+            return Err(Reason::NotAttached);
+        };
+        if attachment_id.is_some_and(|id| current.id != id) {
+            return Err(Reason::NotAttached);
+        }
+        if !current.consumers.remove(consumer) {
+            return Err(Reason::NotAttached);
+        }
+        Ok(())
+    }
+
     /// Opt one consumer in and hand it the capability.
-    pub fn attach_consumer(&mut self, consumer: &str) -> Result<(String, AttachmentState), Reason> {
+    ///
+    /// `attachment_id` is optional here because a consumer that has never
+    /// attached holds no capability yet. When it is given it must match, so
+    /// a stale handle opts nobody in.
+    pub fn attach_consumer(
+        &mut self,
+        attachment_id: Option<&str>,
+        consumer: &str,
+    ) -> Result<(String, AttachmentState), Reason> {
         if consumer.is_empty() {
             return Err(Reason::Protocol);
         }
         let Some(current) = self.attachment.as_mut() else {
             return Err(Reason::NotAttached);
         };
+        if attachment_id.is_some_and(|id| current.id != id) {
+            return Err(Reason::NotAttached);
+        }
         current.consumers.insert(consumer.to_owned());
         Ok((current.id.clone(), current.state))
     }
@@ -955,7 +987,7 @@ mod tests {
     #[test]
     fn only_an_opted_in_consumer_reads_the_bundle() {
         let (mut broker, id) = attached();
-        let (handed, state) = broker.attach_consumer("mcp:alpha").expect("attach");
+        let (handed, state) = broker.attach_consumer(None, "mcp:alpha").expect("attach");
         assert_eq!(handed, id);
         assert_eq!(state, AttachmentState::Attached);
 
@@ -980,7 +1012,7 @@ mod tests {
     #[test]
     fn a_listing_carries_no_capability_and_no_page_content() {
         let (mut broker, id) = attached();
-        broker.attach_consumer("mcp:alpha").expect("attach");
+        broker.attach_consumer(None, "mcp:alpha").expect("attach");
         broker.text(
             "doc-1",
             1,
@@ -995,10 +1027,60 @@ mod tests {
         assert!(listing.contains("mcp:alpha"));
     }
 
+    /// M7-a acceptance: a consumer gives up its own share and nobody else's.
+    #[test]
+    fn a_consumer_detach_leaves_the_attachment_alone() {
+        let (mut broker, id) = attached();
+        broker.attach_consumer(None, "mcp:alpha").expect("alpha");
+        broker.attach_consumer(None, "mcp:beta").expect("beta");
+
+        broker
+            .detach_consumer(Some(&id), "mcp:alpha")
+            .expect("alpha lets go");
+        assert_eq!(
+            broker.context(Some(&id), Some("mcp:alpha"), false),
+            Err(Reason::NotAttached)
+        );
+        // The tab is still attached, and beta still reads it.
+        assert!(broker.context(Some(&id), Some("mcp:beta"), false).is_ok());
+        assert_eq!(broker.list().len(), 1);
+
+        // Letting go twice is not an admission that anyone else is attached.
+        assert_eq!(
+            broker.detach_consumer(Some(&id), "mcp:alpha"),
+            Err(Reason::NotAttached)
+        );
+        assert_eq!(
+            broker.detach_consumer(Some(&id), "mcp:gamma"),
+            Err(Reason::NotAttached)
+        );
+        // A stale handle detaches nothing.
+        assert_eq!(
+            broker.detach_consumer(Some("00000000000000000000000000000000"), "mcp:beta"),
+            Err(Reason::NotAttached)
+        );
+        assert!(broker.context(Some(&id), Some("mcp:beta"), false).is_ok());
+    }
+
+    /// A stale handle opts nobody in, so a guessed id is not a way in.
+    #[test]
+    fn a_wrong_handle_attaches_no_consumer() {
+        let (mut broker, id) = attached();
+        assert_eq!(
+            broker.attach_consumer(Some("00000000000000000000000000000000"), "mcp:alpha"),
+            Err(Reason::NotAttached)
+        );
+        assert_eq!(
+            broker.context(None, Some("mcp:alpha"), false),
+            Err(Reason::NotAttached)
+        );
+        assert!(broker.attach_consumer(Some(&id), "mcp:alpha").is_ok());
+    }
+
     #[test]
     fn detaching_forgets_the_capability_and_the_text() {
         let (mut broker, id) = attached();
-        broker.attach_consumer("mcp:alpha").expect("attach");
+        broker.attach_consumer(None, "mcp:alpha").expect("attach");
         broker.text(
             "doc-1",
             1,
@@ -1019,10 +1101,10 @@ mod tests {
     fn a_consumer_cannot_attach_when_nothing_is_attached() {
         let mut broker = broker();
         assert_eq!(
-            broker.attach_consumer("mcp:alpha"),
+            broker.attach_consumer(None, "mcp:alpha"),
             Err(Reason::NotAttached)
         );
-        assert_eq!(broker.attach_consumer(""), Err(Reason::Protocol));
+        assert_eq!(broker.attach_consumer(None, ""), Err(Reason::Protocol));
     }
 
     // ----------------------------------------------------------- content
