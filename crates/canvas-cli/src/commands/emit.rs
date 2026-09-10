@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::output::{
     Envelope, ErrorResult, IdentityRef, Outcome, SCHEMA_ERROR, error_envelope, generated_at_now,
 };
-use crate::session::{Session, SessionError, ValidateTokenError};
+use crate::session::{Session, SessionError};
 
 /// Write a success (or completed) envelope as JSON, or run the human renderer.
 pub fn emit<T: Serialize>(
@@ -62,50 +62,42 @@ pub fn session_error(json: bool, err: SessionError, profile: Option<String>) -> 
     }
 }
 
-/// Map token validation failures.
-pub fn validate_token_error(json: bool, err: ValidateTokenError, session: &Session) -> ExitCode {
-    match err {
-        ValidateTokenError::Auth => emit_error(
-            json,
-            "auth",
-            "token rejected",
-            3,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        ValidateTokenError::Network => emit_error(
-            json,
-            "network",
-            "network error",
-            4,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        ValidateTokenError::Api(canvas_api::Error::RateLimited) => emit_error(
-            json,
-            "rate_limited",
-            "rate limited",
-            5,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        ValidateTokenError::Api(e) => emit_error(
-            json,
-            "network",
-            &e.to_string(),
-            4,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        ValidateTokenError::Local(e) => emit_error(
-            json,
-            "local",
-            &e.to_string(),
-            13,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
+/// Build a base envelope for a successful command result.
+#[must_use]
+pub fn base_envelope<T>(schema: &str, session: &Session, result: T) -> Envelope<T> {
+    Envelope {
+        schema: schema.to_owned(),
+        generated_at: generated_at_now(),
+        profile: session.profile.clone(),
+        identity: Some(session.identity_ref()),
+        freshness: Vec::new(),
+        requests: session.requests(),
+        partial: Vec::new(),
+        warnings: Vec::new(),
+        outcome: Outcome::Ok,
+        exit: 0,
+        result,
     }
+}
+
+/// Build an error envelope value without writing (tests / composition).
+#[must_use]
+#[allow(dead_code)]
+pub fn error_result(code: &str, message: &str) -> ErrorResult {
+    ErrorResult {
+        code: code.to_owned(),
+        message: message.to_owned(),
+        http_status: None,
+        server_errors: Vec::new(),
+        details: serde_json::json!({}),
+    }
+}
+
+/// Map schema constant for error documents.
+#[must_use]
+#[allow(dead_code)]
+pub fn error_schema() -> &'static str {
+    SCHEMA_ERROR
 }
 
 /// Require an online API client (rejects `--offline` and missing token).
@@ -152,46 +144,72 @@ pub fn require_client<'a>(
     }
 }
 
-/// Build a base envelope for a successful command result.
-#[must_use]
-pub fn base_envelope<T>(schema: &str, session: &Session, result: T) -> Envelope<T> {
-    Envelope {
-        schema: schema.to_owned(),
-        generated_at: generated_at_now(),
-        profile: session.profile.clone(),
-        identity: Some(session.identity_ref()),
-        freshness: Vec::new(),
-        requests: session.requests(),
-        partial: Vec::new(),
-        warnings: Vec::new(),
-        outcome: Outcome::Ok,
-        exit: 0,
-        result,
-    }
-}
-
-/// Build an error envelope value without writing (tests / composition).
-#[must_use]
-#[allow(dead_code)]
-pub fn error_result(code: &str, message: &str) -> ErrorResult {
-    ErrorResult {
-        code: code.to_owned(),
-        message: message.to_owned(),
-        http_status: None,
-        server_errors: Vec::new(),
-        details: serde_json::json!({}),
-    }
-}
-
-/// Map schema constant for error documents.
-#[must_use]
-#[allow(dead_code)]
-pub fn error_schema() -> &'static str {
-    SCHEMA_ERROR
-}
-
-/// Parse a numeric Canvas id; non-numeric ids need M1-c resolution.
+/// Parse a numeric Canvas id; non-numeric ids need M1-c resolution for some commands.
 pub fn parse_numeric_id(raw: &str, label: &str) -> Result<i64, String> {
     raw.parse::<i64>()
         .map_err(|_| format!("{label} resolution needs M1-c; use a numeric id for now"))
+}
+
+/// Keep API variants, status, and invocation telemetry on every abort.
+pub fn sync_error(
+    globals: &super::Globals,
+    session: &Session,
+    err: &canvas_core::sync::SyncError,
+) -> ExitCode {
+    let (code, exit, status) = err.classification();
+    let mut env = error_envelope(
+        code,
+        err.safe_message(),
+        status,
+        serde_json::json!({}),
+        exit,
+    );
+    env.profile.clone_from(&session.profile);
+    env.identity = Some(session.identity_ref());
+    env.requests = session.requests();
+    emit(globals.json, &env, || {
+        writeln!(io::stderr(), "{}", env.result.message)
+    })
+}
+
+pub fn resolve_error(
+    globals: &super::Globals,
+    session: &Session,
+    err: &canvas_core::resolve::ResolveError,
+) -> ExitCode {
+    use canvas_core::resolve::ResolveError;
+    let candidates: Vec<_> = match err {
+        ResolveError::NotFound { candidates } | ResolveError::Ambiguous { candidates } => {
+            candidates
+                .iter()
+                .map(
+                    |c| serde_json::json!({"id": c.id.to_string(), "code": c.code, "name": c.name}),
+                )
+                .collect()
+        }
+        _ => Vec::new(),
+    };
+    let mut env = error_envelope(
+        "resolution",
+        err.to_string(),
+        None,
+        serde_json::json!({"candidates": candidates}),
+        6,
+    );
+    env.profile.clone_from(&session.profile);
+    env.identity = Some(session.identity_ref());
+    env.requests = session.requests();
+    emit(globals.json, &env, || {
+        writeln!(io::stderr(), "{err}")?;
+        for c in &candidates {
+            writeln!(
+                io::stderr(),
+                "{}  {}  {}",
+                c["id"].as_str().unwrap_or(""),
+                c["code"].as_str().unwrap_or(""),
+                c["name"].as_str().unwrap_or("")
+            )?;
+        }
+        Ok(())
+    })
 }

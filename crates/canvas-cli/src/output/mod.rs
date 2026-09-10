@@ -11,13 +11,19 @@ mod render;
 pub use color::{ColorMode, resolve_color, should_use_color, should_use_color_with_env};
 pub use envelope::{
     Envelope, ErrorResult, Freshness, FreshnessSource, IdentityRef, Outcome, PartialScope,
-    Requests, error_envelope,
+    Requests, error_envelope, print_human,
 };
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
-    SCHEMA_CONFIG, SCHEMA_DOCTOR, SCHEMA_ERROR, SCHEMA_IDENTITY, SCHEMA_RECEIPT, SCHEMA_RECEIPTS,
-    SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_VERIFY, SCHEMA_VERSION, SchemaEntry,
-    SubmitCandidateJson, SubmitFileJson, SubmitResult, SubmitTextJson, all_schemas, rejects_json,
+    AliasJson, AliasResult, CacheClearResult, CachePathResult, CacheStatsResult, CacheTableJson,
+    CourseDetailJson, CourseJson, CourseResult, CoursesResult, GradeJson, PeriodJson, SCHEMA_ALIAS,
+    SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
+    SCHEMA_AUTH_LOGIN, SCHEMA_AUTH_LOGOUT, SCHEMA_AUTH_STATUS, SCHEMA_CACHE, SCHEMA_CALENDAR,
+    SCHEMA_CONFIG, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOCTOR, SCHEMA_DOWNLOAD, SCHEMA_ERROR,
+    SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_IDENTITY, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_RECEIPT,
+    SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO,
+    SCHEMA_VERIFY, SCHEMA_VERSION, SchemaEntry, SubmitCandidateJson, SubmitFileJson, SubmitResult,
+    SubmitTextJson, SyncDatasetJson, SyncResult, TeacherJson, TermJson, all_schemas, rejects_json,
 };
 pub use render::{
     StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,
