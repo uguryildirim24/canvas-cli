@@ -241,13 +241,21 @@ pub fn consumer_cursor(state: &Connection, consumer: &str) -> Result<i64, DbErro
 }
 
 /// Move a consumer's position forward. It never moves back.
-pub fn set_consumer_cursor(state: &Connection, consumer: &str, cursor: i64) -> Result<(), DbError> {
-    state.execute(
+///
+/// Every state write is one `BEGIN IMMEDIATE` transaction (SPEC §10).
+pub fn set_consumer_cursor(
+    state: &mut Connection,
+    consumer: &str,
+    cursor: i64,
+) -> Result<(), DbError> {
+    let tx = state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute(
         "INSERT INTO consumer_cursor (consumer, cursor, updated_at) VALUES (?1, ?2, ?3)
          ON CONFLICT(consumer) DO UPDATE SET
             cursor = MAX(cursor, excluded.cursor), updated_at = excluded.updated_at",
         params![consumer, cursor, Timestamp::now().to_string()],
     )?;
+    tx.commit()?;
     Ok(())
 }
 
