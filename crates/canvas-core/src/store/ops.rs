@@ -85,26 +85,51 @@ pub const CACHE_TABLES: &[&str] = &[
 
 /// Hit predicate (§10): complete, not stale, epoch ok, age within TTL, window ok.
 pub fn lookup(conns: &StoreConns, query: &LookupQuery<'_>) -> Result<LookupResult, DbError> {
-    let row = load_fetch_log(&conns.cache, query.dataset, query.scope)?;
-    let Some(row) = row else {
-        return Ok(LookupResult::Miss);
+    let mut candidates = if query.window.is_some() {
+        let mut stmt = conns
+            .cache
+            .prepare("SELECT scope FROM fetch_log WHERE dataset = ?1")?;
+        let scopes = stmt
+            .query_map([query.dataset], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        scopes
+            .iter()
+            .map(|scope| load_fetch_log(&conns.cache, query.dataset, scope))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+    } else {
+        load_fetch_log(&conns.cache, query.dataset, query.scope)?
+            .into_iter()
+            .collect()
     };
-
-    let epoch = read_scope_epoch(&conns.state, query.scope)?;
-    let age_ok = age_within_ttl(row.fetched_at, query.now, query.ttl)?;
-    let window_ok = match &query.window {
-        None => true,
-        Some(w) => window_contains(&row, w),
-    };
-    let epoch_ok = row.epoch_seen >= epoch;
-
-    if row.complete && !row.stale && epoch_ok && age_ok && window_ok {
-        return Ok(LookupResult::Hit(row));
+    candidates.sort_by_key(|row| std::cmp::Reverse(row.fetched_at));
+    let requested_epoch =
+        read_scope_epoch(&conns.state, &format!("{}:{}", query.dataset, query.scope))?;
+    let mut stale = None;
+    for row in candidates {
+        if !row.complete
+            || query
+                .window
+                .as_ref()
+                .is_some_and(|w| !window_contains(&row, w))
+        {
+            continue;
+        }
+        let row_epoch = read_scope_epoch(&conns.state, &format!("{}:{}", row.dataset, row.scope))?;
+        if !row.stale
+            && row.epoch_seen >= requested_epoch
+            && row.epoch_seen >= row_epoch
+            && age_within_ttl(row.fetched_at, query.now, query.ttl)?
+        {
+            return Ok(LookupResult::Hit(row));
+        }
+        if stale.is_none() {
+            stale = Some(row);
+        }
     }
-    if row.complete {
-        return Ok(LookupResult::Stale(row));
-    }
-    Ok(LookupResult::Miss)
+    Ok(stale.map_or(LookupResult::Miss, LookupResult::Stale))
 }
 
 /// Convenience: lookup using a [`Dataset`]'s name, scope, and TTL.
@@ -136,14 +161,14 @@ fn window_contains(row: &FetchLogRow, w: &WindowQuery<'_>) -> bool {
     let (Some(ws), Some(we)) = (row.window_start, row.window_end) else {
         return false;
     };
-    ws <= w.start && we >= w.end
+    w.start <= w.end && ws <= w.start && we >= w.end
 }
 
 fn age_within_ttl(fetched_at: Timestamp, now: Timestamp, ttl: Span) -> Result<bool, DbError> {
     let expiry = fetched_at
         .checked_add(ttl)
         .map_err(|e| DbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))?;
-    Ok(now <= expiry)
+    Ok(fetched_at <= now && now <= expiry)
 }
 
 /// Load a `fetch_log` row.
@@ -191,17 +216,20 @@ fn parse_ts(s: &str) -> rusqlite::Result<Timestamp> {
 }
 
 /// Effective epoch for a scope, including prefix scopes (`planner:*`).
+/// Sum independent counters so incrementing any matching scope invalidates a hit.
 pub fn read_scope_epoch(state: &Connection, scope: &str) -> Result<i64, DbError> {
-    let mut max_epoch: i64 = 0;
+    let mut effective_epoch: i64 = 0;
     let mut stmt = state.prepare("SELECT scope, epoch FROM scope_epoch")?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
     for row in rows {
         let (stored, epoch) = row?;
         if scope_matches(&stored, scope) {
-            max_epoch = max_epoch.max(epoch);
+            effective_epoch = effective_epoch
+                .checked_add(epoch)
+                .ok_or_else(|| DbError::Message("scope epoch overflow".into()))?;
         }
     }
-    Ok(max_epoch)
+    Ok(effective_epoch)
 }
 
 /// `stored` may be an exact scope or a prefix ending in `*`.

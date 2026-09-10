@@ -89,6 +89,10 @@ pub trait Dataset {
     fn name(&self) -> &str;
     /// Scope key for this fetch.
     fn scope_key(&self) -> &str;
+    /// Fully qualified durable epoch scope (§10), distinct from membership scope.
+    fn epoch_scope(&self) -> String {
+        format!("{}:{}", self.name(), self.scope_key())
+    }
     /// TTL for the hit predicate.
     fn ttl(&self) -> jiff::Span;
     /// Entity kind written by this dataset.
@@ -106,18 +110,6 @@ pub trait Dataset {
     ) -> Result<(), IngestError> {
         let super::db::StoreConns { cache, state, .. } = conns;
         let tx = cache.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        // Epoch check at commit time against state (disjoint borrow).
-        let current = ops::read_scope_epoch(state, self.scope_key())?;
-        if current > opts.epoch_seen {
-            // Drop the transaction without commit — old rows remain.
-            drop(tx);
-            return Err(IngestError::Epoch(EpochAbort {
-                scope: self.scope_key().to_string(),
-                epoch_seen: opts.epoch_seen,
-                current,
-            }));
-        }
-
         let mut count = 0i64;
         for page in pages {
             for entity in &page.entities {
@@ -187,7 +179,20 @@ pub trait Dataset {
             ],
         )?;
 
+        // Serialize the final epoch check with journal transitions until cache commit.
+        // Always acquire cache before state; no network work runs under either lock.
+        let state_tx = state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let scope = self.epoch_scope();
+        let current = ops::read_scope_epoch(&state_tx, &scope)?;
+        if current > opts.epoch_seen {
+            return Err(IngestError::Epoch(EpochAbort {
+                scope,
+                epoch_seen: opts.epoch_seen,
+                current,
+            }));
+        }
         tx.commit()?;
+        state_tx.commit()?;
         Ok(())
     }
 

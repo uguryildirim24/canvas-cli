@@ -220,3 +220,176 @@ fn removal_credential_failure_preserves_directory_and_profiles() {
     assert!(paths.identity_json().exists());
     assert!(paths.lock_path.exists());
 }
+
+fn ts(seconds: i64) -> jiff::Timestamp {
+    jiff::Timestamp::from_second(seconds).unwrap()
+}
+fn complete(epoch_seen: i64) -> IngestOpts<'static> {
+    IngestOpts {
+        epoch_seen,
+        complete: true,
+        stale: false,
+        error: None,
+        window: None,
+        contexts: None,
+    }
+}
+fn page(seconds: i64, name: &str) -> IngestPage {
+    FakeEntityPage {
+        fetched_at: ts(seconds),
+        rows: vec![FakeEntityRow {
+            id: 1,
+            name: Supplied::Value(name.into()),
+            ..Default::default()
+        }],
+    }
+    .to_ingest()
+}
+fn ingest_error(error: impl std::fmt::Display) -> DbError {
+    DbError::Message(error.to_string())
+}
+
+#[test]
+fn qualified_epochs_and_overlapping_prefixes_invalidate_hits() {
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store
+        .call_blocking(|conns| {
+            let ds = FakeEntity::new("course:1");
+            let tx = conns
+                .state
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            for _ in 0..5 {
+                bump_epochs(&["fake:course:1"], &tx)?;
+            }
+            tx.commit()?;
+            ds.ingest(&[page(100, "old")], &complete(5), conns)
+                .map_err(ingest_error)?;
+            let tx = conns
+                .state
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            bump_epochs(&["fake:*"], &tx)?;
+            tx.commit()?;
+            assert_eq!(read_scope_epoch(&conns.state, "fake:course:1")?, 6);
+            assert!(matches!(
+                lookup_dataset(conns, &ds, ts(101), None)?,
+                LookupResult::Stale(_)
+            ));
+            assert!(matches!(
+                ds.ingest(&[page(102, "new")], &complete(5), conns),
+                Err(IngestError::Epoch(_))
+            ));
+            let name: String =
+                conns
+                    .cache
+                    .query_row("SELECT name FROM fake_entities", [], |r| r.get(0))?;
+            assert_eq!(name, "old");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn epoch_advanced_during_upsert_aborts_whole_refresh() {
+    struct BumpingDataset {
+        state_path: std::path::PathBuf,
+    }
+    impl Dataset for BumpingDataset {
+        fn name(&self) -> &'static str {
+            "fake"
+        }
+        fn scope_key(&self) -> &'static str {
+            "course:1"
+        }
+        fn ttl(&self) -> jiff::Span {
+            jiff::Span::new().minutes(10)
+        }
+        fn entity_kind(&self) -> &'static str {
+            "fake_entity"
+        }
+        fn upsert_entity(
+            &self,
+            tx: &rusqlite::Transaction<'_>,
+            entity: &EntityIngest,
+            at: jiff::Timestamp,
+        ) -> Result<(), IngestError> {
+            FakeEntity::new("course:1").upsert_entity(tx, entity, at)?;
+            // Independent connection simulates another process's journal transition.
+            let mut state = rusqlite::Connection::open(&self.state_path)?;
+            let state_tx =
+                state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            bump_epochs(&["fake:course:1"], &state_tx)?;
+            state_tx.commit()?;
+            Ok(())
+        }
+    }
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store
+        .call_blocking(move |conns| {
+            let ds = FakeEntity::new("course:1");
+            ds.ingest(&[page(100, "old")], &complete(0), conns)
+                .map_err(ingest_error)?;
+            let ds = BumpingDataset {
+                state_path: paths.state_db,
+            };
+            assert!(matches!(
+                ds.ingest(&[page(200, "new")], &complete(0), conns),
+                Err(IngestError::Epoch(_))
+            ));
+            let name: String =
+                conns
+                    .cache
+                    .query_row("SELECT name FROM fake_entities", [], |r| r.get(0))?;
+            assert_eq!(name, "old");
+            assert_eq!(
+                load_fetch_log(&conns.cache, "fake", "course:1")?
+                    .unwrap()
+                    .fetched_at,
+                ts(100)
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn wider_windows_are_reused_only_with_matching_context_and_containment() {
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store
+        .call_blocking(|conns| {
+            let mut opts = complete(0);
+            opts.window = Some((ts(10), ts(90)));
+            opts.contexts = Some("hash-A");
+            FakeEntity::new("window:wide")
+                .ingest(&[page(100, "old")], &opts, conns)
+                .map_err(ingest_error)?;
+            let mut query = LookupQuery {
+                dataset: "fake",
+                scope: "window:narrow",
+                now: ts(110),
+                ttl: jiff::Span::new().minutes(10),
+                window: Some(WindowQuery {
+                    contexts: "hash-A",
+                    start: ts(20),
+                    end: ts(80),
+                }),
+            };
+            assert!(matches!(lookup(conns, &query)?, LookupResult::Hit(_)));
+            query.window.as_mut().unwrap().contexts = "hash-B";
+            assert!(matches!(lookup(conns, &query)?, LookupResult::Miss));
+            query.window.as_mut().unwrap().contexts = "hash-A";
+            query.window.as_mut().unwrap().end = ts(91);
+            assert!(matches!(lookup(conns, &query)?, LookupResult::Miss));
+            query.window.as_mut().unwrap().end = ts(80);
+            let tx = conns
+                .state
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            bump_epochs(&["fake:*"], &tx)?;
+            tx.commit()?;
+            assert!(matches!(lookup(conns, &query)?, LookupResult::Stale(_)));
+            Ok(())
+        })
+        .unwrap();
+}
