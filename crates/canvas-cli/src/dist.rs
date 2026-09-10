@@ -14,6 +14,12 @@ use crate::cli::Cli;
 /// Installed binary name (§4).
 pub const BIN_NAME: &str = "canvas";
 
+/// Version of the `canvas` binary these assets describe.
+///
+/// `xtask` builds the man pages and carries a version of its own, so it must
+/// read this one rather than its own `CARGO_PKG_VERSION`.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// The shells §5 documents, in the order `dist-assets` writes them.
 pub const SHELLS: &[Shell] = &[
     Shell::Bash,
