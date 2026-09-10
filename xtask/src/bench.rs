@@ -916,15 +916,32 @@ fn report(
         }
         // The socket round trip is well under a millisecond, so one decimal
         // would print every run as zero.
-        println!(
-            "{:<28} {:<10} {:>9.3} {:>9.3} {:>12.0} {:>7}",
-            "warm here over the socket",
-            "bridge",
-            companion.here.p50,
-            companion.here.p95,
-            bench_bridge::HERE_P95_MS,
-            if companion.missed() { "MISS" } else { "ok" }
-        );
+        for (label, latency, target) in [
+            (
+                "warm here over the socket",
+                &companion.here,
+                bench_bridge::HERE_P95_MS,
+            ),
+            (
+                "follow acknowledgement",
+                &companion.follow,
+                bench_bridge::FOLLOW_P95_MS,
+            ),
+        ] {
+            println!(
+                "{:<28} {:<10} {:>9.3} {:>9.3} {:>12.0} {:>7}",
+                label,
+                "bridge",
+                latency.p50,
+                latency.p95,
+                target,
+                if latency.missed_at(target) {
+                    "MISS"
+                } else {
+                    "ok"
+                }
+            );
+        }
     }
     let doc = options
         .doc
@@ -1211,19 +1228,39 @@ fn document(
             out,
             "Measured over a real `bridge-ipc@1` Unix socket against a live \
              `canvas bridge host`, with the extension side spoken by hand in \
-             native-messaging framing. One tab is attached in an `open` zone, \
-             and the timed operation is a metadata `here`.\n"
+             native-messaging framing. One tab is attached in an `open` zone. \
+             Two operations are timed: a metadata `here`, and a `follow` \
+             whose round trip ends when the companion acknowledges the \
+             navigation.\n"
         )?;
         writeln!(out, "| Metric | p50 ms | p95 ms | Target p95 | Verdict |")?;
         writeln!(out, "|---|---:|---:|---:|---|")?;
-        writeln!(
-            out,
-            "| warm metadata `here` over the socket | {:.3} | {:.3} | {:.0} | {} |",
-            companion.here.p50,
-            companion.here.p95,
-            bench_bridge::HERE_P95_MS,
-            if companion.missed() { "**miss**" } else { "ok" }
-        )?;
+        for (label, latency, target) in [
+            (
+                "warm metadata `here` over the socket",
+                &companion.here,
+                bench_bridge::HERE_P95_MS,
+            ),
+            (
+                "follow acknowledgement",
+                &companion.follow,
+                bench_bridge::FOLLOW_P95_MS,
+            ),
+        ] {
+            writeln!(
+                out,
+                "| {} | {:.3} | {:.3} | {:.0} | {} |",
+                label,
+                latency.p50,
+                latency.p95,
+                target,
+                if latency.missed_at(target) {
+                    "**miss**"
+                } else {
+                    "ok"
+                }
+            )?;
+        }
         writeln!(
             out,
             "\n{} timed calls after {} warm-up calls, on one long-lived \
@@ -1234,7 +1271,15 @@ fn document(
         )?;
         writeln!(
             out,
-            "Three things are outside this number by design. The account \
+            "The follow number is a **dispatch acknowledgement**, not a page \
+             load. It ends when the companion says it took the navigation; \
+             what became of the page is a separate message that arrives \
+             later and lands on `here@1`'s `browser.follow` (REPORT §3.2). \
+             Nothing in this measurement waits for a browser to render.\n"
+        )?;
+        writeln!(
+            out,
+            "Three things are outside these numbers by design. The account \
              probe runs in the browser and only when text is requested, so a \
              metadata read never triggers one. The API side of \
              `ContextBundle@1` goes through the same command handlers the \
