@@ -413,11 +413,11 @@ mod tests {
             Assignment, Course, Enrollment, File, Folder, GradingPeriod, MissingSubmission, Module,
             PlannerItem, User, WrappedCollection,
         };
-        let origin: reqwest::Url = "https://canvas.example.edu".parse().unwrap();
         fn check<T: serde::de::DeserializeOwned>(path: &str, body: &Value) {
             serde_json::from_value::<T>(body.clone())
                 .unwrap_or_else(|e| panic!("{path} does not decode: {e}"));
         }
+        let origin: reqwest::Url = "https://canvas.example.edu".parse().unwrap();
         canvas_api::serde_util::with_origin(&origin, || {
             for recorded in responses() {
                 let path = recorded.path.as_str();
