@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use canvas_core::ics::{CalendarItem, IcsError, write_ics};
+use canvas_core::ics::{CalendarItem, write_ics};
 use canvas_core::store::{DbError, StoreConns, WindowQuery, lookup_dataset};
 use canvas_core::sync::{
     BatchOutcome, CalendarEventsDataset, ContextWindow, CoursesScope, PlannerWindow,
@@ -68,9 +68,12 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
             "days must be positive and fit the supported date range",
         );
     }
+    // The alarm is a usage operand, so its grammar is checked here rather
+    // than left to the writer: `canvas calendar --alarm` must exit 2 (§14)
+    // whether or not `--ics` asks for a file.
     let alarm = match args.alarm.as_deref() {
         None => None,
-        Some(raw) => match rfc_duration(raw) {
+        Some(raw) => match rfc_duration(raw).filter(|d| canvas_core::ics::valid_alarm(d)) {
             Some(alarm) => Some(alarm),
             None => {
                 return usage(
@@ -218,25 +221,46 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
         })
         .collect();
     rows.sort_by_key(|row| row.sort_key(&key));
+    // Two events can share a title, and the one-day rule warns about each of
+    // them with the same words.
+    warnings.dedup();
     if undated > 0 {
         warnings.push(format!("{undated} item(s) without a date are not shown"));
     }
     let items: Vec<CalendarItemJson> = rows.iter().map(|row| row.to_json(&key, &zone)).collect();
 
-    let document = match write_calendar(&rows, &key, &warnings, alarm.as_deref(), now) {
-        Ok(doc) => doc,
-        Err(e) => {
-            return usage(globals, &session, &format!("cannot write iCalendar: {e}"));
+    // Only `--ics` needs the calendar text. Building it for a plain listing
+    // would let an unwritable item (§12.5) fail a table that never asked for
+    // a file; the one-day warnings above are the command's own.
+    let text = if matches!(target, IcsTarget::None) {
+        String::new()
+    } else {
+        match write_calendar(&rows, &key, &warnings, alarm.as_deref(), now) {
+            Ok(document) => {
+                warnings = document.warnings;
+                document.text
+            }
+            // Not a usage error: the operands were accepted and the items came
+            // from Canvas, so this is exit 1 (§14).
+            Err(e) => {
+                return emit_error(
+                    globals.json,
+                    "generic",
+                    &format!("cannot write iCalendar: {e}"),
+                    1,
+                    session.profile.clone(),
+                    Some(session.identity_ref()),
+                );
+            }
         }
     };
-    warnings = document.warnings;
 
     // `--ics -` streams raw text with no envelope (§7).
     if matches!(target, IcsTarget::Stdout) {
         for warning in &warnings {
             let _ = writeln!(io::stderr(), "warning: {warning}");
         }
-        if let Err(e) = io::stdout().write_all(document.text.as_bytes()) {
+        if let Err(e) = io::stdout().write_all(text.as_bytes()) {
             let _ = writeln!(io::stderr(), "{e}");
             return ExitCode::from(1);
         }
@@ -247,7 +271,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
         };
     }
     if let IcsTarget::Path(path) = &target
-        && let Err(e) = std::fs::write(path, document.text.as_bytes())
+        && let Err(e) = std::fs::write(path, text.as_bytes())
     {
         return emit_error(
             globals.json,
@@ -307,7 +331,7 @@ fn write_calendar(
     warnings: &[String],
     alarm: Option<&str>,
     now: Timestamp,
-) -> Result<canvas_core::ics::IcsDocument, IcsError> {
+) -> Result<canvas_core::ics::IcsDocument, canvas_core::ics::IcsError> {
     let ics_items: Vec<CalendarItem> = rows
         .iter()
         .map(|row| row.to_ics(identity_key, alarm))
