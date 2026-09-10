@@ -83,11 +83,21 @@ fn dataset_ttl(dataset: &str) -> Option<jiff::Span> {
 }
 
 /// A domain failure the host should show: the envelope is still the answer.
+///
+/// `recovery` belongs here. §14 ranks exit 9 above `mismatch` (10) and
+/// `refused` (8) in its precedence for a completed command, so a result the
+/// CLI ranks highest cannot be the one an agent host renders as a plain
+/// success — a submission whose outcome is unknown is the case §12.2 is most
+/// careful about.
+///
+/// `partial` does not. Exit 12 means some of the answer is missing and the
+/// rest is usable; `partial` names what failed, and a host that hid the
+/// answer would lose the part that worked.
 fn is_domain_failure(outcome: Outcome) -> bool {
-    matches!(
-        outcome,
-        Outcome::Error | Outcome::Refused | Outcome::Mismatch
-    )
+    match outcome {
+        Outcome::Error | Outcome::Refused | Outcome::Mismatch | Outcome::Recovery => true,
+        Outcome::Ok | Outcome::Partial => false,
+    }
 }
 
 /// Build the tool result for a finished command.
@@ -196,5 +206,15 @@ mod tests {
     fn a_partial_result_is_not_an_error() {
         let result = from_envelope_value(json!({ "exit": 12 }), Outcome::Partial, 5);
         assert_eq!(result.is_error, Some(false));
+    }
+
+    /// Exit 9 outranks every other completed outcome in §14, so it is never
+    /// the one a host renders as a plain success.
+    #[test]
+    fn an_unresolved_submission_is_an_error_result() {
+        let document = json!({ "schema": "canvas-cli/submit@1", "exit": 9 });
+        let result = from_envelope_value(document.clone(), Outcome::Recovery, 0);
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(result.structured_content, Some(document));
     }
 }
