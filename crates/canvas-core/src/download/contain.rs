@@ -222,19 +222,11 @@ fn normalize_rel_components(rel: &str) -> Result<Vec<String>, ContainError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_scratch::Scratch;
     use cap_std::ambient_authority;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn scratch() -> (std::path::PathBuf, Dir) {
-        static N: AtomicU64 = AtomicU64::new(0);
-        let n = N.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("canvas-core-contain-{nanos}-{n}"));
-        std::fs::create_dir_all(&path).unwrap();
+    fn scratch() -> (Scratch, Dir) {
+        let path = Scratch::new("canvas-core-contain");
         let dir = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
         (path, dir)
     }
