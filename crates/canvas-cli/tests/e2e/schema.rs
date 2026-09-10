@@ -145,6 +145,8 @@ const NULLABLE_WITH_EXAMPLE: &[&str] = &[
     "canvas-cli/submit@1:posted",
     "canvas-cli/submit@1:posted.excused",
     "canvas-cli/submit@1:receipt_id",
+    "canvas-cli/watch@1:cursor",
+    "canvas-cli/watch@1:since",
     "canvas-cli/todo@1:items[].scheduled_at",
     "canvas-cli/todo@1:items[].scheduled_at_local",
     "canvas-cli/todo@1:items[].status.graded",

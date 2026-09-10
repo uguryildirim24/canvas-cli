@@ -6,6 +6,7 @@
 mod commands;
 mod exits;
 mod harness;
+mod m6c;
 mod precedence;
 mod raw_output;
 mod schema;
