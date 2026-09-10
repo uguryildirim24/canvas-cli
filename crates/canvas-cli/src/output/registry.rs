@@ -587,6 +587,74 @@ pub struct DownloadResult {
     pub totals: DownloadTotalsJson,
 }
 
+// --- M4-b typed result payloads (Appendix D) ---
+
+/// Inclusive civil-day window shared by `announcements@1` and `calendar@1`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowJson {
+    pub start: String,
+    pub end: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnouncementJson {
+    pub id: String,
+    pub course_id: Option<String>,
+    pub course_code: Option<String>,
+    pub title: String,
+    pub posted_at: Option<String>,
+    pub posted_at_local: Option<String>,
+    pub author: Option<String>,
+    pub read: bool,
+    pub html_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnouncementsResult {
+    pub window: WindowJson,
+    pub announcements: Vec<AnnouncementJson>,
+}
+
+/// `announcement@1`: an `announcements@1` item plus the message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnouncementDetailJson {
+    #[serde(flatten)]
+    pub item: AnnouncementJson,
+    pub message_markdown: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnouncementResult {
+    pub announcement: AnnouncementDetailJson,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CalendarItemJson {
+    /// `canvas-<kind>-<id>@<identity-key>`, the same UID the ICS carries.
+    pub uid: String,
+    pub kind: String,
+    pub id: String,
+    pub course_id: Option<String>,
+    pub course_code: Option<String>,
+    pub title: String,
+    pub is_deadline: bool,
+    pub due_at: Option<String>,
+    pub due_at_local: Option<String>,
+    pub start_at: Option<String>,
+    pub start_at_local: Option<String>,
+    pub end_at: Option<String>,
+    pub end_at_local: Option<String>,
+    pub all_day: bool,
+    pub all_day_date: Option<String>,
+    pub html_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CalendarResult {
+    pub window: WindowJson,
+    pub items: Vec<CalendarItemJson>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -779,6 +847,45 @@ mod tests {
         }
         let typed: GradesResult = serde_json::from_value(fixture.clone()).unwrap();
         assert_eq!(serde_json::to_value(&typed).unwrap(), fixture);
+    }
+
+    #[test]
+    fn m4b_fixtures_deserialize_to_typed_results() {
+        let announcements: AnnouncementsResult =
+            serde_json::from_str(include_str!("schemas/announcements.json")).unwrap();
+        assert_eq!(announcements.window.start, "2026-08-26");
+        // Appendix D: `posted_at` desc, then id.
+        assert_eq!(announcements.announcements[0].id, "9001");
+        assert!(!announcements.announcements[0].read);
+
+        let announcement: AnnouncementResult =
+            serde_json::from_str(include_str!("schemas/announcement.json")).unwrap();
+        assert_eq!(announcement.announcement.item.id, "1");
+        assert!(announcement.announcement.message_markdown.is_none());
+
+        let calendar: CalendarResult =
+            serde_json::from_str(include_str!("schemas/calendar.json")).unwrap();
+        assert_eq!(calendar.items.len(), 3);
+        assert!(calendar.items[0].is_deadline);
+        let all_day = calendar.items.last().unwrap();
+        assert!(all_day.all_day && all_day.all_day_date.as_deref() == Some("2026-09-14"));
+        assert!(
+            all_day.uid.starts_with("canvas-event-701@"),
+            "UID carries the identity key (§12.5)"
+        );
+
+        // Every Appendix D field stays present, and `null` means unknown.
+        let value = serde_json::to_value(&calendar).unwrap();
+        for key in ["due_at", "start_at", "end_at", "all_day_date", "html_url"] {
+            assert!(
+                value["items"][2].get(key).is_some(),
+                "calendar item is missing {key}"
+            );
+        }
+        assert_eq!(
+            serde_json::to_value(&announcements).unwrap()["announcements"][1]["author"],
+            serde_json::Value::Null
+        );
     }
 
     /// SPEC §7 and Appendix D: a field defined in Appendix D is always
