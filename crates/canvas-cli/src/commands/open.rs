@@ -34,13 +34,25 @@ fn db_fail(session: &crate::session::Session, err: impl ToString) -> Handled {
     )
 }
 
+/// Whether the resolved URL is also handed to the browser.
+///
+/// `canvas open` launches it. The `open.url` tool resolves only: an agent
+/// surface must not start a program on the user's machine (REPORT §3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Launch {
+    Yes,
+    No,
+}
+
 /// Run `canvas open` for the CLI: one envelope, one exit code.
 pub async fn run(
     globals: &Globals,
     command: Option<OpenCommand>,
     target: Option<String>,
 ) -> ExitCode {
-    handle(globals, command, target).await.emit(globals.json)
+    handle(globals, command, target, Launch::Yes)
+        .await
+        .emit(globals.json)
 }
 
 /// Run `canvas open`.
@@ -48,6 +60,7 @@ pub async fn handle(
     globals: &Globals,
     command: Option<OpenCommand>,
     target: Option<String>,
+    launch: Launch,
 ) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
@@ -165,7 +178,9 @@ pub async fn handle(
         }
     };
 
-    let result = launch_result(kind, &id, &url, || open::that(&url).is_ok());
+    let result = launch_result(kind, &id, &url, || {
+        launch == Launch::Yes && open::that(&url).is_ok()
+    });
     let envelope = base_envelope(SCHEMA_OPEN, &session, result);
     Handled::new(envelope, move |envelope| {
         writeln!(io::stdout(), "{}", human_result(&envelope.result))

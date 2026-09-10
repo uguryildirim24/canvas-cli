@@ -27,7 +27,8 @@ pub enum ColorChoice {
     Never,
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
 pub enum AssignmentBucket {
     Open,
     Upcoming,
@@ -321,6 +322,10 @@ pub enum Commands {
         #[arg(long, conflicts_with = "command")]
         list: bool,
     },
+    /// Serve the Model Context Protocol over stdin and stdout.
+    ///
+    /// One instance serves one identity: bind it with `--profile`.
+    Mcp,
     /// Generate shell completions.
     Completions {
         /// Shell to generate completions for.
