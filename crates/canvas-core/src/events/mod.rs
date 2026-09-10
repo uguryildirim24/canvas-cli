@@ -22,7 +22,7 @@ pub use compare::{Member, Members, SHAPES, Shape, shape_for};
 pub use kind::EventKind;
 pub use log::{
     CursorCheck, EventIdentity, EventRecord, RETENTION_DAYS, check_cursor, consumer_cursor, expire,
-    high_water, identity, low_water, read_after, record_operation_state, record_submission_state,
-    reset_consumer_cursor, set_consumer_cursor,
+    high_water, identity, insert_decision, low_water, read_after, record_operation_state,
+    record_submission_state, reset_consumer_cursor, set_consumer_cursor,
 };
 pub use observe::{Observed, apply_pending, observe_refresh, record_observation};

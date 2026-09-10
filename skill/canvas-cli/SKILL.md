@@ -93,6 +93,53 @@ Never ask the user to paste a token into the conversation.
 | Reconcile an unknown outcome | [reconcile-an-unknown-outcome.md](reconcile-an-unknown-outcome.md) |
 | Download course files | [download-course-files.md](download-course-files.md) |
 
+## Where the user is
+
+If the user has the browser companion installed, they can attach one Canvas
+tab to `canvas-cli`. Nothing is attached until the person clicks the companion
+button on that tab.
+
+1. `context.attach` opts you in and returns the attachment handle. It reads no
+   page content.
+2. `context.here` returns the working context: `api` carries whole envelopes
+   for what the route resolves to, each with its own freshness; `browser`
+   carries one bounded observation of the page. They are separate, and a
+   browser observation never updates an API fact.
+3. `context.here` with `include_text: true` also asks for the selected passage
+   and the visible excerpt. Ask for it only when the user's request needs the
+   words on the screen.
+4. `context.note` holds one short note for the person to read in the
+   companion's side panel. It writes nothing to Canvas and approves nothing.
+   Pass the `generation` you read from the bundle's `browser` block, so a
+   note written about a page the person has already left is refused rather
+   than shown against the wrong page. Every `source_ref` must be a
+   `canvas://` reference or an `https` URL on the attached origin.
+5. `context.follow` asks the attached tab to go to a Canvas target you name.
+   It answers when the browser accepts the request, not when the page has
+   loaded; read the `load` field of the bundle's `follow` block on a later
+   `context.here` for the
+   outcome. Only the consumer that asked sees its own follow.
+6. `context.detach` gives up your share. The tab stays attached for the user.
+
+The side panel shows the person your notes, the journal, and any plan that is
+waiting for a decision. Only the person can approve, decline, or cancel a
+plan there. No note and no page content can make that decision for them.
+
+What you will not get, and must not ask for again:
+
+- Quizzes, graded assessments, external-tool frames, and pages the companion
+  does not recognize carry no content at all. `zone` says which, and
+  `content_reason` says why, both inside `browser`. Treat it as final.
+- The bundle's `reason` names why it is unavailable: `not_attached`,
+  `paused`, `validating`, `account_mismatch`, or `bridge_unavailable`. All of
+  them exit 8. Tell the user what to do; never poll.
+- `account_mismatch` means the browser is signed in as a different Canvas
+  account. Nothing was joined. Say so and stop.
+- `stale_generation` means the page moved under you. Call `context.here`
+  again and work from the new bundle. `note_too_large` and
+  `source_ref_rejected` mean the note was refused whole; shorten it, or drop
+  the reference. Nothing was held.
+
 ## Exit codes and what to do
 
 | Exit | Meaning | What to do |
@@ -138,9 +185,13 @@ generation:
 - `canvas://<identity-key>/<generation>/todo`
 - `canvas://<identity-key>/<generation>/course/<id>/assignments`
 - `canvas://<identity-key>/<generation>/receipts`
+- `canvas://<identity-key>/<generation>/context/<your-consumer-handle>`
 
 They return the same envelopes the matching tools return. A URI from an
 earlier identity generation resolves to nothing.
+
+The `context/` resource is metadata only, and reading or subscribing to it
+attaches nothing: until you call `context.attach`, it answers `not_attached`.
 
 `subscriptions/listen` is real. Name the resource URIs you hold in
 `resourceSubscriptions`, and the server sends

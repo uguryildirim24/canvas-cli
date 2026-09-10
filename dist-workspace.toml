@@ -32,11 +32,15 @@ publish-jobs = []
 install-updater = false
 # `cargo xtask dist-assets` writes the first two before the archives are
 # built. `skill` is tracked in the repository: it is the agent-facing
-# documentation `canvas mcp` expects a host to load.
+# documentation `canvas mcp` expects a host to load. `extension` is the
+# browser companion, shipped unpacked because that is how Chrome loads it
+# until it is published to the Web Store; it has no build step and no
+# dependency, so the tracked directory is the artifact.
 include = [
     "target/dist-assets/man",
     "target/dist-assets/completions",
     "skill",
+    "extension",
 ]
 # Injects the `dist-assets` step into the generated build job.
 github-build-setup = "build-setup.yml"

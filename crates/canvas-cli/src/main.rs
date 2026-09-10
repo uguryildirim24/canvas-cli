@@ -19,6 +19,7 @@ mod cli {
     pub use canvas_cli::cli::*;
 }
 
+mod bridge;
 mod commands;
 mod config;
 mod credentials;
@@ -59,9 +60,32 @@ fn m1b_globals(globals: &Globals) -> commands::Globals {
     }
 }
 
+/// Rewrite Chrome's native-messaging invocation into a command line.
+///
+/// The host manifest names the absolute path of the `canvas` binary (REPORT
+/// §3.4), and Chrome starts a native host as
+/// `<path> chrome-extension://<id>/ [--parent-window=<handle>]`. Clap would
+/// reject that first argument, so it is turned into the subcommand it means
+/// before parsing. Nothing else is rewritten: only an argument that already
+/// is a Chrome extension origin selects this path.
+fn native_messaging_argv<I>(argv: I) -> Vec<std::ffi::OsString>
+where
+    I: IntoIterator<Item = std::ffi::OsString>,
+{
+    let mut argv: Vec<std::ffi::OsString> = argv.into_iter().collect();
+    let is_caller = argv
+        .get(1)
+        .and_then(|arg| arg.to_str())
+        .is_some_and(canvas_cli::cli::is_native_messaging_caller);
+    if is_caller {
+        argv.splice(1..1, ["bridge".into(), "host".into()]);
+    }
+    argv
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(native_messaging_argv(std::env::args_os()));
     if let Err(error) = cli.validate() {
         error.exit();
     }
@@ -115,6 +139,44 @@ async fn main() -> ExitCode {
                         AliasCommand::Remove { name } => commands::alias::AliasCmd::Remove { name },
                     };
                     commands::alias::run(&m1b_globals(&globals), cmd).await
+                }
+                Commands::Bridge { command } => match command {
+                    cli::BridgeCommand::Host {
+                        caller_origin,
+                        parent_window: _,
+                    } => Box::pin(bridge::host::run(&m1b_globals(&globals), caller_origin)).await,
+                    cli::BridgeCommand::Install {
+                        extension_id,
+                        browser,
+                    } => {
+                        commands::bridge::run(
+                            &m1b_globals(&globals),
+                            commands::bridge::BridgeCmd::Install {
+                                extension_id,
+                                browser,
+                            },
+                        )
+                        .await
+                    }
+                    cli::BridgeCommand::Status => {
+                        commands::bridge::run(
+                            &m1b_globals(&globals),
+                            commands::bridge::BridgeCmd::Status,
+                        )
+                        .await
+                    }
+                    cli::BridgeCommand::Detach { attachment } => {
+                        commands::bridge::run(
+                            &m1b_globals(&globals),
+                            commands::bridge::BridgeCmd::Detach {
+                                attachment_id: attachment,
+                            },
+                        )
+                        .await
+                    }
+                },
+                Commands::Here { attachment, text } => {
+                    commands::here::run(&m1b_globals(&globals), attachment, text).await
                 }
                 Commands::Sync { full } => commands::sync::run(&m1b_globals(&globals), full).await,
                 Commands::Watch { jsonl, since, once } => {
@@ -182,8 +244,35 @@ async fn main() -> ExitCode {
                 Commands::Assignment { target, assignment } => {
                     commands::assignment::run(&m1b_globals(&globals), target, assignment).await
                 }
-                Commands::Open { command, target } => {
-                    commands::open::run(&m1b_globals(&globals), command, target).await
+                Commands::Open {
+                    command,
+                    target,
+                    follow,
+                    attachment,
+                } => {
+                    let globals = m1b_globals(&globals);
+                    if follow {
+                        commands::open::follow(&globals, command, target, attachment, None, None)
+                            .await
+                            .emit(globals.json)
+                    } else {
+                        commands::open::run(&globals, command, target).await
+                    }
+                }
+                Commands::Note {
+                    attachment,
+                    text,
+                    source_refs,
+                    generation,
+                } => {
+                    commands::note::run(
+                        &m1b_globals(&globals),
+                        attachment,
+                        generation,
+                        text,
+                        source_refs,
+                    )
+                    .await
                 }
                 Commands::Grades { course, period } => {
                     commands::grades::run(&m1b_globals(&globals), course, period).await
@@ -420,9 +509,55 @@ async fn main() -> ExitCode {
 mod tests {
     use clap::Parser;
 
-    use cli::{OpenCommand, SubmissionCommand};
+    use cli::{BridgeCommand, OpenCommand, SubmissionCommand};
 
     use super::*;
+
+    /// M7-a: Chrome's own invocation reaches `bridge host`, and nothing else
+    /// takes that path.
+    #[test]
+    fn chromes_native_messaging_invocation_becomes_bridge_host() {
+        let origin = "chrome-extension://abcdefghijklmnopabcdefghijklmnop/";
+        let argv = native_messaging_argv(
+            ["canvas", origin, "--parent-window=0"]
+                .into_iter()
+                .map(Into::into),
+        );
+        let cli = Cli::try_parse_from(&argv).expect("chrome's command line parses");
+        match cli.command {
+            Commands::Bridge {
+                command:
+                    BridgeCommand::Host {
+                        caller_origin,
+                        parent_window,
+                    },
+            } => {
+                assert_eq!(caller_origin.as_deref(), Some(origin));
+                assert_eq!(parent_window.as_deref(), Some("0"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        // An ordinary command line is untouched.
+        for plain in [
+            vec!["canvas", "todo"],
+            vec!["canvas", "bridge", "status"],
+            vec!["canvas", "https://school.test/courses/1"],
+        ] {
+            let argv = native_messaging_argv(plain.iter().map(|a| (*a).into()));
+            assert_eq!(argv.len(), plain.len(), "{plain:?} was rewritten");
+        }
+    }
+
+    /// `bridge host` owns stdout for Chrome's framing, so `--json` on it is a
+    /// usage error, not a second output contract.
+    #[test]
+    fn bridge_host_rejects_json() {
+        let cli = Cli::try_parse_from(["canvas", "--json", "bridge", "host"]).expect("parses");
+        assert!(cli.validate().is_err());
+        let ok = Cli::try_parse_from(["canvas", "--json", "bridge", "status"]).expect("parses");
+        ok.validate()
+            .expect("status is an ordinary class-B command");
+    }
 
     #[test]
     fn global_flags_before_nested_commands_preserve_the_selected_command() {
@@ -471,6 +606,7 @@ mod tests {
             Commands::Open {
                 command: Some(OpenCommand::Assignment { course, assignment }),
                 target: None,
+                ..
             } => {
                 assert_eq!(course, "chem");
                 assert_eq!(assignment, "hw1");

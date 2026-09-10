@@ -28,8 +28,9 @@ mod record;
 
 pub use execute::{Admission, execute};
 pub use ops::{
-    EXPIRY, NewOperationPlan, approve, cancel, decline, expire, guard_admission,
-    identity_generation, insert_operation, invalidate, issue_handle, load, refusal_for, require,
+    Awaiting, EXPIRY, NewOperationPlan, NewPlan, approve, awaiting_decision, cancel, decline,
+    expire, guard_admission, identity_generation, insert, insert_operation, invalidate,
+    issue_handle, load, refusal_for, require,
 };
 pub use prepare::{PrepareRequest, Prepared, prepare};
 pub use record::{

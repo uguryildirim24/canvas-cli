@@ -1,0 +1,14 @@
+{
+  "browser": "chrome",
+  "host_name": "com.canvas_cli.bridge",
+  "extension_id": "abcdefghijklmnopabcdefghijklmnop",
+  "binary": "/usr/local/bin/canvas",
+  "manifest_path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+  "written": true,
+  "steps": [
+    "Open chrome://extensions and turn on Developer mode.",
+    "Choose \"Load unpacked\" and select the `extension/` directory of this checkout.",
+    "Copy the extension id Chrome shows and run `canvas bridge install --extension-id <ID>` again if it differs.",
+    "Open your Canvas tab and click the canvas-cli toolbar button."
+  ]
+}

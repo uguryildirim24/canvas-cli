@@ -93,6 +93,48 @@ pub fn insert(
     Ok(tx.last_insert_rowid())
 }
 
+/// Append one plan-decision event: ids and the decision, nothing else.
+///
+/// It exists beside [`insert`] because a decision is not an observation of a
+/// dataset: there is no baseline to compare and no allowlisted field to
+/// carry. `before` names the state the plan was in, `after` names the
+/// decision, and neither carries a target, a digest, or a byte of the payload
+/// (REPORT §3.5).
+#[allow(clippy::too_many_arguments)]
+pub fn insert_decision(
+    tx: &Transaction<'_>,
+    identity: &EventIdentity,
+    observation_id: &str,
+    observed_at: &str,
+    dataset: &str,
+    scope: &str,
+    kind: EventKind,
+    plan_id: &str,
+    decision: &str,
+) -> Result<(), DbError> {
+    let field = |value: &str| {
+        let mut map = Map::new();
+        map.insert("state".to_owned(), Value::String(value.to_owned()));
+        Value::Object(map)
+    };
+    let event = PendingEvent {
+        kind,
+        entity_key: Some(plan_id.to_owned()),
+        before: field("prepared"),
+        after: field(decision),
+    };
+    insert(
+        tx,
+        identity,
+        observation_id,
+        observed_at,
+        dataset,
+        scope,
+        &event,
+    )?;
+    Ok(())
+}
+
 /// Every event after `since`, oldest first.
 pub fn read_after(
     state: &Connection,

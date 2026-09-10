@@ -1,0 +1,21 @@
+{
+  "attachment": "0f3c9a1b2d4e5f60718293a4b5c6d7e8",
+  "consumer": "mcp:claude-code",
+  "target_kind": "assignment",
+  "id": "98765",
+  "url": "https://lasell.instructure.com/courses/45679/assignments/98765",
+  "follow": {
+    "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
+    "url": "https://lasell.instructure.com/courses/45679/assignments/98765",
+    "dispatched": true,
+    "dispatched_at": "2026-09-10T16:04:39Z",
+    "dispatch_ms": 41,
+    "generation": 3,
+    "load": "unknown",
+    "load_at": null
+  },
+  "side_effects": [
+    "the browser loads the page, and Canvas' own page controllers run: a discussion page marks itself read"
+  ],
+  "reason": null
+}

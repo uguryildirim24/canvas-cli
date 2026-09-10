@@ -14,9 +14,8 @@ use rmcp::model::{
 };
 use serde_json::json;
 
-use crate::commands::{Globals, handled::Handled, receipts, todo};
+use crate::commands::{Globals, handled::Handled, here, receipts, todo};
 use crate::mcp::result::ttl_ms;
-use crate::output::{Outcome, error_envelope};
 
 /// The URI scheme of every resource this server serves.
 pub const SCHEME: &str = "canvas://";
@@ -80,7 +79,8 @@ pub enum Target {
     CourseAssignments(String),
     /// `receipts`: local receipts and unresolved journals.
     Receipts,
-    /// `context/<consumer-handle>`: the M7 bridge, not attached yet.
+    /// `context/<consumer-handle>`: what that consumer attached to, if it
+    /// attached at all.
     Context(String),
 }
 
@@ -130,15 +130,21 @@ pub fn templates(binding: &Binding) -> Vec<ResourceTemplate> {
         ResourceTemplate::new(binding.uri("context/{consumer_handle}"), "consumer-context")
             .with_title("Consumer context")
             .with_description(
-                "The attached working context of one consumer. \
-                 The bridge that attaches a consumer is not in this release, \
-                 so this resource reports `not_attached`.",
+                "The attached working context of one consumer, as `context.here` \
+                 returns it, and metadata only. Reading it attaches nothing: a \
+                 consumer that has not called `context.attach` reads \
+                 `not_attached`, and a subscription never opts anybody in.",
             )
             .with_mime_type("application/json"),
     ]
 }
 
 /// Read one resource.
+///
+/// `consumer` is this session's own handle, set by the adapter. A
+/// `context/<handle>` resource is served only when the handle names the
+/// caller, so naming another consumer's handle reads `not_attached` rather
+/// than that consumer's page (REPORT §3.2).
 ///
 /// `Err` means the URI is not one this server serves — a foreign identity
 /// key, another generation, or an unknown path. Everything the command itself
@@ -147,6 +153,7 @@ pub async fn read(
     globals: &Globals,
     binding: &Binding,
     uri: &str,
+    consumer: &str,
 ) -> Result<ReadResourceResult, ErrorData> {
     let Some(target) = binding.target(uri) else {
         return Err(ErrorData::resource_not_found(
@@ -166,29 +173,17 @@ pub async fn read(
         Target::CourseAssignments(course) => {
             crate::commands::assignments::handle(globals, course, None, None).await
         }
-        Target::Context(handle) => not_attached(globals, &handle),
+        // Metadata only. Text is released by an explicit `context.here` with
+        // `include_text`, never by reading or subscribing to a resource.
+        //
+        // A handle that is not this session's own is answered the way an
+        // unattached consumer is: no consumer reads another one's context.
+        Target::Context(handle) if handle == consumer => {
+            here::handle(globals, None, Some(handle), false).await
+        }
+        Target::Context(handle) => here::foreign_consumer(globals, &handle),
     };
     Ok(contents(uri, &handled))
-}
-
-/// The `/context/<handle>` answer until the M7 bridge exists.
-///
-/// It is a §7 refusal, not a protocol error: the request was well formed and
-/// the answer is that no context is attached.
-fn not_attached(globals: &Globals, handle: &str) -> Handled {
-    let message = format!("no context is attached for consumer {handle}");
-    // The same shape every other §3.2 refusal has: code `refused`, and the
-    // reason in `details.reason`, so one rule reads them all.
-    let mut envelope = error_envelope(
-        "refused",
-        &message,
-        None,
-        json!({ "reason": "not_attached", "consumer": handle }),
-        8,
-    );
-    envelope.outcome = Outcome::Refused;
-    envelope.profile = globals.profile.clone();
-    Handled::error_envelope(envelope, message)
 }
 
 /// Wrap a finished command as resource contents with its freshness budget.
@@ -211,6 +206,7 @@ fn contents(uri: &str, handled: &Handled) -> ReadResourceResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::output::{Outcome, error_envelope};
 
     fn binding() -> Binding {
         Binding::new(
@@ -299,38 +295,19 @@ mod tests {
     }
 
     #[test]
-    fn context_reports_not_attached_as_a_refusal() {
-        let globals = Globals {
-            json: true,
-            color: crate::output::ColorMode::Never,
-            profile: Some("default".to_owned()),
-            fresh: false,
-            offline: true,
-            quiet: false,
-        };
-        let handled = not_attached(&globals, "consumer-1");
-        assert_eq!(handled.exit(), 8);
-        let document = handled.envelope().to_value();
-        assert_eq!(document["outcome"], "refused");
-        // REPORT §3.2 puts the reason in `reason`, exactly as a plan refusal
-        // reports `expired`, `invalidated`, or `approval_required`.
-        assert_eq!(document["result"]["code"], "refused");
-        assert_eq!(document["result"]["details"]["reason"], "not_attached");
-        assert_eq!(document["result"]["details"]["consumer"], "consumer-1");
-    }
-
-    #[test]
     fn resource_contents_are_private_and_carry_the_budget() {
-        let globals = Globals {
-            json: true,
-            color: crate::output::ColorMode::Never,
-            profile: None,
-            fresh: false,
-            offline: true,
-            quiet: false,
-        };
         let uri = binding().uri("context/consumer-1");
-        let result = contents(&uri, &not_attached(&globals, "consumer-1"));
+        // Any unresolved answer will do: what is asserted is the wrapper.
+        let mut envelope = error_envelope(
+            "refused",
+            "no context is attached",
+            None,
+            json!({ "reason": "not_attached" }),
+            8,
+        );
+        envelope.outcome = Outcome::Refused;
+        let handled = Handled::error_envelope(envelope, "no context is attached".to_owned());
+        let result = contents(&uri, &handled);
         assert_eq!(result.cache_scope, Some(CacheScope::Private));
         // Nothing is resolved, so the result may not be cached at all.
         assert_eq!(result.ttl_ms, Some(0));

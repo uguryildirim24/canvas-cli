@@ -34,6 +34,9 @@ pub mod submit;
 pub mod operations;
 pub mod plan;
 
+/// The companion broker: native-messaging framing, IPC, and attachments.
+pub mod bridge;
+
 /// Module-aware file download planning and install.
 pub mod download;
 

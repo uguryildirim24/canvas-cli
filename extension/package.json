@@ -1,0 +1,11 @@
+{
+  "name": "canvas-cli-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The canvas-cli browser companion: attach the Canvas tab you already have open.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  }
+}

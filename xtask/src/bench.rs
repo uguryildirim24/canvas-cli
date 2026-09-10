@@ -32,6 +32,7 @@ use sha2::{Digest, Sha256};
 use wiremock::matchers::{method as method_matcher, path as path_matcher, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use crate::bench_bridge;
 use crate::bench_fixture::{self, BLOB_PREFIX, DOWNLOAD_COURSE, DOWNLOAD_FILES};
 use crate::bench_mcp;
 use crate::fixture::{Recorded, load_manifest, load_set};
@@ -46,12 +47,18 @@ const TOKEN: &str = "bench-fixture-token";
 const USER_ID: i64 = 1001;
 
 /// Options of the bench task.
+///
+/// Each flag is one independent switch of the command line, so they stay
+/// separate booleans rather than a state machine.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Options {
     pub fixture: String,
     pub runs: u32,
     pub no_fail: bool,
     /// Also measure the agent surface (`canvas mcp`).
     pub mcp: bool,
+    /// Also measure the browser companion's broker (`canvas bridge host`).
+    pub bridge: bool,
     /// Measure one `watch` tick, and the §13 targets with `watch` running.
     pub watch: bool,
     /// Where the report goes. `None` means `docs/bench.md`.
@@ -219,6 +226,7 @@ pub fn run(options: &Options) -> Result<bool> {
         let uri = server.uri();
         let runs = options.runs;
         let mcp = options.mcp;
+        let bridge = options.bridge;
         let watch = options.watch;
         let outcome = tokio::task::spawn_blocking(move || {
             let harness = Harness::new(release, debug, uri)?;
@@ -229,7 +237,14 @@ pub fn run(options: &Options) -> Result<bool> {
             } else {
                 None
             };
-            anyhow::Ok((measured, agent))
+            // The broker serves metadata from its own memory, so it needs no
+            // fixture server and no primed cache: it gets a bed of its own.
+            let companion = if bridge {
+                Some(harness.measure_bridge(runs)?)
+            } else {
+                None
+            };
+            anyhow::Ok((measured, agent, companion))
         })
         .await?;
         // A failure is almost always a request the set does not answer. Name
@@ -247,8 +262,15 @@ pub fn run(options: &Options) -> Result<bool> {
         anyhow::Ok(outcome?)
     })?;
 
-    let (measurements, agent) = measurements;
-    let passed = report(&root, options, &shape, &measurements, agent.as_ref())?;
+    let (measurements, agent, companion) = measurements;
+    let passed = report(
+        &root,
+        options,
+        &shape,
+        &measurements,
+        agent.as_ref(),
+        companion.as_ref(),
+    )?;
     Ok(passed || options.no_fail)
 }
 
@@ -700,6 +722,11 @@ impl Harness {
         bench_mcp::measure(&factory, runs, DOWNLOAD_COURSE, DOWNLOAD_COURSE * 100 + 1)
     }
 
+    /// Measure the broker over a real `bridge-ipc@1` socket.
+    fn measure_bridge(&self, runs: u32) -> Result<bench_bridge::Report> {
+        bench_bridge::measure(&self.release, runs)
+    }
+
     fn measure_all(&self, runs: u32, watch: bool) -> Result<Measurements> {
         copy_dir(&self.data_root(), &self.snapshot())?;
         let mut out = Vec::new();
@@ -836,6 +863,7 @@ fn report(
     shape: &SetShape,
     measurements: &Measurements,
     agent: Option<&bench_mcp::Report>,
+    companion: Option<&bench_bridge::Report>,
 ) -> Result<bool> {
     let mut passed = true;
     println!(
@@ -882,6 +910,39 @@ fn report(
             agent.catalog_tokens()
         );
     }
+    if let Some(companion) = companion {
+        if companion.missed() {
+            passed = false;
+        }
+        // The socket round trip is well under a millisecond, so one decimal
+        // would print every run as zero.
+        for (label, latency, target) in [
+            (
+                "warm here over the socket",
+                &companion.here,
+                bench_bridge::HERE_P95_MS,
+            ),
+            (
+                "follow acknowledgement",
+                &companion.follow,
+                bench_bridge::FOLLOW_P95_MS,
+            ),
+        ] {
+            println!(
+                "{:<28} {:<10} {:>9.3} {:>9.3} {:>12.0} {:>7}",
+                label,
+                "bridge",
+                latency.p50,
+                latency.p95,
+                target,
+                if latency.missed_at(target) {
+                    "MISS"
+                } else {
+                    "ok"
+                }
+            );
+        }
+    }
     let doc = options
         .doc
         .clone()
@@ -889,7 +950,10 @@ fn report(
     if let Some(parent) = doc.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&doc, document(options, shape, measurements, agent, passed)?)?;
+    std::fs::write(
+        &doc,
+        document(options, shape, measurements, agent, companion, passed)?,
+    )?;
     println!("\nwrote {}", doc.display());
     if !passed {
         eprintln!("a SPEC section 13 target was missed");
@@ -946,6 +1010,7 @@ fn document(
     shape: &SetShape,
     measurements: &Measurements,
     agent: Option<&bench_mcp::Report>,
+    companion: Option<&bench_bridge::Report>,
     passed: bool,
 ) -> Result<String> {
     use std::fmt::Write as _;
@@ -953,8 +1018,9 @@ fn document(
     writeln!(out, "# Benchmarks\n")?;
     writeln!(
         out,
-        "Generated by `cargo xtask bench{}{} --runs {}`. Do not edit by hand.\n",
+        "Generated by `cargo xtask bench{}{}{} --runs {}`. Do not edit by hand.\n",
         if options.mcp { " --mcp" } else { "" },
+        if options.bridge { " --bridge" } else { "" },
         if options.watch { " --watch" } else { "" },
         options.runs
     )?;
@@ -1156,6 +1222,80 @@ fn document(
         )?;
     }
 
+    if let Some(companion) = companion {
+        writeln!(out, "\n## Browser companion (`canvas bridge`)\n")?;
+        writeln!(
+            out,
+            "Measured over a real `bridge-ipc@1` Unix socket against a live \
+             `canvas bridge host`, with the extension side spoken by hand in \
+             native-messaging framing. One tab is attached in an `open` zone. \
+             Two operations are timed: a metadata `here`, and a `follow` \
+             whose round trip ends when the companion acknowledges the \
+             navigation.\n"
+        )?;
+        writeln!(out, "| Metric | p50 ms | p95 ms | Target p95 | Verdict |")?;
+        writeln!(out, "|---|---:|---:|---:|---|")?;
+        for (label, latency, target) in [
+            (
+                "warm metadata `here` over the socket",
+                &companion.here,
+                bench_bridge::HERE_P95_MS,
+            ),
+            (
+                "follow acknowledgement",
+                &companion.follow,
+                bench_bridge::FOLLOW_P95_MS,
+            ),
+        ] {
+            writeln!(
+                out,
+                "| {} | {:.3} | {:.3} | {:.0} | {} |",
+                label,
+                latency.p50,
+                latency.p95,
+                target,
+                if latency.missed_at(target) {
+                    "**miss**"
+                } else {
+                    "ok"
+                }
+            )?;
+        }
+        writeln!(
+            out,
+            "\n{} timed calls after {} warm-up calls, on one long-lived \
+             connection, and the answer is {} bytes on the wire.\n",
+            companion.here.runs,
+            bench_bridge::WARMUP,
+            companion.answer_bytes
+        )?;
+        writeln!(
+            out,
+            "The follow number is a **dispatch acknowledgement**, not a page \
+             load. It ends when the companion says it took the navigation; \
+             what became of the page is a separate message that arrives \
+             later and lands on `here@1`'s `browser.follow` (REPORT §3.2). \
+             Nothing in this measurement waits for a browser to render.\n"
+        )?;
+        writeln!(
+            out,
+            "Three things are outside these numbers by design. The account \
+             probe runs in the browser and only when text is requested, so a \
+             metadata read never triggers one. The API side of \
+             `ContextBundle@1` goes through the same command handlers the \
+             SPEC §13 metrics above already measure. And the client here \
+             connects to the socket directly, the way a resident `canvas mcp` \
+             does, so no process start is counted."
+        )?;
+    } else {
+        writeln!(out, "\n## Browser companion (`canvas bridge`)\n")?;
+        writeln!(
+            out,
+            "Not measured in this run. `cargo xtask bench --bridge` adds the \
+             warm metadata `here` round trip over the broker socket."
+        )?;
+    }
+
     writeln!(out, "\n## Method\n")?;
     writeln!(
         out,
@@ -1253,6 +1393,7 @@ mod tests {
             fixture: "recorded-3".to_owned(),
             runs: 3,
             mcp: false,
+            bridge: false,
             no_fail: false,
             watch: false,
             doc: None,
@@ -1265,7 +1406,7 @@ mod tests {
             targets: Vec::new(),
             tick: None,
         };
-        let doc = document(&options, &shape, &empty, None, true).unwrap();
+        let doc = document(&options, &shape, &empty, None, None, true).unwrap();
         assert!(doc.contains("Courses in set | 3"), "{doc}");
         assert!(doc.contains("fixture set: 3 courses"), "{doc}");
         assert!(doc.contains("not comparable with a 5-course run"), "{doc}");
@@ -1350,6 +1491,7 @@ mod tests {
             fixture: DEFAULT_SET.to_owned(),
             runs: 3,
             mcp: false,
+            bridge: false,
             no_fail: false,
             watch: false,
             doc: None,
@@ -1369,7 +1511,7 @@ mod tests {
             courses: 5,
             extra_pages: 0,
         };
-        let doc = document(&options, &shape, &measurements, None, true).unwrap();
+        let doc = document(&options, &shape, &measurements, None, None, true).unwrap();
         assert!(doc.contains("# Benchmarks"));
         assert!(doc.contains("bench-5"));
         assert!(doc.contains("Courses in set | 5"));
@@ -1387,6 +1529,7 @@ mod tests {
             fixture: DEFAULT_SET.to_owned(),
             runs: 3,
             mcp: false,
+            bridge: false,
             no_fail: false,
             watch: true,
             doc: None,
@@ -1411,7 +1554,7 @@ mod tests {
             courses: 5,
             extra_pages: 0,
         };
-        let doc = document(&options, &shape, &measurements, None, true).unwrap();
+        let doc = document(&options, &shape, &measurements, None, None, true).unwrap();
         assert!(doc.contains("## Watch"), "{doc}");
         assert!(
             doc.contains("watch tick, full refresh | 90.0 | 130.0"),
@@ -1431,7 +1574,7 @@ mod tests {
             targets: Vec::new(),
             tick: None,
         };
-        let doc = document(&quiet, &shape, &without, None, true).unwrap();
+        let doc = document(&quiet, &shape, &without, None, None, true).unwrap();
         assert!(doc.contains("Not measured in this run."), "{doc}");
         assert!(!doc.contains("watch tick, full refresh"), "{doc}");
     }

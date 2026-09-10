@@ -25,6 +25,12 @@ pub enum EventKind {
     OperationState,
     /// The unread-conversation count changed (M8-a `inbox_unread`).
     InboxUnreadCount,
+    /// A person approved a plan (REPORT §3.5). Ids only, never a payload.
+    PlanApproved,
+    /// A person declined a plan.
+    PlanDeclined,
+    /// A person cancelled a plan.
+    PlanCancelled,
     /// The recorded observation could not be applied; rebuild the baseline.
     ResyncRequired,
 }
@@ -45,6 +51,9 @@ impl EventKind {
             Self::SubmissionState => "submission.state",
             Self::OperationState => "operation.state",
             Self::InboxUnreadCount => "inbox.unread_count",
+            Self::PlanApproved => "plan.approved",
+            Self::PlanDeclined => "plan.declined",
+            Self::PlanCancelled => "plan.cancelled",
             Self::ResyncRequired => "resync_required",
         }
     }
@@ -70,6 +79,9 @@ impl EventKind {
             Self::SubmissionState,
             Self::OperationState,
             Self::InboxUnreadCount,
+            Self::PlanApproved,
+            Self::PlanDeclined,
+            Self::PlanCancelled,
             Self::ResyncRequired,
         ]
     }
@@ -88,6 +100,7 @@ impl EventKind {
             Self::SubmissionState => "submission",
             Self::OperationState => "operation",
             Self::InboxUnreadCount => "inbox",
+            Self::PlanApproved | Self::PlanDeclined | Self::PlanCancelled => "plan",
             Self::ResyncRequired => "resync",
         }
     }

@@ -32,6 +32,8 @@ pub struct Config {
     pub network: NetworkConfig,
     #[serde(default)]
     pub output: OutputConfig,
+    #[serde(default)]
+    pub bridge: BridgeConfig,
 }
 
 /// Named profile pointing at an identity.
@@ -169,6 +171,63 @@ impl Default for OutputConfig {
     }
 }
 
+/// Companion broker settings (M7-a).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeConfig {
+    /// How long a hidden tab keeps sharing before the companion pauses it.
+    #[serde(default = "default_pause_hidden_after")]
+    pub pause_hidden_after: String,
+    /// The one Chrome extension id allowed to start `bridge host`.
+    #[serde(default)]
+    pub extension_id: Option<String>,
+}
+
+fn default_pause_hidden_after() -> String {
+    "10m".into()
+}
+
+impl Default for BridgeConfig {
+    fn default() -> Self {
+        Self {
+            pause_hidden_after: default_pause_hidden_after(),
+            extension_id: None,
+        }
+    }
+}
+
+/// `bridge.pause_hidden_after` when the config says nothing, in milliseconds.
+pub const DEFAULT_PAUSE_HIDDEN_MS: u64 = 10 * 60 * 1000;
+
+/// Parse `bridge.pause_hidden_after`, or `None` when it is not a duration.
+///
+/// The SPEC duration form is `<n>h` or `<n>m`, as every `cache.ttl_*` key
+/// uses; `<n>s` is accepted too, because ten minutes is a long time to wait
+/// for a check.
+#[must_use]
+pub fn parse_pause_hidden_after(raw: &str) -> Option<u64> {
+    let parse = |text: &str, unit: u64| -> Option<u64> {
+        text.parse::<u64>()
+            .ok()
+            .and_then(|n| n.checked_mul(unit))
+            .filter(|ms| *ms > 0)
+    };
+    for (suffix, unit) in [('h', 60 * 60 * 1000), ('m', 60 * 1000), ('s', 1000)] {
+        if let Some(count) = raw.strip_suffix(suffix) {
+            return parse(count, unit);
+        }
+    }
+    None
+}
+
+/// `bridge.pause_hidden_after` in milliseconds.
+///
+/// A value this build cannot read falls back to the default rather than
+/// sharing for longer than the person asked for.
+#[must_use]
+pub fn pause_hidden_after_ms(raw: &str) -> u64 {
+    parse_pause_hidden_after(raw).unwrap_or(DEFAULT_PAUSE_HIDDEN_MS)
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -178,6 +237,7 @@ impl Default for Config {
             cache: CacheConfig::default(),
             network: NetworkConfig::default(),
             output: OutputConfig::default(),
+            bridge: BridgeConfig::default(),
         }
     }
 }
@@ -205,7 +265,7 @@ impl Config {
                     let mapped = if raw.contains("__") {
                         raw.replace("__", ".")
                     } else if let Some((root, field)) = raw.split_once('_') {
-                        if ["download", "cache", "network", "output"].contains(&root) {
+                        if ["download", "cache", "network", "output", "bridge"].contains(&root) {
                             format!("{root}.{field}")
                         } else {
                             raw
@@ -302,6 +362,8 @@ const KNOWN_TOP: &[&str] = &[
     "network.api_concurrency",
     "network.storage_concurrency",
     "output.color",
+    "bridge.pause_hidden_after",
+    "bridge.extension_id",
 ];
 
 fn validate_key(key: &str) -> Result<(), CliError> {
@@ -372,6 +434,25 @@ fn apply_set(config: &mut Config, key: &str, value: &str) -> Result<(), CliError
                 ));
             }
             config.output.color = value.to_owned();
+        }
+        "bridge.pause_hidden_after" => {
+            if parse_pause_hidden_after(value).is_none() {
+                return Err(CliError::usage(
+                    "bridge.pause_hidden_after must be a duration such as 10m or 1h",
+                ));
+            }
+            config.bridge.pause_hidden_after = value.to_owned();
+        }
+        "bridge.extension_id" => {
+            if value.is_empty() {
+                config.bridge.extension_id = None;
+            } else if canvas_core::bridge::state::is_extension_id(value) {
+                config.bridge.extension_id = Some(value.to_owned());
+            } else {
+                return Err(CliError::usage(
+                    "bridge.extension_id is 32 characters from a to p",
+                ));
+            }
         }
         other if other.starts_with("profiles.") => set_profile_field(config, other, value)?,
         other => return Err(CliError::usage(format!("unknown config key `{other}`"))),
