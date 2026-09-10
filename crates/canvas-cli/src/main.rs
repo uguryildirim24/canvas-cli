@@ -152,9 +152,7 @@ async fn main() -> ExitCode {
                     course,
                     tree,
                     search,
-                } => {
-                    commands::files::run(&m1b_globals(&globals), course, tree, search).await
-                }
+                } => commands::files::run(&m1b_globals(&globals), course, tree, search).await,
                 Commands::Modules { course, items } => {
                     commands::modules::run(&m1b_globals(&globals), course, items).await
                 }
