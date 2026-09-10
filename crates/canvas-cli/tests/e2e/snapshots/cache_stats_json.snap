@@ -1,0 +1,153 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "datasets": [
+      {
+        "complete": true,
+        "count": 2,
+        "dataset": "course_totals",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "course:100",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "courses",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "active",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "enrollment_grades",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "period:none",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "grading_periods",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "course:100",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "terms",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "active",
+        "source": "cache",
+        "stale": false
+      }
+    ],
+    "path": "<scratch>/data/<identity>/cache.sqlite",
+    "size_bytes": "<n>",
+    "tables": [
+      {
+        "name": "courses",
+        "rows": 1
+      },
+      {
+        "name": "terms",
+        "rows": 1
+      },
+      {
+        "name": "assignment_groups",
+        "rows": 0
+      },
+      {
+        "name": "assignments",
+        "rows": 0
+      },
+      {
+        "name": "submissions",
+        "rows": 0
+      },
+      {
+        "name": "modules",
+        "rows": 0
+      },
+      {
+        "name": "module_items",
+        "rows": 0
+      },
+      {
+        "name": "folders",
+        "rows": 0
+      },
+      {
+        "name": "files",
+        "rows": 0
+      },
+      {
+        "name": "announcements",
+        "rows": 0
+      },
+      {
+        "name": "calendar_events",
+        "rows": 0
+      },
+      {
+        "name": "planner_items",
+        "rows": 0
+      },
+      {
+        "name": "enrollment_grades",
+        "rows": 1
+      },
+      {
+        "name": "course_totals",
+        "rows": 2
+      },
+      {
+        "name": "grading_periods",
+        "rows": 1
+      },
+      {
+        "name": "fake_entities",
+        "rows": 0
+      },
+      {
+        "name": "field_obs",
+        "rows": 34
+      },
+      {
+        "name": "membership",
+        "rows": 6
+      },
+      {
+        "name": "fetch_log",
+        "rows": 5
+      }
+    ]
+  },
+  "schema": "canvas-cli/cache@1",
+  "warnings": []
+}

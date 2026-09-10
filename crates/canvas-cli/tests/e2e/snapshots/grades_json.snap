@@ -1,0 +1,87 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "active",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "enrollment_grades",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "period:none",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "course_totals",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "cache",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course": null,
+    "courses": [
+      {
+        "course": {
+          "code": "CHEM301",
+          "enrollment_state": "active",
+          "html_url": "<origin>/courses/100",
+          "id": "100",
+          "is_favorite": true,
+          "name": "Chemistry 301",
+          "restricted": false,
+          "term": {
+            "end_at": "2026-12-15T10:00:00Z",
+            "id": "10",
+            "name": "Fall 2026",
+            "start_at": "2026-08-25T04:00:00Z"
+          }
+        },
+        "grades": {
+          "current_grade": "A-",
+          "current_score": 92.5,
+          "final_grade": "A-",
+          "final_score": 90.0,
+          "period": {
+            "id": null,
+            "mode": "all",
+            "title": null
+          }
+        },
+        "unavailable_reason": null
+      }
+    ],
+    "period_mode": "all"
+  },
+  "schema": "canvas-cli/grades@1",
+  "warnings": []
+}

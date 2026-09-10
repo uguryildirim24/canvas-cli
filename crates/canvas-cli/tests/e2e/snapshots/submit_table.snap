@@ -1,0 +1,17 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+submit submitted  journal=00000000-0000-4000-8000-00000000000j
+receipt 00000000-0000-4000-8000-00000000000r  attribution=observed
+attempt 1  submitted_at 2026-09-09T13:05:12-04:00
+text transform=text-to-html  input_sha256=5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  sent_sha256=8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683
+--- stderr ---
+Submit plan
+  course 100  assignment 9
+  name Problem Set 1
+  due_at 2026-09-20T03:59:00Z
+  kind online_text_entry  estimated_attempt 1
+  text transform=text-to-html input_sha256=5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03 sent_sha256=8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683

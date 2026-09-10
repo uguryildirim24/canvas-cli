@@ -1,0 +1,29 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+path: <scratch>/data/<identity>/cache.sqlite
+size_bytes: 114688
+  TABLE                ROWS  
+  courses              1     
+  terms                1     
+  assignment_groups    0     
+  assignments          0     
+  submissions          0     
+  modules              0     
+  module_items         0     
+  folders              0     
+  files                0     
+  announcements        0     
+  calendar_events      0     
+  planner_items        0     
+  enrollment_grades    1     
+  course_totals        2     
+  grading_periods      1     
+  fake_entities        0     
+  field_obs            34    
+  membership           6     
+  fetch_log            5     
+--- stderr ---
