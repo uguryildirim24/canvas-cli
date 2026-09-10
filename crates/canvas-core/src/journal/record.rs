@@ -40,6 +40,9 @@ pub struct PostedRecord {
     pub attempt: Option<i64>,
     /// Submitted-at timestamp.
     pub submitted_at: Option<String>,
+    /// Timestamp rendered in the identity zone (system zone when unspecified).
+    #[serde(default)]
+    pub submitted_at_local: Option<String>,
     /// Workflow state.
     pub workflow_state: Option<String>,
     /// Late flag.
@@ -65,6 +68,9 @@ pub struct PostedRecord {
 pub struct ReadbackRecord {
     /// Submitted-at.
     pub submitted_at: Option<String>,
+    /// Timestamp rendered in the identity zone (system zone when unspecified).
+    #[serde(default)]
+    pub submitted_at_local: Option<String>,
     /// Late flag.
     pub late: Option<bool>,
     /// Attachments.
@@ -80,11 +86,14 @@ pub struct CandidateRecord {
     pub attempt: i64,
     /// Submitted-at.
     pub submitted_at: Option<String>,
+    /// Timestamp rendered in the identity zone (system zone when unspecified).
+    #[serde(default)]
+    pub submitted_at_local: Option<String>,
     /// Attachment ids (empty for text/URL).
     pub attachment_ids: Vec<String>,
 }
 
-/// Stored receipt document (subset; full export is M2-b/receipts).
+/// Receipt evidence supplied to commit helpers; they add the frozen intent and identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReceiptRecord {
     /// Receipt id.
@@ -108,6 +117,15 @@ pub fn allowlist_from_json(
     value: &Value,
     raw_body: Option<&[u8]>,
 ) -> Result<PostedRecord, JournalError> {
+    if !value.is_object()
+        || value
+            .get("attempt")
+            .and_then(Value::as_i64)
+            .is_none_or(|n| n < 1)
+        || (evidence == Evidence::PostResponse && raw_body.is_none())
+    {
+        return Err(JournalError::StateConflict);
+    }
     let response_sha256 = match (evidence, raw_body) {
         (Evidence::PostResponse, Some(bytes)) => Some(hex_sha256(bytes)),
         _ => None,
@@ -146,23 +164,20 @@ pub fn allowlist_from_json(
         .get("url")
         .and_then(Value::as_str)
         .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
-        .filter(|u| {
-            // Drop signed / capability-bearing query URLs typical of storage.
-            let lower = u.to_ascii_lowercase();
-            !(lower.contains("x-amz-")
-                || lower.contains("signature=")
-                || lower.contains("access_token"))
-        })
         .map(str::to_owned);
 
+    let submitted_at = value
+        .get("submitted_at")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let submitted_at_local =
+        local_timestamp(submitted_at.as_deref(), &jiff::tz::TimeZone::system())?;
     Ok(PostedRecord {
         evidence,
         submission_id: value.get("id").and_then(json_id),
         attempt: value.get("attempt").and_then(Value::as_i64),
-        submitted_at: value
-            .get("submitted_at")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
+        submitted_at,
+        submitted_at_local,
         workflow_state: value
             .get("workflow_state")
             .and_then(Value::as_str)
@@ -183,8 +198,12 @@ pub fn allowlist_from_json(
 
 fn json_id(value: &Value) -> Option<String> {
     match value {
-        Value::String(s) => Some(s.clone()),
-        Value::Number(n) => Some(n.to_string()),
+        Value::String(s) => s
+            .parse::<u64>()
+            .ok()
+            .filter(|n| *n > 0)
+            .map(|n| n.to_string()),
+        Value::Number(n) => n.as_u64().filter(|n| *n > 0).map(|n| n.to_string()),
         _ => None,
     }
 }
@@ -231,4 +250,61 @@ mod tests {
         );
         assert!(posted.response_sha256.is_some());
     }
+}
+
+/// Frozen intent persisted before uploads. Unknown response/capability fields are rejected.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntendedPayload {
+    #[serde(default)]
+    pub files: Vec<IntendedFile>,
+    pub text: Option<IntendedText>,
+    pub url: Option<String>,
+    pub comment: Option<String>,
+    pub course_code: Option<String>,
+    pub assignment_name: Option<String>,
+    pub due_at: Option<String>,
+    pub time_zone: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntendedFile {
+    pub name: String,
+    pub size: u64,
+    pub sha256: String,
+    pub canvas_file_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntendedText {
+    pub input_sha256: String,
+    pub transform: String,
+    pub sent_sha256: String,
+    pub outbound_bytes: String,
+}
+
+impl IntendedPayload {
+    pub(crate) fn zone(&self) -> Result<jiff::tz::TimeZone, JournalError> {
+        self.time_zone
+            .as_deref()
+            .map(jiff::tz::TimeZone::get)
+            .transpose()
+            .map_err(|_| JournalError::StateConflict)
+            .map(|z| z.unwrap_or_else(jiff::tz::TimeZone::system))
+    }
+}
+
+pub(crate) fn local_timestamp(
+    value: Option<&str>,
+    zone: &jiff::tz::TimeZone,
+) -> Result<Option<String>, JournalError> {
+    value
+        .map(|s| {
+            let ts: jiff::Timestamp = s.parse().map_err(|_| JournalError::StateConflict)?;
+            let local = ts.to_zoned(zone.clone());
+            Ok(format!("{}{}", local.datetime(), local.strftime("%:z")))
+        })
+        .transpose()
 }

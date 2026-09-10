@@ -3,8 +3,9 @@
 use std::path::Path;
 use std::str::FromStr;
 
+use crate::journal::locks::AdmissionLock;
 use jiff::Timestamp;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -30,13 +31,23 @@ pub enum JournalError {
     Lock(#[from] LockError),
     /// Store / `SQLite` error.
     #[error(transparent)]
-    Store(#[from] DbError),
+    Store(DbError),
     /// I/O error.
     #[error(transparent)]
     Io(#[from] std::io::Error),
     /// JSON error.
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+}
+
+impl From<DbError> for JournalError {
+    fn from(error: DbError) -> Self {
+        if matches!(&error, DbError::Message(s) if s == "state conflict") {
+            Self::StateConflict
+        } else {
+            Self::Store(error)
+        }
+    }
 }
 
 impl From<rusqlite::Error> for JournalError {
@@ -56,7 +67,7 @@ pub struct CreateOpts {
     pub assignment_id: i64,
     /// Submission kind.
     pub kind: String,
-    /// Frozen intended payload JSON.
+    /// Frozen [`super::IntendedPayload`] JSON; unknown fields are rejected.
     pub intended_payload_json: String,
     /// Baseline attempt.
     pub baseline_attempt: Option<i64>,
@@ -75,23 +86,37 @@ pub struct TransitionPatch {
     pub response_kind: Option<ResponseKind>,
     /// Not-submitted evidence.
     pub not_submitted_evidence: Option<NotSubmittedEvidence>,
-    /// Allowlisted response JSON.
-    pub response_record_json: Option<String>,
-    /// Readback JSON.
-    pub readback_record_json: Option<String>,
     /// Server match JSON.
     pub server_match_json: Option<String>,
-    /// Receipt JSON.
-    pub receipt_record_json: Option<String>,
-    /// Uploaded file ids JSON array.
-    pub uploaded_file_ids_json: Option<String>,
-    /// Set `posting_started_at` to now when true.
+    /// Compatibility hint; entering `posting` always writes `posting_started_at`.
     pub set_posting_started_at: bool,
 }
 
 /// Loaded journal row.
 #[derive(Debug, Clone)]
 pub struct JournalRow {
+    pub identity_key: String,
+    pub intended_payload_json: String,
+    pub baseline_attempt: Option<i64>,
+    pub baseline_submission_id: Option<i64>,
+    pub created_at: String,
+    pub planned_at: Option<String>,
+    pub uploading_at: Option<String>,
+    pub uploaded_at: Option<String>,
+    pub posting_at: Option<String>,
+    pub posting_started_at: Option<String>,
+    pub submitted_at: Option<String>,
+    pub matched_at: Option<String>,
+    pub terminal_at: Option<String>,
+    pub upload_incomplete_at: Option<String>,
+    pub uploaded_not_submitted_at: Option<String>,
+    pub outcome_unknown_at: Option<String>,
+    pub refused_at: Option<String>,
+    pub post_status: Option<i64>,
+    pub response_kind: Option<String>,
+    pub not_submitted_evidence: Option<String>,
+    pub readback_record_json: Option<String>,
+    pub server_match_json: Option<String>,
     /// Journal id.
     pub journal_id: String,
     /// State.
@@ -120,22 +145,40 @@ pub struct JournalRow {
 pub fn create(
     store: &Store,
     identity_dir: &Path,
+    admission: &AdmissionLock,
     opts: &CreateOpts,
 ) -> Result<(String, OwnerLock), JournalError> {
+    if !admission.matches(identity_dir, opts.assignment_id) {
+        return Err(JournalError::StateConflict);
+    }
+    verify_store_directory(store, identity_dir)?;
     let journal_id = Uuid::new_v4().to_string();
     let owner = OwnerLock::acquire(identity_dir, &journal_id)?;
+    #[cfg(test)]
+    super::crash_tests::checkpoint("owner_acquired", &journal_id);
     let now = Timestamp::now().to_string();
     let identity_key = opts.identity_key.clone();
     let course_id = opts.course_id;
     let assignment_id = opts.assignment_id;
     let kind = opts.kind.clone();
-    let payload = opts.intended_payload_json.clone();
-    let baseline_attempt = opts.baseline_attempt;
+    let payload = serde_json::to_string(&serde_json::from_str::<super::IntendedPayload>(
+        &opts.intended_payload_json,
+    )?)?;
+    let baseline_attempt = Some(opts.baseline_attempt.unwrap_or(0));
     let baseline_submission_id = opts.baseline_submission_id;
     let jid = journal_id.clone();
 
     let result = store.call_blocking(move |conns| {
-        let tx = conns.state.unchecked_transaction()?;
+        let tx = conns
+            .state
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let key: String =
+            tx.query_row("SELECT value FROM identity WHERE key = 'key'", [], |r| {
+                r.get(0)
+            })?;
+        if key != identity_key {
+            return Err(DbError::Message("identity mismatch".into()));
+        }
         let insert = tx.execute(
             "INSERT INTO submission_journal (
                 journal_id, identity_key, course_id, assignment_id, kind, state,
@@ -156,11 +199,15 @@ pub fn create(
         );
         match insert {
             Ok(_) => {
+                #[cfg(test)]
+                super::crash_tests::checkpoint("inserted", &jid);
                 tx.commit()?;
+                #[cfg(test)]
+                super::crash_tests::checkpoint("published", &jid);
                 Ok(())
             }
             Err(rusqlite::Error::SqliteFailure(code, _))
-                if code.code == rusqlite::ErrorCode::ConstraintViolation =>
+                if code.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE =>
             {
                 Err(DbError::from(rusqlite::Error::SqliteFailure(
                     code,
@@ -173,137 +220,142 @@ pub fn create(
 
     match result {
         Ok(()) => Ok((journal_id, owner)),
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("UNIQUE") || msg.contains("in_progress") || msg.contains("constraint") {
-                Err(JournalError::InProgress)
-            } else {
-                Err(JournalError::Store(e))
-            }
+        Err(DbError::Sqlite(rusqlite::Error::SqliteFailure(_, Some(message))))
+            if message == "in_progress" =>
+        {
+            Err(JournalError::InProgress)
         }
+        Err(e) => Err(JournalError::from(e)),
     }
 }
 
-/// Guarded state transition.
+/// Guarded state transition; confirmed outcomes use the receipt helpers below.
 pub fn transition(
     store: &Store,
+    owner: &OwnerLock,
     journal_id: &str,
     from: State,
     to: State,
     patch: TransitionPatch,
 ) -> Result<(), JournalError> {
-    let jid = journal_id.to_string();
-    let from_s = from.as_str().to_string();
-    let to_s = to.as_str().to_string();
+    verify_store_directory(store, owner.identity_dir())?;
+    if !owner.matches(journal_id)
+        || !matches!(
+            (from, to),
+            (
+                State::Planned,
+                State::Uploading | State::Uploaded | State::Refused
+            ) | (
+                State::Uploading,
+                State::Uploaded | State::UploadIncomplete | State::Refused
+            ) | (
+                State::Uploaded,
+                State::Posting | State::UploadedNotSubmitted | State::Refused
+            ) | (
+                State::Posting | State::OutcomeUnknown,
+                State::OutcomeUnknown
+            )
+        )
+    {
+        return Err(JournalError::StateConflict);
+    }
+    let mut patch = validate_patch(patch)?;
+    if let Some(raw) = &mut patch.server_match_json {
+        let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
+        let intent: super::IntendedPayload = serde_json::from_str(&row.intended_payload_json)?;
+        let mut candidate: Option<super::CandidateRecord> = serde_json::from_str(raw)?;
+        if let Some(candidate) = &mut candidate {
+            candidate.submitted_at_local =
+                super::record::local_timestamp(candidate.submitted_at.as_deref(), &intent.zone()?)?;
+        }
+        *raw = serde_json::to_string(&candidate)?;
+    }
+    if to == State::UploadedNotSubmitted
+        && patch.not_submitted_evidence != Some(NotSubmittedEvidence::NeverSent)
+    {
+        return Err(JournalError::StateConflict);
+    }
+    let jid = journal_id.to_owned();
     let now = Timestamp::now().to_string();
-    let ts_col = match to {
-        State::Planned => "planned_at",
-        State::Uploading => "uploading_at",
-        State::Uploaded => "uploaded_at",
-        State::Posting => "posting_at",
-        State::Submitted => "submitted_at",
-        State::Matched => "matched_at",
-        State::UploadIncomplete => "upload_incomplete_at",
-        State::UploadedNotSubmitted => "uploaded_not_submitted_at",
-        State::OutcomeUnknown => "outcome_unknown_at",
-        State::Refused => "refused_at",
-    };
-    let terminal = to.is_terminal();
-
+    let ts_col = format!("{}_at", to.as_str());
     store
         .call_blocking(move |conns| {
-            let tx = conns.state.unchecked_transaction()?;
-            let mut sql = format!("UPDATE submission_journal SET state = ?1, {ts_col} = ?2");
-            if terminal {
-                sql.push_str(", terminal_at = ?2");
-            }
-            if patch.set_posting_started_at {
-                sql.push_str(", posting_started_at = ?2");
-            }
-            if patch.error_text.is_some() {
-                sql.push_str(", error_text = ?3");
-            }
-            if patch.response_kind.is_some() {
-                sql.push_str(", response_kind = ?4");
-            }
-            if patch.not_submitted_evidence.is_some() {
-                sql.push_str(", not_submitted_evidence = ?5");
-            }
-            if patch.response_record_json.is_some() {
-                sql.push_str(", response_record_json = ?6");
-            }
-            if patch.receipt_record_json.is_some() {
-                sql.push_str(", receipt_record_json = ?7");
-            }
-            if patch.readback_record_json.is_some() {
-                sql.push_str(", readback_record_json = ?8");
-            }
-            if patch.server_match_json.is_some() {
-                sql.push_str(", server_match_json = ?9");
-            }
-            if patch.uploaded_file_ids_json.is_some() {
-                sql.push_str(", uploaded_file_ids_json = ?10");
-            }
-            if let Some(Some(_)) = patch.post_status {
-                sql.push_str(", post_status = ?11");
-            } else if let Some(None) = patch.post_status {
-                sql.push_str(", post_status = NULL");
-            }
-            sql.push_str(" WHERE journal_id = ?12 AND state = ?13");
-
+            let tx = conns
+                .state
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let sql = format!(
+                "UPDATE submission_journal SET state = ?1, {ts_col} = ?2,
+            terminal_at = CASE WHEN ?3 THEN ?2 ELSE terminal_at END,
+            posting_started_at = CASE WHEN ?4 THEN ?2 ELSE posting_started_at END,
+            error_text = COALESCE(?5, error_text),
+            response_kind = COALESCE(?6, response_kind),
+            not_submitted_evidence = COALESCE(?7, not_submitted_evidence),
+            server_match_json = CASE WHEN ?8 = 'null' THEN NULL ELSE COALESCE(?8, server_match_json) END,
+            post_status = CASE WHEN ?9 THEN ?10 ELSE post_status END
+            WHERE journal_id = ?11 AND state = ?12"
+            );
             let changed = tx.execute(
                 &sql,
                 params![
-                    to_s,
+                    to.as_str(),
                     now,
+                    to.is_terminal(),
+                    to == State::Posting,
                     patch.error_text,
-                    patch.response_kind.map(|k| k.as_str().to_string()),
-                    patch.not_submitted_evidence.map(|e| e.as_str().to_string()),
-                    patch.response_record_json,
-                    patch.receipt_record_json,
-                    patch.readback_record_json,
+                    patch.response_kind.map(ResponseKind::as_str),
+                    patch
+                        .not_submitted_evidence
+                        .map(NotSubmittedEvidence::as_str),
                     patch.server_match_json,
-                    patch.uploaded_file_ids_json,
-                    patch.post_status.and_then(|p| p),
+                    patch.post_status.is_some(),
+                    patch.post_status.flatten(),
                     jid,
-                    from_s,
+                    from.as_str()
                 ],
             )?;
-            if changed == 0 {
+            if changed != 1 {
                 return Err(DbError::Message("state conflict".into()));
             }
+            bump_journal_epochs(&tx, &jid)?;
             tx.commit()?;
             Ok(())
         })
-        .map_err(|e| {
-            if e.to_string().contains("state conflict") {
-                JournalError::StateConflict
-            } else {
-                JournalError::Store(e)
-            }
-        })
+        .map_err(JournalError::from)
 }
 
 /// Append a Canvas file id after a successful upload.
 pub fn append_uploaded_file_id(
     store: &Store,
+    owner: &OwnerLock,
     journal_id: &str,
+    file_index: usize,
     file_id: i64,
 ) -> Result<(), JournalError> {
+    verify_store_directory(store, owner.identity_dir())?;
+    if !owner.matches(journal_id) {
+        return Err(JournalError::StateConflict);
+    }
     let jid = journal_id.to_string();
     store.call_blocking(move |conns| {
-        let tx = conns.state.unchecked_transaction()?;
+        let tx = conns.state.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: String = tx.query_row(
-            "SELECT uploaded_file_ids_json FROM submission_journal WHERE journal_id = ?1",
+            "SELECT uploaded_file_ids_json FROM submission_journal WHERE journal_id = ?1 AND state = 'uploading'",
             params![jid],
             |r| r.get(0),
-        )?;
-        let mut ids: Vec<i64> = serde_json::from_str(&current).unwrap_or_default();
+        ).optional()?.ok_or_else(|| DbError::Message("state conflict".into()))?;
+        let mut ids: Vec<i64> = serde_json::from_str(&current).map_err(|_| DbError::Message("invalid uploaded ids".into()))?;
+        if file_id <= 0 || ids.contains(&file_id) { return Err(DbError::Message("invalid uploaded id".into())); }
+        let payload: String = tx.query_row("SELECT intended_payload_json FROM submission_journal WHERE journal_id = ?1", [&jid], |r| r.get(0))?;
+        let mut intent: super::IntendedPayload = serde_json::from_str(&payload).map_err(|_| DbError::Message("invalid intent".into()))?;
+        let file = intent.files.get_mut(file_index).ok_or_else(|| DbError::Message("invalid file index".into()))?;
+        if file.canvas_file_id.is_some() { return Err(DbError::Message("file already uploaded".into())); }
+        file.canvas_file_id = Some(file_id.to_string());
+        let payload = serde_json::to_string(&intent).map_err(|_| DbError::Message("invalid intent".into()))?;
         ids.push(file_id);
         let next = serde_json::to_string(&ids).map_err(|e| DbError::Message(e.to_string()))?;
         tx.execute(
-            "UPDATE submission_journal SET uploaded_file_ids_json = ?1 WHERE journal_id = ?2",
-            params![next, jid],
+            "UPDATE submission_journal SET uploaded_file_ids_json = ?1, intended_payload_json = ?3 WHERE journal_id = ?2 AND state = 'uploading'",
+            params![next, jid, payload],
         )?;
         tx.commit()?;
         Ok(())
@@ -312,9 +364,14 @@ pub fn append_uploaded_file_id(
 }
 
 /// Transition `uploaded` → `posting` and set `posting_started_at`.
-pub fn mark_posting(store: &Store, journal_id: &str) -> Result<(), JournalError> {
+pub fn mark_posting(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+) -> Result<(), JournalError> {
     transition(
         store,
+        owner,
         journal_id,
         State::Uploaded,
         State::Posting,
@@ -325,62 +382,252 @@ pub fn mark_posting(store: &Store, journal_id: &str) -> Result<(), JournalError>
     )
 }
 
-/// Success transaction: allowlisted record + receipt + `submitted` + epoch bump.
+/// Store observed success, its complete receipt, and all affected epochs atomically.
 pub fn commit_success(
     store: &Store,
+    owner: &OwnerLock,
     journal_id: &str,
-    course_id: i64,
-    assignment_id: i64,
-    posted: &PostedRecord,
+    post_status: u16,
     receipt: &ReceiptRecord,
 ) -> Result<(), JournalError> {
-    let jid = journal_id.to_string();
-    let response_json = serde_json::to_string(posted)?;
-    let receipt_json = serde_json::to_string(receipt)?;
-    let now = Timestamp::now().to_string();
-    let ag = format!("assignment_groups:course:{course_id}:");
-    let submission_scope = format!("submission:assignment:{assignment_id}");
-    let assignments_scope = format!("assignments:course:{course_id}");
-    let totals_scope = format!("course_totals:course:{course_id}");
+    if !(200..300).contains(&post_status) || receipt.readback.is_some() {
+        return Err(JournalError::StateConflict);
+    }
+    commit_confirmed(
+        store,
+        owner,
+        journal_id,
+        State::Submitted,
+        Some(post_status),
+        receipt,
+    )
+}
 
+/// Store a history-file match; attribution is explicitly unproven. Network selection is M2-b.
+pub fn commit_matched(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    receipt: &ReceiptRecord,
+) -> Result<(), JournalError> {
+    commit_confirmed(store, owner, journal_id, State::Matched, None, receipt)
+}
+
+fn commit_confirmed(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    target: State,
+    status: Option<u16>,
+    receipt: &ReceiptRecord,
+) -> Result<(), JournalError> {
+    let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
+    let mut receipt = receipt.clone();
+    let intent: super::IntendedPayload = serde_json::from_str(&row.intended_payload_json)?;
+    let zone = intent.zone()?;
+    receipt.posted.submitted_at_local =
+        super::record::local_timestamp(receipt.posted.submitted_at.as_deref(), &zone)?;
+    if let Some(readback) = &mut receipt.readback {
+        readback.submitted_at_local =
+            super::record::local_timestamp(readback.submitted_at.as_deref(), &zone)?;
+    }
+    let posted = &receipt.posted;
+    let observed = target == State::Submitted;
+    verify_store_directory(store, owner.identity_dir())?;
+    if !owner.matches(journal_id)
+        || receipt.journal_id != journal_id
+        || receipt.receipt_id.is_empty()
+        || posted
+            .attempt
+            .is_none_or(|a| a <= row.baseline_attempt.unwrap_or(0))
+        || (observed
+            && (receipt.attribution != "observed"
+                || posted.evidence != super::Evidence::PostResponse
+                || posted.response_sha256.is_none()))
+        || (!observed
+            && (receipt.attribution != "unproven"
+                || posted.evidence != super::Evidence::HistoryFiles
+                || posted.response_sha256.is_some()))
+    {
+        return Err(JournalError::StateConflict);
+    }
+    if !observed {
+        validate_history_match(&row, &receipt)?;
+    }
+    let jid = journal_id.to_owned();
+    let response = serde_json::to_string(posted)?;
+    let readback = receipt
+        .readback
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+    let now = Timestamp::now().to_string();
     store
         .call_blocking(move |conns| {
-            let tx = conns.state.unchecked_transaction()?;
+            let tx = conns
+                .state
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let receipt_json = build_receipt(&tx, &jid, &receipt)?;
+            let sql = format!(
+                "UPDATE submission_journal SET state = ?1, {}_at = ?2,
+            terminal_at = ?2, response_record_json = ?3, receipt_record_json = ?4,
+            readback_record_json = ?5, post_status = COALESCE(?6, post_status)
+            WHERE journal_id = ?7 AND state = ?8",
+                target.as_str()
+            );
             let changed = tx.execute(
-                "UPDATE submission_journal SET
-                state = 'submitted',
-                submitted_at = ?1,
-                terminal_at = ?1,
-                response_record_json = ?2,
-                receipt_record_json = ?3
-             WHERE journal_id = ?4 AND state = 'posting'",
-                params![now, response_json, receipt_json, jid],
+                &sql,
+                params![
+                    target.as_str(),
+                    now,
+                    response,
+                    receipt_json,
+                    readback,
+                    status,
+                    jid,
+                    if observed {
+                        "posting"
+                    } else {
+                        "outcome_unknown"
+                    }
+                ],
             )?;
-            if changed == 0 {
+            if changed != 1 {
                 return Err(DbError::Message("state conflict".into()));
             }
-            bump_epochs(
-                &[
-                    submission_scope.as_str(),
-                    assignments_scope.as_str(),
-                    ag.as_str(),
-                    "missing:all",
-                    "planner:*",
-                    "enrollment_grades:*",
-                    totals_scope.as_str(),
-                ],
-                &tx,
-            )?;
+            bump_journal_epochs(&tx, &jid)?;
+            #[cfg(test)]
+            super::crash_tests::checkpoint("success_before_commit", &jid);
             tx.commit()?;
+            #[cfg(test)]
+            super::crash_tests::checkpoint("success_after_commit", &jid);
             Ok(())
         })
-        .map_err(|e| {
-            if e.to_string().contains("state conflict") {
-                JournalError::StateConflict
-            } else {
-                JournalError::Store(e)
-            }
-        })
+        .map_err(JournalError::from)
+}
+
+fn validate_history_match(row: &JournalRow, receipt: &ReceiptRecord) -> Result<(), JournalError> {
+    let posted = &receipt.posted;
+    let ids: Vec<i64> = serde_json::from_str(&row.uploaded_file_ids_json)?;
+    let expected: std::collections::BTreeSet<_> = ids.iter().map(ToString::to_string).collect();
+    let actual: std::collections::BTreeSet<_> =
+        posted.attachments.iter().map(|a| a.id.clone()).collect();
+    if row.kind != "online_upload"
+        || expected.is_empty()
+        || expected != actual
+        || receipt.readback.is_none()
+    {
+        return Err(JournalError::StateConflict);
+    }
+    let started: Timestamp = row
+        .posting_started_at
+        .as_deref()
+        .ok_or(JournalError::StateConflict)?
+        .parse()
+        .map_err(|_| JournalError::StateConflict)?;
+    let submitted: Timestamp = posted
+        .submitted_at
+        .as_deref()
+        .ok_or(JournalError::StateConflict)?
+        .parse()
+        .map_err(|_| JournalError::StateConflict)?;
+    if submitted.as_nanosecond() < started.as_nanosecond() - 300_000_000_000 {
+        return Err(JournalError::StateConflict);
+    }
+    let readback = receipt
+        .readback
+        .as_ref()
+        .ok_or(JournalError::StateConflict)?;
+    if readback.attachments != posted.attachments
+        || readback.body_sha256 != posted.body_sha256
+        || readback.submitted_at != posted.submitted_at
+        || readback.late != posted.late
+    {
+        return Err(JournalError::StateConflict);
+    }
+    Ok(())
+}
+
+/// Enrich only the recorded attempt, updating both journal and receipt in one transaction.
+pub fn enrich_readback(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    attempt: i64,
+    readback: &super::ReadbackRecord,
+) -> Result<(), JournalError> {
+    verify_store_directory(store, owner.identity_dir())?;
+    if !owner.matches(journal_id) {
+        return Err(JournalError::StateConflict);
+    }
+    let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
+    if !matches!(row.state, State::Submitted | State::Matched) {
+        return Err(JournalError::StateConflict);
+    }
+    let posted: PostedRecord = serde_json::from_str(
+        row.response_record_json
+            .as_deref()
+            .ok_or(JournalError::StateConflict)?,
+    )?;
+    if posted.attempt != Some(attempt) {
+        return Err(JournalError::StateConflict);
+    }
+    let mut readback = readback.clone();
+    let intent: super::IntendedPayload = serde_json::from_str(&row.intended_payload_json)?;
+    readback.submitted_at_local =
+        super::record::local_timestamp(readback.submitted_at.as_deref(), &intent.zone()?)?;
+    let mut receipt: serde_json::Value = serde_json::from_str(
+        row.receipt_record_json
+            .as_deref()
+            .ok_or(JournalError::StateConflict)?,
+    )?;
+    receipt["readback"] = serde_json::to_value(&readback)?;
+    let receipt = receipt.to_string();
+    let readback = serde_json::to_string(&readback)?;
+    let jid = journal_id.to_owned();
+    store.call_blocking(move |conns| {
+        let tx = conns.state.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute("UPDATE submission_journal SET readback_record_json = ?1, receipt_record_json = ?2 WHERE journal_id = ?3 AND state = ?4",
+            params![readback, receipt, jid, row.state.as_str()])?;
+        if changed != 1 { return Err(DbError::Message("state conflict".into())); }
+        tx.commit()?;
+        Ok(())
+    }).map_err(JournalError::from)
+}
+
+/// Apply an explicit user assumption after a current history read finds no newer attempt.
+pub fn assume_not_submitted(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    newer_attempt_visible: bool,
+    now: Timestamp,
+) -> Result<(), JournalError> {
+    let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
+    let started: Timestamp = row
+        .posting_started_at
+        .as_deref()
+        .ok_or(JournalError::StateConflict)?
+        .parse()
+        .map_err(|_| JournalError::StateConflict)?;
+    verify_store_directory(store, owner.identity_dir())?;
+    if !owner.matches(journal_id)
+        || row.state != State::OutcomeUnknown
+        || newer_attempt_visible
+        || now.as_nanosecond() - started.as_nanosecond() < 1_800_000_000_000
+    {
+        return Err(JournalError::StateConflict);
+    }
+    let jid = journal_id.to_owned();
+    store.call_blocking(move |conns| {
+        let tx = conns.state.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute("UPDATE submission_journal SET state = 'uploaded_not_submitted', uploaded_not_submitted_at = ?1,
+            terminal_at = ?1, not_submitted_evidence = 'assumed' WHERE journal_id = ?2 AND state = 'outcome_unknown'", params![now.to_string(), jid])?;
+        if changed != 1 { return Err(DbError::Message("state conflict".into())); }
+        bump_journal_epochs(&tx, &jid)?;
+        tx.commit()?;
+        Ok(())
+    }).map_err(JournalError::from)
 }
 
 /// Owner-absent recovery. `Ok(None)` if owner is live.
@@ -389,7 +636,8 @@ pub fn recover_if_owner_absent(
     identity_dir: &Path,
     journal_id: &str,
 ) -> Result<Option<State>, JournalError> {
-    let Some(_lock) = OwnerLock::try_acquire(identity_dir, journal_id)? else {
+    verify_store_directory(store, identity_dir)?;
+    let Some(owner) = OwnerLock::try_acquire(identity_dir, journal_id)? else {
         return Ok(None);
     };
     let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
@@ -418,7 +666,7 @@ pub fn recover_if_owner_absent(
         ),
         other => return Ok(Some(other)),
     };
-    transition(store, journal_id, row.state, to, patch)?;
+    transition(store, &owner, journal_id, row.state, to, patch)?;
     Ok(Some(to))
 }
 
@@ -431,13 +679,35 @@ pub fn get_journal(store: &Store, journal_id: &str) -> Result<Option<JournalRow>
             .query_row(
                 "SELECT journal_id, state, assignment_id, course_id, kind,
                         uploaded_file_ids_json, response_record_json, receipt_record_json,
-                        acknowledged_at, error_text
+                        acknowledged_at, error_text, identity_key, intended_payload_json, baseline_attempt, baseline_submission_id, created_at, planned_at, uploading_at, uploaded_at, posting_at, posting_started_at, submitted_at, matched_at, terminal_at, upload_incomplete_at, uploaded_not_submitted_at, outcome_unknown_at, refused_at, post_status, response_kind, not_submitted_evidence, readback_record_json, server_match_json
                  FROM submission_journal WHERE journal_id = ?1",
                 params![jid],
                 |r| {
                     Ok(JournalRow {
+                        identity_key: r.get(10)?,
+                        intended_payload_json: r.get(11)?,
+                        baseline_attempt: r.get(12)?,
+                        baseline_submission_id: r.get(13)?,
+                        created_at: r.get(14)?,
+                        planned_at: r.get(15)?,
+                        uploading_at: r.get(16)?,
+                        uploaded_at: r.get(17)?,
+                        posting_at: r.get(18)?,
+                        posting_started_at: r.get(19)?,
+                        submitted_at: r.get(20)?,
+                        matched_at: r.get(21)?,
+                        terminal_at: r.get(22)?,
+                        upload_incomplete_at: r.get(23)?,
+                        uploaded_not_submitted_at: r.get(24)?,
+                        outcome_unknown_at: r.get(25)?,
+                        refused_at: r.get(26)?,
+                        post_status: r.get(27)?,
+                        response_kind: r.get(28)?,
+                        not_submitted_evidence: r.get(29)?,
+                        readback_record_json: r.get(30)?,
+                        server_match_json: r.get(31)?,
                         journal_id: r.get(0)?,
-                        state: State::from_str(&r.get::<_, String>(1)?).unwrap_or(State::Refused),
+                        state: State::from_str(&r.get::<_, String>(1)?).map_err(|()| rusqlite::Error::InvalidQuery)?,
                         assignment_id: r.get(2)?,
                         course_id: r.get(3)?,
                         kind: r.get(4)?,
@@ -460,7 +730,9 @@ pub fn acknowledge(store: &Store, journal_id: &str) -> Result<(), JournalError> 
     let jid = journal_id.to_string();
     let now = Timestamp::now().to_string();
     store.call_blocking(move |conns| {
-        let tx = conns.state.unchecked_transaction()?;
+        let tx = conns
+            .state
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute(
             "UPDATE submission_journal SET acknowledged_at = ?1
              WHERE journal_id = ?2 AND state = 'outcome_unknown'",
@@ -476,13 +748,119 @@ pub fn acknowledge(store: &Store, journal_id: &str) -> Result<(), JournalError> 
 }
 
 /// Owner status for JSON: `n/a` when terminal, else probe.
-#[must_use]
-pub fn owner_status_for(identity_dir: &Path, journal_id: &str, state: State) -> OwnerStatus {
+pub fn owner_status_for(
+    identity_dir: &Path,
+    journal_id: &str,
+    state: State,
+) -> Result<OwnerStatus, LockError> {
     if state.is_terminal() {
-        OwnerStatus::NotApplicable
+        Ok(OwnerStatus::NotApplicable)
     } else {
         probe_owner(identity_dir, journal_id)
     }
+}
+
+fn verify_store_directory(store: &Store, identity_dir: &Path) -> Result<(), JournalError> {
+    let expected = std::fs::canonicalize(identity_dir)?;
+    let actual = store.call_blocking(|c| {
+        Ok(c.state
+            .query_row("PRAGMA database_list", [], |r| r.get::<_, String>(2))?)
+    })?;
+    let actual = Path::new(&actual)
+        .parent()
+        .ok_or(JournalError::StateConflict)?;
+    if std::fs::canonicalize(actual)? != expected {
+        return Err(JournalError::StateConflict);
+    }
+    Ok(())
+}
+
+fn bump_journal_epochs(tx: &rusqlite::Transaction<'_>, jid: &str) -> Result<(), DbError> {
+    let (course, assignment): (i64, i64) = tx.query_row(
+        "SELECT course_id, assignment_id FROM submission_journal WHERE journal_id = ?1",
+        [jid],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let scopes = [
+        format!("submission:assignment:{assignment}"),
+        format!("assignments:course:{course}"),
+        format!("assignment_groups:course:{course}:*"),
+        "missing:all".into(),
+        "planner:*".into(),
+        "enrollment_grades:*".into(),
+        format!("course_totals:course:{course}"),
+    ];
+    bump_epochs(&scopes.iter().map(String::as_str).collect::<Vec<_>>(), tx)
+}
+
+fn validate_patch(mut patch: TransitionPatch) -> Result<TransitionPatch, JournalError> {
+    if let Some(raw) = &mut patch.server_match_json {
+        *raw = serde_json::to_string(&serde_json::from_str::<Option<super::CandidateRecord>>(
+            raw,
+        )?)?;
+    }
+    patch.error_text = patch.error_text.map(|s| canvas_api::redact::redact(&s));
+    Ok(patch)
+}
+
+/// Whether a later confirmed operation supersedes this unknown outcome.
+pub fn is_superseded(store: &Store, journal_id: &str) -> Result<bool, JournalError> {
+    let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
+    if row.state != State::OutcomeUnknown {
+        return Ok(false);
+    }
+    let created: Timestamp = row
+        .created_at
+        .parse()
+        .map_err(|_| JournalError::StateConflict)?;
+    Ok(store.call_blocking(move |conns| {
+        let mut stmt = conns.state.prepare("SELECT created_at FROM submission_journal WHERE assignment_id = ?1 AND state IN ('submitted','matched')")?;
+        for at in stmt.query_map([row.assignment_id], |r| r.get::<_, String>(0))? {
+            let at: Timestamp = at?.parse().map_err(|_| DbError::Message("invalid timestamp".into()))?;
+            if at > created { return Ok(true); }
+        }
+        Ok(false)
+    })?)
+}
+
+fn build_receipt(
+    tx: &rusqlite::Transaction<'_>,
+    jid: &str,
+    receipt: &ReceiptRecord,
+) -> Result<String, DbError> {
+    use serde_json::{Value, json};
+    let (course, assignment, kind, baseline, created, payload): (i64, i64, String, Option<i64>, String, String) = tx.query_row(
+        "SELECT course_id, assignment_id, kind, baseline_attempt, created_at, intended_payload_json FROM submission_journal WHERE journal_id = ?1", [jid],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?;
+    let intent: Value =
+        serde_json::from_str(&payload).map_err(|_| DbError::Message("invalid intent".into()))?;
+    let identity = |key| {
+        tx.query_row("SELECT value FROM identity WHERE key = ?1", [key], |r| {
+            r.get::<_, String>(0)
+        })
+    };
+    let files: Vec<Value> = intent.get("files").and_then(Value::as_array).into_iter().flatten().map(|f| json!({
+        "name": f.get("name").and_then(Value::as_str), "size": f.get("size").and_then(Value::as_u64),
+        "sha256": f.get("sha256").and_then(Value::as_str), "canvas_file_id": f.get("canvas_file_id").and_then(Value::as_str),
+    })).collect();
+    let text = intent.get("text").filter(|v| v.is_object()).map(|t| {
+        json!({
+            "input_sha256": t.get("input_sha256").and_then(Value::as_str),
+            "transform": t.get("transform").and_then(Value::as_str),
+            "sent_sha256": t.get("sent_sha256").and_then(Value::as_str),
+            "server_body_sha256": receipt.posted.body_sha256,
+        })
+    });
+    Ok(json!({
+        "receipt_id": receipt.receipt_id, "journal_id": jid,
+        "identity": { "origin": identity("origin")?, "user_id": identity("user_id")?, "key": identity("key")? },
+        "course_id": course.to_string(), "course_code": intent.get("course_code").and_then(Value::as_str),
+        "assignment_id": assignment.to_string(), "assignment_name": intent.get("assignment_name").and_then(Value::as_str),
+        "kind": kind, "baseline_attempt": baseline.unwrap_or(0), "created_at": created,
+        "attribution": receipt.attribution, "posted": receipt.posted, "readback": receipt.readback,
+        "files": files, "text": text, "url": intent.get("url").and_then(Value::as_str),
+        "due_at": intent.get("due_at").and_then(Value::as_str), "cli_version": env!("CARGO_PKG_VERSION"),
+    }).to_string())
 }
 
 #[cfg(test)]
@@ -493,10 +871,8 @@ mod tests {
     use crate::journal::record::{Evidence, allowlist_from_json};
     use crate::store::OpenIdentity;
     use serde_json::json;
-    use std::process::{Command, Stdio};
     use std::sync::{Arc, Barrier};
     use std::thread;
-    use std::time::Duration;
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, Paths, Store, IdentityDocument) {
@@ -525,8 +901,9 @@ mod tests {
     #[test]
     fn create_and_recover_planned() {
         let (_dir, paths, store, doc) = setup();
-        let _adm = AdmissionLock::try_acquire(&paths.identity_dir, 42).unwrap();
-        let (jid, owner) = create(&store, &paths.identity_dir, &opts_for(&doc, 42)).unwrap();
+        let admission = AdmissionLock::try_acquire(&paths.identity_dir, 42).unwrap();
+        let (jid, owner) =
+            create(&store, &paths.identity_dir, &admission, &opts_for(&doc, 42)).unwrap();
         drop(owner);
         let recovered = recover_if_owner_absent(&store, &paths.identity_dir, &jid)
             .unwrap()
@@ -545,13 +922,34 @@ mod tests {
             (State::Uploaded, State::UploadedNotSubmitted, 102),
             (State::Posting, State::OutcomeUnknown, 103),
         ] {
-            let _adm = AdmissionLock::try_acquire(&paths.identity_dir, assignment).unwrap();
-            let (jid, owner) =
-                create(&store, &paths.identity_dir, &opts_for(&doc, assignment)).unwrap();
+            let admission = AdmissionLock::try_acquire(&paths.identity_dir, assignment).unwrap();
+            let (jid, owner) = create(
+                &store,
+                &paths.identity_dir,
+                &admission,
+                &opts_for(&doc, assignment),
+            )
+            .unwrap();
+            if from == State::Posting {
+                transition(
+                    &store,
+                    &owner,
+                    &jid,
+                    State::Planned,
+                    State::Uploaded,
+                    TransitionPatch::default(),
+                )
+                .unwrap();
+            }
             transition(
                 &store,
+                &owner,
                 &jid,
-                State::Planned,
+                if from == State::Posting {
+                    State::Uploaded
+                } else {
+                    State::Planned
+                },
                 from,
                 if from == State::Posting {
                     TransitionPatch {
@@ -574,15 +972,16 @@ mod tests {
     #[test]
     fn live_owner_blocks_recovery() {
         let (_dir, paths, store, doc) = setup();
-        let _adm = AdmissionLock::try_acquire(&paths.identity_dir, 7).unwrap();
-        let (jid, _owner) = create(&store, &paths.identity_dir, &opts_for(&doc, 7)).unwrap();
+        let admission = AdmissionLock::try_acquire(&paths.identity_dir, 7).unwrap();
+        let (jid, _owner) =
+            create(&store, &paths.identity_dir, &admission, &opts_for(&doc, 7)).unwrap();
         assert!(
             recover_if_owner_absent(&store, &paths.identity_dir, &jid)
                 .unwrap()
                 .is_none()
         );
         assert_eq!(
-            owner_status_for(&paths.identity_dir, &jid, State::Planned),
+            owner_status_for(&paths.identity_dir, &jid, State::Planned).unwrap(),
             OwnerStatus::Live
         );
     }
@@ -613,7 +1012,7 @@ mod tests {
                     baseline_submission_id: None,
                 };
                 match adm {
-                    Ok(_adm) => create(&store, &idir, &opts).map(|_| true),
+                    Ok(admission) => create(&store, &idir, &admission, &opts).map(|_| true),
                     Err(LockError::InProgress) => Ok(false),
                     Err(e) => Err(JournalError::from(e)),
                 }
@@ -632,8 +1031,9 @@ mod tests {
     #[test]
     fn two_recoverers_serialize() {
         let (_dir, paths, store, doc) = setup();
-        let _adm = AdmissionLock::try_acquire(&paths.identity_dir, 11).unwrap();
-        let (jid, owner) = create(&store, &paths.identity_dir, &opts_for(&doc, 11)).unwrap();
+        let admission = AdmissionLock::try_acquire(&paths.identity_dir, 11).unwrap();
+        let (jid, owner) =
+            create(&store, &paths.identity_dir, &admission, &opts_for(&doc, 11)).unwrap();
         drop(owner);
         let store = Arc::new(store);
         let idir = paths.identity_dir.clone();
@@ -658,10 +1058,12 @@ mod tests {
     #[test]
     fn commit_success_atomic_with_receipt() {
         let (_dir, paths, store, doc) = setup();
-        let _adm = AdmissionLock::try_acquire(&paths.identity_dir, 3).unwrap();
-        let (jid, _owner) = create(&store, &paths.identity_dir, &opts_for(&doc, 3)).unwrap();
+        let admission = AdmissionLock::try_acquire(&paths.identity_dir, 3).unwrap();
+        let (jid, owner) =
+            create(&store, &paths.identity_dir, &admission, &opts_for(&doc, 3)).unwrap();
         transition(
             &store,
+            &owner,
             &jid,
             State::Planned,
             State::Uploading,
@@ -670,13 +1072,14 @@ mod tests {
         .unwrap();
         transition(
             &store,
+            &owner,
             &jid,
             State::Uploading,
             State::Uploaded,
             TransitionPatch::default(),
         )
         .unwrap();
-        mark_posting(&store, &jid).unwrap();
+        mark_posting(&store, &owner, &jid).unwrap();
         let posted = allowlist_from_json(
             Evidence::PostResponse,
             &json!({"id": 5, "attempt": 1}),
@@ -690,61 +1093,10 @@ mod tests {
             posted: posted.clone(),
             readback: None,
         };
-        commit_success(&store, &jid, 1, 3, &posted, &receipt).unwrap();
+        commit_success(&store, &owner, &jid, 201, &receipt).unwrap();
         let row = get_journal(&store, &jid).unwrap().unwrap();
         assert_eq!(row.state, State::Submitted);
         assert!(row.receipt_record_json.is_some());
         assert!(row.response_record_json.is_some());
-    }
-
-    #[test]
-    fn planned_kill_helper_subprocess() {
-        if let Ok(root) = std::env::var("CANVAS_JOURNAL_KILL_ROOT") {
-            let key =
-                IdentityDocument::new("https://canvas.example", 7, "2026-01-01T00:00:00Z").key;
-            let paths = Paths::for_identity(root, &key);
-            let jid = std::env::var("CANVAS_JOURNAL_KILL_ID").unwrap();
-            let _owner = OwnerLock::acquire(&paths.identity_dir, &jid).unwrap();
-            std::fs::write(paths.data_root.join("ready"), "1").unwrap();
-            thread::sleep(Duration::from_secs(2));
-            return;
-        }
-
-        let (dir, paths, store, doc) = setup();
-        let jid = Uuid::new_v4().to_string();
-        let exe = std::env::current_exe().unwrap();
-        let mut child = Command::new(&exe)
-            .args([
-                "--exact",
-                "journal::ops::tests::planned_kill_helper_subprocess",
-            ])
-            .env("CANVAS_JOURNAL_KILL_ROOT", dir.path())
-            .env("CANVAS_JOURNAL_KILL_ID", &jid)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let ready = dir.path().join("ready");
-        for _ in 0..200 {
-            if ready.exists() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
-        assert!(ready.exists());
-        // While child holds owner lock, create with same id is not used; probe is live.
-        assert_eq!(probe_owner(&paths.identity_dir, &jid), OwnerStatus::Live);
-        let _ = child.kill();
-        let _ = child.wait();
-        // After kill, recovery path for a real journal still works (separate id).
-        let _adm = AdmissionLock::try_acquire(&paths.identity_dir, 55).unwrap();
-        let (real, owner) = create(&store, &paths.identity_dir, &opts_for(&doc, 55)).unwrap();
-        drop(owner);
-        assert_eq!(
-            recover_if_owner_absent(&store, &paths.identity_dir, &real)
-                .unwrap()
-                .unwrap(),
-            State::Refused
-        );
     }
 }
