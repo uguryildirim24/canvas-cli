@@ -754,6 +754,138 @@ async fn a_host_without_elicitation_is_refused_and_nothing_is_dispatched() {
     mcp.stop();
 }
 
+/// A primed fixture whose topic 55 of course 1 accepts one reply.
+async fn repliable(server: &MockServer) -> Fixture {
+    let f = primed(server).await;
+    mount(
+        server,
+        "/api/v1/courses/1/discussion_topics/55",
+        json!({
+            "id": 55, "title": "Week 3 reading", "message": "<p>Well?</p>",
+            "locked": false, "locked_for_user": false,
+            "require_initial_post": false, "user_can_see_posts": true,
+            "group_category_id": null, "group_topic_children": [],
+            "discussion_type": "threaded", "published": true
+        }),
+    )
+    .await;
+    let entry = json!({
+        "id": 5003, "user_id": 123, "user_name": "You",
+        "message": "<p>My reply.</p>", "created_at": "2026-09-09T17:00:00Z"
+    });
+    Mock::given(method("POST"))
+        .and(path("/api/v1/courses/1/discussion_topics/55/entries"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(entry.clone()))
+        .mount(server)
+        .await;
+    mount(
+        server,
+        "/api/v1/courses/1/discussion_topics/55/entries",
+        json!([entry]),
+    )
+    .await;
+    f
+}
+
+/// The write tools take the same approval road, and claim only what is true.
+///
+/// One round trip covers the six of them: the elicitation, the recorded
+/// approval, the single POST, the replay, and the receipt. The tools differ in
+/// what they freeze, not in how they are approved.
+#[tokio::test]
+async fn a_write_tool_asks_for_an_approval_and_replies_once() {
+    let server = MockServer::start().await;
+    let f = repliable(&server).await;
+    let mut mcp = f.mcp(&[]);
+
+    // Preparing freezes the plan and sends nothing.
+    let prepared = mcp.eliciting(
+        "tools/call",
+        json!({
+            "name": "discussion.reply.prepare",
+            "arguments": { "course": "1", "discussion": "55", "text": "My reply." },
+        }),
+    );
+    let plan = &prepared["result"]["structuredContent"]["result"]["plan"];
+    assert_eq!(plan["state"], "prepared", "{prepared}");
+    assert_eq!(plan["operation"]["kind"], "discussion_reply");
+    assert_eq!(posts(&server).await, 0, "prepare sent something");
+
+    // Executing asks, and asking still sends nothing.
+    let asked = mcp.eliciting(
+        "tools/call",
+        json!({
+            "name": "discussion.reply.execute",
+            "arguments": { "plan_id": plan["plan_id"] },
+        }),
+    );
+    let result = &asked["result"];
+    assert_eq!(result["resultType"], "input_required", "{asked}");
+    let request = &result["inputRequests"]["approval"];
+    assert_eq!(request["method"], "elicitation/create");
+    let message = request["params"]["message"].as_str().unwrap();
+    assert!(
+        message.contains(plan["plan_sha256"].as_str().unwrap()),
+        "{message}"
+    );
+    let state = result["requestState"].clone();
+    assert_eq!(posts(&server).await, 0, "asking sent something");
+
+    // The accepted approval sends once.
+    let accepted = mcp.retry(
+        "discussion.reply.execute",
+        &state,
+        &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
+    );
+    let envelope = &accepted["result"]["structuredContent"];
+    assert_eq!(envelope["schema"], "canvas-cli/operation@1", "{accepted}");
+    assert_eq!(envelope["exit"], 0);
+    assert_eq!(envelope["result"]["state"], "posted");
+    assert_eq!(envelope["result"]["replayed"], false);
+    let journal = envelope["result"]["journal_id"].clone();
+    assert_eq!(posts(&server).await, 1, "the accepted plan sent once");
+
+    // A second execute replays the journal and creates no second reply.
+    let replayed = mcp.eliciting(
+        "tools/call",
+        json!({
+            "name": "discussion.reply.execute",
+            "arguments": { "plan_id": plan["plan_id"] },
+        }),
+    );
+    let envelope = &replayed["result"]["structuredContent"];
+    assert_eq!(envelope["result"]["journal_id"], journal, "{envelope}");
+    assert_eq!(envelope["result"]["replayed"], true);
+    assert_eq!(posts(&server).await, 1, "the replay sent something");
+
+    // `operation.status` is the way to check, and it names the channel.
+    let status = mcp.eliciting(
+        "tools/call",
+        json!({ "name": "operation.status", "arguments": { "journal_id": journal } }),
+    );
+    let envelope = &status["result"]["structuredContent"];
+    assert_eq!(envelope["schema"], "canvas-cli/operation@1", "{envelope}");
+    assert_eq!(envelope["result"]["state"], "posted");
+    assert_eq!(posts(&server).await, 1, "a status check sent something");
+
+    let receipt = f
+        .cli(&["receipts", "show", journal.as_str().unwrap()], 0)
+        .await;
+    let approval = &receipt["result"]["journal"]["approval"];
+    assert_eq!(approval["channel"], "elicitation", "{receipt}");
+    assert_eq!(approval["consumer"], "mcp:test-host");
+
+    // A tool that never asks cannot be the second half of a round trip, so a
+    // replayed state can never record an approval against a read.
+    let misrouted = mcp.retry(
+        "operation.status",
+        &state,
+        &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
+    );
+    assert_eq!(misrouted["error"]["code"], -32602, "{misrouted}");
+    mcp.stop();
+}
+
 /// A tool argument can never assert an approval.
 #[tokio::test]
 async fn an_approval_cannot_be_asserted_by_an_argument() {
