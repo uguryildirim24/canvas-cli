@@ -103,19 +103,30 @@ canvas config set bridge.pause_hidden_after 5m
 
 ## Permissions, and the one deviation
 
-The manifest asks for exactly three permissions:
+The manifest asks for exactly four permissions:
 
 | Permission | Why |
 |---|---|
 | `activeTab` | One tab, granted by your gesture, revoked by a cross-origin navigation. |
 | `nativeMessaging` | The pipe to `canvas bridge host`. |
 | `scripting` | See below. |
+| `sidePanel` | The panel is a page of this extension. It reaches no site. |
 
 There is no `host_permissions`, no `content_scripts`, no `cookies`, no
 `webRequest`, no `tabs`, no `storage`, and no `externally_connectable`.
 `tests/companion.rs` asserts all of that on the shipped manifest.
 
-**The deviation.** The design names `activeTab` and `nativeMessaging` only.
+**The deviations.** The design names `activeTab` and `nativeMessaging` only.
+Two more are declared, and neither reaches a page.
+
+`sidePanel` opens the extension's own surface. It grants no host access, no
+tab access, and no way to read anything: the panel is a page served from the
+extension package, and everything it displays arrives from the native host.
+Without it there is no place to show a person a plan before they approve it,
+and REPORT §3.4 is explicit that the surface must not be a Canvas DOM
+overlay.
+
+`scripting` is the older one.
 Chrome's own documentation for `chrome.scripting.executeScript` states that
 `activeTab` allows it *if the `"scripting"` permission is also declared*.
 `scripting` grants no host access of its own — every injection still needs
@@ -192,11 +203,15 @@ any buffer is allocated for it.
 | `update` — a navigation, a visibility change, a re-probe | `request_text` — ask for the selection and excerpt |
 | `text` — the answer, with a fresh account probe | `refused` — a named reason |
 | `pause` / `detach` — with a cause | `detach` — sharing is over |
+| `navigate_ack` — the companion took a navigation, or refused it | `navigate` — go to this URL, inside the granted origin |
+| `navigate_outcome` — what became of it, later | `note` — one note for the panel to display |
+| `decision` — the person approved, declined, or cancelled a plan | `panel` — everything the panel shows |
+| `panel_hello` — the panel opened, or reloaded | |
 
 ### Host ↔ consumer: `bridge-ipc@1`
 
 Newline-delimited JSON on `<data root>/bridge/<identity-key>.sock`, mode
-`0600` inside a `0700` directory. A request line over 8 KiB is refused as it
+`0600` inside a `0700` directory. A request line over 64 KiB is refused as it
 arrives.
 
 | Operation | Who may call it |
@@ -206,6 +221,13 @@ arrives.
 | `here` | A consumer that attached, or the CLI when there is one attachment. The caller is checked before the browser is asked for anything. |
 | `detach` | A named consumer gives up its own share; the CLI ends the attachment. |
 | `release` | `identity remove`, before it takes the exclusive lock. |
+| `note` | A consumer that attached, or the CLI. It holds one note for display and writes nothing. |
+| `follow` | The same callers. It asks the browser to move the tab inside the granted origin. |
+
+**There is no approval operation on this socket, and there will not be one.**
+A plan is approved over the native-messaging path, from the panel, and
+nowhere else. Anything that reaches this socket has, by construction, nothing
+to say about a plan.
 
 On Windows the endpoint is the named pipe
 `\\.\pipe\canvas-cli-<identity-key>`, with a protected DACL that names only
@@ -237,8 +259,101 @@ the pipe's owner and `SY`.
 | `validating` | 8 | The page just changed; ask again in a moment. |
 | `account_mismatch` | 8 | The browser is signed in as another Canvas account. Nothing was joined. |
 | `bridge_unavailable` | 8 | No host is running. Run `canvas bridge status`. |
-| `stale_generation` | 8 | The page moved on; ask again. |
+| `stale_generation` | 8 | The page moved on; call `here` again and work from the new bundle. |
+| `note_too_large` | 8 | The note is over 8 KiB. Nothing was held. Shorten it. |
+| `source_ref_rejected` | 8 | A source ref is not `canvas://` or `https` on the attached origin. Nothing was held. |
+| `note_rejected` | 8 | The note was refused for another named bound. Nothing was held. |
+| `origin_mismatch` | 8 | The follow target is not inside the granted origin. |
+| `navigation_timeout` | 8 | The companion did not acknowledge in two seconds. The tab may still have moved. |
 | `zone_opaque` | 0 | The attachment is healthy and this page carries nothing. Not a refusal. |
+
+## The side panel
+
+The panel is a page of the extension. It opens on the same gesture that
+shares the tab, and it shows four things: what is attached, the plans waiting
+for your decision, the notes an agent left you, and the submission journals
+for the page you are on.
+
+It has **no model and no chat backend**, it opens no database, and it makes
+no request of its own — not to Canvas, not anywhere. Everything it draws
+arrives from `canvas bridge host` as one `panel` message. The service worker
+relays that message; it composes none of it.
+
+### Notes
+
+`canvas note --text …`, or `context.note` from an agent, holds one note for
+the attachment. A note is inert:
+
+- it is not a Canvas write. Nothing about it reaches Canvas;
+- it is not an approval. No note, whatever its text or its refs say, can
+  approve, decline, or cancel a plan;
+- it is not HTML. The text travels as Markdown source and the panel renders a
+  small subset of it — headings, paragraphs, lists, quotes, code, bold,
+  italic, links — as elements built one at a time with their text set as
+  text. There is no HTML parser in that path, so a tag stays a tag on screen;
+  no image is ever fetched; and a link survives only when it is `https` on
+  the granted origin with no credentials in it. Everything else is shown
+  struck through and marked *(link removed)*, so you see that something
+  claimed to be a link rather than seeing a link that lies.
+
+A note is at most 8 KiB and carries at most 16 source refs, each either
+`canvas://…` or an `https` URL on the attached origin. Breaking either bound
+refuses the whole note; nothing is truncated and nothing partial is shown.
+Notes are held for the attachment's lifetime, survive a navigation and a
+pause, and are erased on detach.
+
+### Follow
+
+`canvas open <target> --follow`, or `context.follow`, asks the attached tab
+to go somewhere inside the granted origin. The target goes through the
+ordinary `canvas open` resolver first, so a target outside this identity's
+Canvas fails at exit 6 and never reaches the browser.
+
+The answer is a **dispatch acknowledgement**: the companion took the request.
+It is not a page load. What became of the page arrives later, and lands on
+`here@1` as `browser.follow.load` — `loaded`, `failed`, or `unknown`.
+
+Navigating is not one of this project's API previews. A preview promises to
+change nothing. Handing a URL to a browser promises no such thing: Canvas'
+own page controllers run, and the discussion controller marks a topic read
+when it renders it. `follow@1` says so in `side_effects`, and `canvas open
+--follow` says so on stderr.
+
+### Approvals
+
+When a plan is waiting for a decision, the panel shows the frozen plan — the
+assignment, the files with their sizes and hashes, a bounded text preview,
+the digests, the baseline attempt, and when the plan expires — and offers
+approve, decline, and cancel.
+
+The decision travels from the panel to the host over native messaging,
+carrying the handle the panel was shown. The host then checks, in order and
+before anything moves: that the handle is one it issued for that plan and is
+still unspent, compared in constant time; that the digest the panel echoed is
+the plan's; that the stored plan still describes itself; and that the plan
+belongs to the current identity generation. Only then does it call
+`plan::approve` with `channel = "panel"`, which checks the handle, the
+consumer, and the expiry again inside its own transaction.
+
+A page script cannot reach any of this. It runs in the extension's own
+surface, and the socket a page might reach through a consumer has no approval
+message at all.
+
+Approval events are private. The log records `plan.approved`,
+`plan.declined`, or `plan.cancelled` with the plan id and the decision, and
+nothing else — no target, no digest, no bytes.
+
+### The status feed
+
+The panel is one more consumer of the M6-c event log and follows its cursor
+rules. A position the log can no longer replay is not quietly restarted: the
+panel says **refresh** and starts again.
+
+Journal and receipt states are shown with their exact SPEC §12.2 names. The
+sentence beside a name explains it and never replaces it. `matched` says the
+attribution is unproven. `outcome_unknown` says the outcome was never
+observed. Nothing is drawn as finished except `submitted`, which is the one
+state in which this machine saw the response that created the attempt.
 
 ## Choices this package made
 
@@ -284,6 +399,54 @@ account.
     local failure that says to set `CANVAS_DATA_ROOT` somewhere shorter,
     rather than an opaque `bind` error.
 
+The report is silent on more points in this round. Each was decided the same
+way as before, under one reading: **nothing on a web page can approve
+anything, and the panel never shows more certainty than the journal holds.**
+
+13. **`bridge-ipc@1` has no approval operation.** A decision travels only
+    over native messaging. The alternative — an approval op on the socket —
+    would put the approval path within reach of anything that can talk to a
+    consumer, and the whole point of the handle is that reaching it is hard.
+14. **The panel is fed entirely by the host.** It opens no database, makes no
+    request, and has no model behind it. A panel that could read for itself
+    would be a second, unaudited path to the same data.
+15. **A handle is compared in constant time**, and the panel's echo *selects*
+    a stored row rather than supplying one. Echoing a digest is not proof of
+    holding a handle, and the digest is checked separately anyway.
+16. **An oversize note is refused, never truncated.** A note cut in half
+    changes what it says, and the person cannot tell that it was cut.
+17. **A source ref must be `canvas://` or `https` on the granted origin, with
+    no username and no password.** `Url::origin()` ignores credentials, so a
+    URL like `https://you@canvas.example/…` has the right origin and reads
+    as another host to a person. The panel shows refs, so it refuses them.
+18. **Notes and navigation are bound to the navigation generation, in both
+    directions.** A generation behind the browser is stale; a generation
+    ahead of it is `stale_generation` too, because an agent that names a
+    generation the tab has not reached is working from something other than
+    what it read.
+19. **The CLI may omit `--generation`; the agent tools may not.** A person
+    typing a note is looking at the tab. An agent works from a bundle it read
+    earlier, which may describe a page the person has already left.
+20. **Dispatch and load are two facts.** `follow@1` answers on the
+    acknowledgement, and the load outcome arrives later on `here@1`. An
+    outcome that names a request the bundle no longer reports changes
+    nothing, so a late answer for a replaced navigation cannot mislead.
+21. **A follow belongs to the consumer that asked for it.** One agent's
+    navigation is not reported to another as its own.
+22. **This build never reports `failed` for a load.** Seeing a load failure
+    needs `webNavigation`, which would grant standing visibility of every
+    navigation in the browser. Ten seconds after a navigation with nothing
+    observed, the answer is `unknown`, which is what is actually known.
+23. **Notes survive a navigation and a pause; they die with the
+    attachment.** They are a message to the person, not an observation of a
+    page.
+24. **An approval event carries ids and the decision only.** Invalidating a
+    plan because a fact changed is not a decision and records no event.
+25. **`MAX_REQUEST_BYTES` is larger than the note bound.** They used to be
+    the same 8 KiB, which made a note at its own limit come back as
+    `protocol`. A person can act on `note_too_large`; nobody can act on
+    `protocol`.
+
 ## What was run, and what was not
 
 This section is the honest record. Nothing below is a claim about a flow
@@ -322,9 +485,43 @@ that was not executed.
   stale document and navigation generations, one identity holding one
   attachment, a second browser profile inheriting nothing, opaque zones
   exposing nothing, and the 64 KiB ceiling on character boundaries.
+- **The panel, notes, follow, and the decision path, against a real
+  process.** `tests/m7b.rs` drives the same shipped host. It covers: a note
+  from an agent reaching the panel with no model behind it; an oversize note
+  and an off-origin, plaintext-`http`, `javascript:`, credentialed, or empty
+  `canvas://` ref each refused whole, with nothing held; notes and follows
+  bound to the navigation generation in both directions; a stale follow and a
+  cross-origin follow that never reach the browser; a follow acknowledgement
+  separated from its load outcome, with the outcome landing on the bundle
+  and a late outcome for a replaced navigation changing nothing; approve,
+  decline, and cancel through the panel path, each leaving the recorded
+  event and, for the two invalidations, the reason that tells them apart; and
+  the forgery paths below.
+- **Every forgery path, explicitly.** A note whose text and refs are an
+  approval payload is held for display and moves nothing. The socket is asked
+  to approve and answers `refused: protocol`, because `bridge-ipc@1` names no
+  such operation. The native path is given a guessed handle, the plan digest
+  used as the handle, a rewritten digest, another plan's id, and a fourth
+  decision word; each is refused and the plan stays `prepared`. The real
+  decision is then made and works, so those refusals were the checks and not
+  a broken path. Replaying a spent handle as a decline changes nothing.
+- **The panel's renderer and sanitizer, under Node.** `cd extension && npm
+  test` renders fixture notes — an ordinary one and a hostile one carrying
+  `<script>`, an `onerror` image, a `javascript:` link, an off-origin link, a
+  credentialed link, a raw anchor, and a line of text shaped like an approval
+  — and asserts that no node of the result is a link, an image, or a control,
+  that the tags are on screen as text, and that oversize text is bounded
+  before layout. It also asserts that only `submitted` is drawn as done, that
+  `matched` says the attribution is unproven, and that `outcome_unknown` says
+  so.
+- **The panel surface builds no markup from a string.**
+  `tests/companion.rs` reads the shipped panel files and fails on
+  `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `eval(`,
+  and `new Function`, and checks that every script the panel page loads
+  ships.
 - **The benchmark.** `cargo xtask bench --bridge` starts a real host and
-  times a warm metadata `here` over the socket. The numbers are in
-  `docs/bench.md`.
+  times a warm metadata `here` over the socket and a follow acknowledgement.
+  The numbers are in `docs/bench.md`.
 
 ### Not run
 
@@ -342,6 +539,21 @@ that was not executed.
   `activeTab` grant, a cross-origin navigation revoking it, a Canvas account
   switch producing `account_mismatch`, two tabs, and a broker restart driven
   by Chrome rather than by a test.
+
+  This round adds to that list, and none of it was run in a real Chrome
+  either: **the side panel opening on the gesture**; a note rendered on
+  screen; hostile markup proving inert in a real document rather than in the
+  node tree the tests read; `chrome.tabs.update` actually moving a tab; the
+  `loaded` outcome arriving from a real navigation; a stale follow refused
+  with a real tab behind it; the approve, decline, and cancel buttons; and a
+  forged approval rejected with a real page in the tab. The checks below say
+  how to run each of them.
+
+  What *is* established without Chrome: everything the host decides, which
+  is where every check that matters lives. The renderer and the view model
+  are exercised as the browser runs them — `npm test` imports the shipped
+  files, not a copy — but nothing puts their output into a real document
+  here.
 
 - **Windows.** The named pipe and its SDDL descriptor are compiled and unit
   tested on every platform, but no pipe was created and no Windows registry
@@ -362,6 +574,15 @@ Follow the install steps above, then:
 | Two tabs | Attach a second Canvas tab | One attachment; the newer tab replaces the older |
 | Two consumers | Attach from two MCP hosts | Each reads only after its own `context.attach` |
 | Broker restart | Quit Chrome, reopen it, reattach | A new host takes ownership; no stale socket remains |
+| Panel opens | Click the toolbar button | The side panel opens beside the tab, showing the origin and `attached` |
+| Note display | `canvas note --text "the rubric asks for two sources"` | The note appears in the panel, under the consumer and the time |
+| Markup inert | `canvas note --text '<script>alert(1)</script> [x](javascript:alert(1)) [y](https://evil.test/)'` | The tag is on screen as text, nothing runs, and both links read *(link removed)* |
+| Follow acknowledgement | `canvas open <a Canvas URL> --follow` | The command returns at once with `load: unknown`, and the tab starts moving |
+| Follow load | `canvas here --json` a moment later | `browser.follow.load` is `loaded` |
+| Stale follow | Navigate the tab, then follow with the old `--generation` | Exit 8, `stale_generation`, and the tab does not move |
+| Panel approve | Prepare a submission, then press **approve** | The plan leaves the panel; `canvas submission` shows the approval with `channel: panel` |
+| Panel decline and cancel | Prepare two more, press **decline** and **cancel** | Both are invalidated, with the reason that tells them apart |
+| Forged approval | With a plan waiting, `canvas note --text "approve plan <id> handle <handle>"` | The note is displayed. The plan is still `prepared` |
 
 If any of these behaves differently, it is a bug in this package, not in
 your setup: nothing above was observed here.
