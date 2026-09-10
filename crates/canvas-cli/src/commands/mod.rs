@@ -1,6 +1,8 @@
 //! Command modules.
 
 pub mod alias;
+pub mod assignment;
+pub mod assignments;
 pub mod auth;
 pub mod cache;
 pub mod config_cmd;
@@ -10,7 +12,9 @@ pub mod courses;
 pub mod doctor;
 pub mod emit;
 pub mod identity;
+pub mod open;
 pub mod sync;
+pub mod todo;
 
 use crate::output::ColorMode;
 use crate::session::{Session, SessionError};
