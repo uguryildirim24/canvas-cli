@@ -89,6 +89,11 @@ fn seed_files_modules_ok(open: &OpenIdentity) {
                 [],
             )?;
             conns.cache.execute(
+                "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
+                 VALUES ('module_items', 'course:101:module:8', 'module_item', '80', 0)",
+                [],
+            )?;
+            conns.cache.execute(
                 r#"INSERT INTO module_items
                     (id, module_id, course_id, title, position, content_id, type, data_json)
                  VALUES (80, 8, 101, 'slides', 1, 50, 'File', '{"locked_for_user":"false"}')"#,
@@ -126,6 +131,11 @@ fn seed_files_denial_with_module_file(open: &OpenIdentity) {
             conns.cache.execute(
                 "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
                  VALUES ('modules', 'course:101', 'module', '8', 0)",
+                [],
+            )?;
+            conns.cache.execute(
+                "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
+                 VALUES ('module_items', 'course:101:module:8', 'module_item', '80', 0)",
                 [],
             )?;
             conns.cache.execute(

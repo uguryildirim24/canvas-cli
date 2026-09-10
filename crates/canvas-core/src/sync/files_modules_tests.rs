@@ -458,3 +458,60 @@ fn default_ttls_are_one_hour() {
         Span::new().hours(1).fieldwise()
     );
 }
+
+#[test]
+fn module_refresh_replaces_item_membership_without_deleting_entities() {
+    let (_dir, open) = setup();
+    seed_discovery_course(&open);
+    open.store
+        .call_blocking(|conns| {
+            let ds = ModulesDataset::with_default_ttl(5);
+            let module = Module {
+                id: 8,
+                items_count: Some(0),
+                ..Module::default()
+            };
+            ds.ingest(
+                &[crate::store::IngestPage {
+                    fetched_at: ts(200),
+                    entities: vec![module_to_entity(&module, 5, true, &[])],
+                }],
+                &ingest_ok(0),
+                conns,
+            )
+            .unwrap();
+            assert!(
+                discovery_plan_input(conns, 5, "CS101")?.modules[0]
+                    .items
+                    .is_empty()
+            );
+            let retained: i64 = conns.cache.query_row(
+                "SELECT count(*) FROM module_items WHERE id=80",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(retained, 1);
+            // A late old response can enrich fields, but cannot resurrect membership.
+            let item = ModuleItem {
+                id: 80,
+                content_id: Some(50),
+                ..ModuleItem::default()
+            };
+            ds.ingest(
+                &[crate::store::IngestPage {
+                    fetched_at: ts(150),
+                    entities: vec![module_to_entity(&module, 5, true, &[item])],
+                }],
+                &ingest_ok(0),
+                conns,
+            )
+            .unwrap();
+            assert!(
+                discovery_plan_input(conns, 5, "CS101")?.modules[0]
+                    .items
+                    .is_empty()
+            );
+            Ok(())
+        })
+        .unwrap();
+}
