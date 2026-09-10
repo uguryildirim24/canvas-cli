@@ -871,6 +871,88 @@ Every one of these is decided before any upload and before the submission `POST`
 
 `submit@1` carries `replayed: bool`. `submission.execute` on a plan that is already `executed` returns that journal's own `submit@1` envelope — its own `outcome`, `state`, and `exit` — with `replayed: true`. A replayed acceptance, a second execute in flight, and a lost response all arrive there. The human `submit` never reaches that path and always reports `false`. The field is additive, so `submit@1` keeps `@1`.
 
+## 21. Agent surface
+
+Built by M6-b (`docs/reviews/code-M6-b.md`) and extended by M8-a2 (`docs/reviews/code-M8-a2.md`), from `docs/agent-ux/REPORT.md` §3.2. Three surfaces share one implementation: `canvas schema` publishes the contracts, `canvas mcp` serves them over the Model Context Protocol, and the shipped skill tells a model how to use them.
+
+Every command has one core that returns the §7 envelope and a thin wrapper that prints it. `canvas mcp` calls the same core the CLI calls, so there is one implementation per command and nothing shells out to `canvas`.
+
+### 21.1 `canvas schema`
+
+Class A. Raw output, like `completions`: one JSON Schema document on stdout with no §7 envelope. `--json` is a usage error (exit 2). An unknown operand exits 6 and names `canvas schema --list`. `canvas schema --list` prints the registry, one row per schema shape.
+
+The document is generated from the registry, never hand-written. A result type that derives `JsonSchema` is described exactly; the rest is inferred from the registry fixture, and `result_source` says which.
+
+Every page carries `$schema`, `contract` (`canvas-cli/schema@1`), `command`, `schema`, `result_source`, and `output`. `output` says how the bytes are framed:
+
+| Form | `output.form` | `output.flag` | Body of the page |
+|---|---|---|---|
+| Envelope | `envelope` | `--json` | `envelope` (the `oneOf` of the result and `error@1`), `result`, `error` |
+| Stream summary (`watch@1`) | `envelope` | `--jsonl` | as above, plus `output.refuses: ["--json"]` |
+| Stream line (`event@1`) | `jsonl` | `--jsonl` | `line` only, with its `schema` field pinned by `const`; no `envelope`, no `result`, no `error` |
+
+A `--jsonl` line is self-describing and is never wrapped, so its page describes the line itself. The contract id stays `schema@1` for every form; §19 item 33 records that question. `schema@1` has no registry row of its own, so `canvas schema schema` exits 6 (§19 item 20).
+
+### 21.2 `canvas mcp`
+
+`canvas mcp` serves the Model Context Protocol on stdin and stdout. One instance serves one identity **and** one identity generation, bound at startup from the selected profile (§8). Without an identity it refuses to start with the §14 auth error, exit 3. It re-reads `identity.json` every two seconds and stops with exit 13 when the identity is replaced or removed (§10). The process writes one JSON-RPC message per line on stdout and nothing else.
+
+**Protocol revisions.** Two are implemented, newest first:
+
+| Revision | How it is reached |
+|---|---|
+| `2026-07-28` | primary; no `initialize` handshake. Every request carries its own version, client identity, and capabilities in `_meta`, and a host discovers the server with `server/discover`. |
+| `2025-11-25` | through the `initialize` handshake; the adapter for hosts that have not moved yet. |
+
+Any other revision fails explicitly with a JSON-RPC error rather than being downgraded silently.
+
+**The tool catalog.** Exactly 30 tools. Annotations describe **effects**, not command classes: `readOnlyHint` is true only for a tool whose effect is a read, `destructiveHint` is false for every tool in the catalog, and `idempotentHint` and `openWorldHint` are set per tool.
+
+| Effect | Tools | `readOnlyHint` |
+|---|---|---|
+| Read | `courses.list`, `course.get`, `todo.list`, `assignments.list`, `assignment.get`, `grades.get`, `files.list`, `modules.list`, `pages.list`, `page.get`, `syllabus.get`, `announcements.list`, `announcement.get`, `discussions.list`, `discussion.get`, `inbox.list`, `inbox.get`, `inbox.unread_count`, `calendar.list`, `submission.get`, `receipts.list`, `receipts.show`, `download.plan`, `open.url` | true |
+| Local organization | `sync.run`, `download.run`, `submission.prepare` | false |
+| Remote write | `submission.execute` | false |
+| Evidence retirement | `submission.reconcile`, `receipts.acknowledge` | false |
+
+`download.plan` is a dry run and `open.url` resolves without launching, which is why both are annotated as reads; §19 item 21 records that reading. `submission.execute` is the only `RemoteWrite` tool, and a test pins that it is the only one.
+
+**What the catalog does not contain.** Credentials, token reveal, identity administration, arbitrary HTTP or shell, `--yes`, cache clearing, `download --force`, and every browser action. They are unreachable by name and by argument: every argument struct rejects unknown fields, `download.*` hard-codes `dest: None` and `force: false`, `calendar.list` hard-codes `ics: None`, `open.url` never launches a browser, and `submission.prepare` hard-codes `yes: false` and refuses `text: "-"` because stdin is the transport. `download.run` keeps the v1 `jobs` argument unclamped (§19 item 21).
+
+**Results.** A tool result carries the whole §7 envelope: `structuredContent` is the document `--json` prints, and the text block is the same document serialized. A domain failure keeps the envelope with its `outcome` and `exit`, and is marked `isError` for `error`, `refused`, `mismatch`, and `recovery`; `partial` stays a success with gaps. Only a protocol or argument failure becomes a JSON-RPC error. Every tool's `outputSchema` is the union of its result envelope and the `error@1` envelope, declared `"type": "object"` beside the `oneOf` so a strict host validator loads it.
+
+**`ttlMs` and `cacheScope`.** The revision puts these on discovery, list, and `resources/read` results and nowhere else, so a tool result reports the same two values under this server's own `_meta` keys, `dev.canvas-cli/ttlMs` and `dev.canvas-cli/cacheScope`, rather than inventing wire fields. Results that carry private data are `cacheScope: private`. The `ttlMs` budget is the smallest remaining TTL over every `freshness` row of the envelope, and it is **zero** for an empty list, a stale or incomplete row, an unparseable or future `fetched_at`, or a dataset with no TTL group. §7 coverage stays authoritative.
+
+**Resources.** Namespaced by identity and generation: `canvas://<identity-key>/<generation>/<path>`. A foreign key, another generation, and an unknown path all address nothing here.
+
+| Path | Kind | Reads |
+|---|---|---|
+| `todo` | listed | the default `todo.list` window |
+| `receipts` | listed | local receipts and unresolved journals |
+| `course/{course_id}/assignments` | template | one course's assignments, as `assignments.list` returns them |
+| `context/{consumer_handle}` | template | the M7 bridge; this release answers `refused` with `details.reason: "not_attached"` |
+
+A read goes through the same command core the matching tool uses, so a resource and a tool cannot answer differently.
+
+**The approval round trip.** `submission.execute` is the only tool that can return `input_required`, and therefore the only tool whose retry may carry a `requestState`. A retry that names any other tool is an argument error and leaves the plan untouched.
+
+1. `submission.execute(plan_id)` on a `prepared` plan issues a server-side approval handle and returns `input_required` with one keyed input request and the handle in `requestState`. Nothing is dispatched, and no client is built.
+2. The host asks a person and retries the tool with a new JSON-RPC request id, the echoed `requestState`, and keyed `inputResponses`.
+3. Accept spends the handle and approves the plan (§20); decline and cancel invalidate it.
+4. A host that declares no elicitation gets `outcome: refused`, exit 8, `details.reason: "approval_required"`, carrying the plan id and the handle, so the approval can still be recorded through another channel.
+
+**Subscriptions.** §22.
+
+**Catalog size.** `cargo xtask bench --mcp` measures the catalog at **30 tools, 220 855 bytes, about 55 224 estimated tokens** per `tools/list`, against the 22 tools and about 41 900 tokens M6-b first recorded. Most of each row is the output schema, which inlines the whole §7 envelope in both shapes because a host validator reads a tool definition on its own. §19 item 19 owns the question.
+
+### 21.3 The shipped skill
+
+`skill/canvas-cli/` ships `SKILL.md` and five workflows: `read-an-assignment.md`, `organize-the-week.md`, `download-course-files.md`, `prepare-and-submit.md`, and `reconcile-an-unknown-outcome.md`. The skill names exactly the tool catalog — a test diffs the two in both directions — and confines the two submission tools to the approval workflow. It states the envelope reading order, the §14 exit table including 11, and the coverage fields a model must not paper over (`replies_coverage`, `replies_total`, `messages_complete`, `embedded`). A forbidden flag appears only as an explicit statement that it does not exist.
+
+### 21.4 Host matrix
+
+`docs/agent-hosts.md` records which hosts were actually run against a build on the owner's machine, what each negotiated, and what stayed untested. It is evidence, not a claim: a host that is not in its table was not exercised. The two third-party hosts that connected both negotiated `2025-11-25`; the primary revision is exercised only by the project's own clients, and the approval round trip is verified only against the project's own client.
+
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
 | Crate | Version | Role |
