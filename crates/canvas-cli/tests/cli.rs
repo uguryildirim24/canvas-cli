@@ -367,9 +367,42 @@ fn raw_output_rejects_json_at_every_command_level() {
     }
 }
 
+/// Commands M4-b implements: with no identity they exit auth (3), which
+/// proves the command ran instead of being refused as usage.
+#[test]
+fn m4b_commands_need_an_identity() {
+    let empty = tempfile::TempDir::new().unwrap();
+    for args in [
+        vec!["announcements"],
+        vec!["announcements", "--since", "7d", "--unread"],
+        vec!["announcement", "chem", "123"],
+        vec![
+            "announcement",
+            "https://canvas.example.test/courses/1/discussion_topics/2",
+        ],
+        vec!["calendar"],
+        vec!["calendar", "--days", "7", "--ics", "-"],
+    ] {
+        Command::cargo_bin("canvas")
+            .unwrap()
+            .env("CANVAS_DATA_ROOT", empty.path())
+            .env_remove("CANVAS_IDENTITY_KEY")
+            .args(&args)
+            .assert()
+            .code(3);
+    }
+}
+
 #[test]
 fn nonraw_variants_continue_to_accept_json() {
-    assert_stub(&["calendar", "--ics", "calendar.ics", "--json"]);
+    let empty = tempfile::TempDir::new().unwrap();
+    Command::cargo_bin("canvas")
+        .unwrap()
+        .env("CANVAS_DATA_ROOT", empty.path())
+        .env_remove("CANVAS_IDENTITY_KEY")
+        .args(["calendar", "--ics", "calendar.ics", "--json"])
+        .assert()
+        .code(3);
     for args in [
         vec!["receipts", "export", "receipt-1", "--json"],
         vec![
@@ -420,16 +453,9 @@ fn every_v1_stub_is_callable() {
     // Implemented by M0-c (auth/identity/config/doctor), M1-b
     // (courses/course/alias/sync/cache), M1-c (todo/assignments/assignment/open),
     // M3-a (files/modules), and M3-b (download) are covered elsewhere.
-    let own_stubs: &[&[&str]] = &[
-        &["grades"],
-        &["announcements"],
-        &["announcement", "chem", "123"],
-        &[
-            "announcement",
-            "https://canvas.example.test/courses/1/discussion_topics/2",
-        ],
-        &["calendar"],
-    ];
+    // M4-b implements announcements/announcement/calendar; they need an
+    // identity now, so `m4b_commands_need_an_identity` covers them.
+    let own_stubs: &[&[&str]] = &[&["grades"]];
     for args in own_stubs {
         assert_stub(args);
     }

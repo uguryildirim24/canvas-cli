@@ -66,6 +66,54 @@ impl Dataset for AnnouncementsDataset {
     }
 }
 
+/// One announcement fetched by id, without replacing window membership.
+#[derive(Debug, Clone)]
+pub struct AnnouncementDetailDataset {
+    pub course_id: i64,
+    pub id: i64,
+    scope: String,
+    ttl: Span,
+}
+
+impl AnnouncementDetailDataset {
+    #[must_use]
+    pub fn new(course_id: i64, id: i64, ttl: Span) -> Self {
+        Self {
+            course_id,
+            id,
+            scope: format!("announcement:{id}"),
+            ttl,
+        }
+    }
+}
+
+impl Dataset for AnnouncementDetailDataset {
+    fn name(&self) -> &'static str {
+        "announcement"
+    }
+
+    fn scope_key(&self) -> &str {
+        &self.scope
+    }
+
+    fn ttl(&self) -> Span {
+        self.ttl
+    }
+
+    fn entity_kind(&self) -> &'static str {
+        "announcement"
+    }
+
+    fn upsert_entity(
+        &self,
+        tx: &Transaction<'_>,
+        entity: &EntityIngest,
+        fetched_at: Timestamp,
+    ) -> Result<(), IngestError> {
+        upsert_announcement(tx, entity, fetched_at)
+    }
+}
+
 /// Listing path for one batch of at most ten contexts.
 #[must_use]
 pub fn announcements_path(batch: &[String], window: &ContextWindow) -> String {
@@ -255,4 +303,45 @@ fn upsert_announcement(
         applied.status,
     )?;
     Ok(())
+}
+
+/// Refresh one announcement by id (§12.6).
+#[allow(clippy::too_many_arguments)]
+pub async fn refresh_announcement(
+    client: &canvas_api::Client,
+    store: &crate::store::Store,
+    course_id: i64,
+    id: i64,
+    ttl: Span,
+    now: Timestamp,
+    fresh: bool,
+    offline: bool,
+) -> Result<super::RefreshOutcome, super::SyncError> {
+    use super::refresh::{FetchBundle, refresh_dataset};
+    use super::wire::Observed;
+
+    let dataset = AnnouncementDetailDataset::new(course_id, id, ttl);
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let row: Observed<Announcement> = client.get(&announcement_path(course_id, id)).await?;
+            if row.model.id != id {
+                return Err(canvas_api::Error::Decode.into());
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: vec![row.entity_in_course(course_id)],
+                }],
+            })
+        },
+    )
+    .await
 }
