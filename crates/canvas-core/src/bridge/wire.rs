@@ -259,6 +259,40 @@ pub enum ExtensionMessage {
     Pause { cause: PauseCause },
     /// The attachment is over; a new gesture is required.
     Detach { cause: PauseCause },
+    /// The companion accepted a navigation, or refused it.
+    ///
+    /// This is the **dispatch acknowledgement**. It says the extension took
+    /// the request, and nothing about whether the page loaded.
+    NavigateAck {
+        request_id: String,
+        accepted: bool,
+        /// Why it was not accepted, when it was not.
+        #[serde(default)]
+        reason: Option<String>,
+    },
+    /// What became of an accepted navigation, once the tab settled.
+    NavigateOutcome {
+        request_id: String,
+        /// `loaded`, `failed`, or `unknown`.
+        outcome: String,
+    },
+    /// A decision the person made in the panel (REPORT §3.5).
+    ///
+    /// This is the only approval path in the whole design. It carries the
+    /// same handle the panel was shown, and the host checks the handle, the
+    /// digest, the identity generation, and the consumer before it believes
+    /// any of it. A page script cannot reach this channel: it runs in the
+    /// extension's own surface, and `bridge-ipc@1` has no approval message at
+    /// all.
+    Decision {
+        plan_id: String,
+        handle: String,
+        plan_sha256: String,
+        /// `approve`, `decline`, or `cancel`.
+        decision: String,
+    },
+    /// The panel opened, or asked for the state again after a reload.
+    PanelHello { protocol: String },
 }
 
 /// Host → extension.
@@ -289,6 +323,117 @@ pub enum HostMessage {
     Refused { reason: String },
     /// Drop the attachment and erase what was shared.
     Detach { reason: String },
+    /// Navigate the attached tab to this URL, inside the granted origin.
+    Navigate { request_id: String, url: String },
+    /// One new note for the panel to display.
+    ///
+    /// The panel renders it as text through a Markdown subset that builds no
+    /// HTML and no link to anywhere but the granted origin. It is inert: the
+    /// panel has no model backend and a note decides nothing.
+    Note {
+        note: Box<crate::bridge::note::Note>,
+    },
+    /// Everything the panel shows about the attachment, the journals, the
+    /// receipts, and the plans awaiting approval.
+    Panel { state: Box<PanelState> },
+}
+
+/// The panel's whole view, as the host computes it.
+///
+/// The panel never reads Canvas and never opens a database. Every field here
+/// comes from the host, which is the only side that holds the identity.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelState {
+    /// `attached`, `validating`, `paused`, or `not_attached`.
+    pub attachment_state: String,
+    /// The consumers that opted in.
+    pub consumers: Vec<String>,
+    /// The origin the attachment is bound to.
+    pub origin: String,
+    /// The zone of the current document.
+    pub zone: Option<Zone>,
+    /// The route the host derived, as API facts and nothing more.
+    pub route: Route,
+    /// The sanitized URL, absent in an opaque zone.
+    pub url: Option<String>,
+    /// The page title, absent in an opaque zone.
+    pub title: Option<String>,
+    /// When the observation was made, and how old the panel may treat it.
+    pub observed_at: Option<String>,
+    /// Always `0`: browser context is never cacheable (REPORT §3.2).
+    pub ttl_ms: u64,
+    /// The journals for the current course and assignment, newest first.
+    pub journals: Vec<PanelJournal>,
+    /// The plans waiting for a decision in this panel.
+    pub approvals: Vec<PanelPlan>,
+    /// The notes held for this attachment, oldest first.
+    pub notes: Vec<crate::bridge::note::Note>,
+    /// The last navigation, with its load outcome as it stands.
+    pub follow: Option<crate::bridge::ipc::FollowStatus>,
+    /// The event-log position the panel has been shown.
+    pub cursor: i64,
+    /// The log could not be replayed from the panel's position: start again.
+    pub resync_required: bool,
+}
+
+/// One journal row, exactly as SPEC §12.2 names it.
+///
+/// The panel prints `state` verbatim. It never maps a state to a friendlier
+/// word, and it never shows anything as done that the journal does not say is
+/// done.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelJournal {
+    pub journal_id: String,
+    /// A SPEC §12.2 state name.
+    pub state: String,
+    pub course_id: String,
+    pub assignment_id: String,
+    pub assignment_name: Option<String>,
+    pub kind: String,
+    pub updated_at: String,
+    /// A receipt exists for this journal.
+    pub receipt_id: Option<String>,
+    /// Another attempt superseded it.
+    pub superseded: bool,
+    /// The unknown outcome was accepted by a person.
+    pub acknowledged: bool,
+}
+
+/// One frozen plan, as the panel shows it before a decision.
+///
+/// Everything a person needs to recognize the work is here, and nothing that
+/// would let the panel reconstruct the outbound bytes: files carry a size and
+/// a hash, text carries a bounded preview and its digests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelPlan {
+    pub plan_id: String,
+    /// The server-issued handle this panel was shown. A decision must carry
+    /// it back; echoing a digest is not a substitute (REPORT §3.5).
+    pub handle: String,
+    pub plan_sha256: String,
+    pub consumer: Option<String>,
+    pub course_id: String,
+    pub assignment_id: String,
+    pub assignment_name: Option<String>,
+    pub kind: String,
+    pub files: Vec<PanelPlanFile>,
+    /// The first bytes of the text, for recognition, never the whole payload.
+    pub text_preview: Option<String>,
+    pub input_sha256: Option<String>,
+    pub sent_sha256: Option<String>,
+    pub url: Option<String>,
+    pub comment: Option<String>,
+    pub baseline_attempt: i64,
+    pub baseline_submission_id: Option<String>,
+    pub expires_at: String,
+}
+
+/// One file of a frozen plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelPlanFile {
+    pub name: String,
+    pub bytes: u64,
+    pub sha256: String,
 }
 
 #[cfg(test)]

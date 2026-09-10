@@ -14,6 +14,7 @@
 pub mod endpoint;
 pub mod framing;
 pub mod ipc;
+pub mod note;
 pub mod state;
 pub mod text;
 pub mod wire;

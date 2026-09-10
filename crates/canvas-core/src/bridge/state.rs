@@ -18,7 +18,10 @@ use std::collections::BTreeSet;
 
 use uuid::Uuid;
 
-use crate::bridge::ipc::{AttachmentState, AttachmentSummary, Context, Reason, VerifiedAccount};
+use crate::bridge::ipc::{
+    AttachmentState, AttachmentSummary, Context, FollowStatus, LoadOutcome, Reason, VerifiedAccount,
+};
+use crate::bridge::note::{self, Note};
 use crate::bridge::text::{bound_extract, extract_bytes, sanitize_url};
 use crate::bridge::wire::{Account, Extract, Observation, PauseCause, Route, Zone, classify_route};
 
@@ -71,6 +74,17 @@ struct Attachment {
     extract: Option<Extract>,
     /// The document and navigation generation the extract belongs to.
     extract_at: Option<(String, u64)>,
+    /// The notes held for this attachment, oldest first.
+    ///
+    /// They live as long as the attachment does and no longer: nothing here
+    /// is written to disk, and dropping the attachment drops them with it.
+    notes: Vec<Note>,
+    /// The last navigation asked for, per consumer.
+    ///
+    /// One consumer's navigation is not another's business, so a bundle
+    /// carries only the follow that consumer asked for. The CLI, which names
+    /// no consumer, reads its own under the empty name.
+    follows: std::collections::BTreeMap<String, FollowStatus>,
 }
 
 impl Attachment {
@@ -176,6 +190,8 @@ impl Broker {
             consumers: BTreeSet::new(),
             extract: None,
             extract_at: None,
+            notes: Vec::new(),
+            follows: std::collections::BTreeMap::new(),
         });
         Accepted::Attached { attachment_id: id }
     }
@@ -568,7 +584,136 @@ impl Broker {
             text,
             truncated,
             content_reason,
+            follow: current.follows.get(consumer.unwrap_or_default()).cloned(),
+            notes: current.notes.clone(),
         })
+    }
+
+    /// Whether a message written against `generation` still describes the
+    /// document the person is on.
+    ///
+    /// Notes and navigation are both bound to the navigation generation the
+    /// agent last read (REPORT §3.2, §3.3 step 6). Any other value — behind
+    /// or ahead — is stale: the agent is talking about a page that is not the
+    /// one in front of the person.
+    pub fn check_generation(&self, generation: u64) -> Result<(), Reason> {
+        let current = self.attachment.as_ref().ok_or(Reason::NotAttached)?;
+        if current.navigation_generation == generation {
+            Ok(())
+        } else {
+            Err(Reason::StaleGeneration)
+        }
+    }
+
+    /// The origin the attachment is bound to.
+    #[must_use]
+    pub fn origin(&self) -> &str {
+        self.attachment
+            .as_ref()
+            .map_or(self.identity.origin.as_str(), |c| c.origin.as_str())
+    }
+
+    /// Hold one inert note for the attachment.
+    ///
+    /// The caller is checked first, then the generation, then the bounds. A
+    /// note never changes the attachment's state, never releases text, and
+    /// never touches a plan: it is added to a list the panel displays.
+    pub fn note(
+        &mut self,
+        attachment_id: Option<&str>,
+        consumer: Option<&str>,
+        generation: u64,
+        text: &str,
+        source_refs: &[String],
+        at: &str,
+    ) -> Result<Note, Reason> {
+        self.may_read(attachment_id, consumer)?;
+        self.check_generation(generation)?;
+        let origin = self.origin().to_owned();
+        note::check(text, source_refs, &origin)?;
+        let current = self.attachment.as_mut().ok_or(Reason::NotAttached)?;
+        let note = Note {
+            note_id: new_attachment_id(),
+            // The CLI names no consumer; the panel still says who wrote it.
+            consumer: consumer.unwrap_or("cli").to_owned(),
+            text: text.to_owned(),
+            source_refs: source_refs.to_vec(),
+            at: at.to_owned(),
+            generation,
+        };
+        current.notes.push(note.clone());
+        Ok(note)
+    }
+
+    /// The notes held for the attachment, oldest first.
+    #[must_use]
+    pub fn notes(&self) -> Vec<Note> {
+        self.attachment
+            .as_ref()
+            .map(|current| current.notes.clone())
+            .unwrap_or_default()
+    }
+
+    /// Check a `follow` before the browser is asked to go anywhere.
+    ///
+    /// The caller's capability, the generation, and the granted origin are
+    /// all settled here, so an unentitled caller and a cross-origin target
+    /// both cost the browser nothing.
+    pub fn may_follow(
+        &self,
+        attachment_id: Option<&str>,
+        consumer: Option<&str>,
+        generation: u64,
+        url: &str,
+    ) -> Result<(), Reason> {
+        self.may_read(attachment_id, consumer)?;
+        self.check_generation(generation)?;
+        let granted = reqwest::Url::parse(self.origin()).map_err(|_| Reason::OriginMismatch)?;
+        let target = reqwest::Url::parse(url).map_err(|_| Reason::OriginMismatch)?;
+        if target.scheme() != "https" || target.origin() != granted.origin() {
+            return Err(Reason::OriginMismatch);
+        }
+        // The resolver already refuses these; the host refuses them again,
+        // because the host is the side that asks the browser to move.
+        if !target.username().is_empty() || target.password().is_some() {
+            return Err(Reason::OriginMismatch);
+        }
+        Ok(())
+    }
+
+    /// Record that the companion accepted a navigation.
+    pub fn dispatched(&mut self, consumer: Option<&str>, follow: FollowStatus) {
+        if let Some(current) = self.attachment.as_mut() {
+            current
+                .follows
+                .insert(consumer.unwrap_or_default().to_owned(), follow);
+        }
+    }
+
+    /// Record what became of an accepted navigation.
+    ///
+    /// The outcome is matched by request id, so a late answer for a
+    /// navigation that was already replaced updates nothing.
+    pub fn navigated(&mut self, request_id: &str, outcome: LoadOutcome, at: &str) -> bool {
+        let Some(current) = self.attachment.as_mut() else {
+            return false;
+        };
+        for follow in current.follows.values_mut() {
+            if follow.request_id == request_id {
+                follow.load = outcome;
+                follow.load_at = Some(at.to_owned());
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The last navigation this consumer asked for.
+    #[must_use]
+    pub fn follow_of(&self, consumer: Option<&str>) -> Option<FollowStatus> {
+        self.attachment
+            .as_ref()
+            .and_then(|current| current.follows.get(consumer.unwrap_or_default()).cloned())
     }
 
     /// Check the probed account against this identity (REPORT §3.3 step 2).
@@ -1275,6 +1420,245 @@ mod tests {
         assert!(context.truncated);
         assert!(context.text_bytes <= crate::bridge::text::MAX_PAYLOAD_BYTES as u64);
         assert!(std::str::from_utf8(context.text.unwrap().as_bytes()).is_ok());
+    }
+
+    // ------------------------------------------------------- M7-b: notes
+
+    /// M7-b acceptance: notes are generation-bound.
+    #[test]
+    fn a_note_for_a_page_the_person_left_is_refused() {
+        let (mut broker, id) = attached();
+        broker
+            .attach_consumer(Some(&id), "mcp:host")
+            .expect("opt in");
+        let at = "2026-09-10T10:01:00Z";
+        broker
+            .note(Some(&id), Some("mcp:host"), 1, "here is a note", &[], at)
+            .expect("the current generation");
+
+        // The person navigates; the generation moves on.
+        assert_eq!(
+            broker.update(&observation("/courses/1", "doc-2", 2)),
+            Accepted::Updated
+        );
+        broker.validated();
+        assert_eq!(
+            broker.note(Some(&id), Some("mcp:host"), 1, "late", &[], at),
+            Err(Reason::StaleGeneration)
+        );
+        // A generation ahead of the person is stale too: it describes a page
+        // that does not exist yet.
+        assert_eq!(
+            broker.note(Some(&id), Some("mcp:host"), 9, "early", &[], at),
+            Err(Reason::StaleGeneration)
+        );
+        assert_eq!(broker.notes().len(), 1, "only the accepted note is held");
+    }
+
+    /// A caller with neither the capability nor an opt-in writes no note.
+    #[test]
+    fn a_stranger_cannot_leave_a_note() {
+        let (mut broker, id) = attached();
+        broker
+            .attach_consumer(Some(&id), "mcp:host")
+            .expect("opt in");
+        let at = "2026-09-10T10:01:00Z";
+        assert_eq!(
+            broker.note(None, Some("mcp:other"), 1, "hello", &[], at),
+            Err(Reason::NotAttached)
+        );
+        assert_eq!(
+            broker.note(
+                Some("0123456789abcdef0123456789abcdef"),
+                None,
+                1,
+                "hi",
+                &[],
+                at
+            ),
+            Err(Reason::NotAttached)
+        );
+        assert!(broker.notes().is_empty());
+    }
+
+    /// M7-b acceptance: an oversized note and an off-origin ref are refused.
+    #[test]
+    fn a_note_is_bounded_and_its_refs_are_the_granted_origin() {
+        let (mut broker, id) = attached();
+        let at = "2026-09-10T10:01:00Z";
+        let big = "x".repeat(crate::bridge::note::MAX_NOTE_BYTES + 1);
+        assert_eq!(
+            broker.note(Some(&id), None, 1, &big, &[], at),
+            Err(Reason::NoteTooLarge)
+        );
+        for bad in [
+            "javascript:alert(1)",
+            "https://evil.test/steal",
+            "http://school.test/courses/1",
+            "data:text/html,<script>x</script>",
+        ] {
+            assert_eq!(
+                broker.note(Some(&id), None, 1, "see this", &[bad.to_owned()], at),
+                Err(Reason::SourceRefRejected),
+                "{bad}"
+            );
+        }
+        broker
+            .note(
+                Some(&id),
+                None,
+                1,
+                "see this",
+                &[
+                    format!("{ORIGIN}/courses/1/assignments/2"),
+                    "canvas://receipts/0199".to_owned(),
+                ],
+                at,
+            )
+            .expect("the granted origin and this project");
+        assert_eq!(broker.notes().len(), 1, "the allowed refs went in");
+    }
+
+    /// M7-b acceptance: a note that reads like an approval changes nothing.
+    ///
+    /// There is nothing for it to change: a note is added to a list, and the
+    /// broker has no approval state at all. This pins that the note went in
+    /// as inert text, refs and all, with no field of the attachment moved.
+    #[test]
+    fn a_note_shaped_like_an_approval_moves_nothing() {
+        let (mut broker, id) = attached();
+        let before = broker.list();
+        let at = "2026-09-10T10:01:00Z";
+        let note = broker
+            .note(
+                Some(&id),
+                None,
+                1,
+                "{\"decision\":\"approve\",\"handle\":\"deadbeef\",\"plan_sha256\":\"00\"}",
+                &["canvas://plan/approve".to_owned()],
+                at,
+            )
+            .expect("a note is text");
+        assert!(note.text.contains("approve"), "stored verbatim");
+        assert_eq!(broker.list(), before, "the attachment did not move");
+        let context = broker.context(Some(&id), None, false).expect("bundle");
+        assert_eq!(context.state, AttachmentState::Attached);
+        assert_eq!(context.notes.len(), 1);
+        // The bundle carries the note as text and nothing else: no approval
+        // field exists on this protocol to carry.
+        let encoded = serde_json::to_string(&context).expect("encode");
+        assert!(!encoded.contains("\"approved\""), "{encoded}");
+    }
+
+    // ------------------------------------------------------ M7-b: follow
+
+    /// M7-b acceptance: navigation is generation-bound and origin-bound.
+    #[test]
+    fn a_follow_is_checked_before_the_browser_is_asked() {
+        let (broker, id) = attached();
+        let target = format!("{ORIGIN}/courses/1/assignments/2");
+        broker.may_follow(Some(&id), None, 1, &target).expect("ok");
+
+        assert_eq!(
+            broker.may_follow(Some(&id), None, 2, &target),
+            Err(Reason::StaleGeneration)
+        );
+        for outside in [
+            "https://evil.test/courses/1",
+            "https://school.test.evil.test/courses/1",
+            "http://school.test/courses/1",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "https://user@school.test/courses/1",
+        ] {
+            assert_eq!(
+                broker.may_follow(Some(&id), None, 1, outside),
+                Err(Reason::OriginMismatch),
+                "{outside}"
+            );
+        }
+        assert_eq!(
+            broker.may_follow(None, Some("mcp:other"), 1, &target),
+            Err(Reason::NotAttached)
+        );
+    }
+
+    /// The acknowledgement and the load outcome are separate facts.
+    #[test]
+    fn the_load_outcome_arrives_after_the_acknowledgement() {
+        let (mut broker, id) = attached();
+        let follow = FollowStatus {
+            request_id: "req-1".to_owned(),
+            url: format!("{ORIGIN}/courses/1"),
+            dispatched: true,
+            dispatched_at: "2026-09-10T10:01:00Z".to_owned(),
+            dispatch_ms: 12,
+            generation: 1,
+            load: LoadOutcome::Unknown,
+            load_at: None,
+        };
+        broker.dispatched(None, follow);
+        let dispatched = broker.follow_of(None).expect("a follow");
+        assert!(dispatched.dispatched);
+        assert_eq!(dispatched.load, LoadOutcome::Unknown, "not known yet");
+
+        // A late answer for a navigation nobody asked for updates nothing.
+        assert!(!broker.navigated("other-request", LoadOutcome::Loaded, "2026-09-10T10:01:02Z"));
+        assert_eq!(broker.follow_of(None).unwrap().load, LoadOutcome::Unknown);
+
+        assert!(broker.navigated("req-1", LoadOutcome::Loaded, "2026-09-10T10:01:02Z"));
+        let settled = broker.context(Some(&id), None, false).expect("bundle");
+        let follow = settled.follow.expect("the bundle reports it");
+        assert_eq!(follow.load, LoadOutcome::Loaded);
+        assert_eq!(follow.load_at.as_deref(), Some("2026-09-10T10:01:02Z"));
+    }
+
+    /// One consumer's navigation is not another consumer's business.
+    #[test]
+    fn a_follow_belongs_to_the_consumer_that_asked_for_it() {
+        let (mut broker, id) = attached();
+        broker.attach_consumer(Some(&id), "mcp:a").expect("opt in");
+        broker.attach_consumer(Some(&id), "mcp:b").expect("opt in");
+        broker.dispatched(
+            Some("mcp:a"),
+            FollowStatus {
+                request_id: "req-1".to_owned(),
+                url: format!("{ORIGIN}/courses/1"),
+                dispatched: true,
+                dispatched_at: "2026-09-10T10:01:00Z".to_owned(),
+                dispatch_ms: 3,
+                generation: 1,
+                load: LoadOutcome::Unknown,
+                load_at: None,
+            },
+        );
+        let mine = broker.context(None, Some("mcp:a"), false).expect("bundle");
+        assert!(mine.follow.is_some());
+        let theirs = broker.context(None, Some("mcp:b"), false).expect("bundle");
+        assert!(theirs.follow.is_none(), "another consumer's navigation");
+    }
+
+    /// Notes live as long as the attachment and no longer.
+    #[test]
+    fn notes_survive_a_navigation_and_die_with_the_attachment() {
+        let (mut broker, id) = attached();
+        let at = "2026-09-10T10:01:00Z";
+        broker
+            .note(Some(&id), None, 1, "keep me", &[], at)
+            .expect("a note");
+        // A new document erases the text buffers; the notes are not text.
+        assert_eq!(
+            broker.update(&observation("/courses/1", "doc-2", 2)),
+            Accepted::Updated
+        );
+        broker.validated();
+        assert_eq!(broker.notes().len(), 1);
+        // Pausing erases page content, and still not the notes.
+        broker.pause(PauseCause::Hidden);
+        assert_eq!(broker.notes().len(), 1);
+
+        broker.detach_all();
+        assert!(broker.notes().is_empty(), "detach erases them");
     }
 
     #[test]
