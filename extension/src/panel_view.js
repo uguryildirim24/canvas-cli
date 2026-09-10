@@ -103,6 +103,55 @@ globalThis.canvasCli.followView = function followView(follow) {
   };
 };
 
+/**
+ * The API facts for the page, as the host read them from the local cache.
+ *
+ * They are whole §7 envelopes and they stay whole: each one keeps its own
+ * freshness, and a browser observation never updates one of them (REPORT
+ * §3.1). What the panel takes out is a name, a due date, and how old the row
+ * is — never page text, which is not in these envelopes at all.
+ */
+globalThis.canvasCli.apiView = function apiView(api) {
+  const rows = [];
+  const add = (kind, envelope, title) => {
+    if (!envelope) {
+      return;
+    }
+    rows.push({
+      kind,
+      title,
+      // A refused or unavailable envelope says so instead of a name.
+      outcome: String(envelope.outcome || "ok"),
+      freshness: (Array.isArray(envelope.freshness) ? envelope.freshness : []).map((row) => ({
+        dataset: String(row.dataset || ""),
+        state: String(row.state || ""),
+        fetched_at: row.fetched_at ? String(row.fetched_at) : null,
+      })),
+    });
+  };
+  const course = api && api.course;
+  const assignment = api && api.assignment;
+  const announcement = api && api.announcement;
+  add("course", course, name(course, "course", ["name", "code"]));
+  add("assignment", assignment, name(assignment, "assignment", ["name", "title"]));
+  add("announcement", announcement, name(announcement, "announcement", ["title", "name"]));
+  return rows;
+};
+
+/** The first of `fields` the envelope's named result carries. */
+function name(envelope, key, fields) {
+  const result = envelope && envelope.result && envelope.result[key];
+  if (!result) {
+    return null;
+  }
+  for (const field of fields) {
+    if (typeof result[field] === "string" && result[field] !== "") {
+      return result[field];
+    }
+  }
+  return null;
+}
+
 /** What the header says about the attachment. */
 globalThis.canvasCli.attachmentView = function attachmentView(state) {
   const name = String((state && state.attachment_state) || "not_attached");
@@ -135,6 +184,7 @@ globalThis.canvasCli.panelView = function panelView(state) {
   const notes = Array.isArray(state && state.notes) ? state.notes : [];
   return {
     attachment,
+    api: globalThis.canvasCli.apiView(state && state.api),
     follow: globalThis.canvasCli.followView(state && state.follow),
     journals: journals.map((journal) => globalThis.canvasCli.journalView(journal)),
     approvals: Array.isArray(state && state.approvals) ? state.approvals.slice() : [],

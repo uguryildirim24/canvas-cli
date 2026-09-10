@@ -279,6 +279,15 @@ no request of its own — not to Canvas, not anywhere. Everything it draws
 arrives from `canvas bridge host` as one `panel` message. The service worker
 relays that message; it composes none of it.
 
+The API side of the page travels as whole §7 envelopes, the same documents
+`canvas course --json` and `canvas assignment --json` print, each keeping its
+own freshness. The host reads them **offline**: a panel is redrawn whenever
+the log moves or the person opens it, and a surface that fetched on every
+redraw would make the browser the reason Canvas is called. So a row the cache
+has not refreshed is shown as stale, and a fact the CLI does not have yet is
+shown as not held — never borrowed from the browser observation beside it,
+which is a hint and not a fact. There is no page text in any of this.
+
 ### Notes
 
 `canvas note --text …`, or `context.note` from an agent, holds one note for
@@ -440,9 +449,12 @@ anything, and the panel never shows more certainty than the journal holds.**
 23. **Notes survive a navigation and a pause; they die with the
     attachment.** They are a message to the person, not an observation of a
     page.
-24. **An approval event carries ids and the decision only.** Invalidating a
+24. **The panel's API side is read offline, and only offline.** The panel is
+    redrawn on every log move; fetching on each redraw would make opening a
+    browser panel the reason Canvas is called.
+25. **An approval event carries ids and the decision only.** Invalidating a
     plan because a fact changed is not a decision and records no event.
-25. **`MAX_REQUEST_BYTES` is larger than the note bound.** They used to be
+26. **`MAX_REQUEST_BYTES` is larger than the note bound.** They used to be
     the same 8 KiB, which made a note at its own limit come back as
     `protocol`. A person can act on `note_too_large`; nobody can act on
     `protocol`.

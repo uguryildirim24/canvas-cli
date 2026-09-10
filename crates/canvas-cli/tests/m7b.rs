@@ -340,6 +340,42 @@ fn a_stale_follow_is_refused_before_the_browser_is_asked() {
     host.stop();
 }
 
+/// M7-b acceptance: the panel is shown the API side as whole envelopes, with
+/// each one's own freshness, and no page text anywhere.
+#[test]
+fn the_panel_carries_whole_api_envelopes_and_no_page_text() {
+    let f = Fixture::new();
+    let mut host = attached(&f);
+
+    host.send(&json!({ "type": "panel_hello", "protocol": "bridge-native@1" }));
+    let panel = panel_of(&mut host);
+
+    // The route names a course and an assignment, so both slots hold a whole
+    // §7 envelope. With nothing in the local cache the handlers answer with
+    // their own refusal, which is the point: the panel shows what the CLI
+    // knows, including that it knows nothing yet, and never borrows a fact
+    // from the browser observation beside it.
+    for slot in ["course", "assignment"] {
+        let envelope = &panel["api"][slot];
+        assert!(envelope["schema"].is_string(), "{slot}: {panel}");
+        assert!(envelope["outcome"].is_string(), "{slot}: {envelope}");
+        assert!(envelope["freshness"].is_array(), "{slot}: {envelope}");
+    }
+    assert_eq!(panel["api"]["announcement"], Value::Null);
+
+    // Metadata only. The panel never asks the page for its words, and the
+    // host never asks the browser for them on the panel's behalf.
+    let whole = panel.to_string();
+    assert!(
+        !whole.contains("\"text\":\""),
+        "the panel carried text: {whole}"
+    );
+    assert_eq!(panel["title"], "Essay 1");
+    assert_eq!(panel["ttl_ms"], 0);
+
+    host.stop();
+}
+
 // ----------------------------------------------------------- the status feed
 
 /// M7-b acceptance: the panel is told when the event log moves, and the

@@ -78,6 +78,12 @@ struct Host {
     ///
     /// The panel shows what the host reads; the extension opens no database.
     session: Arc<Session>,
+    /// The globals this host was started with.
+    ///
+    /// Only the panel uses them, and only to read the API side of the page
+    /// from the local cache. It forces `offline` first, so drawing the panel
+    /// never becomes the reason a Canvas request happens.
+    globals: crate::commands::Globals,
     /// Where the panel's feed of the event log stands.
     ///
     /// The panel is one more consumer of the M6-c log and follows its cursor
@@ -191,6 +197,7 @@ async fn serve(globals: &Globals, caller_origin: Option<&str>) -> Result<(), Hos
         waiters: TextWaiters::default(),
         navigations: NavigateWaiters::default(),
         session: Arc::new(session),
+        globals: globals.clone(),
         panel_cursor: Arc::new(Mutex::new(0)),
         stop: Arc::new(tokio::sync::Notify::new()),
         stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -492,11 +499,13 @@ async fn push_panel(host: &Arc<Host>) {
     let context = host.broker.lock().await.context(None, None, false).ok();
     let session = Arc::clone(&host.session);
     let since = read_cursor(host);
+    let observed = context.clone();
     let state = tokio::task::spawn_blocking(move || {
-        Box::new(panel::state(&session, context.as_ref(), since))
+        Box::new(panel::state(&session, observed.as_ref(), since))
     })
     .await;
-    let state = state.unwrap_or_else(|_| Box::new(PanelState::default()));
+    let mut state = state.unwrap_or_else(|_| Box::new(PanelState::default()));
+    state.api = panel::api(&host.globals, context.as_ref()).await;
     set_cursor(host, state.cursor);
     host.send(&HostMessage::Panel { state });
 }
