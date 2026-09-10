@@ -70,6 +70,9 @@ async fn main() -> ExitCode {
         runtime.block_on(async move {
             match cli.command {
                 Commands::Version => commands::version::run(globals.json),
+                Commands::Schema { command, list } => {
+                    commands::schema::run(command.as_deref(), list)
+                }
                 Commands::Completions { shell } => commands::completions::run(shell),
                 Commands::Auth { command } => match commands::auth::run(&globals, command).await {
                     Ok(()) => ExitCode::SUCCESS,

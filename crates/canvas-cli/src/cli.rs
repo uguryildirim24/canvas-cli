@@ -312,6 +312,15 @@ pub enum Commands {
         #[arg(long)]
         network: bool,
     },
+    /// Print the JSON Schema of a command's `--json` output.
+    Schema {
+        /// Command to describe, for example `todo` or `assignment`.
+        #[arg(value_name = "COMMAND", required_unless_present = "list")]
+        command: Option<String>,
+        /// List every registered schema instead.
+        #[arg(long, conflicts_with = "command")]
+        list: bool,
+    },
     /// Generate shell completions.
     Completions {
         /// Shell to generate completions for.
@@ -488,6 +497,7 @@ impl Commands {
     pub fn has_raw_output(&self) -> bool {
         match self {
             Self::Completions { .. }
+            | Self::Schema { .. }
             | Self::Auth {
                 command: AuthCommand::Token { reveal: true },
             }
