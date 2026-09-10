@@ -1,0 +1,14 @@
+{
+  "method": "GET",
+  "path": "/api/v1/users/self",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": {
+    "id": 1001,
+    "login_id": "user1",
+    "name": "Name 1",
+    "short_name": "Name 1",
+    "sortable_name": "Name 1"
+  }
+}

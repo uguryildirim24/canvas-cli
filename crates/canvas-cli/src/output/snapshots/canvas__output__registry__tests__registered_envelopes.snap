@@ -1148,10 +1148,33 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "announcements": [],
+      "announcements": [
+        {
+          "author": "Ada Lovelace",
+          "course_code": "CS-101",
+          "course_id": "101",
+          "html_url": "https://example.instructure.com/courses/101/discussion_topics/9001",
+          "id": "9001",
+          "posted_at": "2026-09-08T14:00:00Z",
+          "posted_at_local": "2026-09-08T10:00:00-04:00",
+          "read": false,
+          "title": "Lab 3 is posted"
+        },
+        {
+          "author": null,
+          "course_code": "MATH-201",
+          "course_id": "102",
+          "html_url": "https://example.instructure.com/courses/102/discussion_topics/9000",
+          "id": "9000",
+          "posted_at": "2026-09-02T18:30:00Z",
+          "posted_at_local": "2026-09-02T14:30:00-04:00",
+          "read": true,
+          "title": "Quiz 2 moved to Friday"
+        }
+      ],
       "window": {
         "end": "2026-09-09",
-        "start": "2026-09-01"
+        "start": "2026-08-26"
       }
     },
     "schema": "canvas-cli/announcements@1",
@@ -1209,10 +1232,65 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "items": [],
+      "items": [
+        {
+          "all_day": false,
+          "all_day_date": null,
+          "course_code": "CS-101",
+          "course_id": "101",
+          "due_at": "2026-09-09T23:59:00Z",
+          "due_at_local": "2026-09-09T19:59:00-04:00",
+          "end_at": null,
+          "end_at_local": null,
+          "html_url": "https://example.instructure.com/courses/101/assignments/500",
+          "id": "500",
+          "is_deadline": true,
+          "kind": "assignment",
+          "start_at": null,
+          "start_at_local": null,
+          "title": "Problem Set 2",
+          "uid": "canvas-assignment-500@example.instructure.com-1-deadbeef"
+        },
+        {
+          "all_day": false,
+          "all_day_date": null,
+          "course_code": "CS-101",
+          "course_id": "101",
+          "due_at": null,
+          "due_at_local": null,
+          "end_at": "2026-09-10T16:00:00Z",
+          "end_at_local": "2026-09-10T12:00:00-04:00",
+          "html_url": "https://example.instructure.com/calendar?event_id=700&include_contexts=course_101",
+          "id": "700",
+          "is_deadline": false,
+          "kind": "event",
+          "start_at": "2026-09-10T15:00:00Z",
+          "start_at_local": "2026-09-10T11:00:00-04:00",
+          "title": "Review session",
+          "uid": "canvas-event-700@example.instructure.com-1-deadbeef"
+        },
+        {
+          "all_day": true,
+          "all_day_date": "2026-09-14",
+          "course_code": null,
+          "course_id": null,
+          "due_at": null,
+          "due_at_local": null,
+          "end_at": "2026-09-14T04:00:00Z",
+          "end_at_local": "2026-09-14T00:00:00-04:00",
+          "html_url": null,
+          "id": "701",
+          "is_deadline": false,
+          "kind": "event",
+          "start_at": "2026-09-14T04:00:00Z",
+          "start_at_local": "2026-09-14T00:00:00-04:00",
+          "title": "Reading day",
+          "uid": "canvas-event-701@example.instructure.com-1-deadbeef"
+        }
+      ],
       "window": {
-        "end": "2026-09-16",
-        "start": "2026-09-09"
+        "end": "2026-09-22",
+        "start": "2026-09-08"
       }
     },
     "schema": "canvas-cli/calendar@1",

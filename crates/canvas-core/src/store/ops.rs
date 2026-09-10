@@ -25,6 +25,65 @@ pub struct FetchLogRow {
     pub window_end: Option<Timestamp>,
 }
 
+/// `fetch_log.error` marker for a window dataset whose batches were isolated
+/// per context (§10, §12.6): `contexts_denied:<status>@<context>,...`.
+///
+/// Coverage is still complete — every batch was stored or isolated — so the
+/// listed contexts are reported as `partial[]` rather than as a failure, and
+/// they survive in the cache so a later cached read reports them too.
+pub const CONTEXT_DENIED_PREFIX: &str = "contexts_denied:";
+
+/// Encode isolated per-context denials for `fetch_log.error`.
+///
+/// Returns `None` when nothing was denied, so callers store no error at all.
+#[must_use]
+pub fn encode_context_denials(denials: &[(String, u16)]) -> Option<String> {
+    if denials.is_empty() {
+        return None;
+    }
+    let mut pairs: Vec<String> = denials
+        .iter()
+        .filter(|(context, _)| is_context_code(context))
+        .map(|(context, status)| format!("{status}@{context}"))
+        .collect();
+    pairs.sort();
+    pairs.dedup();
+    if pairs.is_empty() {
+        return None;
+    }
+    Some(format!("{CONTEXT_DENIED_PREFIX}{}", pairs.join(",")))
+}
+
+/// Decode [`encode_context_denials`]. Any other error string yields `[]`.
+#[must_use]
+pub fn parse_context_denials(error: &str) -> Vec<(String, u16)> {
+    let Some(body) = error.strip_prefix(CONTEXT_DENIED_PREFIX) else {
+        return Vec::new();
+    };
+    body.split(',')
+        .filter_map(|pair| {
+            let (status, context) = pair.split_once('@')?;
+            let status: u16 = status.parse().ok()?;
+            (is_context_code(context) && (400..600).contains(&status))
+                .then(|| (context.to_owned(), status))
+        })
+        .collect()
+}
+
+/// True when `error` is a well-formed context-denial marker.
+#[must_use]
+pub fn is_context_denial(error: &str) -> bool {
+    error.starts_with(CONTEXT_DENIED_PREFIX) && !parse_context_denials(error).is_empty()
+}
+
+/// Context codes are `<kind>_<id>`; reject anything that could confuse the
+/// `,` and `@` separators or hide a newline in the stored row.
+fn is_context_code(code: &str) -> bool {
+    !code.is_empty()
+        && code.len() <= 64
+        && code.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
 /// Query parameters for [`lookup`].
 #[derive(Debug, Clone)]
 pub struct LookupQuery<'a> {

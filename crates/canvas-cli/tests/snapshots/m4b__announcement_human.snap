@@ -1,0 +1,11 @@
+---
+source: crates/canvas-cli/tests/m4b.rs
+expression: stdout
+---
+Lab 3 is posted
+posted 2026-09-08T10:00:00-04:00
+by Ada Lovelace
+unread
+https://canvas.test/courses/1/discussion_topics/9001
+
+Read **chapter 3** first.

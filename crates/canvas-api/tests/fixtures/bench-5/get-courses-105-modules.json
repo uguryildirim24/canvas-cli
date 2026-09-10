@@ -1,0 +1,50 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses/105/modules",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "id": 2100,
+      "items": [
+        {
+          "content_details": {
+            "locked_for_user": false
+          },
+          "content_id": 10511,
+          "id": 2101,
+          "module_id": 2100,
+          "position": 1,
+          "title": "Reading",
+          "type": "File"
+        },
+        {
+          "content_details": {
+            "locked_for_user": false
+          },
+          "content_id": 10501,
+          "id": 2102,
+          "module_id": 2100,
+          "position": 2,
+          "title": "Assignment 1",
+          "type": "Assignment"
+        }
+      ],
+      "items_count": 2,
+      "name": "Unit 1",
+      "position": 1,
+      "published": true,
+      "state": "unlocked"
+    },
+    {
+      "id": 2110,
+      "items": [],
+      "items_count": 0,
+      "name": "Unit 2",
+      "position": 2,
+      "published": true,
+      "state": "unlocked"
+    }
+  ]
+}
