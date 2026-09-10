@@ -231,15 +231,18 @@ fn upsert_assignment_group(
         &column_fields,
     )?;
     apply_group_columns(tx, id, &column_fields, &applied.fields)?;
-    if let Some(entry) = payload.first() {
-        merge_period_assignments(tx, id, period_value, entry.value.as_deref(), fetched_at)?;
-    }
+    let wrote_payload = match payload.first() {
+        Some(entry) => {
+            merge_period_assignments(tx, id, period_value, entry.value.as_deref(), fetched_at)?
+        }
+        None => false,
+    };
     touch_group_observed(
         tx,
         id,
         fetched_at,
         applied.core,
-        applied.detail || !payload.is_empty(),
+        applied.detail || wrote_payload,
         applied.status,
     )?;
     Ok(())
@@ -332,16 +335,17 @@ fn apply_group_columns(
     Ok(())
 }
 
-/// Replace only this period's entry, keeping every other period's list and clock.
+/// Replace only this period's entry, keeping every other period's list and
+/// clock. Returns whether the entry was written.
 fn merge_period_assignments(
     tx: &Transaction<'_>,
     id: i64,
     period_value: &str,
     payload: Option<&str>,
     fetched_at: Timestamp,
-) -> Result<(), IngestError> {
+) -> Result<bool, IngestError> {
     let Some(payload) = payload else {
-        return Ok(());
+        return Ok(false);
     };
     let entry: Value = serde_json::from_str(payload).map_err(|e| {
         DbError::Sqlite(rusqlite::Error::FromSqlConversionFailure(
@@ -379,14 +383,14 @@ fn merge_period_assignments(
         .and_then(|v| v.parse::<Timestamp>().ok())
         .is_some_and(|prev| prev > fetched_at);
     if newer {
-        return Ok(());
+        return Ok(false);
     }
     by_period.insert(period_value.to_owned(), entry);
     tx.execute(
         "UPDATE assignment_groups SET data_json = ?1 WHERE id = ?2",
         params![data.to_string(), id],
     )?;
-    Ok(())
+    Ok(true)
 }
 
 fn touch_group_observed(
