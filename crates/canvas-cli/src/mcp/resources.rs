@@ -168,11 +168,13 @@ pub async fn read(
 /// the answer is that no context is attached.
 fn not_attached(globals: &Globals, handle: &str) -> Handled {
     let message = format!("no context is attached for consumer {handle}");
+    // The same shape every other §3.2 refusal has: code `refused`, and the
+    // reason in `details.reason`, so one rule reads them all.
     let mut envelope = error_envelope(
-        "not_attached",
+        "refused",
         &message,
         None,
-        json!({ "consumer": handle }),
+        json!({ "reason": "not_attached", "consumer": handle }),
         8,
     );
     envelope.outcome = Outcome::Refused;
@@ -300,8 +302,12 @@ mod tests {
         let handled = not_attached(&globals, "consumer-1");
         assert_eq!(handled.exit(), 8);
         let document = handled.envelope().to_value();
-        assert_eq!(document["result"]["code"], "not_attached");
         assert_eq!(document["outcome"], "refused");
+        // REPORT §3.2 puts the reason in `reason`, exactly as a plan refusal
+        // reports `expired`, `invalidated`, or `approval_required`.
+        assert_eq!(document["result"]["code"], "refused");
+        assert_eq!(document["result"]["details"]["reason"], "not_attached");
+        assert_eq!(document["result"]["details"]["consumer"], "consumer-1");
     }
 
     #[test]
