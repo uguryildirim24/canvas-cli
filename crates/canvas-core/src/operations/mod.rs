@@ -103,11 +103,16 @@ pub enum OperationError {
 }
 
 impl OperationError {
-    /// The `reason` this error carries when it is a prepare refusal.
+    /// The `reason` this error carries when it is a refusal.
+    ///
+    /// A plan-layer refusal keeps its own reason (`expired`, `invalidated`,
+    /// `approval_required`), because an operation plan is a plan: a caller
+    /// that reads `reason` must get the same words either layer produced.
     #[must_use]
-    pub fn refusal_reason(&self) -> Option<&'static str> {
+    pub fn refusal_reason(&self) -> Option<&str> {
         match self {
             Self::Refused { reason, .. } => Some(reason),
+            Self::Plan(error) => error.refusal_reason(),
             _ => None,
         }
     }
