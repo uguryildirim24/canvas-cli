@@ -1711,7 +1711,7 @@ When the owner lock is free but the journal is not terminal, the row is given th
 | `posting` | `outcome_unknown`, `response_kind: "none"` | the request may have been on the wire; the answer is not known |
 | any terminal state | unchanged | there is nothing to recover |
 
-This runs over every non-terminal journal of a target before a new one is admitted, so an abandoned operation never blocks a target forever and never turns into a second message. Only `execute` and `operation reconcile` recover; a readback is not a recoverer.
+This runs over every non-terminal journal of a target before a new one is admitted, so an abandoned operation never blocks a target forever and never turns into a second message. `prepare`, `execute`, and `operation reconcile` recover; `operation status` does not, because a readback is not a recoverer.
 
 **Nothing is ever resent automatically.** A journal reaches `outcome_unknown` from a timeout, a transport failure after the request was written, a crash during `posting`, or a **5xx answer**. A `5xx` is `outcome_unknown` and not `failed`, because §12.2 records that Canvas can answer `500` after it has committed, so the answer proves nothing and calling it failed would invite a resend. A `4xx` stays `failed`: Canvas rejected the request.
 
