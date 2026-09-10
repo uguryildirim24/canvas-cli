@@ -6,6 +6,7 @@ mod assignment_read;
 pub mod assignments;
 pub mod auth;
 pub mod cache;
+pub mod completions;
 pub mod config_cmd;
 pub mod course;
 pub mod course_load;
@@ -19,6 +20,7 @@ pub mod modules;
 pub mod open;
 pub mod sync;
 pub mod todo;
+pub mod version;
 
 use crate::output::ColorMode;
 use crate::session::{Session, SessionError};

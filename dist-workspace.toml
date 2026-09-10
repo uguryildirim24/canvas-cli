@@ -1,0 +1,39 @@
+[workspace]
+members = ["cargo:."]
+
+# SPEC §17. The repository has no remote and no tap yet: this config is
+# complete but nothing is published. See docs/release.md.
+[dist]
+cargo-dist-version = "0.32.0"
+# Archives, checksums, and the Homebrew formula are all a release needs.
+# No shell or powershell installer: those are direct archive downloads, and
+# §17 rules those out on macOS until signing and notarization exist. Keeping
+# them off for every platform means one documented install route per platform
+# instead of an unsigned fallback users find first.
+installers = ["homebrew"]
+tap = "uguryildirim24/homebrew-tap"
+formula = "canvas-lms-cli"
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+]
+ci = ["github"]
+# The release job only ever runs from a pushed tag; pull requests stop at
+# `dist plan`.
+pr-run-mode = "plan"
+# No publish job. The tap does not exist yet, and dist 0.32 would push its own
+# formula, which has no man page or completion install lines: `xtask
+# dist-formula` adds those, and docs/release.md is the owner's tap step. This is
+# what `dist plan` warns about, and the warning is expected.
+publish-jobs = []
+install-updater = false
+# `cargo xtask dist-assets` writes these before the archives are built.
+include = [
+    "target/dist-assets/man",
+    "target/dist-assets/completions",
+]
+# Injects the `dist-assets` step into the generated build job.
+github-build-setup = "build-setup.yml"
