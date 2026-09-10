@@ -203,3 +203,28 @@ async fn wider_planner_cache_has_real_exclusive_window_coverage() {
     assert_eq!(hit.freshness.scope, wide.scope_key());
     assert!(hit.freshness.stale);
 }
+
+#[test]
+fn planner_partial_flags_null_and_newest_missing_fields_share_observations() {
+    let (_dir, open) = setup();
+    open.store.call_blocking(|conns|{
+        let ds=PlannerDataset::with_default_ttl(PlannerWindow::from_days("2026-09-01".parse().unwrap(),14));
+        for (time,raw) in [
+            (100,json!({"plannable_type":"quiz","plannable_id":99,"course_id":1,"plannable":{"assignment_id":"2","title":"Old","due_at":"2026-09-01T00:00:00Z"},"submissions":{"submitted":true,"graded":true},"planner_override":{"dismissed":true}})),
+            (300,json!({"plannable_type":"quiz","plannable_id":99,"submissions":{"late":true}})),
+        ] {
+            let entity=super::planner::observed_planner(&raw).unwrap().unwrap();
+            ds.ingest(&[IngestPage{fetched_at:at(time),entities:vec![entity]}],&opts(),conns).unwrap();
+        }
+        let missing:Observed<Assignment>=serde_json::from_value(json!({"id":2,"course_id":1,"name":"New title","submission":{"score":9}})).unwrap();
+        MissingDataset::with_default_ttl().ingest(&[IngestPage{fetched_at:at(200),entities:vec![missing.entity(None)]}],&opts(),conns).unwrap();
+        let canonical=crate::todo::load_assignment_item(conns,2,at(301),default_ttl_assignments())?.unwrap();
+        assert_eq!(canonical.title,"New title");assert_eq!(canonical.status.submitted,Some(true));assert_eq!(canonical.status.graded,Some(true));assert_eq!(canonical.status.score,Some(9.0));
+        let planner=crate::todo::load_planner_rows(conns,&ds.window.scope_key())?;
+        let data:Value=serde_json::from_str(&planner[0].data_json).unwrap();assert_eq!(data["graded"],true);assert_eq!(data["late"],true);
+        let null=super::planner::observed_planner(&json!({"plannable_type":"quiz","plannable_id":99,"plannable":{"assignment_id":2},"submissions":null,"planner_override":null})).unwrap().unwrap();
+        ds.ingest(&[IngestPage{fetched_at:at(400),entities:vec![null]}],&opts(),conns).unwrap();
+        let canonical=crate::todo::load_assignment_item(conns,2,at(401),default_ttl_assignments())?.unwrap();assert_eq!(canonical.status.submitted,None);assert_eq!(canonical.status.graded,None);
+        Ok(())
+    }).unwrap();
+}

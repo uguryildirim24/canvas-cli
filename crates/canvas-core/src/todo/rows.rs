@@ -73,6 +73,7 @@ pub fn load_assignment_item(
         item.status = TodoStatus {
             pending: true,
             missing: item.status.missing,
+            locked: item.status.locked,
             ..TodoStatus::default()
         };
     }

@@ -276,6 +276,7 @@ pub fn build_todo_in_zone(
             item.status = TodoStatus {
                 pending: true,
                 missing: item.status.missing,
+                locked: item.status.locked,
                 ..TodoStatus::default()
             };
         }
@@ -425,6 +426,7 @@ fn planner_to_item(
     if let Some(subs) = data.get("submissions_json") {
         apply_submissions_blob(&mut status, subs);
     }
+    apply_submissions_blob(&mut status, &data);
     let unlock_at = parse_opt_ts(data.get("unlock_at"));
     let lock_at = parse_opt_ts(data.get("lock_at"));
     let availability = TodoAvailability {
@@ -612,22 +614,18 @@ fn merge_missing_into(existing: &mut TodoItem, missing: &TodoItem) {
 }
 
 fn apply_submissions_blob(status: &mut TodoStatus, value: &Value) {
-    if let Some(obj) = value.as_object() {
-        if let Some(v) = obj.get("submitted").and_then(Value::as_bool) {
-            status.submitted = Some(v);
+    for (name, target) in [
+        ("submitted", &mut status.submitted),
+        ("graded", &mut status.graded),
+        ("excused", &mut status.excused),
+        ("late", &mut status.late),
+    ] {
+        if let Some(v) = value.get(name) {
+            *target = v.as_bool();
         }
-        if let Some(v) = obj.get("graded").and_then(Value::as_bool) {
-            status.graded = Some(v);
-        }
-        if let Some(v) = obj.get("excused").and_then(Value::as_bool) {
-            status.excused = Some(v);
-        }
-        if let Some(v) = obj.get("late").and_then(Value::as_bool) {
-            status.late = Some(v);
-        }
-        if let Some(v) = obj.get("missing").and_then(Value::as_bool) {
-            status.missing = v;
-        }
+    }
+    if let Some(v) = value.get("missing") {
+        status.missing = v.as_bool().unwrap_or(false);
     }
 }
 
