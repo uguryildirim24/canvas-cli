@@ -12,11 +12,11 @@ use serde_json::{Map, Value, json};
 use crate::output::envelope::{Envelope, ErrorResult};
 use crate::output::registry::{
     self, AliasResult, AnnouncementResult, AnnouncementsResult, CacheStatsResult, CalendarResult,
-    CourseResult, CoursesResult, DownloadResult, FilesResult, GradesResult, ModulesResult,
-    PlanResult, SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_CACHE,
-    SCHEMA_CALENDAR, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOWNLOAD, SCHEMA_ERROR, SCHEMA_FILES,
-    SCHEMA_GRADES, SCHEMA_MODULES, SCHEMA_PLAN, SCHEMA_SUBMIT, SCHEMA_SYNC, SchemaEntry,
-    SubmitResult, SyncResult,
+    CourseResult, CoursesResult, DownloadResult, FilesResult, GradesResult, HereResult,
+    ModulesResult, PlanResult, SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS,
+    SCHEMA_CACHE, SCHEMA_CALENDAR, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOWNLOAD, SCHEMA_ERROR,
+    SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_HERE, SCHEMA_MODULES, SCHEMA_PLAN, SCHEMA_SUBMIT,
+    SCHEMA_SYNC, SchemaEntry, SubmitResult, SyncResult,
 };
 
 /// The contract version of the document `canvas schema` prints.
@@ -87,6 +87,7 @@ fn result_schema(entry: &SchemaEntry) -> (Value, &'static str) {
         SCHEMA_CACHE => Some(schema_of::<CacheStatsResult>()),
         SCHEMA_SUBMIT => Some(schema_of::<SubmitResult>()),
         SCHEMA_PLAN => Some(schema_of::<PlanResult>()),
+        SCHEMA_HERE => Some(schema_of::<HereResult>()),
         SCHEMA_FILES => Some(schema_of::<FilesResult>()),
         SCHEMA_MODULES => Some(schema_of::<ModulesResult>()),
         SCHEMA_GRADES => Some(schema_of::<GradesResult>()),

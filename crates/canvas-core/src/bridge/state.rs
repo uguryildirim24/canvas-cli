@@ -353,14 +353,15 @@ impl Broker {
         }
     }
 
-    /// End one attachment by its id.
-    pub fn detach(&mut self, attachment_id: &str) -> Result<(), Reason> {
-        match self.attachment.as_ref() {
-            Some(current) if current.id == attachment_id => {
+    /// End one attachment by its id, or the sole one when none is named.
+    pub fn detach(&mut self, attachment_id: Option<&str>) -> Result<(), Reason> {
+        match (self.attachment.as_ref(), attachment_id) {
+            (Some(current), Some(id)) if current.id != id => Err(Reason::NotAttached),
+            (Some(_), _) => {
                 self.attachment = None;
                 Ok(())
             }
-            _ => Err(Reason::NotAttached),
+            (None, _) => Err(Reason::NotAttached),
         }
     }
 
@@ -748,7 +749,7 @@ mod tests {
         };
         assert_ne!(first, second);
         assert_eq!(broker.list().len(), 1);
-        assert_eq!(broker.detach(&first), Err(Reason::NotAttached));
+        assert_eq!(broker.detach(Some(&first)), Err(Reason::NotAttached));
     }
 
     #[test]
@@ -1005,7 +1006,7 @@ mod tests {
             Zone::Open,
             extract("the prompt"),
         );
-        broker.detach(&id).expect("detach");
+        broker.detach(Some(&id)).expect("detach");
         assert_eq!(
             broker.context(Some(&id), Some("mcp:alpha"), true),
             Err(Reason::NotAttached)

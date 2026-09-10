@@ -270,9 +270,15 @@ pub enum HostMessage {
         protocol: String,
         identity_key: String,
         origin: String,
+        /// `bridge.pause_hidden_after`, in milliseconds. The extension owns
+        /// the timer, because only it can see the tab.
+        pause_hidden_after_ms: u64,
     },
-    /// The attachment exists. The id never reaches the page.
-    Attached { attachment_id: String },
+    /// The attachment exists.
+    ///
+    /// The opaque id stays in the host: the extension has no use for it, and
+    /// a value the service worker never holds is one a page can never reach.
+    Attached { state: String },
     /// A consumer asked for text; re-probe and extract.
     RequestText {
         request_id: String,

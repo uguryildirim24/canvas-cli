@@ -158,8 +158,15 @@ pub enum Op {
         include_text: bool,
     },
     /// Drop the attachment.
+    ///
+    /// `attachment_id` follows the same rule as `here`: it is the capability,
+    /// and its absence selects the sole attachment, which REPORT §3.2 permits
+    /// the CLI and nothing else.
     #[serde(rename = "detach")]
-    Detach { attachment_id: String },
+    Detach {
+        #[serde(default)]
+        attachment_id: Option<String>,
+    },
     /// Let go of the identity so `identity remove` can take the exclusive
     /// lock, then exit.
     #[serde(rename = "release")]
@@ -300,7 +307,7 @@ mod tests {
                 include_text: true,
             },
             Op::Detach {
-                attachment_id: "0123456789abcdef0123456789abcdef".to_owned(),
+                attachment_id: Some("0123456789abcdef0123456789abcdef".to_owned()),
             },
         ] {
             let line = serde_json::to_string(&Request::new("1", op.clone())).expect("encode");
