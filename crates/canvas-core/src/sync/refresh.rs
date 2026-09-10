@@ -3,7 +3,7 @@
 #![allow(clippy::too_many_arguments, clippy::too_many_lines)]
 
 use canvas_api::Client;
-use canvas_api::models::{Assignment, Course, Enrollment, GradingPeriod, PlannerItem, Submission};
+use canvas_api::models::{Assignment, Course, Enrollment, GradingPeriod};
 use futures_util::StreamExt;
 use jiff::{Span, Timestamp};
 
@@ -16,10 +16,10 @@ use super::assignments::{AssignmentsDataset, assignments_path};
 use super::courses::{CoursesDataset, CoursesScope, courses_path};
 use super::enrollment_grades::{EnrollmentGradesDataset, PeriodKey, enrollment_grades_path};
 use super::grading_periods::{GradingPeriodsDataset, grading_periods_path};
-use super::missing::{MissingDataset, missing_path, missing_to_ingest_page};
+use super::missing::{MissingDataset, missing_path};
 use super::outcome::{FreshnessInfo, FreshnessSource, RefreshOutcome, SyncError};
-use super::planner::{PlannerDataset, PlannerWindow, planner_path, planner_to_ingest_page};
-use super::submission::{SubmissionDataset, submission_path, submission_to_ingest_page};
+use super::planner::{PlannerDataset, PlannerWindow, planner_path};
+use super::submission::{SubmissionDataset, observed_submission, submission_path};
 use super::wire::Observed;
 
 /// Optional window metadata written into `fetch_log`.
@@ -224,10 +224,13 @@ pub async fn refresh_missing(
             let mut stream = std::pin::pin!(client.get_all::<Observed<Assignment>>(&path));
             while let Some(page) = stream.next().await {
                 let page = page?;
-                items.extend(page.items.into_iter().map(|o| o.model));
+                items.extend(page.items);
             }
             Ok(FetchBundle {
-                pages: vec![missing_to_ingest_page(&items, now)],
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: items.into_iter().map(|o| o.entity(None)).collect(),
+                }],
             })
         },
     )
@@ -263,13 +266,22 @@ pub async fn refresh_planner(
         || async {
             let path = planner_path(&window);
             let mut items = Vec::new();
-            let mut stream = std::pin::pin!(client.get_all::<PlannerItem>(&path));
+            let mut stream = std::pin::pin!(client.get_all::<serde_json::Value>(&path));
             while let Some(page) = stream.next().await {
                 let page = page?;
                 items.extend(page.items);
             }
             Ok(FetchBundle {
-                pages: vec![planner_to_ingest_page(&items, now)],
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: items
+                        .into_iter()
+                        .map(|raw| super::planner::observed_planner(&raw))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect(),
+                }],
             })
         },
     )
@@ -299,9 +311,12 @@ pub async fn refresh_submission(
         None,
         || async {
             let path = submission_path(course_id, assignment_id);
-            let submission: Submission = client.get(&path).await?;
+            let submission = observed_submission(&client.get(&path).await?, assignment_id)?;
             Ok(FetchBundle {
-                pages: vec![submission_to_ingest_page(&submission, now)],
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: vec![submission],
+                }],
             })
         },
     )

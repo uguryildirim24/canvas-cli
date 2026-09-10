@@ -1,5 +1,6 @@
 //! Dataset refresh and sync (SPEC §10).
 
+mod assignment_detail;
 mod assignments;
 mod course;
 mod course_totals;
@@ -55,3 +56,8 @@ pub use submission::{
     SubmissionDataset, submission_path, submission_to_entity, submission_to_ingest_page,
 };
 pub use terms::{TermsDataset, default_ttl_terms, term_to_entity, upsert_term};
+
+pub use assignment_detail::{AssignmentDetailDataset, refresh_assignment};
+
+#[cfg(test)]
+mod m1c_review_tests;

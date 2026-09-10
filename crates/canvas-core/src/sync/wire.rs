@@ -232,28 +232,52 @@ impl Observed<GradingPeriod> {
 }
 
 impl Observed<Assignment> {
-    /// Project an assignment, preserving three-state supply from the raw payload.
+    /// Project allowlisted fields, preserving explicit null for optional fields.
     pub fn entity(self, course_hint: Option<i64>) -> EntityIngest {
         let mut entity = assignment_to_entity(&self.model, course_hint);
-        for (name, group) in [
-            ("name", FieldGroup::Core),
-            ("due_at", FieldGroup::Core),
-            ("unlock_at", FieldGroup::Core),
-            ("lock_at", FieldGroup::Core),
-            ("points_possible", FieldGroup::Core),
-            ("html_url", FieldGroup::Core),
-            ("description", FieldGroup::Detail),
-            ("submission_types", FieldGroup::Detail),
-            ("allowed_extensions", FieldGroup::Detail),
-            ("allowed_attempts", FieldGroup::Detail),
-            ("can_submit", FieldGroup::Detail),
-            ("workflow_state", FieldGroup::Status),
-        ] {
-            observe(&mut entity.fields, &self.raw, name, group);
+        for name in ["locked_for_user", "lock_explanation", "group_category_id"] {
+            if self.raw.get(name).is_some_and(Value::is_null) {
+                observe(&mut entity.fields, &self.raw, name, FieldGroup::Detail);
+            }
         }
-        // List endpoints omit `can_submit`; ensure we do not invent a write when absent.
-        if self.raw.get("can_submit").is_none() {
-            entity.fields.retain(|f| f.name != "can_submit");
+        // Canvas exposes the tool's display name separately from capability URLs.
+        if let Some(tool) = self.raw.get("external_tool_tag_attributes") {
+            observe(
+                &mut entity.fields,
+                &json!({"external_tool_name": tool.get("name")}),
+                "external_tool_name",
+                FieldGroup::Detail,
+            );
+        }
+        if let Some(sub) = self.raw.get("submission") {
+            for name in ["extra_attempts", "posted_at"] {
+                if sub.get(name).is_some_and(Value::is_null) {
+                    observe(&mut entity.fields, sub, name, FieldGroup::Status);
+                }
+            }
+            if sub.is_null() {
+                for name in [
+                    "submitted",
+                    "graded",
+                    "score",
+                    "grade",
+                    "late",
+                    "missing",
+                    "excused",
+                    "workflow_state",
+                    "attempt",
+                    "submitted_at",
+                    "posted_at",
+                    "extra_attempts",
+                ] {
+                    entity.fields.retain(|f| f.name != name);
+                    entity.fields.push(FieldWrite {
+                        name,
+                        group: FieldGroup::Status,
+                        value: None,
+                    });
+                }
+            }
         }
         entity
     }
