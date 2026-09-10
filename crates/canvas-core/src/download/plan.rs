@@ -157,11 +157,9 @@ pub fn plan_course(input: &PlanInput) -> Result<Vec<PlannedFile>, PlanError> {
             if replace {
                 owner_key.insert(file_id, key);
                 let nn = format!("{:02}", module.position);
-                let slug = sanitize_component(
-                    &format!("{nn}-{}", module.name),
-                    ComponentKind::Module,
-                    module.id,
-                );
+                let slug = sanitize_component(&module.name, ComponentKind::Module, module.id);
+                let slug =
+                    sanitize_component(&format!("{nn}-{slug}"), ComponentKind::Module, module.id);
                 let display = sanitize_component(&item.title, ComponentKind::File, file_id);
                 let path = format!("{course_root}/modules/{slug}/{display}");
                 module_owner.insert(file_id, (file_id, module.id, path, None, None));
