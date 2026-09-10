@@ -247,7 +247,7 @@ pub fn list_journals(
                 let mut stmt = conns.state.prepare(
                     "SELECT journal_id FROM submission_journal
                      WHERE course_id = ?1 AND state = ?2
-                     ORDER BY created_at DESC, journal_id DESC",
+                     ORDER BY created_at DESC, journal_id ASC",
                 )?;
                 stmt.query_map(params![cid, state], |r| r.get::<_, String>(0))?
                     .collect::<Result<Vec<_>, _>>()?
@@ -256,7 +256,7 @@ pub fn list_journals(
                 let mut stmt = conns.state.prepare(
                     "SELECT journal_id FROM submission_journal
                      WHERE course_id = ?1
-                     ORDER BY created_at DESC, journal_id DESC",
+                     ORDER BY created_at DESC, journal_id ASC",
                 )?;
                 stmt.query_map(params![cid], |r| r.get::<_, String>(0))?
                     .collect::<Result<Vec<_>, _>>()?
@@ -265,7 +265,7 @@ pub fn list_journals(
                 let mut stmt = conns.state.prepare(
                     "SELECT journal_id FROM submission_journal
                      WHERE state = ?1
-                     ORDER BY created_at DESC, journal_id DESC",
+                     ORDER BY created_at DESC, journal_id ASC",
                 )?;
                 stmt.query_map(params![state], |r| r.get::<_, String>(0))?
                     .collect::<Result<Vec<_>, _>>()?
@@ -273,7 +273,7 @@ pub fn list_journals(
             (None, None) => {
                 let mut stmt = conns.state.prepare(
                     "SELECT journal_id FROM submission_journal
-                     ORDER BY created_at DESC, journal_id DESC",
+                     ORDER BY created_at DESC, journal_id ASC",
                 )?;
                 stmt.query_map([], |r| r.get::<_, String>(0))?
                     .collect::<Result<Vec<_>, _>>()?
@@ -582,10 +582,13 @@ pub fn export_journal(
 }
 
 fn write_mode_0600(path: &Path, bytes: &[u8]) -> Result<(), ReceiptError> {
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let tmp = parent.join(format!(".receipt-{}.tmp", Uuid::new_v4()));
     let result = (|| -> Result<(), std::io::Error> {
         let mut options = OpenOptions::new();
@@ -608,11 +611,6 @@ fn write_mode_0600(path: &Path, bytes: &[u8]) -> Result<(), ReceiptError> {
         let _ = fs::remove_file(&tmp);
     }
     result?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-    }
     Ok(())
 }
 
@@ -627,6 +625,7 @@ mod tests {
     };
     use crate::store::OpenIdentity;
     use serde_json::json;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
 
@@ -792,6 +791,7 @@ mod tests {
                 .join("receipts")
                 .join(format!("{receipt_id}.json"))
         );
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
