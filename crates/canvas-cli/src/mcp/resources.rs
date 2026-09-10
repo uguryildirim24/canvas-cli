@@ -172,27 +172,9 @@ pub async fn read(
         Target::Context(handle) if handle == consumer => {
             here::handle(globals, None, Some(handle), false).await
         }
-        Target::Context(handle) => foreign_consumer(globals, &handle),
+        Target::Context(handle) => here::foreign_consumer(globals, &handle),
     };
     Ok(contents(uri, &handled))
-}
-
-/// The answer to a `context/<handle>` naming some other consumer.
-///
-/// It is exactly what an unattached consumer reads, so the resource never
-/// says whether that other handle attached at all.
-fn foreign_consumer(globals: &Globals, handle: &str) -> Handled {
-    let message = format!("no context is attached for consumer {handle}");
-    let mut envelope = crate::output::error_envelope(
-        "refused",
-        &message,
-        None,
-        json!({ "reason": "not_attached", "consumer": handle }),
-        8,
-    );
-    envelope.outcome = crate::output::Outcome::Refused;
-    envelope.profile = globals.profile.clone();
-    Handled::error_envelope(envelope, message)
 }
 
 /// Wrap a finished command as resource contents with its freshness budget.
