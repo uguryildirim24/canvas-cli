@@ -1,5 +1,9 @@
 //! `canvas` command-line entry point.
 
+mod commands;
+mod output;
+mod session;
+
 use clap::{ArgGroup, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
 use std::io;
@@ -27,6 +31,16 @@ enum ColorChoice {
     Auto,
     Always,
     Never,
+}
+
+impl From<ColorChoice> for output::ColorMode {
+    fn from(value: ColorChoice) -> Self {
+        match value {
+            ColorChoice::Auto => Self::Auto,
+            ColorChoice::Always => Self::Always,
+            ColorChoice::Never => Self::Never,
+        }
+    }
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -446,9 +460,15 @@ enum AliasCommand {
     Remove { name: String },
 }
 
-fn not_implemented() -> ExitCode {
-    eprintln!("not implemented yet");
-    ExitCode::from(1)
+fn not_implemented(json: bool) -> ExitCode {
+    commands::emit::emit_error(
+        json,
+        "not_implemented",
+        "not implemented yet",
+        1,
+        None,
+        None,
+    )
 }
 
 impl Cli {
@@ -521,20 +541,54 @@ async fn main() -> ExitCode {
     if let Err(error) = cli.validate() {
         error.exit();
     }
+    let globals = commands::Globals {
+        json: cli.json,
+        color: cli.color.into(),
+        profile: cli.profile.clone(),
+        fresh: cli.fresh,
+        offline: cli.offline,
+        quiet: cli.quiet,
+    };
     match cli.command {
         Commands::Version => {
-            println!("{}", env!("CARGO_PKG_VERSION"));
-            ExitCode::SUCCESS
+            let envelope = output::Envelope::new(output::SCHEMA_VERSION, None, None).with_result(serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "commit": option_env!("CANVAS_COMMIT"), "target": env!("CANVAS_BUILD_TARGET") }));
+            commands::emit::emit(globals.json, &envelope, || {
+                use std::io::Write;
+                writeln!(io::stdout(), "{}", env!("CARGO_PKG_VERSION"))
+            })
         }
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
             generate(shell, &mut cmd, "canvas", &mut io::stdout());
             ExitCode::SUCCESS
         }
+        Commands::Courses {
+            all,
+            term,
+            favorites,
+        } => commands::courses::run(&globals, all, term, favorites).await,
+        Commands::Course { course } => commands::course::run(&globals, course).await,
+        Commands::Alias { command } => {
+            let cmd = match command {
+                AliasCommand::Set { name, course } => {
+                    commands::alias::AliasCmd::Set { name, course }
+                }
+                AliasCommand::List => commands::alias::AliasCmd::List,
+                AliasCommand::Remove { name } => commands::alias::AliasCmd::Remove { name },
+            };
+            commands::alias::run(&globals, cmd).await
+        }
+        Commands::Sync { full } => commands::sync::run(&globals, full).await,
+        Commands::Cache { command } => {
+            let cmd = match command {
+                CacheCommand::Stats => commands::cache::CacheCmd::Stats,
+                CacheCommand::Clear => commands::cache::CacheCmd::Clear,
+                CacheCommand::Path => commands::cache::CacheCmd::Path,
+            };
+            commands::cache::run(&globals, cmd).await
+        }
         Commands::Auth { .. }
         | Commands::Identity { .. }
-        | Commands::Courses { .. }
-        | Commands::Course { .. }
         | Commands::Todo { .. }
         | Commands::Assignments { .. }
         | Commands::Assignment { .. }
@@ -549,11 +603,8 @@ async fn main() -> ExitCode {
         | Commands::Announcement { .. }
         | Commands::Calendar { .. }
         | Commands::Open { .. }
-        | Commands::Sync { .. }
-        | Commands::Cache { .. }
         | Commands::Config { .. }
-        | Commands::Alias { .. }
-        | Commands::Doctor { .. } => not_implemented(),
+        | Commands::Doctor { .. } => not_implemented(globals.json),
     }
 }
 
