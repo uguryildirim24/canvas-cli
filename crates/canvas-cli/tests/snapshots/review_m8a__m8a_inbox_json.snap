@@ -93,6 +93,8 @@ expression: "normalized(listing, &server.uri())"
       "available": true,
       "http_status": null
     },
+    "pending": false,
+    "pending_journals": [],
     "scope": "inbox"
   },
   "schema": "canvas-cli/inbox@1",

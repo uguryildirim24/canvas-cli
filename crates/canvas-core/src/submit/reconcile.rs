@@ -371,7 +371,7 @@ fn apply_positive_evidence(
                     assume_available: false,
                     attribution: Some("unproven".into()),
                     receipt_id: Some(receipt.receipt_id),
-                    posted: Some(posted),
+                    posted,
                     server_match: None,
                     candidates: eval.candidates.clone(),
                     message: format!(
@@ -513,7 +513,7 @@ fn confirmed_result(
         ReconcileOutcome::Ok,
         message,
     );
-    result.posted = Some(doc.posted);
+    result.posted = doc.posted;
     result.receipt_id = Some(doc.receipt_id);
     result.attribution = Some(doc.attribution);
     Ok(result)

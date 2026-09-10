@@ -31,6 +31,7 @@ pub mod modules;
 pub mod note;
 pub mod notify;
 pub mod open;
+pub mod operation;
 pub mod pages;
 pub mod receipts;
 pub mod schema;

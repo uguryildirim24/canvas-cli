@@ -18,6 +18,7 @@ mod support;
 use std::process::Stdio;
 
 use canvas_core::journal::IntendedPayload;
+use canvas_core::plan::PlanKind;
 use canvas_core::plan::{NewPlan, PlanRow, PlanState, insert, issue_handle, load};
 use canvas_core::store::OpenIdentity;
 use canvas_core::submit::InputKind;
@@ -52,7 +53,7 @@ fn prepared(f: &Fixture, consumer: Option<&str>) -> (String, String, String) {
             consumer: consumer.map(str::to_owned),
             course_id: 45679,
             assignment_id: 98765,
-            kind: InputKind::OnlineTextEntry,
+            kind: PlanKind::Submission(InputKind::OnlineTextEntry),
             payload: IntendedPayload {
                 assignment_name: Some("Essay 1".to_owned()),
                 ..IntendedPayload::default()
@@ -61,6 +62,7 @@ fn prepared(f: &Fixture, consumer: Option<&str>) -> (String, String, String) {
             baseline_attempt: 0,
             baseline_submission_id: None,
             observations: canvas_core::plan::Observations::default(),
+            operation: None,
         },
         "2026-09-10T16:04:40Z".parse().expect("now"),
     )

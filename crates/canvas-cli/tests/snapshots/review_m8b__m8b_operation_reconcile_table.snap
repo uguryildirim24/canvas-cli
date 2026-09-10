@@ -1,0 +1,8 @@
+---
+source: crates/canvas-cli/tests/review_m8b.rs
+expression: "hide_read_time(&reconcile_human.replace(&journal_id,\n\"<journal_id>\").replace(&receipt_id, \"<receipt_id>\"))"
+---
+discussion_reply posted  journal=<journal_id>  verdict=observed
+attribution observed  delivery observable  owner n/a
+read 2 object(s) at <read_at>
+the reply this journal describes is in the thread; accepted by Canvas, and a later read of the thread shows it

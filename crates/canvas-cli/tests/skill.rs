@@ -41,6 +41,14 @@ const CATALOG: &[&str] = &[
     "submission.prepare",
     "submission.execute",
     "submission.reconcile",
+    "discussion.reply.prepare",
+    "discussion.reply.execute",
+    "inbox.send.prepare",
+    "inbox.send.execute",
+    "inbox.reply.prepare",
+    "inbox.reply.execute",
+    "operation.status",
+    "operation.reconcile",
     "receipts.acknowledge",
     "open.url",
     "context.attach",
@@ -50,11 +58,24 @@ const CATALOG: &[&str] = &[
     "context.follow",
 ];
 
-/// The two tools that can send anything to Canvas.
+/// The two tools that can send a submission to Canvas.
 ///
 /// They belong to one workflow, because a submission is one procedure: freeze
 /// a plan, show it to a person, then execute what was approved.
 const SUBMISSION: &[&str] = &["submission.prepare", "submission.execute"];
+
+/// The six tools that can write a reply or a message (M8-b).
+///
+/// Same rule, same reason: one procedure, one workflow, so no other file can
+/// imply that any of them sends something on its own.
+const WRITES: &[&str] = &[
+    "discussion.reply.prepare",
+    "discussion.reply.execute",
+    "inbox.send.prepare",
+    "inbox.send.execute",
+    "inbox.reply.prepare",
+    "inbox.reply.execute",
+];
 
 fn skill_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -72,18 +93,27 @@ fn files() -> Vec<PathBuf> {
     files
 }
 
-/// Whether a token is shaped like a tool name: `<noun>.<verb>`.
+/// Whether a token is shaped like a tool name: `<noun>.<verb>`, or the
+/// three-part form the M8-b writes use (`inbox.send.prepare`).
 fn tool_shaped(token: &str) -> bool {
-    let mut parts = token.split('.');
-    let (Some(head), Some(tail), None) = (parts.next(), parts.next(), parts.next()) else {
-        return false;
+    let parts: Vec<&str> = token.split('.').collect();
+    // Two parts, or three when the last one is a plan step: that is the only
+    // three-part shape the catalog has, and it keeps a dotted field path such
+    // as `result.details.reason` from being read as a tool name.
+    let shape = match parts.as_slice() {
+        [_, _] => true,
+        [_, _, last] => matches!(*last, "prepare" | "execute"),
+        _ => false,
     };
+    if !shape {
+        return false;
+    }
     let word = |part: &str| {
         !part.is_empty()
             && part.starts_with(|c: char| c.is_ascii_lowercase())
             && part.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
     };
-    word(head) && word(tail)
+    parts.iter().all(|part| word(part))
 }
 
 /// Every tool name the skill names.
@@ -135,6 +165,7 @@ fn the_skill_ships_one_file_per_workflow() {
             "prepare-and-submit.md",
             "read-an-assignment.md",
             "reconcile-an-unknown-outcome.md",
+            "reply-and-message-with-approval.md",
         ]
     );
 }
@@ -176,6 +207,41 @@ fn the_submission_tools_are_only_named_by_the_approval_workflow() {
             assert!(
                 !other.contains(name),
                 "{} names {name} outside the approval workflow",
+                path.display()
+            );
+        }
+    }
+}
+
+/// A reply and a message are described in one place too, and that place
+/// carries the course-policy boundary REPORT §3.5 states in plain words.
+#[test]
+fn the_write_tools_are_only_named_by_the_reply_workflow() {
+    let workflow = skill_dir().join("reply-and-message-with-approval.md");
+    let text = std::fs::read_to_string(&workflow).expect("the reply workflow ships");
+    for name in WRITES {
+        assert!(text.contains(name), "{name} has no workflow");
+    }
+    for required in [
+        "not permission for AI-generated academic work",
+        "Never write a placeholder",
+        "not_observable",
+        "Never say",
+    ] {
+        assert!(
+            text.contains(required),
+            "the reply workflow does not state: {required}"
+        );
+    }
+    for path in files() {
+        if path == workflow {
+            continue;
+        }
+        let other = std::fs::read_to_string(&path).expect("read a skill file");
+        for name in WRITES {
+            assert!(
+                !other.contains(name),
+                "{} names {name} outside the reply workflow",
                 path.display()
             );
         }

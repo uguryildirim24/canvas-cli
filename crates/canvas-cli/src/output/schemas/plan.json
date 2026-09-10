@@ -31,6 +31,7 @@
       "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     },
     "journal_id": null,
-    "invalidated_reason": null
+    "invalidated_reason": null,
+    "operation": null
   }
 }

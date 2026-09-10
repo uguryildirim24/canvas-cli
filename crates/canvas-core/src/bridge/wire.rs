@@ -406,8 +406,10 @@ pub struct PanelJournal {
     pub journal_id: String,
     /// A SPEC §12.2 state name.
     pub state: String,
-    pub course_id: String,
-    pub assignment_id: String,
+    /// Absent for an operation that names no course.
+    pub course_id: Option<String>,
+    /// Absent for an operation that is not a submission.
+    pub assignment_id: Option<String>,
     pub assignment_name: Option<String>,
     pub kind: String,
     pub updated_at: String,
