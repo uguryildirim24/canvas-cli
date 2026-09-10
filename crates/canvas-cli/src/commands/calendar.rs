@@ -1,6 +1,6 @@
 //! `canvas calendar` (class C, §12.5).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
@@ -115,7 +115,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
         Err(e) => return sync_error(globals, &session, &e),
     };
 
-    let contexts = match contexts_for(globals, &session, course_id, &mut freshness).await {
+    let contexts = match contexts_for(globals, &session, &mut freshness).await {
         Ok(c) => c,
         Err(code) => return code,
     };
@@ -273,7 +273,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
             .warnings
             .push("served stale calendar_events cache".into());
     }
-    let codes = calendar_codes(&envelope.result.items);
+    let codes = super::announcements::course_labels(&session, &events.denials).await;
     for mut scope in denial_scopes(&events.denials, &codes) {
         scope.scope = scope.scope.replace("announcements:", "calendar_events:");
         scope.message = scope.message.replace("Announcements for", "Calendar for");
@@ -423,17 +423,14 @@ fn sort_key(item: &CalendarItemJson) -> String {
         .unwrap_or_default()
 }
 
-/// Contexts the events fetch covers: one course, or the user plus every
-/// active course (§12.5).
+/// Contexts the events fetch covers: the user plus every active course
+/// (§12.5). `--course` filters what is shown, so one cached window serves
+/// every invocation.
 async fn contexts_for(
     globals: &Globals,
     session: &Session,
-    course_id: Option<i64>,
     freshness: &mut Vec<Freshness>,
 ) -> Result<Vec<String>, ExitCode> {
-    if let Some(id) = course_id {
-        return Ok(vec![format!("course_{id}")]);
-    }
     let courses = match super::course_load::ensure_courses(
         session,
         CoursesScope::Active,
@@ -625,17 +622,6 @@ fn load_calendar_events(conns: &StoreConns, scope: &str) -> Result<Vec<EventRow>
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
-}
-
-fn calendar_codes(items: &[CalendarItemJson]) -> HashMap<String, String> {
-    items
-        .iter()
-        .filter_map(|item| {
-            let id = item.course_id.clone()?;
-            let code = item.course_code.clone()?;
-            Some((id, code))
-        })
-        .collect()
 }
 
 fn usage(globals: &Globals, session: &Session, message: &str) -> ExitCode {
