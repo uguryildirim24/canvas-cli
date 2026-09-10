@@ -983,24 +983,35 @@ pub fn plan_summary(plan: &canvas_core::plan::PlanRow) -> String {
 
 // ------------------------------------------------------------------- helpers
 
+/// One byte past the §12.2 step 5 bound, so an over-long body is refused
+/// rather than read.
+const BODY_READ_LIMIT: u64 = 1_048_577;
+
 /// Read the body from `--text`, `--text -`, or `--text-file`.
+///
+/// Both file and stdin are read under the §12.2 step 5 bound, so a path that
+/// names a huge file — or a pipe that never ends — is refused instead of held
+/// in memory. `frozen_body` applies the bound itself as well.
 fn read_body(text: Option<&str>, file: Option<&std::path::Path>) -> Result<String, String> {
     if let Some(path) = file {
-        return std::fs::read_to_string(path)
-            .map_err(|e| format!("cannot read {}: {e}", path.display()));
+        let handle = std::fs::File::open(path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        return bounded(handle).map_err(|e| format!("cannot read {}: {e}", path.display()));
     }
     match text {
-        Some("-") => {
-            let mut buf = Vec::new();
-            io::stdin()
-                .take(1_048_577)
-                .read_to_end(&mut buf)
-                .map_err(|e| format!("cannot read stdin: {e}"))?;
-            String::from_utf8(buf).map_err(|_| "the body is not valid UTF-8".to_owned())
-        }
+        Some("-") => bounded(io::stdin()).map_err(|e| format!("cannot read stdin: {e}")),
         Some(text) => Ok(text.to_owned()),
         None => Err("one of --text or --text-file is required".to_owned()),
     }
+}
+
+fn bounded(source: impl Read) -> Result<String, String> {
+    let mut buf = Vec::new();
+    source
+        .take(BODY_READ_LIMIT)
+        .read_to_end(&mut buf)
+        .map_err(|e| e.to_string())?;
+    String::from_utf8(buf).map_err(|_| "the body is not valid UTF-8".to_owned())
 }
 
 fn parse_id(raw: &str) -> Result<i64, &'static str> {
