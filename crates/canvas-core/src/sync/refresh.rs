@@ -889,6 +889,10 @@ pub(super) async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
         })
         .await?;
 
+    // The cache is committed; the observation and its events are a separate
+    // transaction, recorded before the comparison (REPORT §3.6).
+    crate::events::observe_refresh(store, dataset.name(), dataset.scope_key()).await?;
+
     Ok(RefreshOutcome {
         freshness: FreshnessInfo {
             dataset: dataset.name().to_owned(),
