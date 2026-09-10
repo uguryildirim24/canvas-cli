@@ -7,6 +7,7 @@ pub mod models;
 pub mod redact;
 pub mod request;
 pub mod serde_util;
+pub mod submission;
 pub mod upload;
 
 use std::fmt;
@@ -27,6 +28,10 @@ pub use models::{Page, WrappedCollection};
 pub use redact::RedactingLayer;
 pub use request::{ApiRequest, TransferKind, TransferRequest};
 pub use serde_util::Supplied;
+pub use submission::{
+    SubmissionBody, get_assignment_for_submit, get_submission_history, is_canvas_error_body,
+    post_submission, sanitize_post_error_text,
+};
 
 /// An API token that never prints its value.
 #[derive(Clone)]
@@ -278,6 +283,23 @@ impl Client {
         request::execute_transfer(self, request).await
     }
 
+    /// Execute an API request and return the raw status, headers, body, and final URL.
+    ///
+    /// Non-2xx responses are **not** mapped to [`Error`]. Rate-limit responses (429 and
+    /// Canvas' 403 rate-limit body) still retry via the governor, then surface as
+    /// [`Error::RateLimited`] when retries are exhausted.
+    pub async fn execute_api(
+        &self,
+        request: ApiRequest,
+    ) -> Result<(StatusCode, HeaderMap, Vec<u8>, Url), Error> {
+        request::execute_api(self, request).await
+    }
+
+    /// Join `path` (may include a query string) onto the Canvas origin.
+    pub fn api_url(&self, path: &str) -> Result<Url, Error> {
+        self.inner.origin.join(path).map_err(|_| Error::Network)
+    }
+
     /// Collect all pages from [`Self::get_all`].
     pub async fn get_all_vec<T: DeserializeOwned + Send + 'static>(
         &self,
@@ -309,10 +331,6 @@ impl Client {
             && url.scheme() == self.inner.origin.scheme()
             && url.host_str() == self.inner.origin.host_str()
             && url.port_or_known_default() == self.inner.origin.port_or_known_default()
-    }
-
-    fn api_url(&self, path: &str) -> Result<Url, Error> {
-        self.inner.origin.join(path).map_err(|_| Error::Network)
     }
 
     fn api_url_with_per_page(&self, path: &str) -> Result<Url, Error> {
@@ -438,7 +456,7 @@ fn classify_status(status: StatusCode, bytes: &[u8]) -> Error {
     }
 }
 
-fn parse_validation_errors(bytes: &[u8]) -> Option<Vec<String>> {
+pub(crate) fn parse_validation_errors(bytes: &[u8]) -> Option<Vec<String>> {
     #[derive(serde::Deserialize)]
     struct Envelope {
         errors: Option<serde_json::Value>,
