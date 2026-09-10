@@ -139,7 +139,7 @@ pub fn lookup_dataset(
     now: Timestamp,
     window: Option<WindowQuery<'_>>,
 ) -> Result<LookupResult, DbError> {
-    lookup(
+    let result = lookup(
         conns,
         &LookupQuery {
             dataset: dataset.name(),
@@ -148,7 +148,13 @@ pub fn lookup_dataset(
             ttl: dataset.ttl(),
             window,
         },
-    )
+    )?;
+    match result {
+        LookupResult::Hit(row) if row.epoch_seen < dataset.current_epoch(&conns.state)? => {
+            Ok(LookupResult::Stale(row))
+        }
+        other => Ok(other),
+    }
 }
 
 fn window_contains(row: &FetchLogRow, w: &WindowQuery<'_>) -> bool {

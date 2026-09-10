@@ -105,7 +105,7 @@ pub fn totals_from_enrollment(course_id: i64, enrollment: &CourseEnrollment) -> 
                 current_grade: &enrollment.computed_current_grade,
                 final_grade: &enrollment.computed_final_grade,
             },
-            meta,
+            (None, None),
         ),
         totals_entity(
             course_id,
@@ -152,6 +152,18 @@ fn totals_entity(
         FieldGroup::Status,
         scores.final_grade,
     );
+    if mode == CourseTotalMode::All {
+        fields.push(FieldWrite {
+            name: "period_id",
+            group: FieldGroup::Detail,
+            value: None,
+        });
+        fields.push(FieldWrite {
+            name: "period_title",
+            group: FieldGroup::Detail,
+            value: None,
+        });
+    }
     if let Some(id) = meta.0 {
         fields.push(FieldWrite {
             name: "period_id",
@@ -200,17 +212,8 @@ pub fn upsert_course_totals(
          ON CONFLICT(course_id, mode) DO NOTHING",
         params![course_id, mode],
     )?;
-    let value_fields: Vec<FieldWrite> = fields
-        .iter()
-        .filter(|f| {
-            matches!(
-                f.name,
-                "current_score" | "final_score" | "current_grade" | "final_grade"
-            )
-        })
-        .cloned()
-        .collect();
-    let applied = apply_field_writes(tx, "course_totals", &entity_key, fetched_at, &value_fields)?;
+    let value_fields = fields.to_vec();
+    let applied = apply_field_writes(tx, "course_totals", &entity_key, fetched_at, fields)?;
     for field in &value_fields {
         if !applied.fields.contains(&field.name) {
             continue;
@@ -240,7 +243,12 @@ pub fn upsert_course_totals(
             _ => {}
         }
     }
-    merge_period_meta(tx, course_id, mode, fields)?;
+    let winning: Vec<_> = fields
+        .iter()
+        .filter(|f| applied.fields.contains(&f.name))
+        .cloned()
+        .collect();
+    merge_period_meta(tx, course_id, mode, &winning)?;
     let ts = fetched_at.to_string();
     if applied.core {
         tx.execute(
