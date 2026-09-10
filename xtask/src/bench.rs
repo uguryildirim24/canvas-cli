@@ -897,7 +897,13 @@ fn document(
              which a host pays once per session before the model has read \
              anything. The token column is an estimate: one token per {} \
              bytes of UTF-8. That is a rule of thumb for JSON with English \
-             identifiers, not a tokenizer run; the byte column is exact.\n",
+             identifiers, not a tokenizer run; the byte column is exact.\n\n\
+             Most of each row is the output schema, which is the whole §7 \
+             envelope in both shapes: the command's result and the `error@1` \
+             branch. Both are self-contained, with every sub-schema inlined, \
+             because a host validator reads a tool definition on its own. \
+             That is why the total is what it is, and it is the number to \
+             beat if the catalog is ever trimmed.\n",
             bench_mcp::BYTES_PER_TOKEN
         )?;
         writeln!(out, "| Tool | Bytes | ~Tokens |")?;

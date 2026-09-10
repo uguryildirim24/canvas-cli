@@ -141,6 +141,9 @@ pub fn document(entry: &SchemaEntry) -> Value {
         json!({
             "$comment": "One JSON document per invocation (SPEC §7). \
                          A command that aborts prints the error branch (SPEC §14).",
+            // Both branches are objects. The union says so too, because a
+            // validator may require a type before it reads `oneOf`.
+            "type": "object",
             "oneOf": [success, error],
         }),
     );

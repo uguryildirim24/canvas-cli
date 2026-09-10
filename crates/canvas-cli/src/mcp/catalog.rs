@@ -988,11 +988,16 @@ mod tests {
 
     /// Every tool's output schema admits the success envelope and the domain
     /// error, because a domain failure keeps the envelope (§3.2).
+    ///
+    /// The union also declares `type`. A host validator may require one
+    /// before it reads `oneOf`: Cursor rejects the whole catalog without it
+    /// (`docs/agent-hosts.md`).
     #[test]
     fn every_output_schema_admits_both_shapes() {
         for spec in specs() {
             let tool = spec.tool();
             let schema = tool.output_schema.expect("output schema");
+            assert_eq!(schema["type"], "object", "{}", spec.name);
             let branches = schema["oneOf"].as_array().expect("oneOf");
             assert_eq!(branches.len(), 2, "{}", spec.name);
             assert_eq!(

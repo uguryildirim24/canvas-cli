@@ -11,13 +11,15 @@ argument that asserts an approval, and there is no `--yes`.
    no submission and posts nothing.
 2. `submission.execute` with that `plan_id`:
    - On an **approved** plan it runs, and returns the receipt.
-   - On a **prepared** plan it returns `input_required`. That is the approval
-     request. Your host shows it to the user and retries the call with the
-     answer.
+   - On a **prepared** plan it returns `input_required` with a `requestState`
+     and one `elicitation/create` request. That is the approval request. Your
+     host shows it to the user and retries the same call under a new id,
+     echoing `requestState` and putting the answer in `inputResponses`.
    - When the host declares no elicitation support, it returns a domain
-     refusal instead: `outcome` `refused`, exit 8, code `approval_required`.
-     **Nothing was dispatched.** Tell the user to run `canvas submit` in their
-     terminal, where the confirmation is a prompt.
+     refusal instead: `outcome` `refused`, exit 8, with
+     `result.details.reason` = `approval_required` and the handle. **Nothing
+     was dispatched.** Tell the user to run `canvas submit` in their terminal,
+     where the confirmation is a prompt.
 
 ## Steps
 
@@ -46,7 +48,11 @@ argument that asserts an approval, and there is no `--yes`.
   disallowed extension, a group assignment, a file that changed mid-submit.
   Read `result` for which one, and tell the user. Do not try another route.
 - **A replayed approval is not a second submission.** Executing an
-  already-executed plan returns the existing journal.
+  already-executed plan returns that journal's `submit@1` envelope with its
+  own `outcome` and exit, and its `replayed` field is `true`. No second attempt
+  is created.
+- **`text` names a file.** `-` is not accepted on this surface, because stdin
+  carries the protocol.
 
 ## Typical calls
 
