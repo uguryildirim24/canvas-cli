@@ -138,28 +138,49 @@ impl Session {
             }
         }
         let paths = Paths::for_identity(&data_root, &identity.key);
-        let open = OpenIdentity::open(&paths, &identity)
-            .map_err(|e| SessionError::Local(format!("cannot open identity store: {e}")))?;
+
+        // SPEC §14 orders the aborts 2, 3, 13, ...: the credential is resolved
+        // before the identity store is opened, so an invocation that has
+        // neither a token nor a store this binary can read reports the missing
+        // token, not the store.
+        //
+        // Resolving one is not a precondition for a session: a class-B command
+        // with cache coverage runs without a token, and only a store that
+        // refuses to open makes the network unavoidable. So the missing
+        // credential decides the exit exactly where both conditions hold, and
+        // nothing else changes.
+        let env_token = match std::env::var("CANVAS_TOKEN") {
+            Ok(token) if !token.is_empty() => Some(token),
+            _ => None,
+        };
+        let open = match OpenIdentity::open(&paths, &identity) {
+            Ok(open) => open,
+            Err(error) => {
+                if !offline && env_token.is_none() {
+                    return Err(SessionError::Auth(
+                        "no token; set CANVAS_TOKEN or run auth login".into(),
+                    ));
+                }
+                return Err(SessionError::Local(format!(
+                    "cannot open identity store: {error}"
+                )));
+            }
+        };
 
         let mut client_init_error = None;
-        let client = if offline {
-            None
-        } else {
-            match std::env::var("CANVAS_TOKEN") {
-                Ok(token) if !token.is_empty() => {
-                    let origin = Url::parse(&identity.origin).map_err(|e| {
-                        SessionError::Local(format!("invalid identity origin: {e}"))
-                    })?;
-                    match Client::new(origin, Secret::new(token), USER_AGENT) {
-                        Ok(client) => Some(client),
-                        Err(error) => {
-                            client_init_error = Some(error);
-                            None
-                        }
+        let client = match env_token {
+            Some(token) if !offline => {
+                let origin = Url::parse(&identity.origin)
+                    .map_err(|e| SessionError::Local(format!("invalid identity origin: {e}")))?;
+                match Client::new(origin, Secret::new(token), USER_AGENT) {
+                    Ok(client) => Some(client),
+                    Err(error) => {
+                        client_init_error = Some(error);
+                        None
                     }
                 }
-                _ => None,
             }
+            _ => None,
         };
 
         Ok(Self {
