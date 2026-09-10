@@ -23,6 +23,7 @@ mod commands;
 mod config;
 mod credentials;
 mod exit;
+mod mcp;
 mod origin;
 mod output;
 mod paths;
@@ -70,6 +71,10 @@ async fn main() -> ExitCode {
         runtime.block_on(async move {
             match cli.command {
                 Commands::Version => commands::version::run(globals.json),
+                Commands::Schema { command, list } => {
+                    commands::schema::run(command.as_deref(), list)
+                }
+                Commands::Mcp => Box::pin(mcp::run(&m1b_globals(&globals))).await,
                 Commands::Completions { shell } => commands::completions::run(shell),
                 Commands::Auth { command } => match commands::auth::run(&globals, command).await {
                     Ok(()) => ExitCode::SUCCESS,
@@ -189,14 +194,16 @@ async fn main() -> ExitCode {
                 } => {
                     commands::submit::run(
                         &m1b_globals(&globals),
-                        target,
-                        assignment,
-                        files,
-                        text,
-                        html,
-                        url,
-                        comment,
-                        yes,
+                        commands::submit::SubmitArgs {
+                            target,
+                            assignment,
+                            files,
+                            text,
+                            html,
+                            url,
+                            comment,
+                            yes,
+                        },
                     )
                     .await
                 }

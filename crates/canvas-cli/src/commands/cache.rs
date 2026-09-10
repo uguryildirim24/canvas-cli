@@ -8,7 +8,8 @@ use comfy_table::Row;
 
 use super::Globals;
 use super::course_load::u64_count;
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use crate::output::{
     CacheClearResult, CachePathResult, CacheStatsResult, CacheTableJson, Freshness,
     FreshnessSource, SCHEMA_CACHE, apply_two_space_padding, new_table,
@@ -22,21 +23,26 @@ pub enum CacheCmd {
     Path,
 }
 
-/// Run `canvas cache …`.
+/// Run `canvas cache` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, command: CacheCmd) -> ExitCode {
+    handle(globals, command).await.emit(globals.json)
+}
+
+/// Run `canvas cache …`.
+pub async fn handle(globals: &Globals, command: CacheCmd) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     match command {
-        CacheCmd::Stats => stats(globals, &session).await,
-        CacheCmd::Clear => clear(globals, &session).await,
-        CacheCmd::Path => path_cmd(globals, &session),
+        CacheCmd::Stats => stats(&session).await,
+        CacheCmd::Clear => clear(&session).await,
+        CacheCmd::Path => path_cmd(&session),
     }
 }
 
-async fn stats(globals: &Globals, session: &Session) -> ExitCode {
+async fn stats(session: &Session) -> Handled {
     let path = cache_path(&session.paths.cache_db);
     let size_bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
 
@@ -86,7 +92,6 @@ async fn stats(globals: &Globals, session: &Session) -> ExitCode {
         Ok(r) => r,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -97,7 +102,7 @@ async fn stats(globals: &Globals, session: &Session) -> ExitCode {
     };
 
     let envelope = base_envelope(SCHEMA_CACHE, session, result);
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         writeln!(
             io::stdout(),
             "path: {}\nsize_bytes: {}",
@@ -114,7 +119,7 @@ async fn stats(globals: &Globals, session: &Session) -> ExitCode {
     })
 }
 
-async fn clear(globals: &Globals, session: &Session) -> ExitCode {
+async fn clear(session: &Session) -> Handled {
     let result = match session
         .open
         .store
@@ -131,7 +136,6 @@ async fn clear(globals: &Globals, session: &Session) -> ExitCode {
         Ok(r) => r,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -142,7 +146,7 @@ async fn clear(globals: &Globals, session: &Session) -> ExitCode {
     };
 
     let envelope = base_envelope(SCHEMA_CACHE, session, result);
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         writeln!(
             io::stdout(),
             "cleared: true\nrows_deleted: {}",
@@ -151,13 +155,13 @@ async fn clear(globals: &Globals, session: &Session) -> ExitCode {
     })
 }
 
-fn path_cmd(globals: &Globals, session: &Session) -> ExitCode {
+fn path_cmd(session: &Session) -> Handled {
     let path = cache_path(&session.paths.cache_db);
     let result = CachePathResult {
         path: path.display().to_string(),
     };
     let envelope = base_envelope(SCHEMA_CACHE, session, result);
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         writeln!(io::stdout(), "{}", envelope.result.path)
     })
 }

@@ -7,19 +7,15 @@ use canvas_core::resolve::{CommandClass, ResolveError, resolve_assignment, resol
 use serde_json::json;
 
 use super::Globals;
-use super::emit::{base_envelope, call_resolve, emit, emit_error, session_error};
+use super::emit::{base_envelope, call_resolve, emit_error, session_error};
+use super::handled::Handled;
 use crate::cli::OpenCommand;
 use crate::output::SCHEMA_OPEN;
 
-fn resolve_fail(
-    globals: &Globals,
-    session: &crate::session::Session,
-    err: ResolveError,
-) -> ExitCode {
+fn resolve_fail(session: &crate::session::Session, err: ResolveError) -> Handled {
     let (code, exit) = ("resolution", 6);
     let message = err.to_string();
     emit_error(
-        globals.json,
         code,
         &message,
         exit,
@@ -28,9 +24,8 @@ fn resolve_fail(
     )
 }
 
-fn db_fail(globals: &Globals, session: &crate::session::Session, err: impl ToString) -> ExitCode {
+fn db_fail(session: &crate::session::Session, err: impl ToString) -> Handled {
     emit_error(
-        globals.json,
         "local",
         &err.to_string(),
         13,
@@ -39,15 +34,37 @@ fn db_fail(globals: &Globals, session: &crate::session::Session, err: impl ToStr
     )
 }
 
-/// Run `canvas open`.
+/// Whether the resolved URL is also handed to the browser.
+///
+/// `canvas open` launches it. The `open.url` tool resolves only: an agent
+/// surface must not start a program on the user's machine (REPORT §3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Launch {
+    Yes,
+    No,
+}
+
+/// Run `canvas open` for the CLI: one envelope, one exit code.
 pub async fn run(
     globals: &Globals,
     command: Option<OpenCommand>,
     target: Option<String>,
 ) -> ExitCode {
+    handle(globals, command, target, Launch::Yes)
+        .await
+        .emit(globals.json)
+}
+
+/// Run `canvas open`.
+pub async fn handle(
+    globals: &Globals,
+    command: Option<OpenCommand>,
+    target: Option<String>,
+    browser: Launch,
+) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let origin = session.identity.origin.clone();
 
@@ -61,8 +78,8 @@ pub async fn run(
             .await
             {
                 Ok(Ok(c)) => c,
-                Ok(Err(e)) => return resolve_fail(globals, &session, e),
-                Err(e) => return db_fail(globals, &session, e),
+                Ok(Err(e)) => return resolve_fail(&session, e),
+                Err(e) => return db_fail(&session, e),
             };
             let a = match call_resolve(&session, {
                 let assignment = assignment.clone();
@@ -75,8 +92,8 @@ pub async fn run(
             .await
             {
                 Ok(Ok(a)) => a,
-                Ok(Err(e)) => return resolve_fail(globals, &session, e),
-                Err(e) => return db_fail(globals, &session, e),
+                Ok(Err(e)) => return resolve_fail(&session, e),
+                Err(e) => return db_fail(&session, e),
             };
             (
                 "assignment",
@@ -91,7 +108,7 @@ pub async fn run(
         }
         Some(OpenCommand::File { id }) => {
             let Ok(id) = id.parse::<i64>() else {
-                return resolve_fail(globals, &session, ResolveError::NeedIdOrUrl);
+                return resolve_fail(&session, ResolveError::NeedIdOrUrl);
             };
             (
                 "file",
@@ -101,7 +118,7 @@ pub async fn run(
         }
         Some(OpenCommand::Announcement { course, id }) => {
             let Ok(id) = id.parse::<i64>() else {
-                return resolve_fail(globals, &session, ResolveError::NeedIdOrUrl);
+                return resolve_fail(&session, ResolveError::NeedIdOrUrl);
             };
             let resolved = match call_resolve(&session, {
                 let course = course.clone();
@@ -111,8 +128,8 @@ pub async fn run(
             .await
             {
                 Ok(Ok(c)) => c,
-                Ok(Err(e)) => return resolve_fail(globals, &session, e),
-                Err(e) => return db_fail(globals, &session, e),
+                Ok(Err(e)) => return resolve_fail(&session, e),
+                Err(e) => return db_fail(&session, e),
             };
             (
                 "announcement",
@@ -127,7 +144,6 @@ pub async fn run(
         None => {
             let Some(target) = target else {
                 return emit_error(
-                    globals.json,
                     "usage",
                     "open requires a target",
                     2,
@@ -138,7 +154,7 @@ pub async fn run(
             if target.contains("://") {
                 match canvas_core::resolve::canvas_url(&target, &origin) {
                     Ok(Some(_)) => {}
-                    _ => return resolve_fail(globals, &session, ResolveError::OriginMismatch),
+                    _ => return resolve_fail(&session, ResolveError::OriginMismatch),
                 }
                 ("url", target.clone(), target)
             } else {
@@ -150,8 +166,8 @@ pub async fn run(
                 .await
                 {
                     Ok(Ok(c)) => c,
-                    Ok(Err(e)) => return resolve_fail(globals, &session, e),
-                    Err(e) => return db_fail(globals, &session, e),
+                    Ok(Err(e)) => return resolve_fail(&session, e),
+                    Err(e) => return db_fail(&session, e),
                 };
                 (
                     "course",
@@ -162,9 +178,9 @@ pub async fn run(
         }
     };
 
-    let result = launch_result(kind, &id, &url, || launch(&url));
+    let result = launch_result(kind, &id, &url, || browser == Launch::Yes && launch(&url));
     let envelope = base_envelope(SCHEMA_OPEN, &session, result);
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         writeln!(io::stdout(), "{}", human_result(&envelope.result))
     })
 }
