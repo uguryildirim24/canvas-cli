@@ -34,13 +34,12 @@ pub async fn download(
         )
         .await
         {
-            Err(Error::RateLimited) if attempt < 4 => {
-                let _delay = retry_delays(attempt, None, client.governor().jitter()).await;
-                attempt += 1;
-            }
-            Err(Error::Forbidden {
-                rate_limited: true, ..
-            }) if attempt < 4 => {
+            Err(
+                Error::RateLimited
+                | Error::Forbidden {
+                    rate_limited: true, ..
+                },
+            ) if attempt < 4 => {
                 let _delay = retry_delays(attempt, None, client.governor().jitter()).await;
                 attempt += 1;
             }
@@ -77,7 +76,7 @@ async fn download_once(
             builder = builder.header(reqwest::header::AUTHORIZATION, auth);
         }
 
-        let response = builder.send().await.map_err(map_err)?;
+        let response = builder.send().await.map_err(|e| map_err(&e))?;
         let status = response.status();
         let headers = response.headers().clone();
         observe(client, issue, &headers);
@@ -108,7 +107,7 @@ async fn download_once(
         let mut stream = response.bytes_stream();
         let mut written = 0u64;
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(map_err)?;
+            let chunk = chunk.map_err(|e| map_err(&e))?;
             sink.write_all(&chunk).await.map_err(|_| Error::Network)?;
             written += chunk.len() as u64;
             on_progress(written);
@@ -141,10 +140,7 @@ fn classify_download(
         return Error::RateLimited;
     }
     if client.same_origin(url) {
-        match code {
-            401 | 403 | 404 => Error::Denied { status: code },
-            _ => Error::Denied { status: code },
-        }
+        Error::Denied { status: code }
     } else if code == 403 {
         Error::StorageExpired
     } else {
@@ -184,7 +180,7 @@ fn observe(client: &Client, issue: u64, headers: &HeaderMap) {
     }
 }
 
-fn map_err(err: reqwest::Error) -> Error {
+fn map_err(err: &reqwest::Error) -> Error {
     if err.is_timeout() {
         Error::Timeout
     } else {
