@@ -580,3 +580,9 @@ impl fmt::Debug for TransferResponse {
 
 #[cfg(test)]
 mod transfer_tests;
+
+/// HTTPS mock transport for workspace integration tests, excluded from default builds.
+#[cfg(feature = "test-support")]
+#[path = "transfer_tests/tls.rs"]
+#[allow(missing_docs)]
+pub mod test_support;
