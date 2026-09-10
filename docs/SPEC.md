@@ -1,6 +1,6 @@
 # canvas-cli — Specification
 
-Status: draft v0.8, 2026-09-09. Owner: Rolf. Supersedes v0.7 after `docs/reviews/spec-v0.7-review.md`. Research inputs: `docs/research/r1-canvas-api.md`, `r2-prior-art.md`, `r3-rust-stack.md`. Appendix E maps every round-1 to round-7 finding to its resolution.
+Status: draft v0.9, 2026-09-10. Owner: Rolf. Supersedes v0.8. Research inputs: `docs/research/r1-canvas-api.md`, `r2-prior-art.md`, `r3-rust-stack.md`, and `docs/agent-ux/REPORT.md` for the post-v1 rounds. §§1–19 and Appendices A–E are the v1 contract. §§20–23 record what the post-v1 packages **built**, as `main` has them; Appendix C names those packages and their review files. §24 and §25 are placeholders for the packages still in flight. Appendix E maps every round-1 to round-7 finding to its resolution.
 
 ## 0. Summary
 
@@ -688,7 +688,7 @@ canvas-cli/
 
 Runtime: `#[tokio::main(flavor = "current_thread")]` plus the blocking pool above. Credential-store access happens only when a network call needs the token, except for the class-B commands listed in §5 that inspect or change the store.
 
-Performance targets are measured by `xtask bench` (M5): cached `todo` first output p50 < 50 ms, p95 < 150 ms; full cached `todo` p95 < 250 ms; cold-start (empty page cache) p95 < 400 ms; all with a 5-course fixture and once more while one download stream is active. Numbers are recorded in `docs/bench.md`.
+Performance targets are measured by `xtask bench` (M5): cached `todo` first output p50 < 50 ms, p95 < 150 ms; full cached `todo` p95 < 250 ms; cold-start (empty page cache) p95 < 400 ms; all with a 5-course fixture and once more while one download stream is active. Numbers are recorded in `docs/bench.md`. `cargo xtask bench --watch` measures the same targets again with a resident `canvas watch` on the same identity and records one tick's cost; `cargo xtask bench --mcp` measures a warm `todo.list` round trip over a real stdio pipe and the size of the `tools/list` catalog (§21). Neither has a §13 target of its own.
 
 ## 14. Errors and exit codes
 
@@ -787,6 +787,8 @@ Three implementation lanes (`w1`, `w2`, `w3`), one git worktree and one private 
 | R5 | M5-a | M5-b | M5-c | w3 | w3 | none | w1, w2, w3 |
 
 An owner adds the interface (enum variant, schema entry, migration) that the other lanes need at the start of the round and pushes it first; other lanes rebase on it. A package that depends on a sibling in the same round (M2-b on M1-c) is merged last and must pass its acceptance on the merged sibling. Interface requests between lanes go through Claude.
+
+The table above stops at R5, which is the v1 plan. The rounds after it (R6 onward) follow the same lane model; `docs/agent-ux/REPORT.md` §4 holds their package list, and Appendix C names the ones that are on `main`.
 
 ## 19. Open questions for the owner
 
@@ -1329,6 +1331,24 @@ The materialized discussion endpoint `GET …/discussion_topics/:tid/view` is de
 - keyring 4.2.0 `v1` feature route; MSRV 1.88.
 - Complete JSON schemas (Appendix D); single-envelope and exit-precedence rules.
 - Dependency-ordered packages with per-round shared-file owners.
+
+### What the post-v1 rounds changed
+
+`docs/agent-ux/REPORT.md` proposed an agent-first surface on top of the v1 contract. These packages are on `main`; each has its own code review, and §§20–23 record what they built rather than what was proposed.
+
+| Package | What it added | Section | Review |
+|---|---|---|---|
+| M6-a | operation plans, approval handles, the approval audit, the human `submit` refactor | §20 | `docs/reviews/code-M6-a.md` |
+| M6-b | `canvas schema`, `canvas mcp`, the shipped skill, the host matrix | §21 | `docs/reviews/code-M6-b.md` |
+| M6-c | cross-process permits, the shared governor, refresh single-flight, foreground interest, the event log, `canvas watch`, `canvas notify` | §22 | `docs/reviews/code-M6-c.md` |
+| M6-c2 | `subscriptions/listen` over the event log | §22.5 | `docs/reviews/code-M6-c2.md` |
+| M8-a | `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox *`, the rubric extension | §23 | `docs/reviews/code-M8-a.md` |
+| M8-a2 | the eight M8-a read tools on the agent surface; §19 items 27 and 28 applied | §21, §23 | `docs/reviews/code-M8-a2.md` |
+| M8-a3 | the `inbox.unread_count` event; the per-form `canvas schema` pages | §22, §21 | `docs/reviews/code-M8-a3.md` |
+
+Still in flight, and not on `main`: M7-a and M7-b (the companion, §24) and M8-b (discussion and inbox writes, §25). M8-c (GraphQL) and M8-d (OAuth) stay conditional, as REPORT §4 leaves them.
+
+`docs/reads-v2.md` was the M8-a contract document. Its content is now §23, and the file is a pointer.
 
 ## Appendix D. JSON `result` payloads
 
