@@ -47,6 +47,17 @@ fn observe(fields: &mut Vec<FieldWrite>, raw: &Value, name: &'static str, group:
 impl Observed<Course> {
     #[allow(clippy::too_many_lines)]
     pub async fn entity(self, hint: &str) -> Result<EntityIngest, SyncError> {
+        if self
+            .raw
+            .get("modules_count")
+            .is_some_and(|v| !v.is_null() && v.as_u64().is_none())
+            || self
+                .raw
+                .get("has_grading_periods")
+                .is_some_and(|v| !v.is_null() && !v.is_boolean())
+        {
+            return Err(canvas_api::Error::Decode.into());
+        }
         let mut entity = course_to_entity(&self.model, hint);
         let fields = &mut entity.fields;
         for (name, group) in [

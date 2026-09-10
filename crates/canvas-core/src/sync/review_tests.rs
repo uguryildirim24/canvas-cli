@@ -300,3 +300,17 @@ fn courses_refresh_guards_derived_totals_epoch() {
         })
         .unwrap();
 }
+
+#[tokio::test]
+async fn malformed_detail_scalars_are_rejected_before_ingestion() {
+    for raw in [
+        json!({"id":1,"modules_count":{"body":"not a count"}}),
+        json!({"id":1,"has_grading_periods":"not a bool"}),
+    ] {
+        let observed: Observed<Course> = serde_json::from_value(raw).unwrap();
+        assert!(matches!(
+            observed.entity("active").await,
+            Err(SyncError::Api(canvas_api::Error::Decode))
+        ));
+    }
+}
