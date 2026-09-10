@@ -95,12 +95,34 @@ pub async fn execute(
     let assignment =
         crate::submit::fetch_assignment(client, plan.course_id, plan.assignment_id).await?;
 
-    // Step 2: admission for the whole of the rest of this function.
-    let admission = crate::submit::admit(identity_dir, plan.assignment_id)?;
+    // Step 2: admission for the whole of the rest of this function. When another
+    // process holds it, that is usually this plan's own concurrent execute, so
+    // wait briefly for its journal rather than reporting a conflict.
+    let admission = match crate::submit::admit(identity_dir, plan.assignment_id) {
+        Ok(lock) => lock,
+        Err(crate::submit::PreflightError::InProgress { journal_id }) => {
+            return wait_for_existing(store, &plan, journal_id).await;
+        }
+        Err(other) => return Err(other.into()),
+    };
+    // Admission serializes plans for this assignment, so the first read under
+    // it is authoritative: a concurrent execute may have finished in between.
+    let plan = ops::require(store, plan_id)?;
+    if plan.state == PlanState::Executed {
+        drop(admission);
+        return plan
+            .journal_id
+            .map(|journal_id| Admission::Existing { journal_id })
+            .ok_or(PlanError::Refused {
+                reason: "invalidated",
+                message: "executed plan has no journal".into(),
+            });
+    }
     crate::submit::recover_active(store, identity_dir, plan.assignment_id)?;
 
-    // Steps 3–4 on the fresh read, then every observation the plan froze.
-    crate::submit::check_admissible(&assignment, plan.kind, now)?;
+    // Every observation the plan froze, then steps 3–4 on the fresh read. The
+    // comparison comes first so a fact that both changed and now refuses is
+    // reported as the changed fact: it needs a fresh plan, not a retry.
     let fresh = Observations::of(&assignment);
     if let Some(field) = plan.observations.first_difference(&fresh) {
         return Err(invalidate(
@@ -109,6 +131,7 @@ pub async fn execute(
             &format!("{field} changed since the plan was prepared"),
         ));
     }
+    crate::submit::check_admissible(&assignment, plan.kind, now)?;
 
     // Step 6: the baseline the plan promised must still be the baseline.
     let facts = crate::submit::facts_of(&assignment, now);
@@ -137,6 +160,34 @@ pub async fn execute(
         },
         Linked::Existing(journal_id) => Admission::Existing { journal_id },
     })
+}
+
+/// How long a blocked execute waits for its own concurrent execute to commit.
+const CONTENTION_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Wait for a concurrent execute of this plan, then return its journal.
+///
+/// REPORT §3.5: a concurrent execute, a restarted host, or a replayed approval
+/// returns the existing journal and never creates a second attempt. Admission
+/// held by anything else is still the ordinary in-progress refusal.
+async fn wait_for_existing(
+    store: &Store,
+    plan: &PlanRow,
+    journal_id: Option<String>,
+) -> Result<Admission, PlanError> {
+    let deadline = std::time::Instant::now() + CONTENTION_WAIT;
+    loop {
+        if let Some(current) = ops::load(store, &plan.plan_id)?
+            && current.state == PlanState::Executed
+            && let Some(journal_id) = current.journal_id
+        {
+            return Ok(Admission::Existing { journal_id });
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(PlanError::InProgress { journal_id });
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
 }
 
 /// The one state transaction: consume the approval and publish the journal.

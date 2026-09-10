@@ -129,11 +129,11 @@ pub async fn run(
         match confirm_tty().await {
             Ok(true) => ApprovalChannel::Tty,
             Ok(false) => {
-                cancel_plan(&session, &plan_id, "cancelled");
+                cancel_plan(&session, &plan_id);
                 return selected_error(globals, &session, "cancelled", "submission cancelled", 11);
             }
             Err(message) => {
-                cancel_plan(&session, &plan_id, "no controlling terminal");
+                cancel_plan(&session, &plan_id);
                 return selected_error(globals, &session, "usage", &message, 2);
             }
         }
@@ -442,8 +442,8 @@ fn build_submit_result(exec: &ExecuteOutcome, frozen: &FrozenInput) -> SubmitRes
 }
 
 /// Invalidate a plan the user did not approve, so it can never be executed.
-fn cancel_plan(session: &Session, plan_id: &str, reason: &str) {
-    let _ = canvas_core::plan::invalidate(&session.open.store, plan_id, reason);
+fn cancel_plan(session: &Session, plan_id: &str) {
+    let _ = canvas_core::plan::cancel(&session.open.store, plan_id);
 }
 
 /// Map a plan-layer failure onto the §14 exit codes.

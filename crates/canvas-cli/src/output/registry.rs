@@ -760,6 +760,93 @@ mod tests {
     }
 
     #[test]
+    fn plan_json_shows_the_digests_and_hashes_but_never_the_outbound_bytes() {
+        use canvas_core::journal::{IntendedFile, IntendedPayload, IntendedText};
+        use canvas_core::plan::{Approval, ApprovalChannel, Observations, PlanRow, PlanState};
+        use canvas_core::submit::InputKind;
+
+        let secret_body = "<p>the essay nobody else may read</p>";
+        let row = PlanRow {
+            plan_id: "plan-1".into(),
+            identity_key: "example.instructure.com-1-deadbeef".into(),
+            identity_generation: "generation-1".into(),
+            consumer: Some("mcp".into()),
+            course_id: 101,
+            assignment_id: 202,
+            kind: InputKind::OnlineHtml,
+            payload: IntendedPayload {
+                files: vec![IntendedFile {
+                    name: "essay.pdf".into(),
+                    size: 24576,
+                    sha256: "bb".repeat(32),
+                    canvas_file_id: None,
+                }],
+                text: Some(IntendedText {
+                    input_sha256: "aa".repeat(32),
+                    transform: "html-verbatim".into(),
+                    sent_sha256: "dd".repeat(32),
+                    outbound_bytes: secret_body.into(),
+                }),
+                url: None,
+                comment: Some("please regrade".into()),
+                course_code: Some("CS-101".into()),
+                assignment_name: Some("Essay 1".into()),
+                due_at: Some("2026-09-15T23:59:59Z".into()),
+                time_zone: Some("America/New_York".into()),
+            },
+            file_paths: vec!["/home/student/private/essay.pdf".into()],
+            input_sha256: Some("aa".repeat(32)),
+            sent_sha256: Some("dd".repeat(32)),
+            baseline_attempt: 1,
+            baseline_submission_id: Some(9001),
+            observations: Observations::default(),
+            plan_sha256: "cc".repeat(32),
+            state: PlanState::Approved,
+            created_at: "2026-09-09T16:04:40Z".into(),
+            expires_at: "2026-09-09T16:19:40Z".into(),
+            approval: Some(Approval {
+                channel: ApprovalChannel::Elicitation,
+                at: "2026-09-09T16:04:52Z".into(),
+                consumer: Some("mcp".into()),
+                plan_sha256: "cc".repeat(32),
+            }),
+            journal_id: None,
+            invalidated_reason: None,
+        };
+
+        let json = serde_json::to_string(&PlanResult {
+            plan: PlanJson::of(&row),
+        })
+        .unwrap();
+
+        // The exact body digest and the file hashes travel.
+        assert!(json.contains(&"dd".repeat(32)), "sent_sha256 is missing");
+        assert!(json.contains(&"aa".repeat(32)), "input_sha256 is missing");
+        assert!(json.contains(&"bb".repeat(32)), "the file hash is missing");
+        assert!(json.contains(&"cc".repeat(32)), "plan_sha256 is missing");
+        assert!(json.contains("essay.pdf"));
+        assert!(json.contains("elicitation"));
+        assert!(json.contains("2026-09-09T16:19:40Z"), "expiry is missing");
+
+        // The bytes themselves, and the local path they came from, do not.
+        assert!(
+            !json.contains(secret_body),
+            "plan@1 leaked the outbound bytes"
+        );
+        assert!(!json.contains("nobody else may read"));
+        assert!(
+            !json.contains("/home/student"),
+            "plan@1 leaked a local path"
+        );
+        assert!(!json.contains("outbound_bytes"));
+        assert!(
+            !json.contains("please regrade"),
+            "plan@1 leaked the comment text"
+        );
+        assert!(json.contains(r#""comment_chars":14"#));
+    }
+
+    #[test]
     fn m1b_fixtures_deserialize_to_typed_results() {
         let courses: CoursesResult =
             serde_json::from_str(include_str!("schemas/courses.json")).unwrap();
