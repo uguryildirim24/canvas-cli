@@ -1,7 +1,6 @@
 //! Wire `canvas-api::download` into the install [`Transfer`] trait.
 
 use std::sync::Arc;
-
 use tokio::io::AsyncWrite;
 
 use canvas_api::download::download as api_download;
@@ -13,50 +12,67 @@ use crate::download::install::{RemoteMeta, Transfer, TransferError};
 /// Progress callback: `(file_id, cumulative_bytes)`.
 pub type ProgressFn = Arc<dyn Fn(i64, u64) + Send + Sync>;
 
-/// Fresh file metadata for install planning.
-#[derive(Debug, Clone)]
+/// Fresh file metadata for install planning. Capability URLs stay in memory only.
+#[derive(Clone)]
 pub struct FileFetchMeta {
-    /// Remote size / `updated_at` for the clobber table.
     pub remote: RemoteMeta,
-    /// True when Canvas reports the file locked for the user.
     pub locked: bool,
+    file_id: i64,
+    url: Option<reqwest::Url>,
 }
 
-/// `GET /api/v1/files/:id` → remote meta (and lock bit).
+/// `GET /api/v1/files/:id` → fresh metadata for classification and transfer.
 pub async fn file_remote_meta(
     client: &Client,
     file_id: i64,
 ) -> Result<FileFetchMeta, TransferError> {
-    let file = fetch_file_meta(client, file_id).await?;
-    let locked =
-        file.locked_for_user == Some(true) || file.locked == Some(true) || file.url.is_none();
-    let size = file.size.unwrap_or(0);
-    let updated_at = file.updated_at.map(|t| t.to_string());
+    let file: File = client.get(&format!("/api/v1/files/{file_id}")).await?;
+    if file.id != file_id {
+        return Err(ApiError::Decode.into());
+    }
+    let locked = file.locked_for_user.or(file.locked) == Some(true);
+    // Zero is a valid size. Unknown size must never borrow stale listing data.
+    let size = match file.size {
+        Some(size) => size,
+        None if locked => 0,
+        None => return Err(ApiError::Decode.into()),
+    };
     Ok(FileFetchMeta {
-        remote: RemoteMeta { size, updated_at },
+        remote: RemoteMeta {
+            size,
+            updated_at: file.updated_at.map(|t| t.to_string()),
+        },
         locked,
+        file_id,
+        url: file.url,
     })
 }
 
-/// Canvas API transport: fresh `GET /files/:id`, then transfer with one
-/// `StorageExpired` URL refresh. Incomplete bodies are restarted (never resumed).
+/// Fresh metadata and one `StorageExpired` refresh; never resume partial bodies.
 #[derive(Clone)]
 pub struct ApiTransfer {
     client: Client,
     progress: Option<ProgressFn>,
+    metadata: Option<FileFetchMeta>,
 }
 
 impl ApiTransfer {
-    /// Build a transfer adapter for `client`.
     #[must_use]
     pub fn new(client: Client) -> Self {
         Self {
             client,
             progress: None,
+            metadata: None,
         }
     }
 
-    /// Attach a per-file byte progress hook.
+    /// Reuse the exact metadata used for the install's clobber decision.
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: FileFetchMeta) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+
     #[must_use]
     pub fn with_progress(mut self, progress: ProgressFn) -> Self {
         self.progress = Some(progress);
@@ -71,93 +87,112 @@ impl Transfer for ApiTransfer {
         sink: &mut (dyn AsyncWrite + Send + Unpin),
         expected_size: u64,
     ) -> Result<u64, TransferError> {
-        let meta = fetch_file_meta(&self.client, file_id).await?;
-        if meta.locked_for_user == Some(true) || meta.locked == Some(true) {
-            return Err(TransferError::Message("locked".into()));
-        }
-        let Some(url) = meta.url.clone() else {
-            return Err(TransferError::Message("locked".into()));
+        let initial = match &self.metadata {
+            Some(meta) if meta.file_id == file_id => meta.clone(),
+            _ => file_remote_meta(&self.client, file_id).await?,
         };
-        let expected = meta.size.unwrap_or(expected_size);
-        let progress = self.progress.clone();
-        match transfer_once(
-            &self.client,
-            url,
-            sink,
-            expected,
-            file_id,
-            progress.as_ref(),
-        )
-        .await
-        {
-            Ok(n) => Ok(n),
-            Err(TransferError::Message(m)) if m == "storage_expired" => {
-                // Restart: caller installs into a fresh part file; this sink has
-                // no body bytes on StorageExpired (status checked before stream).
-                let meta = fetch_file_meta(&self.client, file_id).await?;
-                let Some(url) = meta.url else {
-                    return Err(TransferError::Message("locked".into()));
-                };
-                let expected = meta.size.unwrap_or(expected_size);
-                match transfer_once(
-                    &self.client,
-                    url,
-                    sink,
-                    expected,
-                    file_id,
-                    progress.as_ref(),
-                )
-                .await
-                {
-                    Ok(n) => Ok(n),
-                    Err(TransferError::Message(m)) if m == "storage_expired" => {
-                        Err(TransferError::Message("failed".into()))
-                    }
-                    Err(e) => Err(e),
-                }
+        let mut current = initial.clone();
+        for attempt in 0..2 {
+            // A refreshed URL does not grant permission to ignore a new lock or
+            // to install a different revision under the initial manifest metadata.
+            if current.locked {
+                return Err(TransferError::Message("locked".into()));
             }
-            Err(e) => Err(e),
+            if current.remote.size != expected_size
+                || current.remote.updated_at != initial.remote.updated_at
+            {
+                return Err(TransferError::Message(
+                    "remote file changed during transfer; rerun".into(),
+                ));
+            }
+            let url = current
+                .url
+                .ok_or_else(|| TransferError::Message("missing download URL".into()))?;
+            let progress = self.progress.as_ref();
+            let result = api_download(&self.client, url, &mut *sink, Some(expected_size), |n| {
+                if let Some(cb) = progress {
+                    cb(file_id, n);
+                }
+            })
+            .await;
+            match result {
+                Ok(n) => return Ok(n),
+                // Status is checked before writing bytes, so this retry reuses
+                // an empty sink. Other incomplete transfers fail and clean up.
+                Err(ApiError::StorageExpired) if attempt == 0 => {
+                    current = file_remote_meta(&self.client, file_id).await?;
+                }
+                Err(ApiError::StorageExpired) => {
+                    return Err(TransferError::Message(
+                        "storage URL expired after refresh".into(),
+                    ));
+                }
+                Err(ApiError::SizeMismatch) => return Err(TransferError::SizeMismatch),
+                Err(e) => return Err(e.into()),
+            }
         }
+        unreachable!("two attempts always return")
     }
 }
 
-async fn fetch_file_meta(client: &Client, file_id: i64) -> Result<File, TransferError> {
-    let path = format!("/api/v1/files/{file_id}");
-    match client.get::<File>(&path).await {
-        Ok(file) => Ok(file),
-        Err(ApiError::Unauthorized) => Err(TransferError::Message("unauthorized".into())),
-        Err(ApiError::Denied { status }) => {
-            Err(TransferError::Message(format!("unavailable:{status}")))
-        }
-        Err(ApiError::NotFound) => Err(TransferError::Message("unavailable:404".into())),
-        Err(ApiError::Forbidden { rate_limited, .. }) if !rate_limited => {
-            Err(TransferError::Message("unavailable:403".into()))
-        }
-        Err(e) => Err(TransferError::Message(e.to_string())),
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
 
-async fn transfer_once(
-    client: &Client,
-    url: reqwest::Url,
-    sink: &mut (dyn AsyncWrite + Send + Unpin),
-    expected: u64,
-    file_id: i64,
-    progress: Option<&ProgressFn>,
-) -> Result<u64, TransferError> {
-    let mut on_progress = |n: u64| {
-        if let Some(cb) = progress {
-            cb(file_id, n);
+    #[tokio::test]
+    async fn fresh_metadata_distinguishes_empty_unknown_and_effective_access() {
+        let server = MockServer::start().await;
+        let client = Client::new(
+            server.uri().parse().unwrap(),
+            canvas_api::Secret::new("tok"),
+            "test",
+        )
+        .unwrap();
+        for (body, expected) in [
+            (json!({"id": 50, "size": 0}), Some((0, false))),
+            (json!({"id": 50}), None),
+            (json!({"id": 51, "size": 4}), None),
+            (json!({"id": 50, "locked_for_user": true}), Some((0, true))),
+            (
+                json!({"id": 50, "size": 4, "locked": true, "locked_for_user": false}),
+                Some((4, false)),
+            ),
+        ] {
+            server.reset().await;
+            Mock::given(path("/api/v1/files/50"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(body))
+                .mount(&server)
+                .await;
+            let result = file_remote_meta(&client, 50).await;
+            match expected {
+                Some((size, locked)) => {
+                    let result = result.unwrap();
+                    assert_eq!(result.remote.size, size);
+                    assert_eq!(result.locked, locked);
+                }
+                None => assert!(matches!(result, Err(TransferError::Api(ApiError::Decode)))),
+            }
         }
-    };
-    match api_download(client, url, sink, Some(expected), &mut on_progress).await {
-        Ok(n) => Ok(n),
-        Err(ApiError::StorageExpired) => Err(TransferError::Message("storage_expired".into())),
-        Err(ApiError::SizeMismatch) => Err(TransferError::SizeMismatch),
-        Err(ApiError::Denied { status }) => {
-            Err(TransferError::Message(format!("unavailable:{status}")))
-        }
-        Err(ApiError::Unauthorized) => Err(TransferError::Message("unauthorized".into())),
-        Err(e) => Err(TransferError::Message(e.to_string())),
+    }
+
+    #[tokio::test]
+    async fn metadata_errors_keep_the_api_variant() {
+        let server = MockServer::start().await;
+        let client = Client::new(
+            server.uri().parse().unwrap(),
+            canvas_api::Secret::new("tok"),
+            "test",
+        )
+        .unwrap();
+        Mock::given(path("/api/v1/files/50"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        assert!(matches!(
+            file_remote_meta(&client, 50).await,
+            Err(TransferError::Api(ApiError::Unauthorized))
+        ));
     }
 }

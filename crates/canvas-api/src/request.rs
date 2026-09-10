@@ -302,6 +302,8 @@ async fn execute_transfer_once(
 pub(crate) fn validate_transfer_url(url: &Url) -> Result<(), Error> {
     let scheme_ok = url.scheme() == "https"
         || (url.scheme() == "http"
+            && cfg!(debug_assertions)
+            && matches!(url.host_str(), Some("127.0.0.1" | "[::1]"))
             && std::env::var("CANVAS_TEST_ALLOW_HTTP").ok().as_deref() == Some("1"));
     if !scheme_ok || !url.username().is_empty() || url.password().is_some() {
         return Err(Error::Network);
