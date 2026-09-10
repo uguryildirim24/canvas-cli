@@ -878,6 +878,71 @@ async fn a_url_operand_must_name_the_course_it_was_given() {
 
 /// The `assignment@1` rubric change is additive: a payload written before
 /// M8-a still decodes, and the new keys appear with their absent values.
+/// The additive change must also hold over a cache a pre-M8-a build wrote:
+/// §7 says a declared field is always present, whatever filled the row.
+#[tokio::test]
+async fn a_rubric_cached_before_m8a_still_carries_every_field() {
+    let server = MockServer::start().await;
+    mount(&server, "/api/v1/users/self", json!({"id": 123})).await;
+    mount(
+        &server,
+        "/api/v1/courses/5/assignments/2",
+        json!({
+            "id": 2,
+            "course_id": 5,
+            "name": "Homework 2",
+            "points_possible": 10.0,
+            "submission_types": ["online_upload"],
+            "rubric": [{"id": "c1", "description": "Reasoning", "points": 10.0}]
+        }),
+    )
+    .await;
+    mount(
+        &server,
+        "/api/v1/courses/5/assignments/2/submissions/self",
+        json!({"id": 20, "assignment_id": 2, "workflow_state": "graded", "score": 8.5}),
+    )
+    .await;
+    let f = Fixture::new(&server.uri());
+    f.run(&["assignment", "5", "2"], 0).await;
+    f.run(&["submission", "5", "2"], 0).await;
+
+    // Rewrite the cache to the shape a pre-M8-a build stored.
+    let paths = Paths::for_identity(f.dir.path().join("data"), &f.doc.key);
+    let open = OpenIdentity::open(&paths, &f.doc).unwrap();
+    open.store
+        .call(|conns| {
+            conns.cache.execute(
+                "UPDATE assignments SET rubric_json = ?1 WHERE id = 2",
+                [r#"[{"id":"c1","description":"Reasoning","points":10.0}]"#],
+            )?;
+            conns.cache.execute(
+                "UPDATE submissions SET data_json =
+                     json_set(data_json, '$.rubric_assessment_json', json(?1))",
+                [r#"[{"criterion_id":"c1","points":8.5,"comments":"ok"}]"#],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    drop(open);
+
+    let out = f.run(&["assignment", "5", "2", "--offline"], 0).await;
+    let criterion = &out["result"]["assignment"]["rubric"][0];
+    assert_eq!(criterion["id"], "c1", "{out}");
+    assert_eq!(criterion["points"], 10.0);
+    assert_eq!(criterion["long_description"], Value::Null);
+    assert_eq!(criterion["criterion_use_range"], false);
+    assert!(criterion["ratings"].as_array().unwrap().is_empty());
+
+    let sub = f.run(&["submission", "5", "2", "--offline"], 0).await;
+    let assessed = &sub["result"]["submission"]["rubric_assessment"][0];
+    assert_eq!(assessed["criterion_id"], "c1", "{sub}");
+    assert_eq!(assessed["points"], 8.5);
+    assert_eq!(assessed["comments"], "ok");
+    assert_eq!(assessed["rating_id"], Value::Null);
+}
+
 #[tokio::test]
 async fn an_old_assignment_rubric_still_validates() {
     let server = MockServer::start().await;

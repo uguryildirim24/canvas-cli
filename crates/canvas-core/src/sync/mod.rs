@@ -48,7 +48,7 @@ pub use assignment_groups::{
 };
 pub use assignments::{
     AssignmentsDataset, assignment_detail_path, assignment_to_entity, assignments_path,
-    assignments_to_ingest_page, default_ttl_assignments, upsert_assignment,
+    assignments_to_ingest_page, criterion_json, default_ttl_assignments, upsert_assignment,
 };
 pub use batched::{BatchOutcome, ContextDenial, refresh_announcements, refresh_calendar_events};
 pub use calendar_events::{
@@ -111,7 +111,8 @@ pub use refresh::{
     refresh_submission,
 };
 pub use submission::{
-    SubmissionDataset, submission_path, submission_to_entity, submission_to_ingest_page,
+    SubmissionDataset, assessment_row_json, submission_path, submission_to_entity,
+    submission_to_ingest_page,
 };
 pub use terms::{TermsDataset, default_ttl_terms, term_to_entity, upsert_term};
 
