@@ -1,0 +1,18 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  ID    Course    Name             Due                                  Status     
+  9               Problem Set 1    Sat Sep 19, 11:59 PM (in 10d 10h)    submitted  
+
+Do it
+Submission types: online_upload
+Allowed extensions: pdf
+Attempts: 2, extra: unknown
+can_submit: true
+Unlock: unknown
+Lock: unknown
+<origin>/courses/100/assignments/9
+--- stderr ---

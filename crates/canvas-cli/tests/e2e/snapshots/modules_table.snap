@@ -1,0 +1,10 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  ID      NAME         POS    STATE       ITEMS    COMPLETE  
+  30      Week 1       1      unlocked    1        yes       
+    31      Reading    1      File        501                
+--- stderr ---
