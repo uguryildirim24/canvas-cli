@@ -54,7 +54,8 @@ fixtures and are listed in the e2e shape table. Every field is present;
 unknown values are `null`; an array is never `null`.
 
 `discussion@1` carries `replies_page` and `replies_total` beside `replies`
-and `replies_coverage` (SPEC §19 item 28); see decision 12.
+and `replies_coverage` (SPEC §19 item 28); `replies_total` is `null` when
+the thread was not read. See decision 12.
 
 Ids are strings (§7). Text bodies are Markdown produced by
 `canvas-core::markdown`, bounded at 64 KiB per document.
@@ -174,7 +175,10 @@ calls a cut or partial result complete.
     it. `discussion@1` carries `replies_page` (the window shown, 1 when
     `--page` is absent) and `replies_total` (the replies the covered set
     holds, across every page) so an empty window is never read as a thread
-    with no replies. Both fields are additive; nothing existing is renamed.
+    with no replies. `replies_total` is `null` when `--replies` was not
+    asked: no count was made, and a topic that has replies must not print
+    the document a topic without them prints. Both fields are additive;
+    nothing existing is renamed.
 13. **`discussion@1` replies carry `parent_id`.** The reply list is flat and
     holds both top-level entries and nested replies; without `parent_id` a
     reader could not tell them apart.

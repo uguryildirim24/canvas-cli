@@ -49,7 +49,9 @@ means Canvas will not show the thread until the user posts first. Never
 summarize a thread you only partly read as if it were all of it.
 `replies_page` and `replies_total` say which window you are looking at: an
 empty `replies` beside a non-zero `replies_total` is a page past the end, not
-a thread without replies.
+a thread without replies. A `replies_total` of `null` means you never asked
+for the thread, so you know nothing about its size; only a 0 says there are
+none.
 
 ## Resolution failures
 

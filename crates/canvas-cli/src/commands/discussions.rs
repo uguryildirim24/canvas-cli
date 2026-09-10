@@ -223,8 +223,10 @@ pub async fn handle_show(
     let start = (window - 1) * REPLY_PAGE;
     // A page past the end is an empty list, not an error (SPEC §19 item 28).
     // `replies_total` is what tells the two apart, so it counts the whole
-    // covered set rather than the window.
-    let replies_total = u32::try_from(entries.len()).unwrap_or(u32::MAX);
+    // covered set rather than the window. Without `--replies` nothing was
+    // read, and an unmade count is `null`, not 0: a topic with replies must
+    // never report the document a topic without them reports.
+    let replies_total = replies.then(|| u32::try_from(entries.len()).unwrap_or(u32::MAX));
     let mut reply_json = Vec::new();
     for entry in entries.iter().skip(start).take(REPLY_PAGE) {
         let body = rich_or_default(entry.message.as_deref()).await;
@@ -685,12 +687,15 @@ fn print_topic(topic: &DiscussionDetailJson) -> io::Result<()> {
             writeln!(out, "{body}")?;
         }
     }
+    // "page 1 of 3" would read as one page of three; the total counts
+    // replies, not pages. The line names both units instead.
+    let Some(total) = topic.replies_total else {
+        return writeln!(out, "\nreplies: not read; --replies asks for the thread");
+    };
     writeln!(
         out,
-        "\nreplies: page {} of {} shown, {} pages fetched, complete={}",
-        topic.replies_page,
-        topic.replies_total,
-        topic.replies_coverage.pages_fetched,
-        topic.replies_coverage.complete
+        "\nreplies: showing page {}; {total} replies in the covered set, \
+         {} pages fetched, complete={}",
+        topic.replies_page, topic.replies_coverage.pages_fetched, topic.replies_coverage.complete
     )
 }

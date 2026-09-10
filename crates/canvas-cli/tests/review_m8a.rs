@@ -475,10 +475,26 @@ async fn a_replies_page_past_the_end_is_empty_at_exit_zero() {
     assert_eq!(empty["replies_coverage"]["complete"], true);
 
     // A thread nobody replied to reports a total of 0, so the two cases are
-    // never the same document.
-    let none = f.run(&["discussion", "5", "57"], 0).await;
+    // never the same document. The count is an observation, so it takes a
+    // read: topic 57's entries route answers with an empty page.
+    mount(&server, &entries_route(57), json!([])).await;
+    let none = f.run(&["discussion", "5", "57", "--replies"], 0).await;
     assert_eq!(none["result"]["discussion"]["replies_total"], 0);
+    assert_eq!(
+        none["result"]["discussion"]["replies_coverage"]["complete"],
+        true
+    );
+
+    // A topic read without `--replies` made no count at all, so it reports
+    // `null` rather than the 0 a thread without replies reports.
+    let unread = f.run(&["discussion", "5", "56"], 0).await;
+    assert_eq!(unread["result"]["discussion"]["replies_total"], Value::Null);
     assert_only_get(&server).await;
+}
+
+/// The entries route of one topic of course 5.
+fn entries_route(topic: i64) -> String {
+    format!("/api/v1/courses/5/discussion_topics/{topic}/entries")
 }
 
 #[tokio::test]
@@ -492,6 +508,13 @@ async fn a_topic_read_without_replies_never_claims_the_thread_is_covered() {
     assert_eq!(coverage["complete"], false);
     assert_eq!(coverage["pages_fetched"], 0);
     assert_eq!(coverage["blocked"], "not_requested");
+    // Nothing was counted, so the total is `null`, not the 0 a thread
+    // without replies reports (SPEC §19 item 28).
+    assert_eq!(
+        out["result"]["discussion"]["replies_total"],
+        Value::Null,
+        "a thread that was never read must not report a count"
+    );
     assert!(
         out["result"]["discussion"]["replies"]
             .as_array()
