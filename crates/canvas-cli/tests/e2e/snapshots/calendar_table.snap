@@ -1,0 +1,10 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  WHEN                COURSE     KIND              TITLE          
+  2026-09-15 11:00    CHEM301    event             Office hours   
+  2026-09-19 23:59    CHEM301    assignment due    Problem Set 1  
+--- stderr ---

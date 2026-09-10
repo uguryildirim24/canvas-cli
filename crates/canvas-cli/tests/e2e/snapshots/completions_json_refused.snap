@@ -1,0 +1,12 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 2
+--- stdout ---
+--- stderr ---
+error: --json cannot be used with this raw-output command
+
+Usage: canvas [OPTIONS] <COMMAND>
+
+For more information, try '--help'.

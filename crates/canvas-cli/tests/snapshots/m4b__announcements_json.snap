@@ -1,0 +1,81 @@
+---
+source: crates/canvas-cli/tests/m4b.rs
+expression: normalized(out)
+---
+{
+  "exit": 12,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "active",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "announcements",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-08-26..2026-09-09:ctx:<hash>",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "partial",
+  "partial": [
+    {
+      "http_status": 403,
+      "message": "Announcements for PHYS unavailable (HTTP 403)",
+      "scope": "announcements:course:2"
+    }
+  ],
+  "profile": null,
+  "requests": {
+    "api": 4,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "announcements": [
+      {
+        "author": "Ada Lovelace",
+        "course_code": "CHEM",
+        "course_id": "1",
+        "html_url": "https://canvas.test/courses/1/discussion_topics/9001",
+        "id": "9001",
+        "posted_at": "2026-09-08T14:00:00Z",
+        "posted_at_local": "2026-09-08T10:00:00-04:00",
+        "read": false,
+        "title": "Lab 3 is posted"
+      },
+      {
+        "author": null,
+        "course_code": "CHEM",
+        "course_id": "1",
+        "html_url": "https://canvas.test/courses/1/discussion_topics/9000",
+        "id": "9000",
+        "posted_at": "2026-09-02T18:30:00Z",
+        "posted_at_local": "2026-09-02T14:30:00-04:00",
+        "read": true,
+        "title": "Quiz 2 moved to Friday"
+      }
+    ],
+    "window": {
+      "end": "2026-09-09",
+      "start": "2026-08-26"
+    }
+  },
+  "schema": "canvas-cli/announcements@1",
+  "warnings": [
+    "Announcements for PHYS unavailable (HTTP 403)"
+  ]
+}

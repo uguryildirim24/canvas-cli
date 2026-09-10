@@ -1,0 +1,89 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "submission",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "assignment:9",
+      "source": "cache",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "history": [
+      {
+        "attachments": [],
+        "attempt": 1,
+        "score": null,
+        "submitted_at": null,
+        "submitted_at_local": null
+      }
+    ],
+    "pending_journals": [],
+    "submission": {
+      "attachments": [
+        {
+          "content_type": "application/pdf",
+          "display_name": "ps1.pdf",
+          "id": "501",
+          "size": 1024
+        }
+      ],
+      "attempt": 1,
+      "body_sha256": null,
+      "comments": [
+        {
+          "author": "Ada",
+          "created_at": "<clock>",
+          "created_at_local": "2026-09-09T11:00:00-04:00",
+          "id": "1",
+          "text": "nice"
+        }
+      ],
+      "excused": null,
+      "grade": "A",
+      "graded": false,
+      "late": false,
+      "missing": false,
+      "pending": false,
+      "posted_at": null,
+      "rubric_assessed": true,
+      "rubric_assessment": [
+        {
+          "comments": "ok",
+          "criterion_id": "_123",
+          "points": 5.0
+        }
+      ],
+      "score": 95.0,
+      "submission_type": "online_upload",
+      "submitted": true,
+      "submitted_at": "2026-09-19T12:00:00Z",
+      "submitted_at_local": "2026-09-19T08:00:00-04:00",
+      "url": null,
+      "workflow_state": "submitted"
+    }
+  },
+  "schema": "canvas-cli/submission@1",
+  "warnings": []
+}

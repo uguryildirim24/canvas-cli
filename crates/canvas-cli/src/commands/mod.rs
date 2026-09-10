@@ -1,11 +1,14 @@
 //! Command modules.
 
 pub mod alias;
+pub mod announcement;
+pub mod announcements;
 pub mod assignment;
 mod assignment_read;
 pub mod assignments;
 pub mod auth;
 pub mod cache;
+pub mod calendar;
 pub mod completions;
 pub mod config_cmd;
 pub mod course;
@@ -13,6 +16,7 @@ pub mod course_load;
 pub mod courses;
 pub mod doctor;
 pub mod download;
+pub mod duration;
 pub mod emit;
 pub mod files;
 pub mod grades;

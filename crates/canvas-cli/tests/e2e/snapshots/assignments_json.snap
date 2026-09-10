@@ -1,0 +1,82 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "assignments",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "cache",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "assignments": [
+      {
+        "allowed_attempts": 2,
+        "allowed_extensions": [
+          "pdf"
+        ],
+        "availability": {
+          "external": false,
+          "lock_at": null,
+          "lock_at_local": null,
+          "lock_explanation": null,
+          "locked": false,
+          "submittable": true,
+          "unlock_at": null,
+          "unlock_at_local": null
+        },
+        "course_id": "100",
+        "due_at": "2026-09-20T03:59:00Z",
+        "due_at_local": "2026-09-19T23:59:00-04:00",
+        "group_assignment": false,
+        "html_url": "<origin>/courses/100/assignments/9",
+        "id": "9",
+        "name": "Problem Set 1",
+        "points_possible": 100.0,
+        "status": {
+          "attempt": 1,
+          "excused": null,
+          "grade": null,
+          "graded": false,
+          "late": null,
+          "missing": false,
+          "pending": false,
+          "posted_at": null,
+          "score": null,
+          "submitted": true,
+          "submitted_at": null,
+          "submitted_at_local": null,
+          "workflow_state": "submitted"
+        },
+        "submission_types": [
+          "online_upload"
+        ]
+      }
+    ],
+    "bucket": "open",
+    "course_id": "100"
+  },
+  "schema": "canvas-cli/assignments@1",
+  "warnings": []
+}

@@ -1,0 +1,8 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+announcement <origin>/courses/100/discussion_topics/40 launched=false
+--- stderr ---

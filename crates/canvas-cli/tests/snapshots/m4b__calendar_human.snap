@@ -1,0 +1,9 @@
+---
+source: crates/canvas-cli/tests/m4b.rs
+expression: stdout
+---
+  WHEN                  COURSE    KIND              TITLE                                
+  2026-09-09 23:59      CHEM      assignment due    Problem Set 2                        
+  2026-09-10 11:00      CHEM      event             Review session; bring notes, please  
+  2026-09-14 all day              event             Reading day                          
+  2026-11-01 all day    CHEM      event             Reading period starts
