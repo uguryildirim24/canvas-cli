@@ -79,6 +79,8 @@ const SHAPES: &[Shape] = shapes![
     ("canvas-cli/doctor@1", "doctor.json"),
     ("canvas-cli/version@1", "version.json"),
     ("canvas-cli/error@1", "error.json"),
+    ("canvas-cli/watch@1", "watch.json"),
+    ("canvas-cli/event@1", "event.json"),
 ];
 
 /// Appendix D `T?` fields whose fixture shows an example value instead of null.
@@ -180,6 +182,7 @@ const SORTS: &[(&str, &[&str])] = &[
     ("canvas-cli/files@1:files", &["folder_path", "name", "id"]),
     ("canvas-cli/modules@1:modules", &["position"]),
     ("canvas-cli/sync@1:datasets", &["dataset", "scope"]),
+    ("canvas-cli/watch@1:datasets", &["dataset", "scope"]),
     ("canvas-cli/alias@1:aliases", &["name"]),
     ("canvas-cli/identity@1:identities", &["key"]),
 ];

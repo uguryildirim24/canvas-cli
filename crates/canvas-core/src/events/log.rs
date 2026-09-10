@@ -225,6 +225,32 @@ pub fn expire(state: &mut Connection, now: Timestamp) -> Result<usize, DbError> 
     Ok(removed)
 }
 
+/// How far a derived consumer has read the log.
+///
+/// `notify` deduplicates by cursor, so its position is durable: a second run
+/// posts nothing the first one already posted (REPORT §3.6).
+pub fn consumer_cursor(state: &Connection, consumer: &str) -> Result<i64, DbError> {
+    Ok(state
+        .query_row(
+            "SELECT cursor FROM consumer_cursor WHERE consumer = ?1",
+            [consumer],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or(0))
+}
+
+/// Move a consumer's position forward. It never moves back.
+pub fn set_consumer_cursor(state: &Connection, consumer: &str, cursor: i64) -> Result<(), DbError> {
+    state.execute(
+        "INSERT INTO consumer_cursor (consumer, cursor, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(consumer) DO UPDATE SET
+            cursor = MAX(cursor, excluded.cursor), updated_at = excluded.updated_at",
+        params![consumer, cursor, Timestamp::now().to_string()],
+    )?;
+    Ok(())
+}
+
 /// Record a journal state transition inside the journal's own transaction.
 ///
 /// SPEC §12.2 keeps the journal and its event atomic: either both land or
