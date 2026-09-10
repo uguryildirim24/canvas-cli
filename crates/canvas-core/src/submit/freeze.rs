@@ -28,12 +28,40 @@ pub enum InputKind {
 
 impl InputKind {
     /// Canvas `submission_types` / journal `kind` string.
+    ///
+    /// Text and HTML share one Canvas kind; they differ only in the transform.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::OnlineUpload => "online_upload",
             Self::OnlineTextEntry | Self::OnlineHtml => "online_text_entry",
             Self::OnlineUrl => "online_url",
+        }
+    }
+
+    /// Storage name that separates every kind, including text from HTML.
+    ///
+    /// A plan must round-trip the exact kind it froze: the two text kinds send
+    /// different bytes, so [`Self::as_str`] cannot name them apart.
+    #[must_use]
+    pub const fn plan_name(self) -> &'static str {
+        match self {
+            Self::OnlineUpload => "online_upload",
+            Self::OnlineTextEntry => "online_text_entry",
+            Self::OnlineHtml => "online_html",
+            Self::OnlineUrl => "online_url",
+        }
+    }
+
+    /// Parse a [`Self::plan_name`].
+    #[must_use]
+    pub fn parse_plan_name(raw: &str) -> Option<Self> {
+        match raw {
+            "online_upload" => Some(Self::OnlineUpload),
+            "online_text_entry" => Some(Self::OnlineTextEntry),
+            "online_html" => Some(Self::OnlineHtml),
+            "online_url" => Some(Self::OnlineUrl),
+            _ => None,
         }
     }
 }

@@ -878,9 +878,15 @@ impl E2e {
         out = mask_number_after(&out, "size=");
         out = mask_number_after(&out, "seconds=");
         // `receipts export --out -` streams the receipt document itself, whose
-        // `created_at` comes from the wall clock (see `VOLATILE_KEYS`).
-        for key in ["created_at", "updated_at"] {
-            out = mask_quoted_after(&out, &format!("\"{key}\": "));
+        // volatile keys keep the placeholders `VOLATILE_KEYS` gives them, so a
+        // plan id never reads as a clock and a digest never reads as an id.
+        for (key, placeholder) in [
+            ("created_at", "<clock>"),
+            ("updated_at", "<clock>"),
+            ("plan_id", "<id>"),
+            ("plan_sha256", "<digest>"),
+        ] {
+            out = mask_quoted_after(&out, &format!("\"{key}\": "), placeholder);
         }
         out = out
             .replace(TOKEN, "<token>")
@@ -950,7 +956,7 @@ fn mask_number_after(text: &str, prefix: &str) -> String {
 }
 
 /// Replace the quoted string that follows every `prefix` with `"<clock>"`.
-fn mask_quoted_after(text: &str, prefix: &str) -> String {
+fn mask_quoted_after(text: &str, prefix: &str, placeholder: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(at) = rest.find(prefix) {
@@ -961,7 +967,9 @@ fn mask_quoted_after(text: &str, prefix: &str) -> String {
             .and_then(|body| body.find('"').map(|end| end + 2))
         {
             Some(end) => {
-                out.push_str("\"<clock>\"");
+                out.push('"');
+                out.push_str(placeholder);
+                out.push('"');
                 rest = &tail[end..];
             }
             None => rest = tail,
@@ -984,9 +992,12 @@ fn ensure_newline(text: &str) -> String {
 /// `journal_id` and `receipt_id` are UUIDs. `created_at`, `updated_at` and
 /// `acknowledged_at` are journal row timestamps: `canvas-core` stamps them from
 /// the wall clock, so `CANVAS_NOW` does not reach them.
-const VOLATILE_KEYS: [(&str, &str); 5] = [
+const VOLATILE_KEYS: [(&str, &str); 7] = [
     ("journal_id", "<id>"),
     ("receipt_id", "<id>"),
+    ("plan_id", "<id>"),
+    // The plan digest covers the identity generation, which is fresh per run.
+    ("plan_sha256", "<digest>"),
     ("created_at", "<clock>"),
     ("updated_at", "<clock>"),
     ("acknowledged_at", "<clock>"),

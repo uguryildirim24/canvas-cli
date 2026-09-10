@@ -75,6 +75,20 @@ pub struct CreateOpts {
     pub baseline_submission_id: Option<i64>,
 }
 
+/// The approved plan a journal is created for (REPORT §3.5).
+///
+/// Linking happens inside the journal insert transaction, so a journal and its
+/// plan link are published together or not at all. The unique index on
+/// `submission_journal.plan_id` and the `state = 'approved'` guard on the plan
+/// row both refuse a second journal for one plan.
+#[derive(Debug, Clone)]
+pub struct PlanLink {
+    /// Plan id.
+    pub plan_id: String,
+    /// The approval audit copied into the journal row.
+    pub approval_json: String,
+}
+
 /// Optional column patches for a transition.
 #[derive(Debug, Clone, Default)]
 pub struct TransitionPatch {
@@ -137,6 +151,10 @@ pub struct JournalRow {
     pub acknowledged_at: Option<String>,
     /// Error text.
     pub error_text: Option<String>,
+    /// The plan this journal was admitted from; `null` for legacy rows.
+    pub plan_id: Option<String>,
+    /// The approval audit copied in at admission; `null` for legacy rows.
+    pub approval_json: Option<String>,
 }
 
 /// Create a `planned` journal: owner lock before insert; unique index last.
@@ -147,6 +165,21 @@ pub fn create(
     identity_dir: &Path,
     admission: &AdmissionLock,
     opts: &CreateOpts,
+) -> Result<(String, OwnerLock), JournalError> {
+    create_linked(store, identity_dir, admission, opts, None)
+}
+
+/// Create a `planned` journal and, in the same transaction, link an approved plan.
+///
+/// With `plan = None` this is [`create`]. With a link, the plan moves to
+/// `executed` and its approval audit is copied into the journal row inside the
+/// one transaction REPORT §3.5 requires; nothing uploads before it commits.
+pub fn create_linked(
+    store: &Store,
+    identity_dir: &Path,
+    admission: &AdmissionLock,
+    opts: &CreateOpts,
+    plan: Option<&PlanLink>,
 ) -> Result<(String, OwnerLock), JournalError> {
     if !admission.matches(identity_dir, opts.assignment_id) {
         return Err(JournalError::StateConflict);
@@ -166,6 +199,8 @@ pub fn create(
     )?)?;
     let baseline_attempt = Some(opts.baseline_attempt.unwrap_or(0));
     let baseline_submission_id = opts.baseline_submission_id;
+    let plan_id = plan.map(|p| p.plan_id.clone());
+    let approval_json = plan.map(|p| p.approval_json.clone());
     let jid = journal_id.clone();
 
     let result = store.call_blocking(move |conns| {
@@ -183,8 +218,8 @@ pub fn create(
             "INSERT INTO submission_journal (
                 journal_id, identity_key, course_id, assignment_id, kind, state,
                 intended_payload_json, baseline_attempt, baseline_submission_id,
-                created_at, planned_at
-             ) VALUES (?1,?2,?3,?4,?5,'planned',?6,?7,?8,?9,?9)",
+                created_at, planned_at, plan_id, approval_json
+             ) VALUES (?1,?2,?3,?4,?5,'planned',?6,?7,?8,?9,?9,?10,?11)",
             params![
                 jid,
                 identity_key,
@@ -195,10 +230,24 @@ pub fn create(
                 baseline_attempt,
                 baseline_submission_id,
                 now,
+                plan_id,
+                approval_json,
             ],
         );
         match insert {
             Ok(_) => {
+                // Consume the approval in the same transaction. The guard is the
+                // plan's own state: a second execute finds it already `executed`.
+                if let Some(plan_id) = &plan_id {
+                    let linked = tx.execute(
+                        "UPDATE plans SET state = 'executed', journal_id = ?1
+                         WHERE plan_id = ?2 AND state = 'approved'",
+                        params![jid, plan_id],
+                    )?;
+                    if linked != 1 {
+                        return Err(DbError::Message("state conflict".into()));
+                    }
+                }
                 crate::events::record_submission_state(&tx, &jid, None, "planned")?;
                 #[cfg(test)]
                 super::crash_tests::checkpoint("inserted", &jid);
@@ -769,7 +818,7 @@ pub fn get_journal(store: &Store, journal_id: &str) -> Result<Option<JournalRow>
             .query_row(
                 "SELECT journal_id, state, assignment_id, course_id, kind,
                         uploaded_file_ids_json, response_record_json, receipt_record_json,
-                        acknowledged_at, error_text, identity_key, intended_payload_json, baseline_attempt, baseline_submission_id, created_at, planned_at, uploading_at, uploaded_at, posting_at, posting_started_at, submitted_at, matched_at, terminal_at, upload_incomplete_at, uploaded_not_submitted_at, outcome_unknown_at, refused_at, post_status, response_kind, not_submitted_evidence, readback_record_json, server_match_json
+                        acknowledged_at, error_text, identity_key, intended_payload_json, baseline_attempt, baseline_submission_id, created_at, planned_at, uploading_at, uploaded_at, posting_at, posting_started_at, submitted_at, matched_at, terminal_at, upload_incomplete_at, uploaded_not_submitted_at, outcome_unknown_at, refused_at, post_status, response_kind, not_submitted_evidence, readback_record_json, server_match_json, plan_id, approval_json
                  FROM submission_journal WHERE journal_id = ?1",
                 params![jid],
                 |r| {
@@ -806,6 +855,8 @@ pub fn get_journal(store: &Store, journal_id: &str) -> Result<Option<JournalRow>
                         receipt_record_json: r.get(7)?,
                         acknowledged_at: r.get(8)?,
                         error_text: r.get(9)?,
+                        plan_id: r.get(32)?,
+                        approval_json: r.get(33)?,
                     })
                 },
             )
@@ -919,9 +970,39 @@ fn build_receipt(
     receipt: &ReceiptRecord,
 ) -> Result<String, DbError> {
     use serde_json::{Value, json};
-    let (course, assignment, kind, baseline, created, payload): (i64, i64, String, Option<i64>, String, String) = tx.query_row(
-        "SELECT course_id, assignment_id, kind, baseline_attempt, created_at, intended_payload_json FROM submission_journal WHERE journal_id = ?1", [jid],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?;
+    #[allow(clippy::type_complexity)]
+    let (course, assignment, kind, baseline, created, payload, plan_id, approval_json): (
+        i64,
+        i64,
+        String,
+        Option<i64>,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+    ) = tx.query_row(
+        "SELECT course_id, assignment_id, kind, baseline_attempt, created_at,
+                intended_payload_json, plan_id, approval_json
+         FROM submission_journal WHERE journal_id = ?1",
+        [jid],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+            ))
+        },
+    )?;
+    let approval: Option<Value> = approval_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|_| DbError::Message("invalid approval".into()))?;
     let intent: Value =
         serde_json::from_str(&payload).map_err(|_| DbError::Message("invalid intent".into()))?;
     let identity = |key| {
@@ -950,6 +1031,7 @@ fn build_receipt(
         "attribution": receipt.attribution, "posted": receipt.posted, "readback": receipt.readback,
         "files": files, "text": text, "url": intent.get("url").and_then(Value::as_str),
         "due_at": intent.get("due_at").and_then(Value::as_str), "cli_version": env!("CARGO_PKG_VERSION"),
+        "plan_id": plan_id, "approval": approval,
     }).to_string())
 }
 

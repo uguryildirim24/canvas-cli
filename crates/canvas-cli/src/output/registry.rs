@@ -32,6 +32,7 @@ pub const SCHEMA_AUTH_LOGOUT: &str = "canvas-cli/auth_logout@1";
 pub const SCHEMA_IDENTITY: &str = "canvas-cli/identity@1";
 pub const SCHEMA_CONFIG: &str = "canvas-cli/config@1";
 pub const SCHEMA_DOCTOR: &str = "canvas-cli/doctor@1";
+pub const SCHEMA_PLAN: &str = "canvas-cli/plan@1";
 pub const SCHEMA_VERSION: &str = "canvas-cli/version@1";
 pub const SCHEMA_ERROR: &str = "canvas-cli/error@1";
 
@@ -82,6 +83,11 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
             id: SCHEMA_SUBMIT,
             variant: None,
             fixture: include_str!("schemas/submit.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_PLAN,
+            variant: None,
+            fixture: include_str!("schemas/plan.json"),
         },
         SchemaEntry {
             id: SCHEMA_SUBMISSION,
@@ -663,6 +669,121 @@ pub struct DownloadResult {
     pub totals: DownloadTotalsJson,
 }
 
+/// One frozen upload on a `plan@1` document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanFileJson {
+    pub name: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+/// The text digests on a `plan@1` document.
+///
+/// The digests only. `plan@1` never carries the outbound bytes: `sent_sha256`
+/// is what the approval binds, and §12.2 step 8 verifies it from the stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanTextJson {
+    pub input_sha256: String,
+    pub transform: String,
+    pub sent_sha256: String,
+}
+
+/// The approval audit on a `plan@1` document; `null` before approval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanApprovalJson {
+    pub channel: String,
+    pub at: String,
+    pub consumer: Option<String>,
+    pub plan_sha256: String,
+}
+
+/// A frozen plan (REPORT §3.5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanJson {
+    pub plan_id: String,
+    pub state: String,
+    pub consumer: Option<String>,
+    pub course_id: String,
+    pub course_code: Option<String>,
+    pub assignment_id: String,
+    pub assignment_name: Option<String>,
+    pub kind: String,
+    pub baseline_attempt: i64,
+    pub estimated_attempt: i64,
+    pub files: Vec<PlanFileJson>,
+    pub text: Option<PlanTextJson>,
+    pub url: Option<String>,
+    pub comment_chars: Option<u64>,
+    pub due_at: Option<String>,
+    pub plan_sha256: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub approval: Option<PlanApprovalJson>,
+    pub journal_id: Option<String>,
+    pub invalidated_reason: Option<String>,
+}
+
+/// `plan@1` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanResult {
+    pub plan: PlanJson,
+}
+
+impl PlanJson {
+    /// Render a stored plan row.
+    ///
+    /// Digests and file hashes travel; the outbound bytes and the local file
+    /// paths never do.
+    #[must_use]
+    pub fn of(row: &canvas_core::plan::PlanRow) -> Self {
+        Self {
+            plan_id: row.plan_id.clone(),
+            state: row.state.as_str().to_owned(),
+            consumer: row.consumer.clone(),
+            course_id: row.course_id.to_string(),
+            course_code: row.payload.course_code.clone(),
+            assignment_id: row.assignment_id.to_string(),
+            assignment_name: row.payload.assignment_name.clone(),
+            kind: row.kind.as_str().to_owned(),
+            baseline_attempt: row.baseline_attempt,
+            estimated_attempt: row.baseline_attempt + 1,
+            files: row
+                .payload
+                .files
+                .iter()
+                .map(|f| PlanFileJson {
+                    name: f.name.clone(),
+                    size: f.size,
+                    sha256: f.sha256.clone(),
+                })
+                .collect(),
+            text: row.payload.text.as_ref().map(|t| PlanTextJson {
+                input_sha256: t.input_sha256.clone(),
+                transform: t.transform.clone(),
+                sent_sha256: t.sent_sha256.clone(),
+            }),
+            url: row.payload.url.clone(),
+            comment_chars: row
+                .payload
+                .comment
+                .as_ref()
+                .map(|c| c.chars().count() as u64),
+            due_at: row.payload.due_at.clone(),
+            plan_sha256: row.plan_sha256.clone(),
+            created_at: row.created_at.clone(),
+            expires_at: row.expires_at.clone(),
+            approval: row.approval.as_ref().map(|a| PlanApprovalJson {
+                channel: a.channel.as_str().to_owned(),
+                at: a.at.clone(),
+                consumer: a.consumer.clone(),
+                plan_sha256: a.plan_sha256.clone(),
+            }),
+            journal_id: row.journal_id.clone(),
+            invalidated_reason: row.invalidated_reason.clone(),
+        }
+    }
+}
+
 // --- M4-b typed result payloads (Appendix D) ---
 
 /// Inclusive civil-day window shared by `announcements@1` and `calendar@1`.
@@ -786,6 +907,93 @@ mod tests {
             }
             insta::assert_json_snapshot!("registered_envelopes", rendered);
         });
+    }
+
+    #[test]
+    fn plan_json_shows_the_digests_and_hashes_but_never_the_outbound_bytes() {
+        use canvas_core::journal::{IntendedFile, IntendedPayload, IntendedText};
+        use canvas_core::plan::{Approval, ApprovalChannel, Observations, PlanRow, PlanState};
+        use canvas_core::submit::InputKind;
+
+        let secret_body = "<p>the essay nobody else may read</p>";
+        let row = PlanRow {
+            plan_id: "plan-1".into(),
+            identity_key: "example.instructure.com-1-deadbeef".into(),
+            identity_generation: "generation-1".into(),
+            consumer: Some("mcp".into()),
+            course_id: 101,
+            assignment_id: 202,
+            kind: InputKind::OnlineHtml,
+            payload: IntendedPayload {
+                files: vec![IntendedFile {
+                    name: "essay.pdf".into(),
+                    size: 24576,
+                    sha256: "bb".repeat(32),
+                    canvas_file_id: None,
+                }],
+                text: Some(IntendedText {
+                    input_sha256: "aa".repeat(32),
+                    transform: "html-verbatim".into(),
+                    sent_sha256: "dd".repeat(32),
+                    outbound_bytes: secret_body.into(),
+                }),
+                url: None,
+                comment: Some("please regrade".into()),
+                course_code: Some("CS-101".into()),
+                assignment_name: Some("Essay 1".into()),
+                due_at: Some("2026-09-15T23:59:59Z".into()),
+                time_zone: Some("America/New_York".into()),
+            },
+            file_paths: vec!["/home/student/private/essay.pdf".into()],
+            input_sha256: Some("aa".repeat(32)),
+            sent_sha256: Some("dd".repeat(32)),
+            baseline_attempt: 1,
+            baseline_submission_id: Some(9001),
+            observations: Observations::default(),
+            plan_sha256: "cc".repeat(32),
+            state: PlanState::Approved,
+            created_at: "2026-09-09T16:04:40Z".into(),
+            expires_at: "2026-09-09T16:19:40Z".into(),
+            approval: Some(Approval {
+                channel: ApprovalChannel::Elicitation,
+                at: "2026-09-09T16:04:52Z".into(),
+                consumer: Some("mcp".into()),
+                plan_sha256: "cc".repeat(32),
+            }),
+            journal_id: None,
+            invalidated_reason: None,
+        };
+
+        let json = serde_json::to_string(&PlanResult {
+            plan: PlanJson::of(&row),
+        })
+        .unwrap();
+
+        // The exact body digest and the file hashes travel.
+        assert!(json.contains(&"dd".repeat(32)), "sent_sha256 is missing");
+        assert!(json.contains(&"aa".repeat(32)), "input_sha256 is missing");
+        assert!(json.contains(&"bb".repeat(32)), "the file hash is missing");
+        assert!(json.contains(&"cc".repeat(32)), "plan_sha256 is missing");
+        assert!(json.contains("essay.pdf"));
+        assert!(json.contains("elicitation"));
+        assert!(json.contains("2026-09-09T16:19:40Z"), "expiry is missing");
+
+        // The bytes themselves, and the local path they came from, do not.
+        assert!(
+            !json.contains(secret_body),
+            "plan@1 leaked the outbound bytes"
+        );
+        assert!(!json.contains("nobody else may read"));
+        assert!(
+            !json.contains("/home/student"),
+            "plan@1 leaked a local path"
+        );
+        assert!(!json.contains("outbound_bytes"));
+        assert!(
+            !json.contains("please regrade"),
+            "plan@1 leaked the comment text"
+        );
+        assert!(json.contains(r#""comment_chars":14"#));
     }
 
     #[test]

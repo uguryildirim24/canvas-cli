@@ -12,8 +12,11 @@ pub use freeze::{
     freeze_url, validate_comment,
 };
 pub use preflight::{
-    Plan, PreflightError, PreflightOutcome, create_from_plan, preflight, preflight_with_input,
+    AssignmentFacts, Plan, PreflightError, PreflightOutcome, admit, check_admissible,
+    check_extensions, create_from_plan, enrich_payload, facts_of, fetch_assignment, preflight,
+    preflight_with_input, recover_active,
 };
+pub(crate) use preflight::{freeze_on_worker, plan_of};
 pub use reconcile::{
     ReconcileError, ReconcileOutcome, ReconcileResult, reconcile, reconcile_history,
 };
