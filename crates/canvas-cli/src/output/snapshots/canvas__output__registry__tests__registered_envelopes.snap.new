@@ -1,5 +1,6 @@
 ---
 source: crates/canvas-cli/src/output/registry.rs
+assertion_line: 956
 expression: rendered
 ---
 [
