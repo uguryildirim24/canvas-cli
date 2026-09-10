@@ -1,4 +1,5 @@
 //! Auth command integration tests.
+#![cfg(unix)]
 
 mod common;
 
@@ -265,4 +266,46 @@ async fn auth_token_reveal() {
         .assert()
         .success()
         .stdout(predicate::eq("secret-reveal\n"));
+}
+
+#[tokio::test]
+async fn failed_validation_json_is_one_envelope_with_correct_exit_and_request_count() {
+    for (status, body, expected) in [(401, "denied", 3), (200, "not-json", 1)] {
+        let home = TestHome::new();
+        let server = MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(wiremock::ResponseTemplate::new(status).set_body_string(body))
+            .mount(&server)
+            .await;
+        let output = home
+            .cmd()
+            .env("CANVAS_TOKEN", "validation-secret")
+            .args(["auth", "login", "--host", &server.uri(), "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(expected));
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["schema"], "canvas-cli/error@1");
+        assert_eq!(value["exit"], expected);
+        assert_eq!(value["requests"]["api"], 1);
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("validation-secret"));
+        assert!(!home.config_dir.join("credentials.toml").exists());
+    }
+}
+
+#[tokio::test]
+async fn unreachable_server_is_network_exit_four() {
+    let home = TestHome::new();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let host = format!("http://{}", listener.local_addr().unwrap());
+    let reset = std::thread::spawn(move || {
+        let (socket, _) = listener.accept().unwrap();
+        socket.shutdown(std::net::Shutdown::Both).unwrap();
+    });
+    home.cmd()
+        .env("CANVAS_TOKEN", "network-secret")
+        .args(["auth", "login", "--host", &host])
+        .assert()
+        .code(4);
+    reset.join().unwrap();
 }

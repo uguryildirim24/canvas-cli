@@ -83,31 +83,42 @@ pub fn resolve_token(
     })
 }
 
-/// Call `GET /users/self` and map outcomes to exits 3/4.
-pub async fn validate_users_self(origin: &str, token: &str) -> Result<User, CliError> {
-    let url = origin_url(origin)?;
-    let client = Client::new(url, Secret::new(token), USER_AGENT)
-        .map_err(|e| CliError::usage(format!("invalid origin for API client: {e}")))?;
-    match client.get::<User>("/api/v1/users/self").await {
-        Ok(user) => Ok(user),
-        Err(ApiError::Unauthorized) => Err(CliError::auth("token rejected")),
-        Err(ApiError::Network) => Err(CliError::network("network failure talking to Canvas")),
-        Err(ApiError::RateLimited) => Err(CliError::new(ExitKind::Generic, "rate limited")),
-        Err(other) => Err(CliError::network(format!("Canvas API error: {other}"))),
-    }
-}
-
-/// Validate that `/users/self` matches an expected user id.
-pub async fn validate_identity_user(
+/// Validate with the shared client and retain only headers and request telemetry.
+pub async fn validate_users_self_details(
     origin: &str,
     token: &str,
-    expected_user_id: i64,
-) -> Result<User, CliError> {
-    let user = validate_users_self(origin, token).await?;
-    if user.id != expected_user_id {
-        return Err(CliError::auth("identity mismatch"));
-    }
-    Ok(user)
+    network: &crate::config::NetworkConfig,
+) -> Result<(User, reqwest::header::HeaderMap, canvas_api::Telemetry), CliError> {
+    let url = origin_url(origin)?;
+    let client = Client::with_governor(
+        url.clone(),
+        Secret::new(token),
+        USER_AGENT,
+        canvas_api::GovernorConfig {
+            api_concurrency: network.api_concurrency as usize,
+            storage_concurrency: network.storage_concurrency as usize,
+            ..Default::default()
+        },
+    )
+    .map_err(|_| CliError::usage("invalid origin for API client"))?;
+    let request = canvas_api::ApiRequest::new(
+        reqwest::Method::GET,
+        url.join("/api/v1/users/self")
+            .map_err(|_| CliError::usage("invalid origin"))?,
+    );
+    let result = match client.send_api_with_headers::<User>(request).await {
+        Ok((user, headers)) => Ok((user, headers, client.telemetry())),
+        Err(ApiError::Unauthorized) => Err(CliError::auth("token rejected").with_http_status(401)),
+        Err(ApiError::Network | ApiError::Timeout) => {
+            Err(CliError::network("network failure talking to Canvas"))
+        }
+        Err(ApiError::RateLimited) => Err(CliError::new(ExitKind::RateLimited, "rate limited")),
+        Err(_) => Err(CliError::new(
+            ExitKind::Generic,
+            "unexpected Canvas response",
+        )),
+    };
+    result.map_err(|e| e.with_requests(client.telemetry()))
 }
 
 /// Open the store for a selected identity.

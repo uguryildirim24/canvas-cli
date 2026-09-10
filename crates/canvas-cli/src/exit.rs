@@ -6,8 +6,6 @@ use std::process::ExitCode;
 /// Process exit kinds used by M0-c commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitKind {
-    /// Success.
-    Ok = 0,
     /// Generic failure.
     Generic = 1,
     /// Usage / argument error.
@@ -16,6 +14,10 @@ pub enum ExitKind {
     Auth = 3,
     /// Network failure.
     Network = 4,
+    /// Exhausted rate-limit retries.
+    RateLimited = 5,
+    /// Completed diagnostics with failures.
+    Partial = 12,
     /// User cancelled a confirmation.
     Cancelled = 11,
     /// Local persistence / credential store error.
@@ -35,6 +37,10 @@ impl ExitKind {
 pub struct CliError {
     pub kind: ExitKind,
     pub message: String,
+    pub http_status: Option<u16>,
+    pub profile: Option<String>,
+    pub identity: Option<Box<crate::output::IdentityRef>>,
+    pub requests: canvas_api::Telemetry,
 }
 
 impl CliError {
@@ -44,6 +50,10 @@ impl CliError {
         Self {
             kind,
             message: message.as_ref().to_owned(),
+            http_status: None,
+            profile: None,
+            identity: None,
+            requests: canvas_api::Telemetry::default(),
         }
     }
 
@@ -69,6 +79,54 @@ impl CliError {
     #[must_use]
     pub fn local(message: impl AsRef<str>) -> Self {
         Self::new(ExitKind::Local, message)
+    }
+
+    pub fn with_http_status(mut self, status: u16) -> Self {
+        self.http_status = Some(status);
+        self
+    }
+
+    pub fn with_requests(mut self, requests: canvas_api::Telemetry) -> Self {
+        self.requests = requests;
+        self
+    }
+
+    pub fn for_selected(mut self, selected: &crate::selection::Selected) -> Self {
+        self.profile = selected.profile_name.clone();
+        self.identity = Some(Box::new(crate::output::IdentityRef::new(
+            &selected.identity.origin,
+            selected.identity.user_id,
+            selected.identity.key.as_str(),
+        )));
+        self
+    }
+
+    /// Render exactly one abort envelope; empty messages mean a command already rendered its result.
+    pub fn exit_with_json(self, json: bool) -> ExitCode {
+        if json && !self.message.is_empty() {
+            let code = match self.kind {
+                ExitKind::Usage => "usage",
+                ExitKind::Auth => "auth",
+                ExitKind::Network => "network",
+                ExitKind::RateLimited => "rate_limited",
+                ExitKind::Local => "local",
+                ExitKind::Cancelled => "cancelled",
+                _ => "generic",
+            };
+            let mut envelope = crate::output::Envelope::error(
+                code,
+                &self.message,
+                self.kind as u8,
+                self.http_status,
+                self.profile.as_deref(),
+                self.identity.as_deref().cloned(),
+            );
+            envelope.requests.api = self.requests.api;
+            envelope.requests.storage = self.requests.storage;
+            envelope.requests.cost = self.requests.cost;
+            envelope.print_json();
+        }
+        self.exit()
     }
 
     /// Convert to a process exit code after printing the message to stderr.

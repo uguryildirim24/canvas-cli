@@ -44,52 +44,68 @@ async fn main() -> ExitCode {
         error.exit();
     }
     let globals = Globals::from(&cli);
-    match cli.command {
-        Commands::Version => {
-            println!("{}", env!("CARGO_PKG_VERSION"));
-            ExitCode::SUCCESS
-        }
-        Commands::Completions { shell } => {
-            let mut cmd = Cli::command();
-            generate(shell, &mut cmd, "canvas", &mut io::stdout());
-            ExitCode::SUCCESS
-        }
-        Commands::Auth { command } => match commands::auth::run(&globals, command).await {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => e.exit(),
-        },
-        Commands::Identity { command } => match commands::identity::run(&globals, command).await {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => e.exit(),
-        },
-        Commands::Doctor { network } => match commands::doctor::run(&globals, network).await {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => e.exit(),
-        },
-        Commands::Config { command } => match commands::config_cmd::run(&globals, command).await {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => e.exit(),
-        },
-        Commands::Courses { .. }
-        | Commands::Course { .. }
-        | Commands::Todo { .. }
-        | Commands::Assignments { .. }
-        | Commands::Assignment { .. }
-        | Commands::Submit { .. }
-        | Commands::Submission { .. }
-        | Commands::Receipts { .. }
-        | Commands::Grades { .. }
-        | Commands::Files { .. }
-        | Commands::Download { .. }
-        | Commands::Modules { .. }
-        | Commands::Announcements { .. }
-        | Commands::Announcement { .. }
-        | Commands::Calendar { .. }
-        | Commands::Open { .. }
-        | Commands::Sync { .. }
-        | Commands::Cache { .. }
-        | Commands::Alias { .. } => not_implemented(),
-    }
+    let runtime = tokio::runtime::Handle::current();
+    canvas_core::io::run_blocking(move || {
+        runtime.block_on(async move {
+            match cli.command {
+                Commands::Version => {
+                    println!("{}", env!("CARGO_PKG_VERSION"));
+                    ExitCode::SUCCESS
+                }
+                Commands::Completions { shell } => {
+                    let mut cmd = Cli::command();
+                    generate(shell, &mut cmd, "canvas", &mut io::stdout());
+                    ExitCode::SUCCESS
+                }
+                Commands::Auth { command } => match commands::auth::run(&globals, command).await {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => e.exit_with_json(globals.json),
+                },
+                Commands::Identity { command } => {
+                    match commands::identity::run(&globals, command).await {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(e) => e.exit_with_json(globals.json),
+                    }
+                }
+                Commands::Doctor { network } => {
+                    match commands::doctor::run(&globals, network).await {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(e) => e.exit_with_json(globals.json),
+                    }
+                }
+                Commands::Config { command } => {
+                    match commands::config_cmd::run(&globals, command).await {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(e) => e.exit_with_json(globals.json),
+                    }
+                }
+                Commands::Courses { .. }
+                | Commands::Course { .. }
+                | Commands::Todo { .. }
+                | Commands::Assignments { .. }
+                | Commands::Assignment { .. }
+                | Commands::Submit { .. }
+                | Commands::Submission { .. }
+                | Commands::Receipts { .. }
+                | Commands::Grades { .. }
+                | Commands::Files { .. }
+                | Commands::Download { .. }
+                | Commands::Modules { .. }
+                | Commands::Announcements { .. }
+                | Commands::Announcement { .. }
+                | Commands::Calendar { .. }
+                | Commands::Open { .. }
+                | Commands::Sync { .. }
+                | Commands::Cache { .. }
+                | Commands::Alias { .. } => not_implemented(),
+            }
+        })
+    })
+    .await
+    .unwrap_or_else(|_| {
+        eprintln!("command worker failed");
+        ExitCode::from(13)
+    })
 }
 
 #[cfg(test)]

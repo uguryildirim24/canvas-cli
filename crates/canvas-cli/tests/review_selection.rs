@@ -1,4 +1,5 @@
 //! Profile, environment, and identity containment regressions.
+#![cfg(unix)]
 mod common;
 use common::{TestHome, host_from_server, mock_users_self};
 use std::fs;
@@ -106,7 +107,7 @@ async fn bound_env_identity_wrong_origin_is_removed_and_local_command_never_fetc
 }
 
 #[tokio::test]
-async fn concurrent_binding_writes_and_logins_preserve_both_profiles() {
+async fn concurrent_binding_writes_and_logins_preserve_both_bindings() {
     let home = TestHome::new();
     let server = MockServer::start().await;
     mock_users_self(&server, 79, "Concurrent").await;
@@ -120,13 +121,18 @@ async fn concurrent_binding_writes_and_logins_preserve_both_profiles() {
                 .env("CANVAS_TOKEN", token)
                 .args(["auth", "login"])
                 .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
                 .spawn()
                 .unwrap(),
         );
     }
-    for mut child in children {
-        assert!(child.wait().unwrap().success());
+    for child in children {
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     let raw = fs::read_to_string(home.data_dir.join("env-bindings.toml")).unwrap();
     let bindings: toml::Value = toml::from_str(&raw).unwrap();
@@ -161,4 +167,62 @@ fn insecure_origin_refused_before_credentials_or_network() {
         .assert()
         .code(2);
     assert!(!home.config_dir.join("credentials.toml").exists());
+}
+
+#[test]
+fn flags_override_environment_and_config_values() {
+    let home = TestHome::new();
+    home.cmd()
+        .args(["config", "set", "output.color", "never"])
+        .assert()
+        .success();
+    home.cmd()
+        .env("CANVAS_OUTPUT_COLOR", "always")
+        .args(["config", "get", "output.color"])
+        .assert()
+        .success()
+        .stdout("always\n");
+    home.cmd()
+        .env("CANVAS_OUTPUT_COLOR", "always")
+        .args(["--color", "auto", "config", "get", "output.color"])
+        .assert()
+        .success()
+        .stdout("auto\n");
+}
+
+#[tokio::test]
+async fn concurrent_named_logins_preserve_both_profiles() {
+    let home = TestHome::new();
+    let server = MockServer::start().await;
+    mock_users_self(&server, 80, "Profiles").await;
+    let mut children = Vec::new();
+    for profile in ["one", "two"] {
+        children.push(
+            home.std_cmd()
+                .env("CANVAS_TOKEN", "profile-token")
+                .args([
+                    "--profile",
+                    profile,
+                    "auth",
+                    "login",
+                    "--host",
+                    &server.uri(),
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+    }
+    for child in children {
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let raw = fs::read_to_string(home.config_dir.join("config.toml")).unwrap();
+    let config: toml::Value = toml::from_str(&raw).unwrap();
+    assert_eq!(config["profiles"].as_table().unwrap().len(), 2);
 }

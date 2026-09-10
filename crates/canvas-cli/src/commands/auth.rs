@@ -10,12 +10,12 @@ use canvas_core::store::OpenIdentity;
 use crate::cli::{AuthCommand, Globals};
 use crate::config::{Config, Profile};
 use crate::credentials::{self, ActiveSource, CredentialRow};
-use crate::exit::{CliError, ExitKind};
+use crate::exit::CliError;
 use crate::origin::canonicalize_origin;
 use crate::output::{Envelope, IdentityRef, print_human};
 use crate::paths::CliPaths;
 use crate::selection::{self, CommandClass, SelectionInput};
-use crate::token::{self, TokenSource};
+use crate::token;
 
 /// Dispatch auth subcommands.
 pub async fn run(globals: &Globals, command: AuthCommand) -> Result<(), CliError> {
@@ -45,7 +45,7 @@ async fn login(
         ));
     }
 
-    let config = Config::load(paths)?;
+    let config = Config::load_with_flags(paths, globals)?;
     let profile_input = globals
         .profile
         .clone()
@@ -105,105 +105,112 @@ async fn login(
     }
     eprintln!("using token from {token_source_label}");
 
-    let user = token::validate_users_self(&origin, &token).await?;
-    let key = IdentityKey::compute(&origin, user.id);
+    let (user, _headers, telemetry) =
+        token::validate_users_self_details(&origin, &token, &config.network).await?;
+    let result = (|| {
+        let key = IdentityKey::compute(&origin, user.id);
 
-    if let Some(existing) = config.profiles.get(&profile_name) {
-        if existing.key != key.as_str() && !replace {
-            return Err(CliError::auth(format!(
-                "profile `{profile_name}` points at a different identity; pass --replace to rebind"
-            )));
-        }
-        // Token for a different user than an existing identity under this profile path:
-        // still refuse identity mismatch when the profile's recorded user differs and the
-        // operator did not intend a replace of the label alone.
-        if existing.user_id != user.id && existing.origin == origin && !replace {
-            return Err(CliError::auth("identity mismatch"));
-        }
-    }
-
-    let (identity, _initialization_lock) = selection::initialize_identity(paths, &origin, user.id)?;
-    let core_paths = CorePaths::for_identity(&paths.data_dir, &key);
-    let open = OpenIdentity::open(&core_paths, &identity)?;
-    let _config_lock = crate::config::ConfigLock::acquire(paths)?;
-    let mut config = Config::load_file(paths)?;
-    if config
-        .profiles
-        .get(&profile_name)
-        .is_some_and(|p| p.key != key.as_str())
-        && !replace
-    {
-        return Err(CliError::auth(
-            "profile points at a different identity; pass --replace to rebind",
-        ));
-    }
-
-    let validated_at = jiff::Timestamp::now().to_string();
-    let source = credentials::activate(paths, &open.store, &key, &token, &validated_at)?;
-
-    config.profiles.insert(
-        profile_name.clone(),
-        Profile {
-            origin: origin.clone(),
-            user_id: user.id,
-            key: key.as_str().to_owned(),
-            name: user.name.clone(),
-            time_zone: user.time_zone.clone(),
-        },
-    );
-    if config.default_profile.is_none() {
-        config.default_profile = Some(profile_name.clone());
-    }
-    config.save(paths)?;
-
-    // Bind env pair when both env vars were the inputs.
-    if std::env::var_os("CANVAS_HOST").is_some() && std::env::var_os("CANVAS_TOKEN").is_some() {
-        if profile_input.is_none() {
-            let env_origin =
-                canonicalize_origin(&std::env::var("CANVAS_HOST").unwrap_or_default())?;
-            let env_token = std::env::var("CANVAS_TOKEN").unwrap_or_default();
-            if env_origin == origin && env_token == token {
-                selection::write_env_binding(paths, &origin, &token, &key)?;
+        if let Some(existing) = config.profiles.get(&profile_name) {
+            if existing.key != key.as_str() && !replace {
+                return Err(CliError::auth(format!(
+                    "profile `{profile_name}` points at a different identity; pass --replace to rebind"
+                )));
+            }
+            // Token for a different user than an existing identity under this profile path:
+            // still refuse identity mismatch when the profile's recorded user differs and the
+            // operator did not intend a replace of the label alone.
+            if existing.user_id != user.id && existing.origin == origin && !replace {
+                return Err(CliError::auth("identity mismatch"));
             }
         }
-    }
 
-    let backend = credentials::backend_label(source).unwrap_or("unknown");
-    let identity_ref = IdentityRef::new(&origin, user.id, key.as_str());
-    let result = json!({
-        "profile": profile_name,
-        "identity": {
-            "origin": origin,
-            "user_id": user.id.to_string(),
-            "key": key.as_str(),
-        },
-        "backend": backend,
-        "removed": [],
-    });
+        let (identity, _initialization_lock) =
+            selection::initialize_identity(paths, &origin, user.id)?;
+        let core_paths = CorePaths::for_identity(&paths.data_dir, &key);
+        let open = OpenIdentity::open(&core_paths, &identity)?;
+        let _config_lock = crate::config::ConfigLock::acquire(paths)?;
+        let mut config = Config::load_file(paths)?;
+        if config
+            .profiles
+            .get(&profile_name)
+            .is_some_and(|p| p.key != key.as_str())
+            && !replace
+        {
+            return Err(CliError::auth(
+                "profile points at a different identity; pass --replace to rebind",
+            ));
+        }
 
-    if globals.json {
-        Envelope::new(
-            "canvas-cli/auth_login@1",
-            Some(&profile_name),
-            Some(identity_ref),
-        )
-        .with_result(result)
-        .with_api_requests(1)
-        .print_json();
-    } else {
-        let name = user.name.as_deref().unwrap_or("(unnamed)");
-        print_human([
-            format!("logged in as {name} ({})", user.id),
-            format!("profile: {profile_name}"),
-            format!("identity: {origin} / {}", user.id),
-            format!("credential backend: {backend}"),
-        ]);
-    }
-    Ok(())
+        let validated_at = jiff::Timestamp::now().to_string();
+        let source = credentials::activate(paths, &open.store, &key, &token, &validated_at)?;
+
+        config.profiles.insert(
+            profile_name.clone(),
+            Profile {
+                origin: origin.clone(),
+                user_id: user.id,
+                key: key.as_str().to_owned(),
+                name: user.name.clone(),
+                time_zone: user.time_zone.clone(),
+            },
+        );
+        if config.default_profile.is_none() {
+            config.default_profile = Some(profile_name.clone());
+        }
+        config.save(paths)?;
+
+        // Bind env pair when both env vars were the inputs.
+        if std::env::var_os("CANVAS_HOST").is_some() && std::env::var_os("CANVAS_TOKEN").is_some() {
+            if profile_input.is_none() {
+                let env_origin =
+                    canonicalize_origin(&std::env::var("CANVAS_HOST").unwrap_or_default())?;
+                let env_token = std::env::var("CANVAS_TOKEN").unwrap_or_default();
+                if env_origin == origin && env_token == token {
+                    selection::write_env_binding(paths, &origin, &token, &key)?;
+                }
+            }
+        }
+
+        let backend = credentials::backend_label(source).unwrap_or("unknown");
+        let identity_ref = IdentityRef::new(&origin, user.id, key.as_str());
+        let result = json!({
+            "profile": profile_name,
+            "identity": {
+                "origin": origin,
+                "user_id": user.id.to_string(),
+                "key": key.as_str(),
+            },
+            "backend": backend,
+            "removed": [],
+        });
+
+        if globals.json {
+            let mut envelope = Envelope::new(
+                "canvas-cli/auth_login@1",
+                Some(&profile_name),
+                Some(identity_ref),
+            )
+            .with_result(result)
+            .with_api_requests(telemetry.api);
+            envelope.requests.storage = telemetry.storage;
+            envelope.requests.cost = telemetry.cost;
+            envelope.print_json();
+        } else {
+            let name = user.name.as_deref().unwrap_or("(unnamed)");
+            print_human([
+                format!("logged in as {name} ({})", user.id),
+                format!("profile: {profile_name}"),
+                format!("identity: {origin} / {}", user.id),
+                format!("credential backend: {backend}"),
+            ]);
+        }
+        Ok(())
+    })();
+    result.map_err(|e: CliError| e.with_requests(telemetry))
 }
 
 async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
-    let config = Config::load(paths)?;
+    let config = Config::load_with_flags(paths, globals)?;
     let selected = selection::select(
         CommandClass::B,
         paths,
@@ -214,8 +221,9 @@ async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
             allow_new_profile: false,
         },
     )?;
-    let open = token::open_store(&selected)?;
-    let row = CredentialRow::load(&open.store, &selected.identity.key)?;
+    let open = token::open_store(&selected).map_err(|e| e.for_selected(&selected))?;
+    let row = CredentialRow::load(&open.store, &selected.identity.key)
+        .map_err(|e| e.for_selected(&selected))?;
     let mut token_source: Option<&str> = None;
     if std::env::var("CANVAS_TOKEN")
         .ok()
@@ -229,7 +237,8 @@ async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
             ActiveSource::None => {}
         }
     }
-    let stray = credentials::stray_sources(paths, &selected.identity.key, &row)?;
+    let stray = credentials::stray_sources(paths, &selected.identity.key, &row)
+        .map_err(|e| e.for_selected(&selected))?;
     let mut pending = Vec::new();
     if row.cleanup_keyring {
         pending.push("keyring");
@@ -237,11 +246,7 @@ async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
     if row.cleanup_file {
         pending.push("file");
     }
-    let backend = if credentials::keyring_available() {
-        "keyring"
-    } else {
-        "file"
-    };
+    let backend = credentials::backend_label(row.active_source);
 
     let identity_ref = IdentityRef::new(
         &selected.identity.origin,
@@ -281,7 +286,7 @@ async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
                 selected.identity.origin, selected.identity.user_id
             ),
             format!("token source: {}", token_source.unwrap_or("none")),
-            format!("backend: {backend}"),
+            format!("backend: {}", backend.unwrap_or("none")),
         ];
         if let Some(v) = &row.validated_at {
             lines.push(format!("validated at: {v}"));
@@ -298,7 +303,7 @@ async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
 }
 
 async fn logout(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
-    let config = Config::load(paths)?;
+    let config = Config::load_with_flags(paths, globals)?;
     let selected = selection::select(
         CommandClass::B,
         paths,
@@ -309,11 +314,12 @@ async fn logout(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
             allow_new_profile: false,
         },
     )?;
-    let open = token::open_store(&selected)?;
+    let open = token::open_store(&selected).map_err(|e| e.for_selected(&selected))?;
     if std::env::var_os("CANVAS_TOKEN").is_some() {
         eprintln!("warning: CANVAS_TOKEN is still set in the environment");
     }
-    let removed = credentials::logout(paths, &open.store, &selected.identity.key)?;
+    let removed = credentials::logout(paths, &open.store, &selected.identity.key)
+        .map_err(|e| e.for_selected(&selected))?;
     let identity_ref = IdentityRef::new(
         &selected.identity.origin,
         selected.identity.user_id,
@@ -356,7 +362,10 @@ async fn token_cmd(globals: &Globals, paths: &CliPaths, reveal: bool) -> Result<
             "--json cannot be used with auth token --reveal",
         ));
     }
-    let config = Config::load(paths)?;
+    if !reveal {
+        return status(globals, paths).await;
+    }
+    let config = Config::load_with_flags(paths, globals)?;
     let selected = selection::select(
         CommandClass::B,
         paths,
@@ -367,8 +376,9 @@ async fn token_cmd(globals: &Globals, paths: &CliPaths, reveal: bool) -> Result<
             allow_new_profile: false,
         },
     )?;
-    let open = token::open_store(&selected)?;
-    let resolved = token::resolve_token(paths, &open.store, &selected.identity.key)?;
+    let open = token::open_store(&selected).map_err(|e| e.for_selected(&selected))?;
+    let resolved = token::resolve_token(paths, &open.store, &selected.identity.key)
+        .map_err(|e| e.for_selected(&selected))?;
     if reveal {
         print!("{}", resolved.token.expose());
         if !resolved.token.expose().ends_with('\n') {
@@ -376,34 +386,6 @@ async fn token_cmd(globals: &Globals, paths: &CliPaths, reveal: bool) -> Result<
         }
         return Ok(());
     }
-    let identity_ref = IdentityRef::new(
-        &selected.identity.origin,
-        selected.identity.user_id,
-        selected.identity.key.as_str(),
-    );
-    let result = json!({
-        "token_source": resolved.source.as_str(),
-        "sha256": credentials::token_sha256(resolved.token.expose()),
-    });
-    if globals.json {
-        Envelope::new(
-            "canvas-cli/auth_status@1",
-            selected.profile_name.as_deref(),
-            Some(identity_ref),
-        )
-        .with_result(result)
-        .print_json();
-    } else {
-        print_human([
-            format!("token source: {}", resolved.source.as_str()),
-            format!(
-                "sha256: {}",
-                credentials::token_sha256(resolved.token.expose())
-            ),
-        ]);
-    }
-    let _ = TokenSource::Env;
-    let _ = ExitKind::Ok;
     Ok(())
 }
 

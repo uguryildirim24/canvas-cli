@@ -25,8 +25,12 @@ pub async fn run(globals: &Globals, command: IdentityCommand) -> Result<(), CliE
 }
 
 fn list(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
-    let config = Config::load(paths)?;
+    let config = Config::load_with_flags(paths, globals)?;
     let identities = selection::list_identities(paths)?;
+    let _identity_locks = identities
+        .iter()
+        .map(|doc| IdentityLock::acquire_shared(&selection::paths_for_key(paths, &doc.key), doc))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut items = Vec::new();
     for doc in &identities {
         let profiles: Vec<String> = config
@@ -42,7 +46,7 @@ fn list(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
             .values()
             .find(|p| p.key == doc.key.as_str())
             .and_then(|p| p.name.clone());
-        let journals_pending = count_pending_journals(paths, doc).unwrap_or(0);
+        let journals_pending = count_pending_journals(paths, doc)?;
         items.push(json!({
             "key": doc.key.as_str(),
             "origin": doc.origin,
@@ -69,11 +73,12 @@ fn list(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
                 .map(|(n, _)| n.as_str())
                 .collect();
             print_human([format!(
-                "{}  {} / {}  profiles=[{}]",
+                "{}  {} / {}  profiles=[{}]  size={} bytes",
                 doc.key.as_str(),
                 doc.origin,
                 doc.user_id,
-                profiles.join(", ")
+                profiles.join(", "),
+                dir_size(&selection::paths_for_key(paths, &doc.key).identity_dir)
             )]);
         }
     }

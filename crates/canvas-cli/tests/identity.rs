@@ -1,4 +1,5 @@
 //! Identity command integration tests.
+#![cfg(unix)]
 
 mod common;
 
