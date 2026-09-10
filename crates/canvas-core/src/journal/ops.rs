@@ -248,6 +248,7 @@ pub fn create_linked(
                         return Err(DbError::Message("state conflict".into()));
                     }
                 }
+                crate::events::record_submission_state(&tx, &jid, None, "planned")?;
                 #[cfg(test)]
                 super::crash_tests::checkpoint("inserted", &jid);
                 tx.commit()?;
@@ -327,6 +328,7 @@ pub fn transition(
     let jid = journal_id.to_owned();
     let now = Timestamp::now().to_string();
     let ts_col = format!("{}_at", to.as_str());
+    let (from_state, to_state) = (from.as_str(), to.as_str());
     store
         .call_blocking(move |conns| {
             let tx = conns
@@ -366,6 +368,8 @@ pub fn transition(
                 return Err(DbError::Message("state conflict".into()));
             }
             bump_journal_epochs(&tx, &jid)?;
+            // §12.2: the journal transition and its event are one transaction.
+            crate::events::record_submission_state(&tx, &jid, Some(from_state), to_state)?;
             tx.commit()?;
             Ok(())
         })
@@ -515,6 +519,12 @@ fn commit_confirmed(
         Some(full_readback(&receipt.posted)?.to_string())
     };
     let now = Timestamp::now().to_string();
+    let from_state = if observed {
+        "posting"
+    } else {
+        "outcome_unknown"
+    };
+    let to_state = target.as_str();
     store
         .call_blocking(move |conns| {
             let tx = conns
@@ -549,6 +559,7 @@ fn commit_confirmed(
                 return Err(DbError::Message("state conflict".into()));
             }
             bump_journal_epochs(&tx, &jid)?;
+            crate::events::record_submission_state(&tx, &jid, Some(from_state), to_state)?;
             #[cfg(test)]
             super::crash_tests::checkpoint("success_before_commit", &jid);
             tx.commit()?;
@@ -739,6 +750,7 @@ pub fn assume_not_submitted(
             terminal_at = ?1, not_submitted_evidence = 'assumed' WHERE journal_id = ?2 AND state = 'outcome_unknown'", params![now.to_string(), jid])?;
         if changed != 1 { return Err(DbError::Message("state conflict".into())); }
         bump_journal_epochs(&tx, &jid)?;
+        crate::events::record_submission_state(&tx, &jid, Some("outcome_unknown"), "uploaded_not_submitted")?;
         tx.commit()?;
         Ok(())
     }).map_err(JournalError::from)
