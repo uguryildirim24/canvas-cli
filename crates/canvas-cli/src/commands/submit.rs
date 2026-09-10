@@ -13,9 +13,7 @@ use canvas_core::submit::{
 use jiff::Timestamp;
 
 use super::Globals;
-use super::emit::{
-    base_envelope, emit, emit_error, parse_numeric_id, require_client, session_error, sync_error,
-};
+use super::emit::{base_envelope, emit, emit_error, require_client, session_error, sync_error};
 use crate::output::{
     Outcome, SCHEMA_SUBMIT, SubmitCandidateJson, SubmitFileJson, SubmitResult, SubmitTextJson,
 };
@@ -34,20 +32,6 @@ pub async fn run(
     comment: Option<String>,
     yes: bool,
 ) -> ExitCode {
-    let (course_id, assignment_id) = match resolve_numeric_pair(&target, assignment.as_deref()) {
-        Ok(ids) => ids,
-        Err(message) => {
-            return emit_error(
-                globals.json,
-                "usage",
-                &message,
-                2,
-                globals.profile.clone(),
-                None,
-            );
-        }
-    };
-
     if globals.offline {
         return emit_error(
             globals.json,
@@ -71,6 +55,25 @@ pub async fn run(
         return sync_error(globals, &session, &e);
     }
 
+    // Pre-flight step 1: resolve the course and the assignment (SPEC §6).
+    let mut freshness = Vec::new();
+    let mut outcomes = Vec::new();
+    let (course, assignment_id) = match super::assignment_read::resolve_target(
+        &session,
+        globals,
+        &target,
+        assignment.as_deref(),
+        &mut freshness,
+        &mut outcomes,
+    )
+    .await
+    {
+        Ok(pair) => pair,
+        Err(code) => return code,
+    };
+    let course_id = course.id;
+    freshness.extend(outcomes.iter().map(super::course_load::outcome_freshness));
+
     let kind = if !files.is_empty() {
         InputKind::OnlineUpload
     } else if html.is_some() {
@@ -80,7 +83,7 @@ pub async fn run(
     } else {
         InputKind::OnlineTextEntry
     };
-    let outcome = match preflight_with_input(
+    let mut outcome = match preflight_with_input(
         client,
         &session.open.store,
         &session.paths.identity_dir,
@@ -104,6 +107,17 @@ pub async fn run(
         Ok(o) => o,
         Err(e) => return map_preflight_error(globals, &session, e),
     };
+
+    // The assignment GET omits the course include; fall back to the resolved code.
+    if outcome.plan.course_code.is_none() {
+        outcome.plan.course_code.clone_from(&course.code);
+        outcome
+            .plan
+            .frozen
+            .payload
+            .course_code
+            .clone_from(&course.code);
+    }
 
     for (jid, state) in &outcome.plan.recovered {
         let _ = writeln!(io::stderr(), "recovered journal {jid} → {state}");
@@ -157,21 +171,10 @@ pub async fn run(
                     |w| format!("assignment is past due; {w}"),
                 ));
             }
-            emit_submit_ok(globals, &session, &exec, &frozen)
+            emit_submit_ok(globals, &session, &exec, &frozen, freshness)
         }
-        Err(e) => map_execute_error(globals, &session, &journal_id, e),
+        Err(e) => map_execute_error(globals, &session, &journal_id, e, freshness),
     }
-}
-
-fn resolve_numeric_pair(target: &str, assignment: Option<&str>) -> Result<(i64, i64), String> {
-    let Some(assignment) = assignment else {
-        return Err(
-            "course and assignment resolution needs M1-c; pass two numeric ids for now".into(),
-        );
-    };
-    let course_id = parse_numeric_id(target, "course")?;
-    let assignment_id = parse_numeric_id(assignment, "assignment")?;
-    Ok((course_id, assignment_id))
 }
 
 fn freeze_inputs(
@@ -302,6 +305,7 @@ fn emit_submit_ok(
     session: &Session,
     exec: &ExecuteOutcome,
     frozen: &FrozenInput,
+    freshness: Vec<crate::output::Freshness>,
 ) -> ExitCode {
     let (outcome, exit) = match exec.state {
         State::Submitted | State::Matched => (Outcome::Ok, 0),
@@ -357,6 +361,7 @@ fn emit_submit_ok(
     };
 
     let mut envelope = base_envelope(SCHEMA_SUBMIT, session, result);
+    envelope.freshness = freshness;
     envelope.outcome = outcome;
     envelope.exit = exit;
     envelope.requests = session.requests();
@@ -417,6 +422,7 @@ fn map_execute_error(
     session: &Session,
     journal_id: &str,
     err: ExecuteError,
+    freshness: Vec<crate::output::Freshness>,
 ) -> ExitCode {
     let row = get_journal(&session.open.store, journal_id).ok().flatten();
     if let Some(row) = &row
@@ -444,7 +450,7 @@ fn map_execute_error(
             payload: canvas_core::journal::IntendedPayload::default(),
             file_paths: vec![],
         };
-        return emit_submit_ok(globals, session, &exec, &frozen);
+        return emit_submit_ok(globals, session, &exec, &frozen, freshness);
     }
     let details = row.map_or_else(|| serde_json::json!({"journal_id":journal_id}), |row| serde_json::json!({
         "journal_id":journal_id,"state":row.state.as_str(),
