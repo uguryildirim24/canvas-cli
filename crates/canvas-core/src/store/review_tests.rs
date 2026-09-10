@@ -192,9 +192,12 @@ fn simultaneous_processes_migrate_fresh_identity() {
     store
         .unwrap()
         .call_blocking(|conns| {
-            for conn in [&conns.cache, &conns.state] {
+            for (conn, supported) in [
+                (&conns.cache, super::migrate::CACHE_USER_VERSION),
+                (&conns.state, super::migrate::STATE_USER_VERSION),
+            ] {
                 let version: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-                assert_eq!(version, 1);
+                assert_eq!(version, supported);
             }
             Ok(())
         })

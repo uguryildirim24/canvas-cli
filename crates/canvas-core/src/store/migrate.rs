@@ -1,4 +1,9 @@
-//! Schema migrations. Owner of the migration list for M1-a: `0001_initial`.
+//! Schema migrations.
+//!
+//! Owner of the migration list for M1-a (`0001_initial`) and M6-c
+//! (`0003_events`). Each batch is applied only when the database is below it,
+//! so a lane that adds a numbered migration between two existing ones needs no
+//! more than its own `if` arm here.
 
 use rusqlite::Connection;
 
@@ -7,19 +12,29 @@ use super::db::DbError;
 /// Current cache.sqlite schema version.
 pub const CACHE_USER_VERSION: i32 = 1;
 /// Current state.sqlite schema version.
-pub const STATE_USER_VERSION: i32 = 1;
+///
+/// `0002_plans` belongs to lane w1 (M6-a) and arrives with that merge; this
+/// lane owns `0003_events`, so the version is already 3 and the missing arm is
+/// filled in when the two lanes meet.
+pub const STATE_USER_VERSION: i32 = 3;
 
-/// Apply cache migrations up to [`CACHE_USER_VERSION`].
-pub fn migrate_cache(conn: &Connection) -> Result<(), DbError> {
-    // 0001_initial
-    conn.execute_batch(CACHE_0001)?;
+/// Apply cache migrations from `from` up to [`CACHE_USER_VERSION`].
+pub fn migrate_cache(conn: &Connection, from: i32) -> Result<(), DbError> {
+    if from < 1 {
+        conn.execute_batch(CACHE_0001)?;
+    }
     Ok(())
 }
 
-/// Apply state migrations up to [`STATE_USER_VERSION`].
-pub fn migrate_state(conn: &Connection) -> Result<(), DbError> {
-    // 0001_initial
-    conn.execute_batch(STATE_0001)?;
+/// Apply state migrations from `from` up to [`STATE_USER_VERSION`].
+pub fn migrate_state(conn: &Connection, from: i32) -> Result<(), DbError> {
+    if from < 1 {
+        conn.execute_batch(STATE_0001)?;
+    }
+    // 0002_plans: lane w1 (M6-a).
+    if from < 3 {
+        conn.execute_batch(STATE_0003)?;
+    }
     Ok(())
 }
 
@@ -360,4 +375,74 @@ CREATE TABLE destinations (
     root_fingerprint TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+";
+
+/// Coordinator, observation, and event tables (REPORT §3.6, migration `0003_events`).
+const STATE_0003: &str = r"
+-- The shared rate-limit governor (SPEC §11). One row, id 1.
+CREATE TABLE governor (
+    id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+    estimate REAL NOT NULL,
+    watermark INTEGER NOT NULL DEFAULT 0,
+    cooldown_until INTEGER,
+    refill REAL NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+);
+
+-- Foreground submission interest. One row per assignment; liveness is the
+-- matching `locks/interest-assignment-<id>.lock`, so a dead registrant frees
+-- its interest with its descriptor.
+CREATE TABLE interest (
+    assignment_id INTEGER PRIMARY KEY NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('submit', 'plan_execute')),
+    registered_at TEXT NOT NULL
+);
+
+-- The observation outbox. `observation_id` is
+-- `<dataset>:<scope>:<fetch_log rowid>:<fetched_at>`, so a cache row that was
+-- removed or refreshed again before the comparison ran no longer matches.
+CREATE TABLE observations (
+    observation_id TEXT PRIMARY KEY NOT NULL,
+    dataset TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    fetch_row_id INTEGER NOT NULL,
+    fetched_at TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('pending', 'applied')),
+    recorded_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX observations_row
+ON observations(dataset, scope, fetch_row_id, fetched_at);
+
+CREATE INDEX observations_pending ON observations(state, recorded_at);
+
+-- The last complete membership of a dataset scope and the allowlisted fields
+-- compared against it.
+CREATE TABLE baselines (
+    dataset TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    observation_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    members_json TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (dataset, scope)
+);
+
+-- The event log. AUTOINCREMENT so retention never hands a deleted cursor to a
+-- second event, which is what a consumer's deduplication key relies on.
+CREATE TABLE events (
+    cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+    observation_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    identity_key TEXT NOT NULL,
+    generation TEXT NOT NULL,
+    dataset TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    entity_key TEXT,
+    [before] TEXT NOT NULL DEFAULT '{}',
+    [after] TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX events_observed_at ON events(observed_at);
+CREATE INDEX events_observation ON events(observation_id);
 ";
