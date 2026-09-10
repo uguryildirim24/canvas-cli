@@ -463,3 +463,326 @@ async fn text_verify_and_readback_retry_are_attempt_bound_and_idempotent() {
         assert!(enriched.readback.unwrap().attachments.is_empty());
     }
 }
+
+#[tokio::test]
+async fn uploads_are_bounded_and_changed_input_never_posts() {
+    use canvas_api::test_support::{TestServer, test_client};
+    for scenario in ["success", "changed", "failed", "missing"] {
+        let (_dir, paths, open, doc) = setup_identity();
+        let server = TestServer::start().await;
+        let client = test_client(&server);
+        let inputs: Vec<_> = (0..3)
+            .map(|n| {
+                let p = paths.identity_dir.join(format!("input{n}"));
+                std::fs::write(&p, b"hello").unwrap();
+                p
+            })
+            .collect();
+        let frozen = freeze_files(&inputs, None).unwrap();
+        let admission = AdmissionLock::try_acquire(&paths.identity_dir, 2).unwrap();
+        let (jid, owner) = create(
+            &open.store,
+            &paths.identity_dir,
+            &admission,
+            &CreateOpts {
+                identity_key: doc.key.to_string(),
+                course_id: 1,
+                assignment_id: 2,
+                kind: "online_upload".into(),
+                intended_payload_json: serde_json::to_string(&frozen.payload).unwrap(),
+                baseline_attempt: Some(0),
+                baseline_submission_id: None,
+            },
+        )
+        .unwrap();
+        drop(admission);
+        let base = server.uri();
+        Mock::given(path("/api/v1/courses/1/assignments/2/submissions/self/files")).respond_with(move|r:&wiremock::Request|{
+            let v:Value=serde_json::from_slice(&r.body).unwrap();
+            ResponseTemplate::new(200).set_body_json(json!({"upload_url":format!("{base}/storage/{}",v["name"].as_str().unwrap()),"upload_params":{}}))
+        }).mount(&server).await;
+        for n in 0..3 {
+            Mock::given(path(format!("/storage/input{n}")))
+                .respond_with(if scenario == "failed" {
+                    ResponseTemplate::new(500)
+                } else {
+                    ResponseTemplate::new(201)
+                        .set_body_json(json!({"id":777+n}))
+                        .set_delay(std::time::Duration::from_millis(150))
+                })
+                .mount(&server)
+                .await;
+        }
+        Mock::given(method("POST"))
+            .and(path("/api/v1/courses/1/assignments/2/submissions"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(entry(1, &[777, 778, 779])))
+            .expect(u64::from(scenario == "success"))
+            .mount(&server)
+            .await;
+        history(&server, json!(1), vec![entry(1, &[777, 778, 779])]).await;
+        if scenario == "changed" {
+            std::fs::write(&inputs[0], b"other").unwrap();
+        }
+        if scenario == "missing" {
+            std::fs::remove_file(&inputs[0]).unwrap();
+        }
+        let run = execute(&client, &open.store, &paths, &owner, &jid, &frozen);
+        tokio::pin!(run);
+        if scenario == "success" {
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(80), &mut run)
+                    .await
+                    .is_err()
+            );
+            let requests = server.received_requests().await.unwrap();
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|r| r.url.path().contains("/storage/"))
+                    .count(),
+                2
+            );
+        }
+        let result = run.await;
+        let state = get_journal(&open.store, &jid).unwrap().unwrap().state;
+        match scenario {
+            "success" => assert_eq!(result.unwrap().state, State::Submitted),
+            "changed" => assert_eq!(state, State::Refused),
+            _ => assert_eq!(state, State::UploadIncomplete),
+        }
+    }
+}
+
+#[tokio::test]
+async fn preflight_checks_fresh_eligibility_before_reading_inputs() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    for (assignment, refused) in [
+        (
+            json!({"can_submit":false,"lock_explanation":"closed"}),
+            true,
+        ),
+        (json!({"group_category_id":1,"can_submit":true}), true),
+        (json!({"submission_types":["external_tool"]}), true),
+        (
+            json!({"allowed_attempts":1,"submission":{"attempt":2,"extra_attempts":1}}),
+            true,
+        ),
+        (
+            json!({"allowed_attempts":1,"submission":{"attempt":1,"extra_attempts":1}}),
+            false,
+        ),
+        (json!({"allowed_attempts":null}), false),
+        (json!({"allowed_attempts":-1}), false),
+        (
+            json!({"can_submit":true,"locked_for_user":true,"allowed_attempts":0}),
+            false,
+        ),
+    ] {
+        let (_dir, paths, open, doc) = setup_identity();
+        let server = MockServer::start().await;
+        let client = test_client(&server);
+        let mut assignment = assignment;
+        if assignment.get("submission_types").is_none() {
+            assignment["submission_types"] = json!(["online_text_entry"]);
+        }
+        Mock::given(path("/api/v1/courses/1/assignments/2"))
+            .and(wiremock::matchers::query_param("include[]", "submission"))
+            .and(wiremock::matchers::query_param("include[]", "can_submit"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(assignment))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let called = Arc::new(AtomicBool::new(false));
+        let flag = called.clone();
+        let result = preflight_with_input(
+            &client,
+            &open.store,
+            &paths.identity_dir,
+            doc.key.as_str(),
+            1,
+            2,
+            InputKind::OnlineTextEntry,
+            move || {
+                flag.store(true, Ordering::SeqCst);
+                freeze_text(&TextSource::Bytes(b"hello"), None)
+            },
+            Timestamp::now(),
+        )
+        .await;
+        assert_eq!(result.is_err(), refused);
+        assert_eq!(called.load(Ordering::SeqCst), !refused);
+        assert!(
+            list_journals(&open.store, &paths.identity_dir, &ListFilter::default())
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+#[tokio::test]
+async fn failed_readback_retries_and_unknown_text_is_superseded() {
+    let (_dir, paths, open, doc) = setup_identity();
+    let server = MockServer::start().await;
+    let client = test_client(&server);
+    let (old, owner, _) = seed(&paths, &open.store, &doc, false);
+    unknown(&open.store, &owner, &old);
+    drop(owner);
+    let (jid, owner, frozen) = seed(&paths, &open.store, &doc, false);
+    let mut posted = entry(1, &[]);
+    posted.as_object_mut().unwrap().remove("body");
+    Mock::given(method("POST"))
+        .and(path("/api/v1/courses/1/assignments/2/submissions"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(posted))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let result = post_and_finish(&client, &open.store, &paths, &owner, &jid, &frozen)
+        .await
+        .unwrap();
+    drop(owner);
+    assert_eq!(result.state, State::Submitted);
+    assert!(result.warning.is_some());
+    assert!(
+        rebuild_from_journal(&open.store, &jid)
+            .unwrap()
+            .readback
+            .is_none()
+    );
+    assert!(is_superseded(&open.store, &old).unwrap());
+    assert!(
+        !open
+            .store
+            .call_blocking(|c| crate::store::pending_for_assignment(&c.state, 2))
+            .unwrap()
+    );
+    server.reset().await;
+    history(&server, json!(2), vec![entry(1, &[]), entry(2, &[999])]).await;
+    reconcile(&client, &open.store, &paths, &jid, false, Timestamp::now())
+        .await
+        .unwrap();
+    let receipt = rebuild_from_journal(&open.store, &jid).unwrap();
+    assert!(receipt.text.unwrap().server_body_sha256.is_some());
+    assert!(receipt.readback.unwrap().attachments.is_empty());
+}
+
+#[tokio::test]
+async fn timeout_and_malformed_success_remain_unknown() {
+    use canvas_api::test_support::{TestServer, test_client_with_timeout};
+    for timeout in [false, true] {
+        let (_dir, paths, open, doc) = setup_identity();
+        let server = TestServer::start().await;
+        let client = test_client_with_timeout(&server, std::time::Duration::from_millis(100));
+        let (jid, owner, frozen) = seed(&paths, &open.store, &doc, false);
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(201)
+                    .set_body_string("raw unrecognized body")
+                    .set_delay(std::time::Duration::from_millis(if timeout {
+                        300
+                    } else {
+                        0
+                    })),
+            )
+            .mount(&server)
+            .await;
+        history(&server, json!(0), vec![]).await;
+        let result = post_and_finish(&client, &open.store, &paths, &owner, &jid, &frozen)
+            .await
+            .unwrap();
+        drop(owner);
+        assert_eq!(result.state, State::OutcomeUnknown);
+        assert_eq!(
+            result.response_kind,
+            Some(if timeout {
+                ResponseKind::None
+            } else {
+                ResponseKind::Other
+            })
+        );
+        assert_eq!(result.post_status, if timeout { None } else { Some(201) });
+        assert!(
+            !get_journal(&open.store, &jid)
+                .unwrap()
+                .unwrap()
+                .error_text
+                .unwrap()
+                .contains("raw unrecognized body")
+        );
+        assert_eq!(
+            reconcile(&client, &open.store, &paths, &jid, false, Timestamp::now())
+                .await
+                .unwrap()
+                .state,
+            State::OutcomeUnknown
+        );
+    }
+}
+
+#[tokio::test]
+async fn confirmed_reconcile_is_ok_while_export_owner_is_live() {
+    let (_dir, paths, open, doc) = setup_identity();
+    let server = MockServer::start().await;
+    let client = test_client(&server);
+    let (jid, owner, _) = seed(&paths, &open.store, &doc, false);
+    commit_seed(&open.store, &owner, &jid, entry(1, &[]));
+    let result = reconcile(&client, &open.store, &paths, &jid, false, Timestamp::now())
+        .await
+        .unwrap();
+    assert_eq!(result.outcome, ReconcileOutcome::Ok);
+    assert_eq!(result.state, State::Submitted);
+    assert_eq!(result.posted.unwrap().attempt, Some(1));
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+#[tokio::test]
+async fn url_receipt_is_refused_without_network() {
+    let (_dir, paths, open, doc) = setup_identity();
+    let server = MockServer::start().await;
+    let client = test_client(&server);
+    let frozen = freeze_url("https://example.test/work", None).unwrap();
+    let admission = AdmissionLock::try_acquire(&paths.identity_dir, 2).unwrap();
+    let (jid, owner) = create(
+        &open.store,
+        &paths.identity_dir,
+        &admission,
+        &CreateOpts {
+            identity_key: doc.key.to_string(),
+            course_id: 1,
+            assignment_id: 2,
+            kind: "online_url".into(),
+            intended_payload_json: serde_json::to_string(&frozen.payload).unwrap(),
+            baseline_attempt: Some(0),
+            baseline_submission_id: None,
+        },
+    )
+    .unwrap();
+    transition(
+        &open.store,
+        &owner,
+        &jid,
+        State::Planned,
+        State::Uploaded,
+        TransitionPatch::default(),
+    )
+    .unwrap();
+    commit_seed(
+        &open.store,
+        &owner,
+        &jid,
+        json!({"attempt":1,"url":"https://example.test/work"}),
+    );
+    let receipt = rebuild_from_journal(&open.store, &jid).unwrap();
+    assert_eq!(
+        verify(&client, &open.store, &paths, doc.key.as_str(), &receipt)
+            .await
+            .unwrap()
+            .outcome,
+        VerifyOutcome::Refused
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
