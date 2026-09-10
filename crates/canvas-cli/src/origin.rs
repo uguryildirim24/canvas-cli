@@ -7,7 +7,7 @@ use crate::exit::CliError;
 /// Normalize a host or URL to a canonical origin string.
 ///
 /// Form: `https://` + lowercase IDNA-ASCII host + `:port` only when the port is
-/// not the scheme default. An explicit `http://` input keeps `http` (tests).
+/// not 443. HTTP loopback is available only in debug builds with the test gate.
 pub fn canonicalize_origin(raw: &str) -> Result<String, CliError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -26,6 +26,15 @@ pub fn canonicalize_origin(raw: &str) -> Result<String, CliError> {
         return Err(CliError::usage(format!(
             "unsupported origin scheme `{scheme}`"
         )));
+    }
+    if scheme == "http"
+        && !(cfg!(debug_assertions)
+            && std::env::var("CANVAS_TEST_ALLOW_HTTP").ok().as_deref() == Some("1")
+            && url
+                .host_str()
+                .is_some_and(|host| matches!(host, "127.0.0.1" | "[::1]")))
+    {
+        return Err(CliError::usage("Canvas origin must use https"));
     }
     if !url.username().is_empty() || url.password().is_some() {
         return Err(CliError::usage("origin must not include credentials"));
@@ -95,10 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn http_preserved_for_tests() {
-        assert_eq!(
-            canonicalize_origin("http://127.0.0.1:9").unwrap(),
-            "http://127.0.0.1:9"
-        );
+    fn http_refused_without_test_gate() {
+        assert!(canonicalize_origin("http://example.test").is_err());
     }
 }

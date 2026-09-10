@@ -4,7 +4,7 @@ use std::io::{self, IsTerminal, Read, Write};
 
 use serde_json::json;
 
-use canvas_core::identity::{IdentityDocument, IdentityKey, Paths as CorePaths};
+use canvas_core::identity::{IdentityKey, Paths as CorePaths};
 use canvas_core::store::OpenIdentity;
 
 use crate::cli::{AuthCommand, Globals};
@@ -45,12 +45,46 @@ async fn login(
         ));
     }
 
-    let host_raw = match host.or_else(|| std::env::var("CANVAS_HOST").ok()) {
+    let config = Config::load(paths)?;
+    let profile_input = globals
+        .profile
+        .clone()
+        .or_else(|| std::env::var("CANVAS_PROFILE").ok());
+    let profile_name = profile_input.clone().unwrap_or_else(|| "default".into());
+    let env_host = std::env::var("CANVAS_HOST").ok().filter(|v| !v.is_empty());
+    if profile_input.is_some() && env_host.is_some() {
+        eprintln!("warning: CANVAS_HOST is ignored when a profile is selected");
+    }
+    let host_raw = match host
+        .or_else(|| {
+            if profile_input.is_some() {
+                config.profiles.get(&profile_name).map(|p| p.origin.clone())
+            } else {
+                env_host
+            }
+        })
+        .or_else(|| config.profiles.get(&profile_name).map(|p| p.origin.clone()))
+    {
         Some(h) => h,
         None => prompt_line("Canvas host: ")?,
     };
     let origin = canonicalize_origin(&host_raw)?;
 
+    if !token_stdin
+        && std::env::var("CANVAS_TOKEN")
+            .ok()
+            .is_none_or(|t| t.is_empty())
+        && io::stdin().is_terminal()
+    {
+        let settings = format!("{origin}/profile/settings");
+        eprintln!("Create a personal access token at {settings}");
+        if matches!(
+            prompt_line("Open token settings in your browser? [y/N] ")?.as_str(),
+            "y" | "Y" | "yes"
+        ) {
+            open::that(&settings).map_err(|_| CliError::local("could not open token settings"))?;
+        }
+    }
     let (token, token_source_label) = if token_stdin {
         let mut buf = String::new();
         io::stdin()
@@ -74,14 +108,6 @@ async fn login(
     let user = token::validate_users_self(&origin, &token).await?;
     let key = IdentityKey::compute(&origin, user.id);
 
-    let mut config = Config::load(paths)?;
-    let profile_name = globals.profile.clone().unwrap_or_else(|| {
-        config
-            .default_profile
-            .clone()
-            .unwrap_or_else(|| "default".into())
-    });
-
     if let Some(existing) = config.profiles.get(&profile_name) {
         if existing.key != key.as_str() && !replace {
             return Err(CliError::auth(format!(
@@ -96,20 +122,21 @@ async fn login(
         }
     }
 
+    let (identity, _initialization_lock) = selection::initialize_identity(paths, &origin, user.id)?;
     let core_paths = CorePaths::for_identity(&paths.data_dir, &key);
-    if core_paths.identity_json().exists() {
-        let existing = IdentityDocument::read(&core_paths.identity_json())?;
-        if existing.user_id != user.id || existing.origin != origin {
-            return Err(CliError::auth("identity mismatch"));
-        }
-    } else {
-        let created_at = jiff::Timestamp::now().to_string();
-        let doc = IdentityDocument::new(origin.clone(), user.id, created_at);
-        doc.write(&core_paths.identity_json())?;
-    }
-
-    let identity = IdentityDocument::read(&core_paths.identity_json())?;
     let open = OpenIdentity::open(&core_paths, &identity)?;
+    let _config_lock = crate::config::ConfigLock::acquire(paths)?;
+    let mut config = Config::load_file(paths)?;
+    if config
+        .profiles
+        .get(&profile_name)
+        .is_some_and(|p| p.key != key.as_str())
+        && !replace
+    {
+        return Err(CliError::auth(
+            "profile points at a different identity; pass --replace to rebind",
+        ));
+    }
 
     let validated_at = jiff::Timestamp::now().to_string();
     let source = credentials::activate(paths, &open.store, &key, &token, &validated_at)?;
@@ -131,7 +158,14 @@ async fn login(
 
     // Bind env pair when both env vars were the inputs.
     if std::env::var_os("CANVAS_HOST").is_some() && std::env::var_os("CANVAS_TOKEN").is_some() {
-        let _ = selection::write_env_binding(paths, &origin, &token, &key);
+        if profile_input.is_none() {
+            let env_origin =
+                canonicalize_origin(&std::env::var("CANVAS_HOST").unwrap_or_default())?;
+            let env_token = std::env::var("CANVAS_TOKEN").unwrap_or_default();
+            if env_origin == origin && env_token == token {
+                selection::write_env_binding(paths, &origin, &token, &key)?;
+            }
+        }
     }
 
     let backend = credentials::backend_label(source).unwrap_or("unknown");
@@ -183,7 +217,10 @@ async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
     let open = token::open_store(&selected)?;
     let row = CredentialRow::load(&open.store, &selected.identity.key)?;
     let mut token_source: Option<&str> = None;
-    if std::env::var_os("CANVAS_TOKEN").is_some() {
+    if std::env::var("CANVAS_TOKEN")
+        .ok()
+        .is_some_and(|v| !v.is_empty())
+    {
         token_source = Some("env");
     } else {
         match row.active_source {
