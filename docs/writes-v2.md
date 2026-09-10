@@ -33,8 +33,13 @@ The readback both `operation status` and `operation reconcile` run:
 
 | Kind | Request |
 |---|---|
-| `discussion_reply` | `GET /api/v1/courses/:cid/discussion_topics/:tid/entries` |
+| `discussion_reply` without `--to` | `GET /api/v1/courses/:cid/discussion_topics/:tid/entries` |
+| `discussion_reply` with `--to ENTRY_ID` | `GET /api/v1/courses/:cid/discussion_topics/:tid/entries/:eid/replies` |
 | `inbox_reply`, and `inbox_send` after Canvas named a conversation | `GET /api/v1/conversations/:id?auto_mark_as_read=false` |
+
+A threaded reply is read on the replies route because that is where Canvas
+puts it: the topic's entry listing is top-level only, so reading it would
+report every threaded reply as absent.
 
 `per_page=100` is appended by `canvas_api::Client`, so it is not written in
 the source paths. `auto_mark_as_read=false` is on every conversation read, as

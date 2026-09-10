@@ -24,7 +24,7 @@ use crate::store::Store;
 use super::OperationError;
 use super::execute::hex_sha256;
 use super::ops;
-use super::prepare::{entries_of, get, json_id};
+use super::prepare::{entries_of, entry_replies_of, get, json_id};
 use super::record::{
     Attribution, OpState, OperationReadback, OperationRow, OperationTarget, ServerMatch,
 };
@@ -234,10 +234,13 @@ fn persist_identity(store: &Store, journal_id: &str) -> Result<(), OperationErro
 
 /// Read the thread this operation writes to.
 ///
-/// A discussion topic is paged through its entries; a conversation is one
-/// `GET` with `auto_mark_as_read=false`, so reading never marks anything read.
-/// A new conversation is read back through the conversation Canvas said it
-/// created, and when Canvas never said, there is nothing to read.
+/// A top-level discussion reply is paged through the topic's entries; a
+/// **threaded** reply is paged through its parent entry's replies, because
+/// that is where Canvas puts it and the topic's entry listing is top-level
+/// only. A conversation is one `GET` with `auto_mark_as_read=false`, so
+/// reading never marks anything read. A new conversation is read back through
+/// the conversation Canvas said it created, and when Canvas never said, there
+/// is nothing to read.
 pub async fn readback(
     client: &Client,
     row: &OperationRow,
@@ -256,10 +259,19 @@ async fn read_thread(
         ..OperationReadback::default()
     };
     let objects: Vec<Value> = match &row.intended.target {
+        // `--to` posted to `…/entries/:eid/replies`, and Canvas does not list
+        // a nested reply among the topic's top-level entries. Reading the
+        // wrong route would report every threaded reply as absent, which is
+        // exactly the evidence `--assume-not-posted` must never be given.
         OperationTarget::DiscussionReply {
             course_id,
             topic_id,
-            ..
+            parent_entry_id: Some(entry_id),
+        } => entry_replies_of(client, *course_id, *topic_id, *entry_id).await?,
+        OperationTarget::DiscussionReply {
+            course_id,
+            topic_id,
+            parent_entry_id: None,
         } => entries_of(client, *course_id, *topic_id).await?,
         OperationTarget::InboxReply { conversation_id } => {
             messages_of(client, *conversation_id).await?
