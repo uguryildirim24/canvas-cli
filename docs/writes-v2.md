@@ -320,7 +320,9 @@ never resends, and never claims more than it observed.
    request.
 8. **A readback that did not cover the whole thread cannot prove absence.**
    When `complete` is false, a `not_found` verdict carries a warning saying
-   so, and `--assume-not-posted` is still refused.
+   so, and `--assume-not-posted` is refused however old the journal is. The
+   exposed case is a send Canvas never named a conversation for: there is no
+   thread to read at all.
 9. **`operation status` never changes state; `operation reconcile` may.**
    Both read the thread, and both record what they saw, because recording an
    observation is not a state change. Only `reconcile` moves

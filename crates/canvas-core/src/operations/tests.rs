@@ -970,6 +970,62 @@ async fn a_digest_match_with_no_id_link_is_unproven() {
     assert_eq!(found.body_sha256, sent);
 }
 
+/// A readback that covered nothing cannot support "never posted" (review).
+///
+/// The exposed case is a send Canvas never named a conversation for: there is
+/// no thread to read, so `complete` is false and the assertion is refused
+/// however old the journal is (`docs/writes-v2.md` choice 8).
+#[tokio::test]
+async fn an_assumption_needs_a_readback_that_covered_the_thread() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_inbox(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/conversations"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({"errors": []})))
+        .mount(&server)
+        .await;
+    let client = test_client(&server.uri());
+    let recipients = vec!["31".to_owned()];
+    let prepared = prepare_inbox_send(
+        &client,
+        &open.store,
+        &send_request(&paths, &doc, &recipients, "Are you free Tuesday?"),
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+    approve_plan(&open.store, &prepared.plan.plan_id);
+    let unknown = run(&client, &open.store, &paths, &doc, &prepared.plan.plan_id).await;
+    assert_eq!(unknown.state, OpState::OutcomeUnknown);
+    assert!(unknown.response.is_none(), "Canvas named no conversation");
+
+    let late = reconcile(
+        &client,
+        &open.store,
+        &paths.identity_dir,
+        &unknown.journal_id,
+        true,
+        Timestamp::now() + super::ASSUME_AFTER + jiff::SignedDuration::from_secs(1),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        late.row.state,
+        OpState::OutcomeUnknown,
+        "an unread thread was accepted as proof of absence"
+    );
+    assert_ne!(late.verdict, Verdict::AssumedNotPosted);
+    assert!(late.row.not_posted_evidence.is_none());
+    assert!(
+        late.warning
+            .as_deref()
+            .is_some_and(|w| w.contains("did not cover")),
+        "{:?}",
+        late.warning
+    );
+}
+
 /// `--assume-not-posted` is refused before the wait, and honest after it.
 #[tokio::test]
 async fn assume_not_posted_is_refused_early_and_recorded_late() {
