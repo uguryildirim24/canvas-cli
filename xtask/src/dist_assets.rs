@@ -93,3 +93,53 @@ fn reset_dir(dir: &Path) -> Result<()> {
     fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
     Ok(())
 }
+
+/// Install lines the generated Homebrew formula is missing.
+///
+/// `dist` 0.32 has no hook for extra formula content: its template installs the
+/// binary and sweeps everything else into `pkgshare`, which would leave the man
+/// pages and completions unusable. This rewrites that sweep into real Homebrew
+/// destinations. It is idempotent, and it fails loudly if the template it
+/// anchors on changes.
+const FORMULA_ANCHOR: &str = "    # Homebrew will automatically install these";
+
+const FORMULA_INSTALLS: &str = r#"    man1.install Dir["man/*.1"]
+    bash_completion.install "completions/canvas.bash" => "canvas"
+    zsh_completion.install "completions/_canvas"
+    fish_completion.install "completions/canvas.fish"
+    # Homebrew has no shared location for these two shells.
+    pkgshare.install "completions/_canvas.ps1", "completions/canvas.elv"
+
+"#;
+
+const FORMULA_LEFTOVERS: &str = r#"    leftover_contents = Dir["*"] - doc_files"#;
+
+const FORMULA_LEFTOVERS_PATCHED: &str =
+    r#"    leftover_contents = Dir["*"] - doc_files - ["man", "completions"]"#;
+
+/// Add the man page and completion install lines to a `dist`-generated formula.
+///
+/// Returns `true` when the file was rewritten, `false` when it already had
+/// them.
+pub fn patch_formula(path: &Path) -> Result<bool> {
+    let original =
+        fs::read_to_string(path).with_context(|| format!("read formula {}", path.display()))?;
+    if original.contains(r#"man1.install Dir["man/*.1"]"#) {
+        return Ok(false);
+    }
+    anyhow::ensure!(
+        original.matches(FORMULA_ANCHOR).count() == 1
+            && original.matches(FORMULA_LEFTOVERS).count() == 1,
+        "{} is not a formula this task knows how to patch; \
+         the dist Homebrew template changed and xtask/src/dist_assets.rs needs updating",
+        path.display()
+    );
+    let patched = original
+        .replace(
+            FORMULA_ANCHOR,
+            &format!("{FORMULA_INSTALLS}{FORMULA_ANCHOR}"),
+        )
+        .replace(FORMULA_LEFTOVERS, FORMULA_LEFTOVERS_PATCHED);
+    fs::write(path, patched).with_context(|| format!("write formula {}", path.display()))?;
+    Ok(true)
+}
