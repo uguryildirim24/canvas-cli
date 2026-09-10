@@ -355,6 +355,7 @@ pub fn responses() -> Vec<Recorded> {
     }
 
     push_reads(&mut out);
+    push_writes(&mut out);
     out
 }
 
@@ -435,6 +436,66 @@ fn push_reads(out: &mut Vec<Recorded>) {
     ));
 }
 
+/// The M8-b write surface: what a reply and a message need to be prepared.
+///
+/// Nothing here is a `POST` the benchmark issues. A write needs a recorded
+/// human approval, which no harness can give, so the set carries the reads a
+/// prepare makes — the topic, the entries, the conversation, the recipient —
+/// plus the two upload routes an inbox attachment travels, so a recorded set
+/// covers the whole path and not only its read half.
+fn push_writes(out: &mut Vec<Recorded>) {
+    let course_id = DOWNLOAD_COURSE;
+    let locked = locked_topic_row(course_id, 4);
+    let locked_id = locked["id"].as_i64().unwrap_or_default();
+    out.push(get(
+        format!("/api/v1/courses/{course_id}/discussion_topics/{locked_id}"),
+        locked,
+    ));
+    out.push(get(
+        format!("/api/v1/courses/{course_id}/discussion_topics/{locked_id}/entries"),
+        json!([]),
+    ));
+
+    // One messageable recipient: `prepare` resolves every id this way, and an
+    // id that resolves to nothing is refused as `unresolved`.
+    out.push(with_query(
+        get(
+            "/api/v1/search/recipients".to_owned(),
+            json!([{"id": 3001, "name": "Classmate 1", "common_courses": {}}]),
+        ),
+        &[("user_id", "3001")],
+    ));
+
+    // The §11 upload transport for a conversation attachment: the session
+    // request, and the storage `POST` its response names.
+    out.push(Recorded {
+        method: "POST".to_owned(),
+        status: 200,
+        ..get(
+            "/api/v1/users/self/files".to_owned(),
+            json!({
+                "upload_url": "/upload/user-files",
+                "upload_params": {"key": "user-files/1", "filename": "note.txt"},
+                "file_param": "file"
+            }),
+        )
+    });
+    out.push(Recorded {
+        method: "POST".to_owned(),
+        status: 201,
+        ..get(
+            "/upload/user-files".to_owned(),
+            json!({
+                "id": 9100,
+                "display_name": "note.txt",
+                "filename": "note.txt",
+                "size": 12,
+                "content-type": "text/plain"
+            }),
+        )
+    });
+}
+
 fn page_row(course_id: i64, n: i64, front: bool) -> Value {
     json!({
         "page_id": course_id * 1000 + n,
@@ -496,6 +557,14 @@ fn gated_topic_row(course_id: i64, n: i64) -> Value {
     row["require_initial_post"] = json!(true);
     row["user_can_see_posts"] = json!(false);
     row["unread_count"] = json!(0);
+    row
+}
+
+fn locked_topic_row(course_id: i64, n: i64) -> Value {
+    let mut row = topic_row(course_id, n);
+    row["title"] = json!("Week 1 wrap-up (closed)");
+    row["locked"] = json!(true);
+    row["locked_for_user"] = json!(true);
     row
 }
 
@@ -748,6 +817,15 @@ mod tests {
                     check::<WrappedCollection<GradingPeriod>>(path, body);
                 } else if path.ends_with("/assignments") {
                     check::<Vec<Assignment>>(path, body);
+                } else if path == "/api/v1/search/recipients"
+                    || path == "/api/v1/users/self/files"
+                    || path == "/upload/user-files"
+                {
+                    // The M8-b write surface: `canvas-api` decodes the two
+                    // upload responses with its own upload types, and the
+                    // recipient search is read as a raw value by
+                    // `operations::prepare`. Both are checked here as shape.
+                    assert!(body.is_array() || body.is_object(), "{path}");
                 } else if path.ends_with("/folders") {
                     check::<Vec<Folder>>(path, body);
                 } else if path.ends_with("/files") {
