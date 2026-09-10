@@ -4,9 +4,12 @@
   "version": "0.1.0",
   "description": "Attach the Canvas tab you already have open to canvas-cli. No cookie import, no fetch proxy.",
   "minimum_chrome_version": "116",
-  "permissions": ["activeTab", "nativeMessaging", "scripting"],
+  "permissions": ["activeTab", "nativeMessaging", "scripting", "sidePanel"],
   "background": {
     "service_worker": "src/background.js"
+  },
+  "side_panel": {
+    "default_path": "src/panel.html"
   },
   "action": {
     "default_title": "Attach this Canvas tab to canvas-cli"

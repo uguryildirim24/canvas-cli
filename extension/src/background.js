@@ -8,7 +8,11 @@
 // - the **navigation generation**, incremented on every committed navigation
 //   of the attached tab. A cross-origin navigation ends the grant, so it ends
 //   the attachment too and a new gesture is required;
-// - the pauses: hidden tab, assessment, tab close, host loss.
+// - the pauses: hidden tab, assessment, tab close, host loss;
+// - the side panel: it opens on the same gesture, and it is fed only by what
+//   the host pushes. The worker relays; it never composes what the panel
+//   shows, and the panel's one message back — a decision on a plan — is
+//   relayed to the host unchanged, for the host to check.
 //
 // It performs no fetch of its own. The one Canvas request lives in the
 // content script, where it is same-origin.
@@ -31,8 +35,13 @@ const INJECTED = [
 // One browser-profile instance, for the life of this service worker.
 const PROFILE_INSTANCE = crypto.randomUUID();
 
+// How long a navigation is watched before its outcome is called unknown.
+const NAVIGATE_SETTLE_MS = 10 * 1000;
+
 /** @type {{port: chrome.runtime.Port|null, tabId: number|null, origin: string|null,
- *          generation: number, pauseHiddenAfterMs: number, attached: boolean}} */
+ *          generation: number, pauseHiddenAfterMs: number, attached: boolean,
+ *          paused: boolean, panel: object|null,
+ *          navigation: {requestId: string, url: string, timer: number}|null}} */
 const state = {
   port: null,
   tabId: null,
@@ -40,6 +49,10 @@ const state = {
   generation: 0,
   pauseHiddenAfterMs: 10 * 60 * 1000,
   attached: false,
+  paused: false,
+  // The last state the host pushed, so a panel opened later draws at once.
+  panel: null,
+  navigation: null,
 };
 
 chrome.action.onClicked.addListener((tab) => {
@@ -76,14 +89,38 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     return;
   }
   state.generation += 1;
+  settleNavigation(tab.url);
   observe().catch(report);
 });
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message && message.type === "pause") {
-    send({ type: "pause", cause: message.cause || "hidden" });
+  switch (message && message.type) {
+    case "pause":
+      state.paused = true;
+      send({ type: "pause", cause: message.cause || "hidden" });
+      return false;
+    case "panel_hello":
+      // Draw the panel from what is already here, then ask the host for the
+      // current state. Nothing is composed in this worker.
+      if (state.panel !== null) {
+        toPanel({ type: "panel", state: state.panel });
+      }
+      send({ type: "panel_hello", protocol: NATIVE_PROTOCOL });
+      return false;
+    case "decision":
+      // Straight through. This worker checks nothing and decides nothing;
+      // the host owns the identity and re-checks every field.
+      send({
+        type: "decision",
+        plan_id: String(message.plan_id || ""),
+        handle: String(message.handle || ""),
+        plan_sha256: String(message.plan_sha256 || ""),
+        decision: String(message.decision || ""),
+      });
+      return false;
+    default:
+      return false;
   }
-  return false;
 });
 
 /** The gesture: connect the host, inject, and offer the attachment. */
@@ -104,6 +141,11 @@ async function attach(tab) {
   state.tabId = tab.id;
   state.origin = origin;
   state.generation = 1;
+  state.paused = false;
+  // The panel opens on the same gesture that shares the tab, because opening
+  // it needs that gesture and because the person should see what they just
+  // shared. It is called before the first `await` for that reason.
+  openPanel(tab.id);
   openPort();
   await inject(tab.id);
   const observation = await ask(tab.id, { type: "observe", pause_hidden_after_ms: state.pauseHiddenAfterMs });
@@ -111,6 +153,7 @@ async function attach(tab) {
     return;
   }
   state.attached = true;
+  state.paused = false;
   send({
     type: "attach",
     observation: stamp(observation),
@@ -199,7 +242,124 @@ function onHostMessage(message) {
     case "refused":
       state.attached = false;
       return;
+    case "navigate":
+      navigate(message).catch(report);
+      return;
+    case "note":
+      toPanel({ type: "note", note: message.note });
+      return;
+    case "panel":
+      state.panel = message.state;
+      toPanel({ type: "panel", state: message.state });
+      return;
     default:
+  }
+}
+
+/** Open the side panel for this tab, inside the gesture that shared it. */
+function openPanel(tabId) {
+  try {
+    chrome.sidePanel.setOptions({ tabId, path: "src/panel.html", enabled: true });
+    const opened = chrome.sidePanel.open({ tabId });
+    if (opened && typeof opened.catch === "function") {
+      opened.catch(report);
+    }
+  } catch (error) {
+    report(error);
+  }
+}
+
+/** Send one message to the panel, which may not be open. */
+function toPanel(message) {
+  try {
+    const sent = chrome.runtime.sendMessage(message);
+    if (sent && typeof sent.catch === "function") {
+      // "Receiving end does not exist" is the ordinary case: no panel is
+      // open. The host is not told, because nothing failed.
+      sent.catch(() => {});
+    }
+  } catch {
+    // The same case, on the callback form.
+  }
+}
+
+/**
+ * Navigate the attached tab, and acknowledge that the request was taken.
+ *
+ * The acknowledgement says one thing: the companion accepted the navigation.
+ * Whether the page loads is a separate message, sent later, and it is never
+ * folded into this one.
+ */
+async function navigate(request) {
+  const refuse = (reason) => send({ type: "navigate_ack", request_id: request.request_id, accepted: false, reason });
+  if (!state.attached || state.tabId === null) {
+    refuse("not_attached");
+    return;
+  }
+  if (state.paused) {
+    refuse("paused");
+    return;
+  }
+  if (originOf(request.url) !== state.origin) {
+    refuse("origin_mismatch");
+    return;
+  }
+  try {
+    await chrome.tabs.update(state.tabId, { url: request.url });
+  } catch (error) {
+    report(error);
+    refuse("origin_mismatch");
+    return;
+  }
+  watchNavigation(request.request_id, request.url);
+  send({ type: "navigate_ack", request_id: request.request_id, accepted: true, reason: null });
+}
+
+/** Watch one navigation until the tab settles, or until it is too late. */
+function watchNavigation(requestId, url) {
+  clearNavigation();
+  const timer = setTimeout(() => {
+    // Nothing was observed in time. `unknown` is the honest answer: this
+    // companion has no permission that would let it see a load failure.
+    finishNavigation("unknown");
+  }, NAVIGATE_SETTLE_MS);
+  state.navigation = { requestId, url, timer };
+}
+
+/** The attached tab finished a load. Say what became of the navigation. */
+function settleNavigation(landedUrl) {
+  if (state.navigation === null) {
+    return;
+  }
+  finishNavigation(sameTarget(landedUrl, state.navigation.url) ? "loaded" : "unknown");
+}
+
+function finishNavigation(outcome) {
+  const pending = state.navigation;
+  if (pending === null) {
+    return;
+  }
+  clearNavigation();
+  send({ type: "navigate_outcome", request_id: pending.requestId, outcome });
+}
+
+function clearNavigation() {
+  if (state.navigation !== null) {
+    clearTimeout(state.navigation.timer);
+    state.navigation = null;
+  }
+}
+
+/** Whether the tab landed where the navigation asked it to go. */
+function sameTarget(landed, asked) {
+  try {
+    const a = new URL(String(landed));
+    const b = new URL(String(asked));
+    a.hash = "";
+    b.hash = "";
+    return a.toString() === b.toString();
+  } catch {
+    return false;
   }
 }
 
@@ -231,6 +391,9 @@ function end(cause) {
   state.tabId = null;
   state.origin = null;
   state.generation = 0;
+  state.paused = false;
+  state.panel = null;
+  clearNavigation();
   if (state.port !== null) {
     state.port.disconnect();
     state.port = null;
