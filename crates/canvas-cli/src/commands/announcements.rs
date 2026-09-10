@@ -142,7 +142,7 @@ pub async fn run(
             .push("served stale announcements cache".into());
     }
     let codes = course_labels(&session, &batch.denials).await;
-    for scope in denial_scopes(&batch.denials, &codes) {
+    for scope in denial_scopes("announcements", "Announcements", &batch.denials, &codes) {
         envelope.warnings.push(scope.message.clone());
         envelope.partial.push(scope);
         envelope.outcome = Outcome::Partial;
@@ -283,23 +283,37 @@ pub(crate) fn decode_denials(error: Option<&str>) -> Vec<ContextDenial> {
         .collect()
 }
 
-/// `partial[]` rows naming the courses that stayed unreadable (§12.6).
+/// `partial[]` rows naming the contexts that stayed unreadable (§12.6).
+///
+/// `dataset` is the §10 dataset name and `subject` the word the message uses,
+/// so `calendar` reports its own denials instead of relabelling these. A
+/// course scope is `<dataset>:course:<id>`, as in the §7 envelope; any other
+/// context keeps its own code, which is the shape `sync` records too.
 pub(crate) fn denial_scopes(
+    dataset: &str,
+    subject: &str,
     denials: &[ContextDenial],
     codes: &HashMap<String, String>,
 ) -> Vec<PartialScope> {
     denials
         .iter()
         .map(|denial| {
-            let id = denial
-                .course_id()
-                .map_or_else(|| denial.context.clone(), |id| id.to_string());
-            let label = codes.get(&id).map_or_else(|| id.clone(), Clone::clone);
+            let (scope, label) = match denial.course_id() {
+                Some(id) => {
+                    let id = id.to_string();
+                    let label = codes.get(&id).map_or_else(|| id.clone(), Clone::clone);
+                    (format!("{dataset}:course:{id}"), label)
+                }
+                None => (
+                    format!("{dataset}:{}", denial.context),
+                    denial.context.clone(),
+                ),
+            };
             PartialScope {
-                scope: format!("announcements:course:{id}"),
+                scope,
                 http_status: Some(denial.http_status),
                 message: format!(
-                    "Announcements for {label} unavailable (HTTP {})",
+                    "{subject} for {label} unavailable (HTTP {})",
                     denial.http_status
                 ),
             }
@@ -467,4 +481,46 @@ fn local_day(at: Timestamp, zone: &TimeZone) -> String {
     let zoned = at.to_zoned(zone.clone());
     let date: Date = zoned.date();
     format!("{date} {}", zoned.strftime("%H:%M"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// §7: a denied course is `<dataset>:course:<id>`; any other context keeps
+    /// its own code, so `calendar`'s `user_<id>` context is never dressed up
+    /// as a course.
+    #[test]
+    fn denial_scopes_name_the_dataset_and_the_context() {
+        let denials = vec![
+            ContextDenial {
+                context: "course_45679".into(),
+                http_status: 403,
+            },
+            ContextDenial {
+                context: "user_12345".into(),
+                http_status: 403,
+            },
+        ];
+        let mut codes = HashMap::new();
+        codes.insert("45679".to_owned(), "CS-101".to_owned());
+
+        let rows = denial_scopes("announcements", "Announcements", &denials, &codes);
+        assert_eq!(rows[0].scope, "announcements:course:45679");
+        assert_eq!(
+            rows[0].message,
+            "Announcements for CS-101 unavailable (HTTP 403)"
+        );
+        assert_eq!(rows[1].scope, "announcements:user_12345");
+
+        let rows = denial_scopes("calendar_events", "Calendar", &denials, &codes);
+        assert_eq!(rows[0].scope, "calendar_events:course:45679");
+        assert_eq!(
+            rows[0].message,
+            "Calendar for CS-101 unavailable (HTTP 403)"
+        );
+        // The same shape `sync` records for a context that is not a course.
+        assert_eq!(rows[1].scope, "calendar_events:user_12345");
+        assert_eq!(rows[1].http_status, Some(403));
+    }
 }

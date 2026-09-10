@@ -276,9 +276,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
             .push("served stale calendar_events cache".into());
     }
     let codes = super::announcements::course_labels(&session, &events.denials).await;
-    for mut scope in denial_scopes(&events.denials, &codes) {
-        scope.scope = scope.scope.replace("announcements:", "calendar_events:");
-        scope.message = scope.message.replace("Announcements for", "Calendar for");
+    for scope in denial_scopes("calendar_events", "Calendar", &events.denials, &codes) {
         envelope.warnings.push(scope.message.clone());
         envelope.partial.push(scope);
         envelope.outcome = Outcome::Partial;
