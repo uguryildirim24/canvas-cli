@@ -29,10 +29,10 @@ pub struct File {
     pub updated_at: Option<Timestamp>,
     #[serde(default, deserialize_with = "deserialize_opt_timestamp")]
     pub modified_at: Option<Timestamp>,
-    #[serde(default, deserialize_with = "deserialize_opt_timestamp")]
-    pub unlock_at: Option<Timestamp>,
-    #[serde(default, deserialize_with = "deserialize_opt_timestamp")]
-    pub lock_at: Option<Timestamp>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub unlock_at: crate::serde_util::Supplied<Timestamp>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub lock_at: crate::serde_util::Supplied<Timestamp>,
     #[serde(default, deserialize_with = "deserialize_opt_url")]
     pub url: Option<Url>,
     #[serde(default, deserialize_with = "deserialize_opt_url")]

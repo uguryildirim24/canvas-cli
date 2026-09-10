@@ -5,7 +5,7 @@ use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::serde_util::{deserialize_id, deserialize_opt_timestamp, deserialize_opt_url};
+use crate::serde_util::{deserialize_id, deserialize_opt_timestamp};
 
 /// Discussion topic used as an announcement.
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -28,7 +28,11 @@ pub struct Announcement {
     pub pinned: Option<bool>,
     pub is_announcement: Option<bool>,
     pub context_code: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_url")]
-    pub html_url: Option<Url>,
-    pub url: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::deserialize_supplied_url"
+    )]
+    pub html_url: crate::serde_util::Supplied<Url>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_opt_url")]
+    pub url: Option<reqwest::Url>,
 }

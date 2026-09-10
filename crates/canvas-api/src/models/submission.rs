@@ -42,15 +42,22 @@ pub struct SubmissionComment {
 pub struct SubmissionHistoryEntry {
     #[serde(default, deserialize_with = "deserialize_opt_id")]
     pub id: Option<i64>,
-    pub attempt: Option<i64>,
-    #[serde(default, deserialize_with = "deserialize_opt_timestamp")]
-    pub submitted_at: Option<Timestamp>,
-    pub workflow_state: Option<String>,
-    pub score: Option<f64>,
-    pub grade: Option<String>,
-    pub late: Option<bool>,
-    pub missing: Option<bool>,
-    pub excused: Option<bool>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub attempt: crate::serde_util::Supplied<i64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub submitted_at: crate::serde_util::Supplied<Timestamp>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub workflow_state: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub grade: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub late: crate::serde_util::Supplied<bool>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub missing: crate::serde_util::Supplied<bool>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub excused: crate::serde_util::Supplied<bool>,
     pub submission_type: Option<String>,
     pub body: Option<String>,
     #[serde(default, deserialize_with = "deserialize_opt_url")]
@@ -71,25 +78,33 @@ pub struct Submission {
     pub assignment_id: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_opt_id")]
     pub user_id: Option<i64>,
-    pub attempt: Option<i64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub attempt: crate::serde_util::Supplied<i64>,
     pub extra_attempts: Option<i64>,
-    #[serde(default, deserialize_with = "deserialize_opt_timestamp")]
-    pub submitted_at: Option<Timestamp>,
-    #[serde(default, deserialize_with = "deserialize_opt_timestamp")]
-    pub graded_at: Option<Timestamp>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub submitted_at: crate::serde_util::Supplied<Timestamp>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub graded_at: crate::serde_util::Supplied<Timestamp>,
     #[serde(default, deserialize_with = "deserialize_opt_timestamp")]
     pub posted_at: Option<Timestamp>,
-    pub workflow_state: Option<String>,
-    pub score: Option<f64>,
-    pub grade: Option<String>,
-    pub late: Option<bool>,
-    pub missing: Option<bool>,
-    pub excused: Option<bool>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub workflow_state: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub grade: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub late: crate::serde_util::Supplied<bool>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub missing: crate::serde_util::Supplied<bool>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub excused: crate::serde_util::Supplied<bool>,
     pub submission_type: Option<String>,
     pub body: Option<String>,
     #[serde(default, deserialize_with = "deserialize_opt_url")]
     pub url: Option<Url>,
-    pub preview_url: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_opt_url")]
+    pub preview_url: Option<reqwest::Url>,
     pub attachments: Option<Vec<SubmissionAttachment>>,
     pub submission_comments: Option<Vec<SubmissionComment>>,
     pub submission_history: Option<Vec<SubmissionHistoryEntry>>,

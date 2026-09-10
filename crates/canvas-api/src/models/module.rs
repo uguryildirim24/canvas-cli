@@ -12,10 +12,14 @@ pub struct ModuleItemContentDetails {
     pub locked_for_user: Option<bool>,
     pub lock_explanation: Option<String>,
     pub lock_info: Option<Value>,
-    pub points_possible: Option<f64>,
-    pub due_at: Option<String>,
-    pub unlock_at: Option<String>,
-    pub lock_at: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub points_possible: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub due_at: crate::serde_util::Supplied<jiff::Timestamp>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub unlock_at: crate::serde_util::Supplied<jiff::Timestamp>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub lock_at: crate::serde_util::Supplied<jiff::Timestamp>,
 }
 
 /// One module item.
@@ -33,10 +37,16 @@ pub struct ModuleItem {
     pub item_type: Option<String>,
     #[serde(default, deserialize_with = "deserialize_opt_id")]
     pub content_id: Option<i64>,
-    pub html_url: Option<String>,
-    pub url: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::deserialize_supplied_url"
+    )]
+    pub html_url: crate::serde_util::Supplied<reqwest::Url>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_opt_url")]
+    pub url: Option<reqwest::Url>,
     pub page_url: Option<String>,
-    pub external_url: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_opt_url")]
+    pub external_url: Option<reqwest::Url>,
     pub new_tab: Option<bool>,
     pub completion_requirement: Option<Value>,
     pub content_details: Option<ModuleItemContentDetails>,
@@ -49,16 +59,24 @@ pub struct ModuleItem {
 pub struct Module {
     #[serde(deserialize_with = "deserialize_id")]
     pub id: i64,
-    pub name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub name: crate::serde_util::Supplied<String>,
     pub position: Option<i64>,
-    pub unlock_at: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub unlock_at: crate::serde_util::Supplied<jiff::Timestamp>,
     pub require_sequential_progress: Option<bool>,
     pub publish_final_grade: Option<bool>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_opt_ids")]
     pub prerequisite_module_ids: Option<Vec<i64>>,
     pub state: Option<String>,
-    pub completed_at: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::deserialize_opt_timestamp"
+    )]
+    pub completed_at: Option<jiff::Timestamp>,
     pub items_count: Option<u64>,
-    pub items_url: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_opt_url")]
+    pub items_url: Option<reqwest::Url>,
     pub items: Option<Vec<ModuleItem>>,
     pub published: Option<bool>,
 }

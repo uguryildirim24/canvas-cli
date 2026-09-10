@@ -8,15 +8,27 @@ use crate::serde_util::{deserialize_id, deserialize_opt_id};
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct EnrollmentGrades {
-    pub html_url: Option<String>,
-    pub current_score: Option<f64>,
-    pub current_grade: Option<String>,
-    pub final_score: Option<f64>,
-    pub final_grade: Option<String>,
-    pub unposted_current_score: Option<f64>,
-    pub unposted_current_grade: Option<String>,
-    pub unposted_final_score: Option<f64>,
-    pub unposted_final_grade: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::deserialize_supplied_url"
+    )]
+    pub html_url: crate::serde_util::Supplied<reqwest::Url>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub current_score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub current_grade: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub final_score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub final_grade: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub unposted_current_score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub unposted_current_grade: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub unposted_final_score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub unposted_final_grade: crate::serde_util::Supplied<String>,
 }
 
 /// User enrollment on a course.
@@ -34,12 +46,20 @@ pub struct Enrollment {
     pub role: Option<String>,
     pub enrollment_state: Option<String>,
     pub grades: Option<EnrollmentGrades>,
-    pub computed_current_score: Option<f64>,
-    pub computed_final_score: Option<f64>,
-    pub computed_current_grade: Option<String>,
-    pub computed_final_grade: Option<String>,
-    pub current_period_computed_current_score: Option<f64>,
-    pub current_period_computed_final_score: Option<f64>,
-    pub current_period_computed_current_grade: Option<String>,
-    pub current_period_computed_final_grade: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub computed_current_score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub computed_final_score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub computed_current_grade: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub computed_final_grade: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub current_period_computed_current_score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub current_period_computed_final_score: crate::serde_util::Supplied<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub current_period_computed_current_grade: crate::serde_util::Supplied<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub current_period_computed_final_grade: crate::serde_util::Supplied<String>,
 }

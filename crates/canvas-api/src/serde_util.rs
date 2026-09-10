@@ -16,10 +16,14 @@ thread_local! {
 /// Run `f` with `origin` as the base for relative URL deserialization.
 pub fn with_origin<R>(origin: &Url, f: impl FnOnce() -> R) -> R {
     ORIGIN.with(|slot| {
-        let previous = slot.replace(Some(origin.clone()));
-        let result = f();
-        slot.replace(previous);
-        result
+        struct RestoreOrigin<'a>(&'a RefCell<Option<Url>>, Option<Url>);
+        impl Drop for RestoreOrigin<'_> {
+            fn drop(&mut self) {
+                self.0.replace(self.1.take());
+            }
+        }
+        let _restore = RestoreOrigin(slot, slot.replace(Some(origin.clone())));
+        f()
     })
 }
 
@@ -202,12 +206,11 @@ fn parse_url(raw: &str) -> Result<Url, String> {
     if let Ok(url) = Url::parse(raw) {
         return Ok(url);
     }
-    let origin = current_origin().ok_or_else(|| {
-        format!("relative URL `{raw}` without an origin (use serde_util::with_origin)")
-    })?;
+    let origin = current_origin()
+        .ok_or_else(|| "relative URL without an origin (use serde_util::with_origin)".to_owned())?;
     origin
         .join(raw)
-        .map_err(|e| format!("relative URL `{raw}`: {e}"))
+        .map_err(|_| "invalid relative URL".to_owned())
 }
 
 /// Deserialize a [`Url`], resolving relative references against the thread-local origin.
@@ -246,4 +249,26 @@ pub fn serialize_opt_url<S: Serializer>(
         Some(u) => serializer.serialize_str(u.as_str()),
         None => serializer.serialize_none(),
     }
+}
+
+/// Deserialize a tracked URL, preserving null and resolving relative values.
+pub fn deserialize_supplied_url<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Supplied<Url>, D::Error> {
+    #[derive(serde::Deserialize)]
+    struct RelativeUrl(#[serde(deserialize_with = "deserialize_url")] Url);
+    Ok(match Option::<RelativeUrl>::deserialize(deserializer)? {
+        Some(value) => Supplied::Value(value.0),
+        None => Supplied::Null,
+    })
+}
+
+/// Deserialize an optional vector of IDs, accepting strings and numbers per element.
+pub fn deserialize_opt_ids<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<i64>>, D::Error> {
+    #[derive(serde::Deserialize)]
+    struct Id(#[serde(deserialize_with = "deserialize_id")] i64);
+    Ok(Option::<Vec<Id>>::deserialize(deserializer)?
+        .map(|ids| ids.into_iter().map(|id| id.0).collect()))
 }

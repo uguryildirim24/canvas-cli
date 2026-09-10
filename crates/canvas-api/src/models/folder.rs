@@ -14,7 +14,8 @@ use crate::serde_util::{
 pub struct Folder {
     #[serde(deserialize_with = "deserialize_id")]
     pub id: i64,
-    pub name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub name: crate::serde_util::Supplied<String>,
     pub full_name: Option<String>,
     #[serde(default, deserialize_with = "deserialize_opt_id")]
     pub parent_folder_id: Option<i64>,
