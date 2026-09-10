@@ -1,0 +1,1 @@
+{"id": 3, "name": "Homework", "position": 1, "group_weight": 40.0, "course_id": 100, "rules": {"drop_lowest": 1, "drop_highest": 0, "never_drop": [9]}}
