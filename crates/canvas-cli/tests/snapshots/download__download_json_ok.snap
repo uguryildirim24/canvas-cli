@@ -28,7 +28,7 @@ expression: value
           {
             "action": "downloaded",
             "id": "50",
-            "path": "CS-101-101/modules/01-Week 1/slides",
+            "path": "CS-101-101/modules/01-Week 1/lec.pdf",
             "size": 4
           }
         ]

@@ -2,6 +2,6 @@
 source: crates/canvas-cli/tests/download.rs
 expression: stdout.as_ref()
 ---
-  course    path                                   action        size  
-  CS-101    CS-101-101/modules/01-Week 1/slides    downloaded    4     
-totals: downloaded=1 moved=0 skipped=0 failed=0 bytes=4
+  course    path                                    action        size    verify  
+  CS-101    CS-101-101/modules/01-Week 1/lec.pdf    downloaded    4               
+totals: planned=0 downloaded=1 moved=0 skipped=0 unmanaged=0 modified=0 locked=0 unavailable=0 skipped_external=0 unsafe_path=0 unresolved_move=0 failed=0 bytes=4

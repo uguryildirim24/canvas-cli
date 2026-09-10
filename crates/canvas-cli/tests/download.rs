@@ -39,6 +39,9 @@ impl Fixture {
             .env("CANVAS_IDENTITY_KEY", &self.key)
             .env("CANVAS_TOKEN", "tok")
             .env("CANVAS_TEST_ALLOW_HTTP", "1")
+            .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
+            .env("TZ", "UTC")
+            .env("COLUMNS", "100")
             .env_remove("CANVAS_HOST")
             .env_remove("HOME");
         cmd
@@ -66,7 +69,7 @@ fn seed_course_and_files(open: &OpenIdentity) {
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('courses', 'active', '2026-09-09T16:00:00Z', 1, 1, 0, 0)",
+                 VALUES ('courses', 'active', '2026-09-09T17:00:00Z', 1, 1, 0, 0)",
                 [],
             )?;
             conns.cache.execute(
@@ -81,7 +84,7 @@ fn seed_course_and_files(open: &OpenIdentity) {
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('folders', 'course:101', '2026-09-09T16:00:00Z', 1, 1, 0, 0)",
+                 VALUES ('folders', 'course:101', '2026-09-09T17:00:00Z', 1, 1, 0, 0)",
                 [],
             )?;
             conns.cache.execute(
@@ -97,7 +100,7 @@ fn seed_course_and_files(open: &OpenIdentity) {
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('files', 'course:101', '2026-09-09T16:00:00Z', 1, 1, 0, 0)",
+                 VALUES ('files', 'course:101', '2026-09-09T17:00:00Z', 1, 1, 0, 0)",
                 [],
             )?;
             conns.cache.execute(
@@ -123,7 +126,7 @@ fn seed_course_and_files(open: &OpenIdentity) {
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('modules', 'course:101', '2026-09-09T16:00:00Z', 1, 1, 0, 0)",
+                 VALUES ('modules', 'course:101', '2026-09-09T17:00:00Z', 1, 1, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -294,6 +297,16 @@ async fn identity_mismatch_exits_8_before_write() {
     // Identity check runs after creating install.lock; refuse further writes.
     assert!(dest.join(".canvas-cli/dest.json").exists());
     assert!(!dest.join("CS-101-101").exists());
+    assert!(!fx.data.path().join(&fx.key).join("downloads").exists());
+    let state =
+        rusqlite::Connection::open(fx.data.path().join(&fx.key).join("state.sqlite")).unwrap();
+    assert_eq!(
+        state
+            .query_row("SELECT count(*) FROM destinations", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
 }
 
 #[tokio::test]
@@ -574,7 +587,7 @@ async fn storage_expired_refresh_once_then_failed() {
 }
 
 #[tokio::test]
-async fn unsafe_path_dotdot_is_partial() {
+async fn symlinked_final_path_is_partial() {
     // Containment is covered in canvas-core; here we assert CLI maps UnsafePath.
     // A symlink final path under dest triggers unsafe_path via install.
     let server = MockServer::start().await;
@@ -633,3 +646,4 @@ async fn unsafe_path_dotdot_is_partial() {
     let v: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
     assert_eq!(v["result"]["totals"]["unsafe_path"], 1);
 }
+

@@ -2,16 +2,20 @@
 
 #![allow(clippy::too_many_lines)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+};
 
 use canvas_api::Client;
 use canvas_core::download::{
-    Action, ApiTransfer, Destination, InstallOpts, ManifestError, PlannedFile, PlannedSource,
-    RemoteMeta, SqliteDestinationRegistry, TransferError, hash_path, install_part_file,
-    open_destination, outcome_exit_code, plan_course,
+    Action, ApiTransfer, Destination, InstallOpts, ManifestError, PlannedFile,
+    SqliteDestinationRegistry, TransferError, hash_path, install_part_file, open_destination,
+    outcome_exit_code, plan_course,
 };
 use canvas_core::resolve::ResolvedCourse;
 use canvas_core::sync::{CoursesScope, discovery_plan_input};
@@ -27,7 +31,8 @@ use super::files::{ensure_files, ensure_folders, ensure_modules};
 use crate::config::Config;
 use crate::output::{
     DownloadCourseJson, DownloadFileJson, DownloadResult, DownloadTotalsJson, Freshness, Outcome,
-    SCHEMA_DOWNLOAD, apply_two_space_padding, new_table, now_timestamp,
+    PartialScope, SCHEMA_DOWNLOAD, apply_two_space_padding, error_envelope, new_table,
+    now_timestamp,
 };
 use crate::paths::CliPaths;
 use crate::session::{Session, ttl_courses};
@@ -107,17 +112,27 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
         return sync_error(globals, &session, &e);
     }
 
-    let courses = match select_courses(globals, &session, &args).await {
+    let (courses, mut freshness) = match select_courses(globals, &session, &args).await {
         Ok(c) => c,
         Err(code) => return code,
     };
 
-    let mut freshness = Vec::new();
+    let mut prepared = Vec::new();
+    let mut partial = Vec::new();
+    for course in courses {
+        let (planned, course_fresh, course_partial) =
+            match prepare_course(globals, &session, &course, &args).await {
+                Ok(v) => v,
+                Err(code) => return code,
+            };
+        freshness.extend(course_fresh);
+        partial.extend(course_partial);
+        prepared.push((course, planned));
+    }
     let mut course_results = Vec::new();
-    let mut all_actions = Vec::new();
     let mut verify_mismatch = false;
     let mut bytes_total = 0u64;
-    let mut warnings = Vec::new();
+    let mut abort = None;
 
     let destination = if args.dry_run {
         None
@@ -159,28 +174,9 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
         bar
     });
 
-    for course in courses {
-        let (planned, course_fresh) = match prepare_course(globals, &session, &course, &args).await
-        {
-            Ok(v) => v,
-            Err(code) => return code,
-        };
-        freshness.extend(course_fresh);
-
-        let mut file_rows = Vec::new();
-        let recovered: HashSet<i64> = destination
-            .as_ref()
-            .map(|d| d.recovery_actions.iter().map(|(id, _)| *id).collect())
-            .unwrap_or_default();
-
-        if let Some(dest) = &destination {
-            for (file_id, action) in &dest.recovery_actions {
-                if let Some(pf) = planned.iter().find(|p| p.file_id == *file_id) {
-                    file_rows.push(file_json(pf, *action, None, None, None));
-                    all_actions.push(*action);
-                }
-            }
-        }
+    let (mut recovery, recovered) = recovery_results(destination.as_ref());
+    for (course, planned) in prepared {
+        let mut file_rows = recovery.remove(&course.id).unwrap_or_default();
 
         if args.dry_run {
             for pf in &planned {
@@ -190,13 +186,15 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
                     Action::Planned
                 };
                 file_rows.push(file_json(pf, action, None, None, None));
-                all_actions.push(action);
+                if !pf.skipped_external {
+                    bytes_total = bytes_total.saturating_add(pf.size.unwrap_or(0));
+                }
             }
         } else {
             let dest = destination.as_ref().expect("destination opened");
             let to_run: Vec<PlannedFile> = planned
                 .into_iter()
-                .filter(|p| !recovered.contains(&p.file_id))
+                .filter(|p| p.skipped_external || !recovered.contains(&p.file_id))
                 .collect();
 
             if let Some(bar) = &total_bar {
@@ -204,13 +202,14 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
                     .iter()
                     .filter(|p| !p.skipped_external)
                     .map(|p| p.size.unwrap_or(0))
-                    .sum();
+                    .fold(0, u64::saturating_add);
                 bar.inc_length(add);
             }
 
             let transfer = ApiTransfer::new(client.clone());
             let force = args.force;
             let verify = args.verify;
+            let stopped = Arc::new(AtomicBool::new(false));
             let results = stream::iter(to_run.into_iter().map(|pf| {
                 let dest = dest.clone();
                 let transfer = transfer.clone();
@@ -218,8 +217,12 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
                 let total_bar = total_bar.clone();
                 let client = client.clone();
                 let course_id = course.id;
+                let stopped = stopped.clone();
                 async move {
-                    process_one(
+                    if stopped.load(Ordering::Acquire) {
+                        return None;
+                    }
+                    let result = process_one(
                         &client,
                         &dest,
                         &transfer,
@@ -230,33 +233,45 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
                         multi.as_ref(),
                         total_bar.as_ref(),
                     )
-                    .await
+                    .await;
+                    if result.is_err() {
+                        stopped.store(true, Ordering::Release);
+                    }
+                    Some(result)
                 }
             }))
             .buffer_unordered(jobs)
             .collect::<Vec<_>>()
             .await;
 
-            for row in results {
+            for result in results.into_iter().flatten() {
+                let row = match result {
+                    Ok(row) => row,
+                    Err(failure) => {
+                        let (row, error) = *failure;
+                        if abort.is_none() {
+                            abort = Some(error);
+                        }
+                        row
+                    }
+                };
                 if row.verify.as_deref() == Some("mismatch") {
                     verify_mismatch = true;
                 }
                 if row.action == Action::Downloaded.as_str() {
                     bytes_total = bytes_total.saturating_add(row.size.unwrap_or(0));
                 }
-                match row.action.as_str() {
-                    "unmanaged" => warnings.push(format!(
-                        "unmanaged file at {}; pass --force to replace",
-                        row.path
-                    )),
-                    "modified" => warnings.push(format!(
-                        "modified local file at {}; pass --force to replace",
-                        row.path
-                    )),
-                    _ => {}
+                if let Some(recovery) = file_rows.iter_mut().find(|r| {
+                    row.action == "skipped"
+                        && r.id == row.id
+                        && r.path == row.path
+                        && r.action == "moved"
+                }) {
+                    recovery.verify = row.verify;
+                    recovery.size = row.size;
+                } else {
+                    file_rows.push(row);
                 }
-                all_actions.push(action_from_str(&row.action));
-                file_rows.push(row);
             }
         }
 
@@ -266,12 +281,52 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
             course_code: course.code.clone().unwrap_or_default(),
             files: file_rows,
         });
+        if abort.is_some() {
+            break;
+        }
+    }
+
+    // Startup recovery covers the destination, including files outside filters
+    // and courses that are no longer in the selected discovery set.
+    for (course_id, mut files) in recovery {
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        course_results.push(DownloadCourseJson {
+            course_id: course_id.to_string(),
+            course_code: String::new(),
+            files,
+        });
+    }
+    course_results.sort_by(|a, b| {
+        a.course_code
+            .cmp(&b.course_code)
+            .then(a.course_id.cmp(&b.course_id))
+    });
+    let mut all_actions = Vec::new();
+    let mut warnings: Vec<String> = partial.iter().map(|p| p.message.clone()).collect();
+    for item in &freshness {
+        if item.stale {
+            warnings.push(format!("served stale {} cache", item.dataset));
+        }
+    }
+    for course in &course_results {
+        for row in &course.files {
+            all_actions.push(action_from_str(&row.action));
+            if matches!(row.action.as_str(), "unmanaged" | "modified") {
+                warnings.push(format!(
+                    "{} file at {}; pass --force to replace",
+                    row.action, row.path
+                ));
+            }
+        }
     }
 
     if let Some(bar) = &total_bar {
         bar.finish_and_clear();
     }
 
+    if !partial.is_empty() {
+        all_actions.push(Action::Unavailable);
+    }
     let exit = outcome_exit_code(&all_actions, verify_mismatch, args.dry_run);
     let totals = sum_totals(&course_results, bytes_total);
     let result = DownloadResult {
@@ -281,18 +336,144 @@ pub async fn run(globals: &Globals, args: DownloadArgs) -> ExitCode {
         totals,
     };
 
+    if let Some(error) = abort {
+        let mut envelope = error_envelope(
+            error.code,
+            &error.message,
+            error.status,
+            serde_json::json!({"download": result}),
+            error.exit,
+        );
+        envelope.profile.clone_from(&session.profile);
+        envelope.identity = Some(session.identity_ref());
+        envelope.requests = session.requests();
+        envelope.freshness = freshness;
+        envelope.partial = partial;
+        envelope.warnings = warnings;
+        return emit(globals.json, &envelope, || {
+            writeln!(io::stderr(), "{}", error.message)
+        });
+    }
     let mut envelope = base_envelope(SCHEMA_DOWNLOAD, &session, result);
     envelope.freshness = freshness;
     envelope.requests = session.requests();
     envelope.warnings = warnings;
+    envelope.partial = partial;
     envelope.exit = exit;
     envelope.outcome = match exit {
         12 => Outcome::Partial,
-        10 => Outcome::Error,
+        10 => Outcome::Mismatch,
         _ => Outcome::Ok,
     };
 
     emit(globals.json, &envelope, || print_human(&envelope.result))
+}
+
+fn recovery_results(
+    destination: Option<&Destination>,
+) -> (HashMap<i64, Vec<DownloadFileJson>>, HashSet<i64>) {
+    let mut courses: HashMap<i64, Vec<DownloadFileJson>> = HashMap::new();
+    let mut blocked = HashSet::new();
+    if let Some(dest) = destination {
+        for (id, action) in &dest.recovery_actions {
+            let Some(row) = dest.recovery_rows.iter().find(|row| row.file_id == *id) else {
+                continue;
+            };
+            // Only-old-match merely clears the marker; normal planning still runs.
+            if *action == Action::Skipped {
+                continue;
+            }
+            if matches!(action, Action::UnsafePath | Action::UnresolvedMove) {
+                blocked.insert(*id);
+            }
+            let moved = *action == Action::Moved;
+            courses
+                .entry(row.course_id)
+                .or_default()
+                .push(DownloadFileJson {
+                    id: id.to_string(),
+                    path: if moved {
+                        row.pending_move_to
+                            .clone()
+                            .unwrap_or_else(|| row.path.clone())
+                    } else {
+                        row.path.clone()
+                    },
+                    previous_path: moved.then(|| row.path.clone()),
+                    action: action.as_str().into(),
+                    size: Some(row.size),
+                    error: matches!(action, Action::UnsafePath | Action::UnresolvedMove)
+                        .then(|| action.as_str().into()),
+                    verify: None,
+                });
+        }
+    }
+    (courses, blocked)
+}
+
+struct Abort {
+    code: &'static str,
+    exit: u8,
+    status: Option<u16>,
+    message: String,
+}
+
+fn transfer_failure(error: TransferError) -> (Action, String, Option<Abort>) {
+    use canvas_api::Error as Api;
+    match error {
+        TransferError::Api(
+            Api::NotFound
+            | Api::Denied { status: 403 | 404 }
+            | Api::Forbidden {
+                rate_limited: false,
+                ..
+            },
+        ) => (Action::Unavailable, "file unavailable".into(), None),
+        TransferError::Api(error) => {
+            let error = match error {
+                Api::Denied { status: 401 } => Api::Unauthorized,
+                error => error,
+            };
+            let sync = canvas_core::sync::SyncError::Api(error);
+            let (code, exit, status) = sync.classification();
+            let message = sync.safe_message();
+            let abort = matches!(exit, 3..=6).then(|| Abort {
+                code,
+                exit,
+                status,
+                message: message.clone(),
+            });
+            (Action::Failed, message, abort)
+        }
+        TransferError::Message(message) if message == "locked" => (Action::Locked, message, None),
+        other => (Action::Failed, other.to_string(), None),
+    }
+}
+
+fn install_failure(error: canvas_core::download::InstallError) -> (Action, String, Option<Abort>) {
+    use canvas_core::download::InstallError;
+    match error {
+        InstallError::Transfer(error) => transfer_failure(error),
+        InstallError::Manifest(error)
+            if !matches!(
+                error,
+                ManifestError::LockTimeout | ManifestError::UnsafePath
+            ) =>
+        {
+            let message = error.to_string();
+            (
+                Action::Failed,
+                message.clone(),
+                Some(Abort {
+                    code: "local",
+                    exit: 13,
+                    status: None,
+                    message,
+                }),
+            )
+        }
+        other => (other.action(), other.to_string(), None),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -306,13 +487,20 @@ async fn process_one(
     verify: bool,
     multi: Option<&MultiProgress>,
     total_bar: Option<&ProgressBar>,
-) -> DownloadFileJson {
+) -> Result<DownloadFileJson, Box<(DownloadFileJson, Abort)>> {
     if pf.skipped_external {
-        return file_json(&pf, Action::SkippedExternal, None, None, None);
+        return Ok(file_json(&pf, Action::SkippedExternal, None, None, None));
     }
-
+    let meta = match canvas_core::download::file_remote_meta(client, pf.file_id).await {
+        Ok(meta) => meta,
+        Err(error) => return failed_row(&pf, transfer_failure(error)),
+    };
+    if meta.locked {
+        return Ok(file_json(&pf, Action::Locked, None, None, None));
+    }
+    let remote = meta.remote.clone();
     let file_bar = multi.map(|m| {
-        let bar = m.add(ProgressBar::new(pf.size.unwrap_or(0)));
+        let bar = m.add(ProgressBar::new(remote.size));
         bar.set_style(
             ProgressStyle::with_template("{msg} {bar:30.green/white} {bytes}/{total_bytes}")
                 .unwrap_or_else(|_| ProgressStyle::default_bar()),
@@ -320,85 +508,82 @@ async fn process_one(
         bar.set_message(pf.path.clone());
         bar
     });
-
-    let meta = match canvas_core::download::file_remote_meta(client, pf.file_id).await {
-        Ok(m) => m,
-        Err(TransferError::Message(m)) if m.starts_with("unavailable:") => {
+    let callback = progress_callback(file_bar.clone(), total_bar.cloned());
+    let transfer = transfer.clone().with_metadata(meta).with_progress(callback);
+    // The pre-install path supplies previous_path for moves; blocking reads and
+    // verification stay off the async executor and under the install locks.
+    let d = dest.clone();
+    let file_id = pf.file_id;
+    let before = match tokio::task::spawn_blocking(move || d.manifest.get(file_id)).await {
+        Ok(Ok(row)) => row,
+        Ok(Err(error)) => {
             finish_bar(file_bar.as_ref());
-            return file_json(&pf, Action::Unavailable, None, Some(m), None);
+            return failed_row(&pf, install_failure(error.into()));
         }
-        Err(TransferError::Message(m)) if m == "locked" => {
+        Err(_) => {
             finish_bar(file_bar.as_ref());
-            return file_json(&pf, Action::Locked, None, None, None);
-        }
-        Err(TransferError::Message(m)) if m == "unauthorized" => {
-            finish_bar(file_bar.as_ref());
-            return file_json(&pf, Action::Failed, None, Some(m), None);
-        }
-        Err(e) => {
-            finish_bar(file_bar.as_ref());
-            return file_json(&pf, Action::Failed, None, Some(e.to_string()), None);
+            return failed_row(
+                &pf,
+                install_failure(canvas_core::download::InstallError::Worker),
+            );
         }
     };
-    if meta.locked {
-        finish_bar(file_bar.as_ref());
-        return file_json(&pf, Action::Locked, None, None, None);
-    }
-
-    let remote = if meta.remote.size == 0 {
-        RemoteMeta {
-            size: pf.size.unwrap_or(0),
-            updated_at: pf.updated_at.clone().or(meta.remote.updated_at),
-        }
-    } else {
-        meta.remote
-    };
-    if remote.size == 0 {
-        finish_bar(file_bar.as_ref());
-        return file_json(
-            &pf,
-            Action::Failed,
-            None,
-            Some("missing remote size".into()),
-            None,
-        );
-    }
-    if let Some(bar) = &file_bar {
-        bar.set_length(remote.size);
-    }
-
     let opts = InstallOpts {
         force,
         verify,
         course_id,
     };
-    let action = match install_part_file(dest, transfer, pf.file_id, &pf.path, &remote, &opts).await
-    {
-        Ok(a) => a,
-        Err(e) => map_install_err(e),
-    };
-
+    let action =
+        match install_part_file(dest, &transfer, pf.file_id, &pf.path, &remote, &opts).await {
+            Ok(action) => action,
+            Err(error) => {
+                finish_bar(file_bar.as_ref());
+                return failed_row(&pf, install_failure(error));
+            }
+        };
     let verify_status = if verify {
-        hash_and_compare(dest, &pf, action).unwrap_or(Some("mismatch".into()))
+        match hash_and_compare(dest, &pf, action).await {
+            Ok(status) => status,
+            Err(error) => {
+                finish_bar(file_bar.as_ref());
+                return failed_row(&pf, install_failure(error));
+            }
+        }
     } else {
         None
     };
-
-    if let Some(bar) = total_bar
-        && matches!(action, Action::Downloaded | Action::Skipped | Action::Moved)
-    {
-        bar.inc(remote.size);
-    }
     finish_bar(file_bar.as_ref());
+    let previous = before.map(|r| r.path).filter(|path| path != &pf.path);
+    let mut row = file_json(&pf, action, previous, None, verify_status);
+    row.size = Some(remote.size);
+    Ok(row)
+}
 
-    let mut row = file_json(&pf, action, None, None, verify_status);
-    if matches!(
-        action,
-        Action::Downloaded | Action::Skipped | Action::Moved | Action::Planned
-    ) {
-        row.size = Some(remote.size);
+fn failed_row(
+    pf: &PlannedFile,
+    (action, message, abort): (Action, String, Option<Abort>),
+) -> Result<DownloadFileJson, Box<(DownloadFileJson, Abort)>> {
+    let row = file_json(pf, action, None, Some(message), None);
+    match abort {
+        Some(error) => Err(Box::new((row, error))),
+        None => Ok(row),
     }
-    row
+}
+
+fn progress_callback(
+    file: Option<ProgressBar>,
+    total: Option<ProgressBar>,
+) -> canvas_core::download::ProgressFn {
+    let previous = AtomicU64::new(0);
+    Arc::new(move |_, bytes| {
+        let old = previous.swap(bytes, Ordering::Relaxed);
+        if let Some(bar) = &file {
+            bar.set_position(bytes);
+        }
+        if let Some(bar) = &total {
+            bar.inc(bytes.saturating_sub(old));
+        }
+    })
 }
 
 fn finish_bar(bar: Option<&ProgressBar>) {
@@ -407,39 +592,42 @@ fn finish_bar(bar: Option<&ProgressBar>) {
     }
 }
 
-fn hash_and_compare(
+async fn hash_and_compare(
     dest: &Destination,
     pf: &PlannedFile,
     action: Action,
 ) -> Result<Option<String>, canvas_core::download::InstallError> {
+    use canvas_core::download::InstallError;
     if !matches!(
         action,
         Action::Skipped | Action::Downloaded | Action::Moved | Action::Modified
     ) {
         return Ok(None);
     }
-    let Some(row) = dest.manifest.get(pf.file_id)? else {
-        return Ok(None);
-    };
-    let Some(expected) = row.sha256.as_ref() else {
-        return Ok(None);
-    };
-    match hash_path(&dest.root, &pf.path)? {
-        Some(actual) if &actual == expected => Ok(Some("ok".into())),
-        Some(_) | None => Ok(Some("mismatch".into())),
-    }
-}
-
-fn map_install_err(e: canvas_core::download::InstallError) -> Action {
-    use canvas_core::download::InstallError;
-    match &e {
-        InstallError::Transfer(TransferError::Message(m)) if m == "locked" => Action::Locked,
-        InstallError::Transfer(TransferError::Message(m)) if m.starts_with("unavailable:") => {
-            Action::Unavailable
+    let lock = dest
+        .acquire_install_lock(canvas_core::download::LOCK_TIMEOUT)
+        .await?;
+    let d = dest.clone();
+    let pf = pf.clone();
+    tokio::task::spawn_blocking(move || {
+        let _lock = lock;
+        let Some(row) = d.manifest.get(pf.file_id)? else {
+            return Ok(None);
+        };
+        let Some(expected) = row.sha256.as_ref() else {
+            return Ok(None);
+        };
+        // A different path belongs to a different run; do not hash an unrelated file.
+        if row.path != pf.path {
+            return Ok(None);
         }
-        InstallError::Transfer(TransferError::Message(m)) if m == "failed" => Action::Failed,
-        other => other.action(),
-    }
+        match hash_path(&d.root, &pf.path)? {
+            Some(actual) if &actual == expected => Ok(Some("ok".into())),
+            Some(_) | None => Ok(Some("mismatch".into())),
+        }
+    })
+    .await
+    .map_err(|_| InstallError::Worker)?
 }
 
 fn action_from_str(s: &str) -> Action {
@@ -516,25 +704,43 @@ fn sum_totals(courses: &[DownloadCourseJson], bytes: u64) -> DownloadTotalsJson 
 
 fn print_human(result: &DownloadResult) -> io::Result<()> {
     let mut table = new_table();
-    table.set_header(vec!["course", "path", "action", "size"]);
+    table.set_header(vec!["course", "path", "action", "size", "verify"]);
     for course in &result.courses {
         for f in &course.files {
             table.add_row(Row::from(vec![
                 course.course_code.clone(),
-                f.path.clone(),
+                f.previous_path
+                    .as_ref()
+                    .map_or_else(|| f.path.clone(), |old| format!("{old} -> {}", f.path)),
                 f.action.clone(),
                 f.size.map(|s| s.to_string()).unwrap_or_default(),
+                f.verify.clone().unwrap_or_default(),
             ]));
+        }
+    }
+    for course in &result.courses {
+        for file in &course.files {
+            if let Some(error) = &file.error {
+                writeln!(io::stderr(), "{}: {error}", file.path)?;
+            }
         }
     }
     apply_two_space_padding(&mut table);
     writeln!(io::stdout(), "{table}")?;
     writeln!(
         io::stdout(),
-        "totals: downloaded={} moved={} skipped={} failed={} bytes={}",
+        "totals: planned={} downloaded={} moved={} skipped={} unmanaged={} modified={} locked={} unavailable={} skipped_external={} unsafe_path={} unresolved_move={} failed={} bytes={}",
+        result.totals.planned,
         result.totals.downloaded,
         result.totals.moved,
         result.totals.skipped,
+        result.totals.unmanaged,
+        result.totals.modified,
+        result.totals.locked,
+        result.totals.unavailable,
+        result.totals.skipped_external,
+        result.totals.unsafe_path,
+        result.totals.unresolved_move,
         result.totals.failed,
         result.totals.bytes
     )?;
@@ -582,9 +788,9 @@ async fn select_courses(
     globals: &Globals,
     session: &Session,
     args: &DownloadArgs,
-) -> Result<Vec<ResolvedCourse>, ExitCode> {
+) -> Result<(Vec<ResolvedCourse>, Vec<Freshness>), ExitCode> {
     if args.all_courses {
-        match ensure_courses(
+        let outcome = match ensure_courses(
             session,
             CoursesScope::Active,
             ttl_courses(),
@@ -594,9 +800,9 @@ async fn select_courses(
         )
         .await
         {
-            Ok(_) => {}
+            Ok(outcome) => outcome,
             Err(e) => return Err(refresh_fail(globals, session, e)),
-        }
+        };
         let rows = session
             .open
             .store
@@ -612,18 +818,20 @@ async fn select_courses(
                     Some(session.identity_ref()),
                 )
             })?;
-        return Ok(rows
-            .into_iter()
-            .map(|r| ResolvedCourse {
-                id: r.id,
-                code: Some(r.code),
-                name: Some(r.name),
-            })
-            .collect());
+        return Ok((
+            rows.into_iter()
+                .map(|r| ResolvedCourse {
+                    id: r.id,
+                    code: Some(r.code),
+                    name: Some(r.name),
+                })
+                .collect(),
+            vec![outcome_freshness(&outcome)],
+        ));
     }
     let course = args.course.as_deref().expect("course or all_courses");
-    let (resolved, _, _) = resolve_with_refresh(globals, session, course).await?;
-    Ok(vec![resolved])
+    let (resolved, freshness, _) = resolve_with_refresh(globals, session, course).await?;
+    Ok((vec![resolved], freshness))
 }
 
 async fn prepare_course(
@@ -631,19 +839,38 @@ async fn prepare_course(
     session: &Session,
     course: &ResolvedCourse,
     args: &DownloadArgs,
-) -> Result<(Vec<PlannedFile>, Vec<Freshness>), ExitCode> {
+) -> Result<(Vec<PlannedFile>, Vec<Freshness>, Vec<PartialScope>), ExitCode> {
     let mut freshness = Vec::new();
-    match ensure_folders(globals, session, course.id).await {
-        Ok(o) => freshness.push(outcome_freshness(&o)),
-        Err(e) => return Err(refresh_fail(globals, session, e)),
-    }
-    match ensure_files(globals, session, course.id).await {
-        Ok(o) => freshness.push(outcome_freshness(&o)),
-        Err(e) => return Err(refresh_fail(globals, session, e)),
-    }
-    match ensure_modules(globals, session, course.id).await {
-        Ok(o) => freshness.push(outcome_freshness(&o)),
-        Err(e) => return Err(refresh_fail(globals, session, e)),
+    let mut partial = Vec::new();
+    let folders = ensure_folders(globals, session, course.id)
+        .await
+        .map_err(|e| refresh_fail(globals, session, e))?;
+    let files = ensure_files(globals, session, course.id)
+        .await
+        .map_err(|e| refresh_fail(globals, session, e))?;
+    let modules = ensure_modules(globals, session, course.id)
+        .await
+        .map_err(|e| refresh_fail(globals, session, e))?;
+    for outcome in [&folders, &files, &modules] {
+        freshness.push(outcome_freshness(outcome));
+        if let Some(status) = outcome
+            .error
+            .as_deref()
+            .and_then(canvas_core::sync::listing_denial_status)
+        {
+            let message = if outcome.freshness.dataset == "files" {
+                format!(
+                    "Files listing unavailable (HTTP {status}); showing files linked from modules"
+                )
+            } else {
+                format!("Folders listing unavailable (HTTP {status}); folder paths unavailable")
+            };
+            partial.push(PartialScope {
+                scope: format!("{}:course:{}", outcome.freshness.dataset, course.id),
+                http_status: Some(status),
+                message,
+            });
+        }
     }
 
     let course_id = course.id;
@@ -677,15 +904,29 @@ async fn prepare_course(
 
     if let Some(module_filter) = args.module.as_deref() {
         let needle = module_filter.to_lowercase();
-        let module_ids: HashSet<i64> = input
+        let modules: Vec<_> = input
             .modules
             .iter()
             .filter(|m| m.name.to_lowercase().contains(&needle))
-            .map(|m| m.id)
             .collect();
-        planned.retain(|p| match p.source {
-            PlannedSource::Module { module_id } => module_ids.contains(&module_id),
-            PlannedSource::ExternalTool | PlannedSource::FilesListing => false,
+        let file_ids: HashSet<_> = modules
+            .iter()
+            .flat_map(|m| &m.items)
+            .filter(|i| i.item_type.eq_ignore_ascii_case("File"))
+            .filter_map(|i| i.content_id)
+            .collect();
+        let external_ids: HashSet<_> = modules
+            .iter()
+            .flat_map(|m| &m.items)
+            .filter(|i| i.item_type.eq_ignore_ascii_case("ExternalTool"))
+            .map(|i| i.content_id.unwrap_or(i.id))
+            .collect();
+        planned.retain(|p| {
+            if p.skipped_external {
+                external_ids.contains(&p.file_id)
+            } else {
+                file_ids.contains(&p.file_id)
+            }
         });
     }
     if !args.files.is_empty() {
@@ -693,5 +934,75 @@ async fn prepare_course(
         planned.retain(|p| want.contains(&p.file_id));
     }
 
-    Ok((planned, freshness))
+    Ok((planned, freshness, partial))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_updates_active_file_and_total_incrementally() {
+        let file = ProgressBar::hidden();
+        let total = ProgressBar::hidden();
+        let progress = progress_callback(Some(file.clone()), Some(total.clone()));
+        progress(50, 2);
+        assert_eq!(file.position(), 2);
+        assert_eq!(total.position(), 2);
+        progress(50, 5);
+        assert_eq!(file.position(), 5);
+        assert_eq!(total.position(), 5);
+    }
+
+    #[test]
+    fn every_action_has_counts_and_completed_exit_precedence() {
+        for action in [
+            Action::Planned,
+            Action::Downloaded,
+            Action::Moved,
+            Action::Skipped,
+            Action::Unmanaged,
+            Action::Modified,
+            Action::Locked,
+            Action::Unavailable,
+            Action::SkippedExternal,
+            Action::UnsafePath,
+            Action::UnresolvedMove,
+            Action::Failed,
+        ] {
+            let row = DownloadFileJson {
+                id: "1".into(),
+                path: "file".into(),
+                previous_path: None,
+                action: action.as_str().into(),
+                size: Some(4),
+                error: None,
+                verify: None,
+            };
+            let totals = sum_totals(
+                &[DownloadCourseJson {
+                    course_id: "101".into(),
+                    course_code: "CS".into(),
+                    files: vec![row],
+                }],
+                4,
+            );
+            assert_eq!(serde_json::to_value(totals).unwrap()[action.as_str()], 1);
+            assert_eq!(action_from_str(action.as_str()), action);
+            let partial = matches!(
+                action,
+                Action::Locked
+                    | Action::Unavailable
+                    | Action::UnsafePath
+                    | Action::UnresolvedMove
+                    | Action::Failed
+            );
+            assert_eq!(
+                outcome_exit_code(&[action], false, false),
+                if partial { 12 } else { 0 }
+            );
+            assert_eq!(outcome_exit_code(&[action], true, false), 10);
+            assert_eq!(outcome_exit_code(&[action], true, true), 0);
+        }
+    }
 }
