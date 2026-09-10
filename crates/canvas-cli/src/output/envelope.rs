@@ -8,7 +8,7 @@ use crate::output::now::generated_at_now;
 use crate::output::registry::SCHEMA_ERROR;
 
 /// Machine-readable process outcome (§7).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
     Ok,
@@ -20,7 +20,7 @@ pub enum Outcome {
 }
 
 /// Identity reference embedded in envelopes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct IdentityRef {
     pub origin: String,
     pub user_id: String,
@@ -40,7 +40,7 @@ impl IdentityRef {
 }
 
 /// Where a freshness row was obtained.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FreshnessSource {
     Cache,
@@ -48,7 +48,7 @@ pub enum FreshnessSource {
 }
 
 /// One dataset freshness entry (§7 / Appendix D).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Freshness {
     pub dataset: String,
     pub scope: String,
@@ -60,7 +60,7 @@ pub struct Freshness {
 }
 
 /// Request counters for the invocation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct Requests {
     pub api: u64,
     pub storage: u64,
@@ -68,7 +68,7 @@ pub struct Requests {
 }
 
 /// A scope that returned a partial/denied result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PartialScope {
     pub scope: String,
     pub http_status: Option<u16>,
@@ -76,7 +76,7 @@ pub struct PartialScope {
 }
 
 /// Fatal error payload for `canvas-cli/error@1`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ErrorResult {
     pub code: String,
     pub message: String,
@@ -86,7 +86,7 @@ pub struct ErrorResult {
 }
 
 /// Single-document JSON envelope for one invocation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>"))]
 pub struct Envelope<T> {
     pub schema: String,

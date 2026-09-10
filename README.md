@@ -121,6 +121,8 @@ Every command below runs in this build.
 | `canvas alias list` | List your course aliases. |
 | `canvas alias remove` | Remove a course alias. |
 | `canvas doctor` | Check config, databases, credentials, and locks. `--network`. |
+| `canvas schema` | Print the JSON Schema of a command's `--json` output. `--list`. |
+| `canvas mcp` | Serve the Model Context Protocol over stdio for one identity. |
 | `canvas completions` | Print a completion script: bash, zsh, fish, powershell, elvish. |
 | `canvas version` | Print the version, build commit, and target triple. |
 
@@ -155,6 +157,31 @@ stdout carries data only. Progress, logs, and confirmations go to stderr.
 `--json` disables color and progress, and the raw-output commands
 (`completions`, `auth token --reveal`, `config edit`, `calendar --ics -`,
 `receipts export --out -`) reject it with exit 2.
+
+## Agents
+
+`canvas mcp` serves the Model Context Protocol on stdin and stdout. One
+instance serves one identity: pick it with `--profile`. The catalog is
+read-first, and it holds no tool that reveals a credential, changes an
+identity, runs arbitrary HTTP or shell, clears the cache, overwrites a file,
+or opens a browser. A submission still needs a recorded human approval.
+
+```json
+{
+  "mcpServers": {
+    "canvas": { "command": "canvas", "args": ["--profile", "default", "mcp"] }
+  }
+}
+```
+
+[`skill/canvas-cli/`](skill/canvas-cli/SKILL.md) is the shipped skill: the
+identity model, five workflows, the exit-code and recovery table, and the MCP
+setup for Claude Code, Codex, and Cursor. The release archives carry it.
+`docs/agent-hosts.md` records which hosts were actually exercised.
+
+`canvas schema <command>` prints the JSON Schema of any command's envelope and
+`result`, and `canvas schema --list` prints the registry. The MCP tools use the
+same documents as their output schemas.
 
 ## Where things live
 

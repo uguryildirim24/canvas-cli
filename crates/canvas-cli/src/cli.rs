@@ -27,7 +27,8 @@ pub enum ColorChoice {
     Never,
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
 pub enum AssignmentBucket {
     Open,
     Upcoming,
@@ -312,6 +313,19 @@ pub enum Commands {
         #[arg(long)]
         network: bool,
     },
+    /// Print the JSON Schema of a command's `--json` output.
+    Schema {
+        /// Command to describe, for example `todo` or `assignment`.
+        #[arg(value_name = "COMMAND", required_unless_present = "list")]
+        command: Option<String>,
+        /// List every registered schema instead.
+        #[arg(long, conflicts_with = "command")]
+        list: bool,
+    },
+    /// Serve the Model Context Protocol over stdin and stdout.
+    ///
+    /// One instance serves one identity: bind it with `--profile`.
+    Mcp,
     /// Generate shell completions.
     Completions {
         /// Shell to generate completions for.
@@ -488,6 +502,7 @@ impl Commands {
     pub fn has_raw_output(&self) -> bool {
         match self {
             Self::Completions { .. }
+            | Self::Schema { .. }
             | Self::Auth {
                 command: AuthCommand::Token { reveal: true },
             }
