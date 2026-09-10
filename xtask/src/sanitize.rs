@@ -234,38 +234,65 @@ impl Shape {
 }
 
 /// Replace free text with a placeholder of the same length that keeps the
-/// Markdown and HTML structure: punctuation, tags, and list markers survive,
-/// letters become `x` and digits become `0`. Applying it twice changes
-/// nothing, because `x` and `0` are already their own replacement.
+/// Markdown and HTML structure: punctuation, element names, and list markers
+/// survive, letters become `x` and digits become `0`. Applying it twice
+/// changes nothing, because `x` and `0` are already their own replacement.
+///
+/// Only the element *name* of an HTML tag survives, never its attributes. An
+/// attribute value carries a URL, an e-mail address, or a name as readily as
+/// the text around it does (`<a href="mailto:…">`, `<img src="…/users/77/…">`),
+/// and none of those may reach a fixture (SPEC §15).
 pub fn placeholder(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut in_tag = false;
-    let mut first_of_word = true;
-    for ch in input.chars() {
-        if ch == '<' {
-            in_tag = true;
-        }
-        if in_tag {
-            out.push(ch);
-            if ch == '>' {
-                in_tag = false;
-            }
-            continue;
-        }
+    /// One character outside a tag name: letters to `x`, digits to `0`,
+    /// everything else kept so the structure reads the same.
+    fn masked(ch: char, first_of_word: &mut bool) -> char {
         if ch.is_alphabetic() {
-            out.push(if first_of_word && ch.is_uppercase() {
+            let out = if *first_of_word && ch.is_uppercase() {
                 'X'
             } else {
                 'x'
-            });
-            first_of_word = false;
+            };
+            *first_of_word = false;
+            out
         } else if ch.is_numeric() {
-            out.push('0');
-            first_of_word = false;
+            *first_of_word = false;
+            '0'
         } else {
-            out.push(ch);
-            first_of_word = true;
+            *first_of_word = true;
+            ch
         }
+    }
+
+    let mut out = String::with_capacity(input.len());
+    let mut in_tag = false;
+    let mut in_tag_name = false;
+    let mut first_of_word = true;
+    for ch in input.chars() {
+        if in_tag {
+            if ch == '>' {
+                in_tag = false;
+                in_tag_name = false;
+                out.push(ch);
+                first_of_word = true;
+                continue;
+            }
+            // The name runs from `<` to the first character that cannot be
+            // part of one; from there on the tag is attributes.
+            if in_tag_name && (ch.is_ascii_alphanumeric() || ch == '/' || ch == '-') {
+                out.push(ch);
+                continue;
+            }
+            in_tag_name = false;
+            out.push(masked(ch, &mut first_of_word));
+            continue;
+        }
+        if ch == '<' {
+            in_tag = true;
+            in_tag_name = true;
+            out.push(ch);
+            continue;
+        }
+        out.push(masked(ch, &mut first_of_word));
     }
     out
 }
@@ -673,8 +700,46 @@ mod tests {
         assert_eq!(out.chars().count(), input.chars().count());
         assert!(out.starts_with("## Xxxx 0\n\nXxxx *xxxxxxx 0*"), "{out}");
         assert!(out.contains("<b>"), "{out}");
+        assert!(out.ends_with("</b> xx Xxxxxx."), "{out}");
         // Idempotent.
         assert_eq!(placeholder(&out), out);
+    }
+
+    #[test]
+    fn free_text_keeps_element_names_but_never_attributes() {
+        let input = "<p>Ask <a href=\"mailto:ada@lasell.edu\" title=\"Ada\">Ada</a> \
+                     or see <img src=\"https://canvas.real.edu/users/77/avatar.png\"/>.</p>";
+        let out = placeholder(input);
+        assert_eq!(out.chars().count(), input.chars().count());
+        // The structure a test relies on survives.
+        for kept in ["<p>", "<a ", "</a>", "<img ", "/>", "</p>"] {
+            assert!(out.contains(kept), "{kept} lost from {out}");
+        }
+        // Nothing identifying does.
+        for leak in [
+            "mailto",
+            "ada",
+            "lasell",
+            "Ada",
+            "canvas.real.edu",
+            "avatar",
+            "77",
+        ] {
+            assert!(!out.contains(leak), "{leak} survived in {out}");
+        }
+        assert_eq!(placeholder(&out), out);
+    }
+
+    #[test]
+    fn a_markdown_link_target_does_not_survive_free_text() {
+        let out = placeholder("See [the syllabus](https://canvas.real.edu/courses/77).");
+        assert!(!out.contains("canvas.real.edu"), "{out}");
+        assert!(!out.contains("77"), "{out}");
+        // The Markdown link structure is still there.
+        assert!(
+            out.contains('[') && out.contains("](") && out.contains(')'),
+            "{out}"
+        );
     }
 
     #[test]
