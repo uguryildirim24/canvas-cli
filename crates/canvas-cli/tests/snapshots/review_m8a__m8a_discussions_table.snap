@@ -6,4 +6,4 @@ expression: "scrub_text(&f.text(&[\"discussions\", \"5\"], 0).await, &server.uri
   55    Topic 55              2026-09-08T10:00:00Z    3          2         unread  
   56    Introduce yourself    2026-09-08T10:00:00Z    3          2         unread  
   57    Group lab report      2026-09-08T10:00:00Z    3          2         unread  
-  60    Welcome               2026-09-08T10:00:00Z    3          2         unread
+announcements are listed by `canvas announcements`

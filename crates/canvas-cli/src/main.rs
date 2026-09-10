@@ -272,18 +272,8 @@ async fn main() -> ExitCode {
                 Commands::Syllabus { course } => {
                     commands::pages::run_syllabus(&m1b_globals(&globals), course).await
                 }
-                Commands::Discussions {
-                    course,
-                    unread,
-                    announcements,
-                } => {
-                    commands::discussions::run_list(
-                        &m1b_globals(&globals),
-                        course,
-                        unread,
-                        announcements,
-                    )
-                    .await
+                Commands::Discussions { course, unread } => {
+                    commands::discussions::run_list(&m1b_globals(&globals), course, unread).await
                 }
                 Commands::Discussion {
                     course,

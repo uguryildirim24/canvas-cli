@@ -15,7 +15,7 @@ package marks anything read.
 | `pages <course> [--unpublished]` | `GET /api/v1/courses/:id/pages?sort=title&per_page=100` | `pages` / `course:<id>` / `ttl_pages` (1h) |
 | `page <course> <url-slug\|id\|URL>` | `GET /api/v1/courses/:id/pages/:url_or_id` | `page` / `page:<course>:<operand>` / `ttl_pages` |
 | `syllabus <course>` | none new; the `course` dataset already carries the syllabus | `course` / `course:<id>` / `ttl_courses` |
-| `discussions <course> [--unread] [--announcements yes\|no]` | `GET /api/v1/courses/:id/discussion_topics?only_announcements=false&per_page=100` | `discussions` / `course:<id>` / `ttl_discussions` (15m) |
+| `discussions <course> [--unread]` | `GET /api/v1/courses/:id/discussion_topics?only_announcements=false&per_page=100` | `discussions` / `course:<id>` / `ttl_discussions` (15m) |
 | `discussion <course> <id\|URL> [--replies] [--page N]` | `GET /api/v1/courses/:id/discussion_topics/:tid`, and with `--replies` also `GET …/discussion_topics/:tid/entries?per_page=100` and `GET …/entries/:eid/replies?per_page=100` | `discussion` / `topic:<id>` or `topic:<id>:replies` / `ttl_discussions` |
 | `inbox [--scope inbox\|unread\|sent\|archived]` | `GET /api/v1/conversations?scope=<scope>&auto_mark_as_read=false&per_page=100` | `inbox` / `scope:<scope>` / `ttl_inbox` (5m) |
 | `inbox show <id>` | `GET /api/v1/conversations/:id?auto_mark_as_read=false` | `conversation` / `conversation:<id>` / `ttl_inbox` |
@@ -98,7 +98,7 @@ Markdown plus a `BodyRefs` projection. The projection holds no HTML.
 | A reply page failed after earlier pages were stored | `replies_coverage.complete = false`, `blocked: page_failed`, `partial[]` row `discussion_entries:topic:<id>`, exit 12 |
 | A body cut at 64 KiB | `truncated: true`, `partial[]`, exit 12. A cut reply body raises the row under `discussion_entries:topic:<id>`; a cut conversation message under `conversation:<id>`. |
 | `--offline` with no complete coverage | exit 7 (§7) |
-| Bad `--scope`, bad `--announcements`, `--page` without `--replies` | exit 2 |
+| Bad `--scope`, `--page` without `--replies` | exit 2 |
 
 Auth (`401`) and throttling (`429`, or a rate-limited `403`) always
 propagate as exit 3 and exit 5; they are never recorded as coverage.
@@ -133,11 +133,16 @@ calls a cut or partial result complete.
    reports no revision time for a syllabus body, and the course object does
    not carry one through the current allowlist, so the field is `null`
    today rather than a guess.
-7. **`--announcements` takes `yes` or `no` and defaults to `yes`.** The
-   endpoint is fixed at `only_announcements=false`, which returns every
-   topic; `no` hides the topics Canvas marks `is_announcement`. `--unread`
-   filters the same way, on the stored `read_state` and `unread_count`.
-   Neither flag marks anything read.
+7. **`discussions` lists discussion topics only; there is no
+   `--announcements` flag.** The request is pinned at
+   `only_announcements=false`, so Canvas never returns an announcement
+   through it, and a flag that asked for one could not be honoured (SPEC §19
+   item 27). The human table closes with a line pointing at
+   `canvas announcements`, which is the listing that holds them. The
+   `is_announcement` field stays in `discussions@1` and `discussion@1`,
+   because Canvas sends it on a topic; it is a topic property, not a filter.
+   `--unread` is the only filter, and it works on the stored `read_state`
+   and `unread_count`. It marks nothing read.
 8. **Replies have their own coverage scope.** A `discussion` read without
    `--replies` covers `topic:<id>`; with `--replies` it covers
    `topic:<id>:replies`. One scope can never make the other look covered.
