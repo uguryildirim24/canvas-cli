@@ -149,8 +149,10 @@ Items 27 and 28 stay open. Their fixes predate pass 1, which read them and delib
 |---|---|
 | 44 | The companion declares `sidePanel` as a **fourth** permission. REPORT §3.3 names two; item 30 recorded `scripting` as the third and was closed on that reading, before M7-b added `sidePanel`. It grants no host or tab access, and REPORT §3.4 forbids the alternative of a Canvas DOM overlay, so the same reasoning applies — but the confirmation on item 30 cannot cover a permission added afterwards. |
 | 45 | The panel draws an operation plan without its body. `awaiting_decision` filters by plan state and handle only, so every waiting plan reaches the panel, and `PanelPlan` carries the submission half only. A discussion or inbox plan therefore draws as `assignment 0` with its kind, digests and expiry, and with no message text, no thread and no recipients — while REPORT §3.5 requires the exact bytes before an approval. Approving it there still works and every host-side check is unchanged, so it is not a forgery path. |
+| 46 | The panel has no words for an operation journal's own states. `panel::journals` lists operation journals beside submission journals, and `JOURNAL_STATES` names only the ten §12.2 submission states, so `posted` and `failed` draw as states the panel does not know. Added by the review pass, not by the worker; see `docs/reviews/spec-v0.9-pass2.md`. |
 
-No existing item was resolved by me, reworded, or renumbered. §19 now runs 1–45.
+No existing item was resolved by me, reworded, or renumbered. §19 now runs
+1–46: 44 and 45 from this pass, 46 from the review of it.
 
 ## The header
 
