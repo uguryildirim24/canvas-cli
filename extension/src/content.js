@@ -61,9 +61,16 @@
   async function observe() {
     // Frames are read as attributes, before any text exists.
     const frames = api.collectFrames(document);
-    const { route, zone } = api.classifyZone(location.pathname, frames);
+    // The address is captured with the frames, so what is classified and
+    // what is reported are the same page. A same-document navigation during
+    // the probe below would otherwise pair one page's zone with another
+    // page's URL.
+    const href = location.href;
+    const { route, zone } = api.classifyZone(pathOf(href), frames);
     const account = await probeAccount();
-    const opaque = api.isOpaque(zone);
+    // The page moved while the probe was in flight: this classification
+    // describes a document that is gone, so it describes nothing.
+    const opaque = api.isOpaque(zone) || location.href !== href;
     return {
       origin: location.origin,
       tab_id: -1,
@@ -71,12 +78,21 @@
       frame_id: 0,
       navigation_generation: 0,
       route: opaque ? emptyRoute() : route,
-      zone,
+      zone: location.href === href ? zone : "unknown",
       account,
-      url: opaque ? null : api.sanitizeUrl(location.href),
+      url: opaque ? null : api.sanitizeUrl(href),
       title: opaque ? null : api.pageTitle(document),
       observed_at: new Date().toISOString(),
     };
+  }
+
+  /** The path of an address, for the classifier. */
+  function pathOf(href) {
+    try {
+      return new URL(href).pathname;
+    } catch {
+      return "";
+    }
   }
 
   function emptyRoute() {
@@ -93,8 +109,15 @@
   /** Answer a text request: re-probe, then read. */
   async function extract() {
     const frames = api.collectFrames(document);
-    const { zone } = api.classifyZone(location.pathname, frames);
+    const href = location.href;
+    const { zone } = api.classifyZone(pathOf(href), frames);
     const account = await probeAccount();
+    // The classification must still describe the page about to be read. A
+    // document that moved under the probe is answered as `unknown`, which
+    // reads nothing.
+    if (location.href !== href) {
+      return { zone: "unknown", account, extract: emptyExtract() };
+    }
     if (account === null || api.isOpaque(zone)) {
       return { zone, account, extract: emptyExtract() };
     }
