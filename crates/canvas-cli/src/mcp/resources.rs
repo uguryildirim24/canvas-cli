@@ -132,6 +132,11 @@ pub fn templates(binding: &Binding) -> Vec<ResourceTemplate> {
 
 /// Read one resource.
 ///
+/// `consumer` is this session's own handle, set by the adapter. A
+/// `context/<handle>` resource is served only when the handle names the
+/// caller, so naming another consumer's handle reads `not_attached` rather
+/// than that consumer's page (REPORT §3.2).
+///
 /// `Err` means the URI is not one this server serves — a foreign identity
 /// key, another generation, or an unknown path. Everything the command itself
 /// reports, including a refusal, comes back inside the envelope.
@@ -139,6 +144,7 @@ pub async fn read(
     globals: &Globals,
     binding: &Binding,
     uri: &str,
+    consumer: &str,
 ) -> Result<ReadResourceResult, ErrorData> {
     let Some(target) = binding.path_of(uri).and_then(target_of) else {
         return Err(ErrorData::resource_not_found(
@@ -160,9 +166,33 @@ pub async fn read(
         }
         // Metadata only. Text is released by an explicit `context.here` with
         // `include_text`, never by reading or subscribing to a resource.
-        Target::Context(handle) => here::handle(globals, None, Some(handle), false).await,
+        //
+        // A handle that is not this session's own is answered the way an
+        // unattached consumer is: no consumer reads another one's context.
+        Target::Context(handle) if handle == consumer => {
+            here::handle(globals, None, Some(handle), false).await
+        }
+        Target::Context(handle) => foreign_consumer(globals, &handle),
     };
     Ok(contents(uri, &handled))
+}
+
+/// The answer to a `context/<handle>` naming some other consumer.
+///
+/// It is exactly what an unattached consumer reads, so the resource never
+/// says whether that other handle attached at all.
+fn foreign_consumer(globals: &Globals, handle: &str) -> Handled {
+    let message = format!("no context is attached for consumer {handle}");
+    let mut envelope = crate::output::error_envelope(
+        "refused",
+        &message,
+        None,
+        json!({ "reason": "not_attached", "consumer": handle }),
+        8,
+    );
+    envelope.outcome = crate::output::Outcome::Refused;
+    envelope.profile = globals.profile.clone();
+    Handled::error_envelope(envelope, message)
 }
 
 /// Wrap a finished command as resource contents with its freshness budget.
