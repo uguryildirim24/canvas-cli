@@ -188,8 +188,11 @@ setup for Claude Code, Codex, and Cursor. The release archives carry it.
 `docs/agent-hosts.md` records which hosts were actually exercised.
 
 `canvas schema <command>` prints the JSON Schema of any command's envelope and
-`result`, and `canvas schema --list` prints the registry. The MCP tools use the
-same documents as their output schemas.
+`result`, and `canvas schema --list` prints the registry: three tab-separated
+columns, the name, the schema id, and whether that name is a command you can
+run or a document no command prints (`error@1`, `plan@1`, `receipt@1`). Every
+name in the first column resolves. The MCP tools use the same documents as
+their output schemas.
 
 ## Where things live
 

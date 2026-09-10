@@ -16,7 +16,7 @@ pub use envelope::{
 };
 pub use json_schema::{
     SCHEMA_SCHEMA, command_name, document_for_command, document_for_schema, entry_command,
-    list as schema_list,
+    entry_kind, list as schema_list,
 };
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
