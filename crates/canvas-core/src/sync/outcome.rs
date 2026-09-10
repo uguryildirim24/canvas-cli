@@ -59,3 +59,37 @@ pub struct RefreshOutcome {
     pub requests: u32,
     pub error: Option<String>,
 }
+
+impl SyncError {
+    /// Stable, credential-free diagnostic and process classification.
+    pub fn classification(&self) -> (&'static str, u8, Option<u16>) {
+        use canvas_api::Error as Api;
+        match self {
+            Self::OfflineMiss => ("offline", 7, None),
+            Self::Db(_) | Self::Ingest(_) => ("local", 13, None),
+            Self::Api(e) => match e {
+                Api::Unauthorized => ("auth", 3, Some(401)),
+                Api::Network | Api::Timeout => ("network", 4, None),
+                Api::RateLimited => ("rate_limited", 5, Some(429)),
+                Api::Forbidden {
+                    rate_limited: true, ..
+                } => ("rate_limited", 5, Some(403)),
+                Api::Forbidden { .. } => ("refused", 8, Some(403)),
+                Api::Denied { status } | Api::Validation { status, .. } => {
+                    ("refused", 8, Some(*status))
+                }
+                Api::NotFound => ("not_found", 6, Some(404)),
+                Api::CrossOrigin => ("resolution", 6, None),
+                _ => ("response", 1, None),
+            },
+        }
+    }
+    pub fn safe_message(&self) -> String {
+        match self {
+            Self::Api(canvas_api::Error::Validation { status, .. }) => {
+                format!("validation (status={status})")
+            }
+            _ => self.to_string(),
+        }
+    }
+}

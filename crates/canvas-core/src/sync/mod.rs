@@ -1,5 +1,6 @@
 //! Dataset refresh and sync (SPEC §10).
 
+mod course;
 mod course_totals;
 mod courses;
 mod enrollment_grades;
@@ -8,10 +9,14 @@ mod grading_periods;
 mod outcome;
 mod refresh;
 mod terms;
+mod wire;
 
+#[cfg(test)]
+mod review_tests;
 #[cfg(test)]
 mod tests;
 
+pub use course::{CourseDetailDataset, refresh_course};
 pub use course_totals::{
     CourseTotalMode, CourseTotalsDataset, default_ttl_grades, totals_from_enrollment,
     upsert_course_totals, upsert_course_totals_entity,

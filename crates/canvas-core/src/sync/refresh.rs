@@ -7,17 +7,13 @@ use jiff::{Span, Timestamp};
 
 use crate::store::{
     Dataset, DbError, FetchLogRow, IngestOpts, IngestPage, LookupResult, Store, lookup_dataset,
-    read_scope_epoch,
 };
 
-use super::courses::{CoursesDataset, CoursesScope, courses_path, courses_to_ingest_page};
-use super::enrollment_grades::{
-    EnrollmentGradesDataset, PeriodKey, enrollment_grades_path, enrollments_to_ingest_page,
-};
-use super::grading_periods::{
-    GradingPeriodsDataset, grading_periods_path, grading_periods_to_ingest_page,
-};
+use super::courses::{CoursesDataset, CoursesScope, courses_path};
+use super::enrollment_grades::{EnrollmentGradesDataset, PeriodKey, enrollment_grades_path};
+use super::grading_periods::{GradingPeriodsDataset, grading_periods_path};
 use super::outcome::{FreshnessInfo, FreshnessSource, RefreshOutcome, SyncError};
+use super::wire::Observed;
 
 /// Refresh the `courses` dataset for `scope`.
 pub async fn refresh_courses(
@@ -30,21 +26,26 @@ pub async fn refresh_courses(
     offline: bool,
 ) -> Result<RefreshOutcome, SyncError> {
     let dataset = CoursesDataset::new(scope, ttl);
-    refresh_dataset(store, &dataset, now, fresh, offline, || async {
+    refresh_dataset(client, store, &dataset, now, fresh, offline, || async {
         let mut pages = Vec::new();
-        let mut requests = 0u32;
         for state in scope.enrollment_states() {
             let path = courses_path(state);
             let mut items = Vec::new();
-            let mut stream = std::pin::pin!(client.get_all::<Course>(&path));
+            let mut stream = std::pin::pin!(client.get_all::<Observed<Course>>(&path));
             while let Some(page) = stream.next().await {
                 let page = page?;
-                requests = requests.saturating_add(1);
                 items.extend(page.items);
             }
-            pages.push(courses_to_ingest_page(&items, state, now));
+            let mut entities = Vec::new();
+            for item in items {
+                entities.push(item.entity(state).await?);
+            }
+            pages.push(IngestPage {
+                fetched_at: now,
+                entities,
+            });
         }
-        Ok(FetchBundle { pages, requests })
+        Ok(FetchBundle { pages })
     })
     .await
 }
@@ -60,19 +61,22 @@ pub async fn refresh_enrollment_grades(
     offline: bool,
 ) -> Result<RefreshOutcome, SyncError> {
     let dataset = EnrollmentGradesDataset::new(period, ttl);
-    refresh_dataset(store, &dataset, now, fresh, offline, || async {
+    refresh_dataset(client, store, &dataset, now, fresh, offline, || async {
         let path = enrollment_grades_path(period);
         let mut items = Vec::new();
-        let mut requests = 0u32;
-        let mut stream = std::pin::pin!(client.get_all::<Enrollment>(&path));
+        let mut stream = std::pin::pin!(client.get_all::<Observed<Enrollment>>(&path));
         while let Some(page) = stream.next().await {
             let page = page?;
-            requests = requests.saturating_add(1);
             items.extend(page.items);
         }
         Ok(FetchBundle {
-            pages: vec![enrollments_to_ingest_page(&items, period, now)],
-            requests: requests.max(1),
+            pages: vec![IngestPage {
+                fetched_at: now,
+                entities: items
+                    .into_iter()
+                    .map(|e| e.entity(&period.period_value()))
+                    .collect(),
+            }],
         })
     })
     .await
@@ -89,30 +93,31 @@ pub async fn refresh_grading_periods(
     offline: bool,
 ) -> Result<RefreshOutcome, SyncError> {
     let dataset = GradingPeriodsDataset::new(course_id, ttl);
-    refresh_dataset(store, &dataset, now, fresh, offline, || async {
+    refresh_dataset(client, store, &dataset, now, fresh, offline, || async {
         let path = grading_periods_path(course_id);
         let mut items = Vec::new();
-        let mut requests = 0u32;
-        let mut stream = std::pin::pin!(client.get_all_wrapped::<GradingPeriod>(&path));
+        let mut stream = std::pin::pin!(client.get_all_wrapped::<Observed<GradingPeriod>>(&path));
         while let Some(page) = stream.next().await {
             let page = page?;
-            requests = requests.saturating_add(1);
             items.extend(page.items);
         }
         Ok(FetchBundle {
-            pages: vec![grading_periods_to_ingest_page(&items, course_id, now)],
-            requests: requests.max(1),
+            pages: vec![IngestPage {
+                fetched_at: now,
+                entities: items.into_iter().map(|p| p.entity(course_id)).collect(),
+            }],
         })
     })
     .await
 }
 
-struct FetchBundle {
-    pages: Vec<IngestPage>,
-    requests: u32,
+pub(super) struct FetchBundle {
+    pub pages: Vec<IngestPage>,
 }
 
-async fn refresh_dataset<D, F, Fut>(
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub(super) async fn refresh_dataset<D, F, Fut>(
+    client: &Client,
     store: &Store,
     dataset: &D,
     now: Timestamp,
@@ -134,6 +139,7 @@ where
 
     if let LookupResult::Hit(row) = &lookup
         && !fresh
+        && !offline
     {
         return Ok(cache_outcome(row, false, 0, None));
     }
@@ -144,16 +150,24 @@ where
 
     let epoch_seen = store
         .call({
-            let scope = dataset.epoch_scope();
-            move |conns| read_scope_epoch(&conns.state, &scope)
+            let dataset = dataset.clone();
+            move |conns| dataset.current_epoch(&conns.state)
         })
         .await?;
 
+    let before = client.telemetry().api;
     match fetch().await {
         Ok(bundle) => {
-            let count = bundle.pages.iter().map(|p| p.entities.len()).sum::<usize>();
+            let count = bundle
+                .pages
+                .iter()
+                .flat_map(|p| &p.entities)
+                .map(|e| &e.entity_key)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
             let count = i64::try_from(count).unwrap_or(i64::MAX);
-            let requests = bundle.requests;
+            let requests =
+                u32::try_from(client.telemetry().api.saturating_sub(before)).unwrap_or(u32::MAX);
             let pages = bundle.pages;
             let dataset_for_ingest = dataset.clone();
             store
@@ -190,10 +204,13 @@ where
             })
         }
         Err(err) => {
+            if matches!(err, SyncError::Api(canvas_api::Error::Unauthorized)) {
+                return Err(err);
+            }
             let message = sanitize_error(&err);
             let dataset_fail = dataset.clone();
             let fail_msg = message.clone();
-            let _ = store
+            store
                 .call(move |conns| {
                     dataset_fail
                         .ingest(
@@ -210,10 +227,16 @@ where
                         )
                         .map_err(|e| ingest_err(&e))
                 })
-                .await;
+                .await?;
 
             match complete_row(lookup) {
-                Some(row) => Ok(cache_outcome(&row, true, 0, Some(message))),
+                Some(row) => Ok(cache_outcome(
+                    &row,
+                    true,
+                    u32::try_from(client.telemetry().api.saturating_sub(before))
+                        .unwrap_or(u32::MAX),
+                    Some(message),
+                )),
                 None => Err(err),
             }
         }
@@ -261,10 +284,5 @@ fn ingest_err(err: &crate::store::IngestError) -> DbError {
 
 /// Prefer a short, non-credential summary for `fetch_log.error`.
 fn sanitize_error(err: &SyncError) -> String {
-    match err {
-        SyncError::Api(e) => e.to_string(),
-        SyncError::OfflineMiss => "offline cache miss".into(),
-        SyncError::Db(e) => e.to_string(),
-        SyncError::Ingest(e) => e.to_string(),
-    }
+    err.safe_message()
 }

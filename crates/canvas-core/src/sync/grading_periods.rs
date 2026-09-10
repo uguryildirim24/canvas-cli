@@ -153,25 +153,26 @@ fn upsert_grading_period(
          ON CONFLICT(id) DO NOTHING",
         params![id, split.course_id],
     )?;
-    let tracked: Vec<FieldWrite> = split
-        .column_fields
-        .iter()
-        .filter(|f| f.name != "course_id")
-        .cloned()
-        .collect();
     let applied = apply_field_writes(
         tx,
         "grading_period",
         &entity.entity_key,
         fetched_at,
-        &tracked,
+        &entity.fields,
     )?;
-    tx.execute(
-        "UPDATE grading_periods SET course_id = ?1 WHERE id = ?2",
-        params![split.course_id, id],
-    )?;
-    apply_period_columns(tx, id, &tracked, &applied.fields)?;
-    merge_period_extra(tx, id, split.extra)?;
+    if applied.fields.contains(&"course_id") {
+        tx.execute(
+            "UPDATE grading_periods SET course_id = ?1 WHERE id = ?2",
+            params![split.course_id, id],
+        )?;
+    }
+    apply_period_columns(tx, id, &split.column_fields, &applied.fields)?;
+    let extra = split
+        .extra
+        .into_iter()
+        .filter(|(name, _)| applied.fields.contains(&name.as_str()))
+        .collect();
+    merge_period_extra(tx, id, extra)?;
     touch_period_observed(
         tx,
         id,

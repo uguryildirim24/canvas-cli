@@ -103,6 +103,19 @@ pub trait Dataset {
     fn epoch_scope(&self) -> String {
         format!("{}:{}", self.name(), self.scope_key())
     }
+    /// Effective epoch for this dataset and any values derived during its refresh.
+    fn current_epoch(&self, state: &Connection) -> Result<i64, DbError> {
+        ops::read_scope_epoch(state, &self.epoch_scope())
+    }
+    /// Publish dependent coverage in the same cache transaction, after the epoch guard.
+    fn finish_refresh(
+        &self,
+        _tx: &Transaction<'_>,
+        _state: &Connection,
+        _pages: &[IngestPage],
+    ) -> Result<(), IngestError> {
+        Ok(())
+    }
     /// TTL for the hit predicate.
     fn ttl(&self) -> jiff::Span;
     /// Entity kind written by this dataset.
@@ -236,7 +249,7 @@ fn commit_refresh<D: Dataset + ?Sized>(
     // Always acquire cache before state; no network work runs under either lock.
     let state_tx = state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let scope = dataset.epoch_scope();
-    let current = ops::read_scope_epoch(&state_tx, &scope)?;
+    let current = dataset.current_epoch(&state_tx)?;
     if current > opts.epoch_seen {
         return Err(IngestError::Epoch(EpochAbort {
             scope,
@@ -244,6 +257,7 @@ fn commit_refresh<D: Dataset + ?Sized>(
             current,
         }));
     }
+    dataset.finish_refresh(&tx, &state_tx, pages)?;
     tx.commit()?;
     state_tx.commit()?;
     Ok(())

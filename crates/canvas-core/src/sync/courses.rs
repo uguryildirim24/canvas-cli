@@ -81,6 +81,28 @@ impl Dataset for CoursesDataset {
         "course"
     }
 
+    fn current_epoch(&self, state: &rusqlite::Connection) -> Result<i64, DbError> {
+        // A list response can contain any course. Guard all totals epochs so a
+        // concurrent submission cannot publish old totals as fresh.
+        let totals: i64 = state.query_row(
+            "SELECT COALESCE(SUM(epoch), 0) FROM scope_epoch WHERE scope LIKE 'course_totals:%'",
+            [],
+            |r| r.get(0),
+        )?;
+        crate::store::read_scope_epoch(state, &self.epoch_scope())?
+            .checked_add(totals)
+            .ok_or_else(|| DbError::Message("scope epoch overflow".into()))
+    }
+
+    fn finish_refresh(
+        &self,
+        tx: &Transaction<'_>,
+        state: &rusqlite::Connection,
+        pages: &[IngestPage],
+    ) -> Result<(), IngestError> {
+        publish_derived(tx, state, pages, self.scope_key())
+    }
+
     fn upsert_entity(
         &self,
         tx: &Transaction<'_>,
@@ -151,11 +173,13 @@ pub fn course_to_entity(course: &Course, enrollment_state_hint: &str) -> EntityI
         .as_deref()
         .or_else(|| student_enrollment(course).and_then(|e| e.enrollment_state.as_deref()))
         .unwrap_or(enrollment_state_hint);
-    fields.push(FieldWrite {
-        name: "enrollment_state",
-        group: FieldGroup::Status,
-        value: Some(enrollment_state.to_owned()),
-    });
+    if !enrollment_state.is_empty() {
+        fields.push(FieldWrite {
+            name: "enrollment_state",
+            group: FieldGroup::Status,
+            value: Some(enrollment_state.to_owned()),
+        });
+    }
     push_opt_bool(
         &mut fields,
         "is_favorite",
@@ -201,19 +225,15 @@ pub fn course_to_entity(course: &Course, enrollment_state_hint: &str) -> EntityI
     }
 }
 
-fn student_enrollment(course: &Course) -> Option<&CourseEnrollment> {
+pub(super) fn student_enrollment(course: &Course) -> Option<&CourseEnrollment> {
     let enrollments = course.enrollments.as_ref()?;
-    enrollments
-        .iter()
-        .find(|e| {
-            e.enrollment_type
-                .as_deref()
-                .is_some_and(|t| t.eq_ignore_ascii_case("StudentEnrollment"))
-                || e.role.as_deref().is_some_and(|r| {
-                    r.eq_ignore_ascii_case("StudentEnrollment") || r.eq_ignore_ascii_case("Student")
-                })
+    enrollments.iter().find(|e| {
+        e.enrollment_type.as_deref().is_some_and(|t| {
+            t.eq_ignore_ascii_case("StudentEnrollment") || t.eq_ignore_ascii_case("student")
+        }) || e.role.as_deref().is_some_and(|r| {
+            r.eq_ignore_ascii_case("StudentEnrollment") || r.eq_ignore_ascii_case("Student")
         })
-        .or_else(|| enrollments.first())
+    })
 }
 
 fn json_field_map(fields: &[FieldWrite]) -> Map<String, Value> {
@@ -249,6 +269,7 @@ struct CourseExtras {
     term_id: crate::store::Supplied<i64>,
     term_payload: Option<String>,
     totals_payload: Option<String>,
+    detail: Map<String, Value>,
 }
 
 fn upsert_course_bundle(
@@ -263,9 +284,24 @@ fn upsert_course_bundle(
         "INSERT INTO courses (id) VALUES (?1) ON CONFLICT(id) DO NOTHING",
         params![id],
     )?;
-    let applied = apply_field_writes(tx, "course", &entity.entity_key, fetched_at, &tracked)?;
+    let real_fields: Vec<_> = entity
+        .fields
+        .iter()
+        .filter(|f| !matches!(f.name, "term_payload" | "totals_payload"))
+        .cloned()
+        .collect();
+    let applied = apply_field_writes(tx, "course", &entity.entity_key, fetched_at, &real_fields)?;
+    let winning: Vec<_> = entity
+        .fields
+        .iter()
+        .filter(|f| {
+            applied.fields.contains(&f.name) || matches!(f.name, "term_payload" | "totals_payload")
+        })
+        .cloned()
+        .collect();
+    let (_, winning_extras) = split_course_fields(&winning)?;
     apply_tracked_columns(tx, id, &tracked, &applied.fields)?;
-    match extras.term_id {
+    match winning_extras.term_id {
         crate::store::Supplied::Absent => {}
         crate::store::Supplied::Null => {
             tx.execute(
@@ -280,7 +316,7 @@ fn upsert_course_bundle(
             )?;
         }
     }
-    write_course_data_json(tx, id, &extras)?;
+    write_course_data_json(tx, id, &winning_extras)?;
     touch_course_observed(
         tx,
         id,
@@ -321,6 +357,7 @@ fn split_course_fields(
         term_id: Supplied::Absent,
         term_payload: None,
         totals_payload: None,
+        detail: Map::new(),
     };
     for field in fields {
         match field.name {
@@ -350,6 +387,26 @@ fn split_course_fields(
                     })?),
                     None => Supplied::Null,
                 };
+            }
+            "syllabus_markdown"
+            | "teachers"
+            | "time_zone"
+            | "modules_count"
+            | "has_grading_periods" => {
+                let value = if let Some(raw) = &field.value {
+                    if matches!(
+                        field.name,
+                        "teachers" | "modules_count" | "has_grading_periods"
+                    ) {
+                        serde_json::from_str(raw)
+                            .map_err(|_| DbError::Message("invalid course detail field".into()))?
+                    } else {
+                        Value::String(raw.clone())
+                    }
+                } else {
+                    Value::Null
+                };
+                extras.detail.insert(field.name.into(), value);
             }
             "term_payload" => extras.term_payload.clone_from(&field.value),
             "totals_payload" => extras.totals_payload.clone_from(&field.value),
@@ -421,6 +478,7 @@ fn write_course_data_json(
             obj.insert("restricted".into(), Value::Bool(b));
         }
     }
+    obj.extend(extras.detail.clone());
     tx.execute(
         "UPDATE courses SET data_json = ?1 WHERE id = ?2",
         params![data.to_string(), id],
@@ -587,5 +645,76 @@ fn validate_tracked(fields: &[FieldWrite]) -> Result<(), IngestError> {
             return Err(DbError::Message("unsupported or duplicate course field".into()).into());
         }
     }
+    Ok(())
+}
+
+/// Coverage for embedded terms and totals is committed atomically with courses.
+pub(super) fn publish_derived(
+    tx: &Transaction<'_>,
+    state: &rusqlite::Connection,
+    pages: &[IngestPage],
+    scope: &str,
+) -> Result<(), IngestError> {
+    let Some(page) = pages.last() else {
+        return Ok(());
+    };
+    let mut terms = std::collections::BTreeSet::new();
+    let mut courses = std::collections::BTreeSet::new();
+    for entity in pages.iter().flat_map(|p| &p.entities) {
+        for field in &entity.fields {
+            if field.name == "term_id"
+                && let Some(id) = &field.value
+            {
+                terms.insert(id.clone());
+            }
+        }
+        courses.insert(entity.entity_key.clone());
+    }
+    publish_coverage(
+        tx,
+        state,
+        "terms",
+        scope,
+        "term",
+        &terms.into_iter().collect::<Vec<_>>(),
+        page.fetched_at,
+    )?;
+    for id in courses {
+        // Unknown scores still have nullable rows; absent fields keep their own age.
+        for mode in ["all", "current"] {
+            tx.execute("INSERT INTO course_totals (course_id, mode) VALUES (?1, ?2) ON CONFLICT DO NOTHING", params![id, mode])?;
+        }
+        publish_coverage(
+            tx,
+            state,
+            "course_totals",
+            &format!("course:{id}"),
+            "course_totals",
+            &[format!("{id}|all"), format!("{id}|current")],
+            page.fetched_at,
+        )?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn publish_coverage(
+    tx: &Transaction<'_>,
+    state: &rusqlite::Connection,
+    dataset: &str,
+    scope: &str,
+    kind: &str,
+    ids: &[String],
+    at: Timestamp,
+) -> Result<(), IngestError> {
+    tx.execute(
+        "DELETE FROM membership WHERE dataset=?1 AND scope=?2",
+        params![dataset, scope],
+    )?;
+    for (position, id) in ids.iter().enumerate() {
+        tx.execute("INSERT INTO membership (dataset,scope,entity_kind,entity_id,position) VALUES (?1,?2,?3,?4,?5)", params![dataset, scope, kind, id, i64::try_from(position).unwrap_or(i64::MAX)])?;
+    }
+    let epoch = crate::store::read_scope_epoch(state, &format!("{dataset}:{scope}"))?;
+    tx.execute("INSERT INTO fetch_log (dataset,scope,fetched_at,complete,count,stale,epoch_seen) VALUES (?1,?2,?3,1,?4,0,?5) ON CONFLICT(dataset,scope) DO UPDATE SET fetched_at=excluded.fetched_at, complete=1,count=excluded.count,stale=0,error=NULL,epoch_seen=excluded.epoch_seen", params![dataset, scope, at.to_string(), i64::try_from(ids.len()).unwrap_or(i64::MAX), epoch])?;
     Ok(())
 }
