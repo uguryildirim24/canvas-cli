@@ -24,6 +24,8 @@ mod wire;
 #[cfg(test)]
 mod files_modules_tests;
 #[cfg(test)]
+mod grades_tests;
+#[cfg(test)]
 mod review_tests;
 #[cfg(test)]
 mod tests;
