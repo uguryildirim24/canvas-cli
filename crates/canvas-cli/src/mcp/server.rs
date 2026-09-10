@@ -412,9 +412,12 @@ impl ServerHandler for CanvasServer {
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
-        resources::read(&self.globals, &self.binding, &request.uri)
+        // The consumer handle is this session's own, exactly as it is for a
+        // tool call: a model cannot read a resource under another handle.
+        let consumer = consumer_of(&context);
+        resources::read(&self.globals, &self.binding, &request.uri, &consumer)
             .await
             .map(ReadResourceResponse::Complete)
     }

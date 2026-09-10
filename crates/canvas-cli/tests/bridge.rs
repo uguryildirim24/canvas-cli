@@ -701,6 +701,24 @@ fn only_the_consumer_that_attached_reads_the_bundle() {
     // Beta never opted in. Alpha's handle does not serve beta either.
     let refused = beta.tool("context.here", &json!({}));
     assert_eq!(refused["result"]["reason"], "not_attached", "{refused}");
+    // Nor does alpha's *resource*: a consumer handle is not a name anyone may
+    // read under (REPORT section 3.2).
+    let borrowed = beta.call(
+        "resources/read",
+        json!({ "uri": format!("{prefix}/mcp:alpha") }),
+    );
+    let text = borrowed["result"]["contents"][0]["text"]
+        .as_str()
+        .expect("text");
+    let document: Value = serde_json::from_str(text).expect("json");
+    assert_eq!(
+        document["result"]["details"]["reason"], "not_attached",
+        "beta read alpha's context: {document}"
+    );
+    assert!(
+        !text.contains("Essay 1"),
+        "beta read alpha's page: {document}"
+    );
     let stolen = beta.tool("context.here", &json!({ "attachment_id": handle }));
     assert_eq!(stolen["result"]["reason"], "not_attached", "{stolen}");
     let read = beta.call(
