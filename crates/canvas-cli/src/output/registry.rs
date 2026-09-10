@@ -33,6 +33,8 @@ pub const SCHEMA_IDENTITY: &str = "canvas-cli/identity@1";
 pub const SCHEMA_CONFIG: &str = "canvas-cli/config@1";
 pub const SCHEMA_DOCTOR: &str = "canvas-cli/doctor@1";
 pub const SCHEMA_PLAN: &str = "canvas-cli/plan@1";
+pub const SCHEMA_HERE: &str = "canvas-cli/here@1";
+pub const SCHEMA_BRIDGE: &str = "canvas-cli/bridge@1";
 pub const SCHEMA_VERSION: &str = "canvas-cli/version@1";
 pub const SCHEMA_ERROR: &str = "canvas-cli/error@1";
 
@@ -248,6 +250,26 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
             id: SCHEMA_IDENTITY,
             variant: Some("remove"),
             fixture: include_str!("schemas/identity_remove.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_HERE,
+            variant: None,
+            fixture: include_str!("schemas/here.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_BRIDGE,
+            variant: Some("status"),
+            fixture: include_str!("schemas/bridge_status.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_BRIDGE,
+            variant: Some("install"),
+            fixture: include_str!("schemas/bridge_install.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_BRIDGE,
+            variant: Some("detach"),
+            fixture: include_str!("schemas/bridge_detach.json"),
         },
     ]
 }
@@ -1320,5 +1342,119 @@ mod tests {
             let json = serde_json::to_string_pretty(&env).unwrap();
             insta::assert_snapshot!(json);
         });
+    }
+}
+
+// --- M7-a typed result payloads (`here@1`, `bridge@1`; REPORT §3.2, §3.3) ---
+
+/// The identity a bundle belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HereIdentityJson {
+    pub key: String,
+    pub generation: String,
+}
+
+/// The API side of `ContextBundle@1`: whole §7 envelopes, each with its own
+/// freshness. A browser extract never updates one of these (REPORT §3.1).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HereApiJson {
+    /// A `canvas-cli/course@1` envelope, when the route named a course.
+    pub course: Option<serde_json::Value>,
+    /// A `canvas-cli/assignment@1` envelope, when the route named one.
+    pub assignment: Option<serde_json::Value>,
+    /// A `canvas-cli/announcement@1` envelope, when the route named a topic
+    /// that Canvas serves as an announcement.
+    pub announcement: Option<serde_json::Value>,
+}
+
+/// The browser side of `ContextBundle@1`.
+///
+/// Everything here is an observation of one document at one moment. `ttl_ms`
+/// is zero: browser context is never cacheable (REPORT §3.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HereBrowserJson {
+    pub origin: String,
+    pub account: HereAccountJson,
+    pub zone: String,
+    pub page_kind: Option<String>,
+    pub course_id: Option<String>,
+    pub assignment_id: Option<String>,
+    pub topic_id: Option<String>,
+    pub quiz_id: Option<String>,
+    pub page_url: Option<String>,
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub document_id: String,
+    pub frame_id: i64,
+    pub navigation_generation: u64,
+    pub observed_at: String,
+    pub ttl_ms: u64,
+    pub selection: Option<String>,
+    pub text: Option<String>,
+    pub selection_bytes: u64,
+    pub text_bytes: u64,
+    pub truncated: bool,
+    /// Why `selection` and `text` are absent, when they are: `zone_opaque`,
+    /// `validating`, or `account_mismatch`.
+    pub content_reason: Option<String>,
+}
+
+/// The account the companion probed, verified against this identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HereAccountJson {
+    pub user_id: String,
+    pub observed_at: String,
+}
+
+/// `here@1` = `ContextBundle@1` (REPORT §3.3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HereResult {
+    /// The opaque attachment id, when one was resolved.
+    pub attachment: Option<String>,
+    /// `attached`, `validating`, `paused`, or `not_attached`.
+    pub state: String,
+    /// The consumer this bundle was resolved for; `null` for the CLI.
+    pub consumer: Option<String>,
+    pub identity: HereIdentityJson,
+    pub api: HereApiJson,
+    pub browser: Option<HereBrowserJson>,
+    /// Why the bundle carries no browser context, when it does not.
+    pub reason: Option<String>,
+}
+
+impl From<&canvas_core::bridge::ipc::Context> for HereBrowserJson {
+    fn from(context: &canvas_core::bridge::ipc::Context) -> Self {
+        fn name<T: Serialize>(value: &T) -> Option<String> {
+            serde_json::to_value(value)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+        }
+        Self {
+            origin: context.origin.clone(),
+            account: HereAccountJson {
+                user_id: context.account.user_id.clone(),
+                observed_at: context.account.observed_at.clone(),
+            },
+            zone: name(&context.zone).unwrap_or_else(|| "unknown".to_owned()),
+            page_kind: context.page_kind.as_ref().and_then(name),
+            course_id: context.course_id.clone(),
+            assignment_id: context.assignment_id.clone(),
+            topic_id: context.topic_id.clone(),
+            quiz_id: context.quiz_id.clone(),
+            page_url: context.page_url.clone(),
+            url: context.url.clone(),
+            title: context.title.clone(),
+            document_id: context.document_id.clone(),
+            frame_id: context.frame_id,
+            navigation_generation: context.navigation_generation,
+            observed_at: context.observed_at.clone(),
+            ttl_ms: context.ttl_ms,
+            selection: context.selection.clone(),
+            text: context.text.clone(),
+            selection_bytes: context.selection_bytes,
+            text_bytes: context.text_bytes,
+            truncated: context.truncated,
+            content_reason: context.content_reason.map(|r| r.as_str().to_owned()),
+        }
     }
 }

@@ -109,6 +109,11 @@ Every command below runs in this build.
 | `canvas open assignment` | Open an assignment page in the browser. |
 | `canvas open file` | Open a file by id in the browser. |
 | `canvas open announcement` | Open an announcement page in the browser. |
+| `canvas bridge install` | Write the Chrome native-messaging host manifest for this user. `--extension-id`, `--browser`. |
+| `canvas bridge host` | Speak Chrome native messaging on stdin and stdout. Chrome starts it; you do not. |
+| `canvas bridge status` | Report the host manifest, the broker owner, and the attachment. |
+| `canvas bridge detach` | Ask the live broker to drop the attachment. `--attachment`. |
+| `canvas here` | Show the attached Canvas page as a context bundle. `--attachment`, `--text`. |
 | `canvas sync` | Refresh the cached datasets. `--full` adds files, modules, and the calendar. |
 | `canvas cache stats` | Row counts and size per cached dataset. |
 | `canvas cache clear` | Drop the cache database. State and receipts survive. |
@@ -179,6 +184,25 @@ identity model, five workflows, the exit-code and recovery table, and the MCP
 setup for Claude Code, Codex, and Cursor. The release archives carry it.
 `docs/agent-hosts.md` records which hosts were actually exercised.
 
+## The browser companion
+
+`canvas bridge` attaches the Canvas tab you already have open to the agent you
+are already talking to. A toolbar click in the shipped `extension/` is the
+gesture; the extension checks the account with one fixed same-origin
+`GET /api/v1/users/self` and sends the location, the zone, and — only when you
+ask for it — the selected passage. Cookies never leave Chrome, there is no
+fetch proxy, and quizzes, assessments, and unrecognized embedded tools expose
+nothing at all.
+
+```sh
+canvas bridge install --extension-id <ID>   # write the native host manifest
+canvas bridge status                        # manifest, broker owner, attachment
+canvas here --text --json                   # the context bundle
+```
+
+[`docs/companion.md`](docs/companion.md) has the install steps, the protocol,
+the zones, and exactly which flows were run in real Chrome on this machine.
+
 `canvas schema <command>` prints the JSON Schema of any command's envelope and
 `result`, and `canvas schema --list` prints the registry. The MCP tools use the
 same documents as their output schemas.
@@ -198,6 +222,8 @@ XDG layout on macOS and Linux, AppData on Windows.
 | Download manifests | `<identity dir>/downloads/<dest-id>.sqlite` | same |
 | Receipt exports | `<identity dir>/receipts/*.json`, mode `0600` | same |
 | Identity locks | `<data root>/locks/<identity-key>.lock` | same |
+| Broker ownership lock | `<data root>/bridge/<identity-key>.lock` | same |
+| Broker endpoint | `<data root>/bridge/<identity-key>.sock`, mode `0600` | `\\.\pipe\canvas-cli-<identity-key>` |
 
 `canvas cache path` and `canvas config path` print the live values.
 `canvas cache clear` touches only the cache database.
