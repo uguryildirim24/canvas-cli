@@ -35,3 +35,7 @@ pub mod markdown;
 
 /// Blocking I/O bridge onto the async runtime.
 pub mod io;
+
+/// Unique, self-cleaning temporary directories for tests.
+#[cfg(test)]
+pub(crate) mod test_scratch;

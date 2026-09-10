@@ -2,8 +2,6 @@
 
 use crate::io::{CHANNEL_CAPACITY, CHUNK_SIZE, ChunkWriter};
 use std::io::{Read, Seek, Write};
-#[cfg(test)]
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use cap_std::fs::Dir;
@@ -693,18 +691,10 @@ mod tests {
     use super::*;
     use crate::download::manifest::ManifestRow;
     use crate::download::manifest::test_support::open_destination;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use crate::test_scratch::Scratch;
 
-    fn scratch() -> std::path::PathBuf {
-        static N: AtomicU64 = AtomicU64::new(0);
-        let n = N.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("canvas-core-install-{nanos}-{n}"));
-        std::fs::create_dir_all(&path).unwrap();
-        path
+    fn scratch() -> Scratch {
+        Scratch::new("canvas-core-install")
     }
 
     fn row(path: &str, size: u64, sha: &str, updated: &str) -> ManifestRow {
@@ -1138,13 +1128,8 @@ mod review_tests {
     use crate::download::manifest::test_support::open_destination;
     use std::path::PathBuf;
 
-    fn scratch() -> PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "canvas-install-review-{}",
-            crate::download::manifest::new_dest_id().unwrap()
-        ));
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn scratch() -> crate::test_scratch::Scratch {
+        crate::test_scratch::Scratch::new("canvas-install-review")
     }
     fn remote() -> RemoteMeta {
         RemoteMeta {
@@ -1356,7 +1341,7 @@ mod review_tests {
                         "download::install::review_tests::competing_child",
                         "--nocapture",
                     ])
-                    .env("CANVAS_REVIEW_CHILD_BASE", &base)
+                    .env("CANVAS_REVIEW_CHILD_BASE", base.as_os_str())
                     .env("CANVAS_REVIEW_CHILD_LABEL", label)
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped())

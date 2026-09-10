@@ -712,10 +712,8 @@ mod tests {
     use super::test_support::Registry;
     use super::*;
 
-    fn scratch() -> PathBuf {
-        let p = std::env::temp_dir().join(format!("canvas-destination-{}", new_dest_id().unwrap()));
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn scratch() -> crate::test_scratch::Scratch {
+        crate::test_scratch::Scratch::new("canvas-destination")
     }
 
     #[test]
