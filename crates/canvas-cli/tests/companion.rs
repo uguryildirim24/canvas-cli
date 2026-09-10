@@ -62,6 +62,7 @@ fn the_manifest_asks_for_nothing_it_does_not_need() {
         "webRequest",
         "webRequestBlocking",
         "declarativeNetRequest",
+        "webNavigation",
         "history",
         "tabs",
         "storage",
@@ -119,8 +120,15 @@ fn the_panel_builds_no_markup_from_a_string() {
             );
         }
     }
-    for file in ["panel.js", "panel_view.js", "markdown.js"] {
-        let source = std::fs::read_to_string(panel_dir.join(file)).expect(file);
+    // Every file the panel page loads, taken from the page itself. A fixed
+    // list here would go stale the moment `panel.html` gained a script, and
+    // the file it gained is exactly the one nobody would think to add.
+    let mut scanned = 0;
+    for span in html.split('"') {
+        if Path::new(span).extension().is_none_or(|e| e != "js") {
+            continue;
+        }
+        let source = std::fs::read_to_string(panel_dir.join(span)).expect(span);
         for forbidden in [
             "innerHTML",
             "outerHTML",
@@ -128,10 +136,23 @@ fn the_panel_builds_no_markup_from_a_string() {
             "document.write",
             "eval(",
             "new Function",
+            "srcdoc",
         ] {
-            assert!(!source.contains(forbidden), "{file} uses {forbidden}");
+            assert!(!source.contains(forbidden), "{span} uses {forbidden}");
         }
+        scanned += 1;
     }
+    assert!(
+        scanned >= 5,
+        "the panel loads {scanned} scripts; the scan found too few to be reading the real page"
+    );
+    // The one `javascript:` in this surface is the comment naming what the
+    // link policy blocks. A panel that built such a URL would not say so.
+    let markdown = std::fs::read_to_string(panel_dir.join("markdown.js")).expect("markdown.js");
+    assert!(
+        markdown.contains("url.protocol !== \"https:\""),
+        "the link policy no longer decides by protocol"
+    );
 }
 
 /// The package has no dependency at all, so nothing is installed to run it.
