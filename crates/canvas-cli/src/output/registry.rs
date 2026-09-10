@@ -384,6 +384,108 @@ pub struct ModulesResult {
     pub modules: Vec<ModuleEntryJson>,
 }
 
+// --- M4-a grades payloads (Appendix D `grades@1`) ---
+
+/// Shared Appendix D `Course` object (grades are a sibling, not a member).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CourseBaseJson {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub term: TermJson,
+    pub enrollment_state: String,
+    pub is_favorite: bool,
+    pub restricted: bool,
+    pub html_url: String,
+}
+
+/// Appendix D `SubmissionStatus`; `missing` and `pending` are never null.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmissionStatusJson {
+    pub submitted: Option<bool>,
+    pub graded: Option<bool>,
+    pub score: Option<f64>,
+    pub grade: Option<String>,
+    pub late: Option<bool>,
+    pub missing: bool,
+    pub excused: Option<bool>,
+    pub workflow_state: Option<String>,
+    pub submitted_at: Option<String>,
+    pub submitted_at_local: Option<String>,
+    pub attempt: Option<i64>,
+    pub posted_at: Option<String>,
+    pub pending: bool,
+}
+
+/// One course row of the grades overview.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GradesCourseJson {
+    pub course: CourseBaseJson,
+    pub grades: GradeJson,
+    /// Why this course has no total for the selected period, else `null`.
+    pub unavailable_reason: Option<String>,
+}
+
+/// Canvas drop rules; `never_drop` is an array, never null.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GroupRulesJson {
+    pub drop_lowest: Option<u32>,
+    pub drop_highest: Option<u32>,
+    pub never_drop: Vec<String>,
+}
+
+/// Group subtotal, present only when the API supplied one (SPEC §12.4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GroupSubtotalJson {
+    pub score: Option<f64>,
+    pub possible: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GroupAssignmentJson {
+    pub id: String,
+    pub name: String,
+    pub points_possible: Option<f64>,
+    pub omit_from_final_grade: bool,
+    pub status: SubmissionStatusJson,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssignmentGroupJson {
+    pub id: String,
+    pub name: String,
+    pub position: i64,
+    pub weight: Option<f64>,
+    pub rules: GroupRulesJson,
+    pub subtotal: Option<GroupSubtotalJson>,
+    pub assignments: Vec<GroupAssignmentJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GradingPeriodJson {
+    pub id: String,
+    pub title: String,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub is_current: bool,
+}
+
+/// The `grades <course>` course view.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GradesCourseViewJson {
+    pub groups: Vec<AssignmentGroupJson>,
+    pub periods: Vec<GradingPeriodJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GradesResult {
+    /// The selected period mode: `all`, `current`, or `id`.
+    pub period_mode: String,
+    pub courses: Vec<GradesCourseJson>,
+    /// Present only for the course view; `null` for the overview.
+    pub course: Option<GradesCourseViewJson>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DownloadFileJson {
     pub id: String,
@@ -524,6 +626,22 @@ mod tests {
             serde_json::from_str(include_str!("schemas/download.json")).unwrap();
         assert!(!download.dest.is_empty());
         assert_eq!(download.courses[0].files[0].action, "downloaded");
+
+        let grades: GradesResult =
+            serde_json::from_str(include_str!("schemas/grades.json")).unwrap();
+        assert_eq!(grades.period_mode, "current");
+        // Appendix D sorts courses by code, groups by position.
+        assert_eq!(grades.courses[0].course.code, "CS-101");
+        assert_eq!(
+            grades.courses[1].unavailable_reason.as_deref(),
+            Some("no current grading period total")
+        );
+        assert!(grades.courses[1].grades.current_score.is_none());
+        let view = grades.course.as_ref().unwrap();
+        assert_eq!(view.groups[0].position, 1);
+        // A subtotal is present only when the API supplied one.
+        assert!(view.groups[0].subtotal.is_some() && view.groups[1].subtotal.is_none());
+        assert!(view.periods[0].is_current && !view.periods[1].is_current);
     }
 
     /// SPEC §7 and Appendix D: a field defined in Appendix D is always
