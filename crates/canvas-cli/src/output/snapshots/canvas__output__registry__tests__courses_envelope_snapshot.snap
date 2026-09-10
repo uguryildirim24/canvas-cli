@@ -1,6 +1,5 @@
 ---
 source: crates/canvas-cli/src/output/registry.rs
-assertion_line: 411
 expression: json
 ---
 {

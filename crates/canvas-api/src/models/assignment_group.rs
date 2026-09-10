@@ -22,8 +22,10 @@ pub struct AssignmentGroup {
     pub id: i64,
     #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
     pub name: crate::serde_util::Supplied<String>,
-    pub position: Option<i64>,
-    pub group_weight: Option<f64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub position: crate::serde_util::Supplied<i64>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub group_weight: crate::serde_util::Supplied<f64>,
     #[serde(default, deserialize_with = "deserialize_opt_id")]
     pub course_id: Option<i64>,
     pub rules: Option<AssignmentGroupRules>,

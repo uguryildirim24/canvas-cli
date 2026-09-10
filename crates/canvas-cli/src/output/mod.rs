@@ -15,17 +15,19 @@ pub use envelope::{
 };
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
-    AliasJson, AliasResult, CacheClearResult, CachePathResult, CacheStatsResult, CacheTableJson,
-    CourseDetailJson, CourseJson, CourseResult, CoursesResult, DownloadCourseJson,
-    DownloadFileJson, DownloadResult, DownloadTotalsJson, FileEntryJson, FilesListingJson,
-    FilesResult, GradeJson, ModuleEntryJson, ModuleItemJson, ModulesResult, PeriodJson,
-    SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
+    AliasJson, AliasResult, AssignmentGroupJson, CacheClearResult, CachePathResult,
+    CacheStatsResult, CacheTableJson, CourseBaseJson, CourseDetailJson, CourseJson, CourseResult,
+    CoursesResult, DownloadCourseJson, DownloadFileJson, DownloadResult, DownloadTotalsJson,
+    FileEntryJson, FilesListingJson, FilesResult, GradeJson, GradesCourseJson,
+    GradesCourseViewJson, GradesResult, GradingPeriodJson, GroupAssignmentJson, GroupRulesJson,
+    GroupSubtotalJson, ModuleEntryJson, ModuleItemJson, ModulesResult, PeriodJson, SCHEMA_ALIAS,
+    SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
     SCHEMA_AUTH_LOGIN, SCHEMA_AUTH_LOGOUT, SCHEMA_AUTH_STATUS, SCHEMA_CACHE, SCHEMA_CALENDAR,
     SCHEMA_CONFIG, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOCTOR, SCHEMA_DOWNLOAD, SCHEMA_ERROR,
     SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_IDENTITY, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_RECEIPT,
     SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO,
-    SCHEMA_VERIFY, SCHEMA_VERSION, SchemaEntry, SyncDatasetJson, SyncResult, TeacherJson, TermJson,
-    all_schemas, rejects_json,
+    SCHEMA_VERIFY, SCHEMA_VERSION, SchemaEntry, SubmissionStatusJson, SyncDatasetJson, SyncResult,
+    TeacherJson, TermJson, all_schemas, rejects_json,
 };
 pub use render::{
     StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,

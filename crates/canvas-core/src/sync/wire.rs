@@ -1,13 +1,17 @@
 //! Preserve field presence while projecting API models onto allowlisted cache fields.
 
 use super::{
-    SyncError, assignment_to_entity, course_to_entity, enrollment_to_entity, file_to_entity,
-    folder_to_entity, grading_period_to_entity, module_to_entity,
+    SyncError, assignment_group_to_entity, assignment_to_entity, course_to_entity,
+    enrollment_to_entity, file_to_entity, folder_to_entity, grading_period_to_entity,
+    module_to_entity,
 };
 use crate::store::{EntityIngest, FieldGroup, FieldWrite};
 use canvas_api::{
     Supplied,
-    models::{Assignment, Course, Enrollment, File, Folder, GradingPeriod, Module, ModuleItem},
+    models::{
+        Assignment, AssignmentGroup, Course, Enrollment, File, Folder, GradingPeriod, Module,
+        ModuleItem,
+    },
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -429,6 +433,32 @@ impl Observed<ModuleItem> {
                     }
                 }
             }
+        }
+        entity
+    }
+}
+
+impl Observed<AssignmentGroup> {
+    /// Project allowlisted fields, preserving explicit null for optional fields.
+    pub fn entity(self, course_hint: i64, fetched_at: jiff::Timestamp) -> EntityIngest {
+        let mut entity = assignment_group_to_entity(&self.model, course_hint, fetched_at);
+        for (name, group) in [
+            ("name", FieldGroup::Core),
+            ("position", FieldGroup::Core),
+            ("group_weight", FieldGroup::Core),
+        ] {
+            if self.raw.get(name).is_some_and(Value::is_null) {
+                observe(&mut entity.fields, &self.raw, name, group);
+            }
+        }
+        // An explicit null `rules` clears the stored rules; absent leaves them.
+        if self.raw.get("rules").is_some_and(Value::is_null) {
+            observe(
+                &mut entity.fields,
+                &json!({"rules_json": null}),
+                "rules_json",
+                FieldGroup::Detail,
+            );
         }
         entity
     }
