@@ -1,0 +1,39 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 9,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "recovery",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "assume_available": false,
+    "attribution": null,
+    "candidates": [],
+    "journal_id": "00000000-0000-4000-8000-00000000000j",
+    "message": "no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes",
+    "not_submitted_evidence": null,
+    "outcome": "recovery",
+    "owner": "n/a",
+    "posted": null,
+    "receipt_id": null,
+    "response_kind": "canvas-error",
+    "server_match": null,
+    "state": "outcome_unknown"
+  },
+  "schema": "canvas-cli/reconcile@1",
+  "warnings": []
+}

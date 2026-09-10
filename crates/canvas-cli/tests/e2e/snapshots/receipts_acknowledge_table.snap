@@ -1,0 +1,8 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+acknowledged 00000000-0000-4000-8000-00000000000j at <clock>
+--- stderr ---

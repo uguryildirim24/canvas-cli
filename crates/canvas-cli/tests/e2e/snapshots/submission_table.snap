@@ -1,0 +1,14 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+course 100
+state submitted  attempt 1  submitted Sat Sep 19, 8:00 AM  score 95.0
+  Canvas ID    File       Size    Type             
+  501          ps1.pdf    1024    application/pdf  
+comment Wed Sep 9, 11:00 AM Ada: nice
+  Attempt    Submitted    Score    Files  
+  1          —            —        0      
+--- stderr ---

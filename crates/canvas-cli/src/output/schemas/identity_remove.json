@@ -1,0 +1,8 @@
+{
+  "removed": true,
+  "key": "example.instructure.com-1-deadbeef",
+  "profiles_removed": [
+    "default"
+  ],
+  "default_profile_cleared": true
+}

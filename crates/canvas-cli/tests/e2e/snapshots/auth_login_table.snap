@@ -1,0 +1,12 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+logged in as Ada Lovelace (1)
+profile: default
+identity: <origin> / 1
+credential backend: file
+--- stderr ---
+using token from stdin

@@ -1,0 +1,31 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 5,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "error",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 5,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "code": "rate_limited",
+    "details": {},
+    "http_status": 429,
+    "message": "rate limited",
+    "server_errors": []
+  },
+  "schema": "canvas-cli/error@1",
+  "warnings": []
+}
