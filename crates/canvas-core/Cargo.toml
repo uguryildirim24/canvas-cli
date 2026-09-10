@@ -1,0 +1,21 @@
+[package]
+name = "canvas-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Canvas CLI domain logic: store, sync, resolve, journal, download"
+
+[dependencies]
+canvas-api.workspace = true
+cap-fs-ext.workspace = true
+cap-std.workspace = true
+jiff.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

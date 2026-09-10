@@ -1,0 +1,26 @@
+[package]
+name = "canvas-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Command-line client for Canvas LMS"
+publish = false
+
+[[bin]]
+name = "canvas"
+path = "src/main.rs"
+
+[dependencies]
+anstream.workspace = true
+anstyle.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[dev-dependencies]
+assert_cmd.workspace = true
+
+[lints]
+workspace = true
