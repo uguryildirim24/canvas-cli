@@ -1,7 +1,7 @@
 //! `submission verify` (§12.2).
 
 use std::collections::BTreeSet;
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use canvas_api::{Client, get_submission_history};
@@ -144,16 +144,7 @@ pub fn load_receipt_for_verify(
     paths: &Paths,
     receipt_id: &str,
 ) -> Result<ReceiptDocument, VerifyError> {
-    let path = paths
-        .identity_dir
-        .join("receipts")
-        .join(format!("{receipt_id}.json"));
-    if path.is_file() {
-        let bytes = std::fs::read(&path)?;
-        let mut doc: ReceiptDocument = serde_json::from_slice(&bytes)?;
-        doc.recompute_server_body_sha256();
-        return Ok(doc);
-    }
+    // Exports are replaceable snapshots; state.sqlite is the sole authority.
     let shown = show(store, &paths.identity_dir, receipt_id)?;
     if let Some(doc) = shown.receipt {
         return Ok(doc);
@@ -178,11 +169,26 @@ fn validate_local(
     if receipt.identity.key != identity_key {
         return Some(refused("identity mismatch"));
     }
-    if receipt.posted.attempt.is_none() {
-        return Some(refused("posted.attempt missing"));
+    let Ok(authoritative) = rebuild_from_journal(store, &receipt.journal_id) else {
+        return Some(refused("missing or invalid authoritative journal"));
+    };
+    if receipt.identity != authoritative.identity
+        || receipt.receipt_id != authoritative.receipt_id
+        || receipt.course_id != authoritative.course_id
+        || receipt.assignment_id != authoritative.assignment_id
+        || receipt.kind != authoritative.kind
+        || receipt.posted.attempt != authoritative.posted.attempt
+    {
+        return Some(refused("receipt binding does not match journal"));
     }
-    if receipt.kind == "online_url" {
+    if receipt.posted.attempt.is_none_or(|a| a < 1) {
+        return Some(refused("posted.attempt missing or invalid"));
+    }
+    if !matches!(receipt.kind.as_str(), "online_upload" | "online_text_entry") {
         return Some(refused("URL receipts cannot be verified"));
+    }
+    if receipt.course_id.parse::<i64>().is_err() || receipt.assignment_id.parse::<i64>().is_err() {
+        return Some(refused("invalid course or assignment id"));
     }
     if receipt.kind == "online_upload" {
         let file_ids: BTreeSet<_> = receipt
@@ -196,12 +202,19 @@ fn validate_local(
             .iter()
             .map(|a| a.id.clone())
             .collect();
-        if file_ids.is_empty() || file_ids != posted_ids {
+        if file_ids.is_empty()
+            || file_ids != posted_ids
+            || receipt.files.iter().any(|f| f.canvas_file_id.is_none())
+            || receipt.files != authoritative.files
+        {
             return Some(refused(
                 "file id sets on receipt files and posted.attachments must match and be non-empty",
             ));
         }
-        if let Ok(Some(row)) = get_journal(store, &receipt.journal_id) {
+        let Ok(Some(row)) = get_journal(store, &receipt.journal_id) else {
+            return Some(refused("missing journal"));
+        };
+        {
             let uploaded: BTreeSet<String> =
                 serde_json::from_str::<Vec<i64>>(&row.uploaded_file_ids_json)
                     .unwrap_or_default()
@@ -270,10 +283,6 @@ async fn verify_files(
         });
     }
 
-    let tmp_root = identity_dir.join("tmp");
-    std::fs::create_dir_all(&tmp_root)?;
-    let root = Dir::open_ambient_dir(&tmp_root, cap_std::ambient_authority())?;
-
     for file in &receipt.files {
         let Some(fid) = &file.canvas_file_id else {
             continue;
@@ -301,17 +310,9 @@ async fn verify_files(
             });
             continue;
         };
-        let rel = format!("verify-{fid}");
-        let contained = contain::walk_parent(&root, &rel)?;
-        let mut part = contain::open_contained_file(&contained, true)?;
-        let mut sink = Vec::new();
-        if let Ok(()) =
-            canvas_api::download::download(client, url, &mut sink, attachment.size, |_| {})
-                .await
-                .map(|_| ())
+        if let Ok(actual_hash) =
+            download_digest(client, identity_dir, fid, url, attachment.size).await
         {
-            let actual_hash = hex_sha256(&sink);
-            part.write_all(&sink)?;
             let status = if actual_hash == file.sha256 {
                 "ok"
             } else {
@@ -354,6 +355,80 @@ async fn verify_files(
         body: None,
         reason: None,
     })
+}
+
+/// Hold the identity capability through tmp traversal and use a fresh private file per transfer.
+async fn download_digest(
+    client: &Client,
+    identity_dir: &Path,
+    fid: &str,
+    url: reqwest::Url,
+    size: Option<u64>,
+) -> Result<String, VerifyError> {
+    use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
+    let identity_dir = identity_dir.to_owned();
+    let (contained, part) = tokio::task::spawn_blocking(move || {
+        let root = Dir::open_ambient_dir(identity_dir, cap_std::ambient_authority())?;
+        let rel = format!("tmp/.verify-{}.part", uuid::Uuid::new_v4());
+        let contained = contain::walk_parent(&root, &rel)?;
+        let mut options = cap_std::fs::OpenOptions::new();
+        options
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .follow(FollowSymlinks::No);
+        #[cfg(unix)]
+        {
+            use cap_std::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let part = contained
+            .parent
+            .open_with(&contained.name, &options)?
+            .into_std();
+        Ok::<_, VerifyError>((contained, part))
+    })
+    .await
+    .map_err(|_| std::io::Error::other("verify worker failed"))??;
+    let result = async {
+        let mut sink = tokio::fs::File::from_std(part);
+        let result = canvas_api::download::download(client, url, &mut sink, size, |_| {}).await;
+        if matches!(result, Err(canvas_api::Error::StorageExpired)) {
+            let metadata: canvas_api::models::File =
+                client.get(&format!("/api/v1/files/{fid}")).await?;
+            let url = metadata.url.ok_or(canvas_api::Error::NotFound)?;
+            sink.set_len(0).await?;
+            tokio::io::AsyncSeekExt::rewind(&mut sink).await?;
+            canvas_api::download::download(client, url, &mut sink, size, |_| {}).await?;
+        } else {
+            result?;
+        }
+        tokio::io::AsyncWriteExt::flush(&mut sink).await?;
+        let mut file = sink.into_std().await;
+        tokio::task::spawn_blocking(move || {
+            file.seek(SeekFrom::Start(0))?;
+            let mut digest = sha2::Sha256::default();
+            let mut bytes = vec![0; 65536];
+            loop {
+                let count = file.read(&mut bytes)?;
+                if count == 0 {
+                    break;
+                }
+                sha2::Digest::update(&mut digest, &bytes[..count]);
+            }
+            Ok::<_, VerifyError>(format!("{:x}", sha2::Digest::finalize(digest)))
+        })
+        .await
+        .map_err(|_| std::io::Error::other("verify worker failed"))?
+    }
+    .await;
+    let cleanup =
+        tokio::task::spawn_blocking(move || contained.parent.remove_file(&contained.name))
+            .await
+            .map_err(|_| std::io::Error::other("verify worker failed"))?;
+    let digest = result?;
+    cleanup?;
+    Ok(digest)
 }
 
 fn verify_text(

@@ -127,9 +127,7 @@ pub fn sanitize_post_error_text(bytes: &[u8]) -> String {
             return crate::redact::redact(err);
         }
     }
-    let lossy = String::from_utf8_lossy(bytes);
-    let trimmed: String = lossy.chars().take(200).collect();
-    crate::redact::redact(&trimmed)
+    "submission response could not be decoded as a Canvas error".into()
 }
 
 /// Assignment GET with the submit preflight includes.
@@ -164,6 +162,19 @@ pub async fn get_submission_history(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_bodies_are_not_persistable_diagnostics() {
+        for body in [
+            b"private raw response".as_slice(),
+            br#"{"unlisted":"secret"}"#,
+            b"<html>secret</html>",
+        ] {
+            let diagnostic = sanitize_post_error_text(body);
+            assert!(!diagnostic.contains("secret"));
+            assert!(!diagnostic.contains("private raw"));
+        }
+    }
 
     #[test]
     fn canvas_error_shapes() {
