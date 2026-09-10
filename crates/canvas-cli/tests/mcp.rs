@@ -1676,6 +1676,50 @@ async fn a_host_resumes_from_the_cursor_it_names() {
     mcp.stop();
 }
 
+/// A cursor the *host* names is the host's own position. When the log cannot
+/// replay it the host is told to resync, but the consumer's stored position is
+/// left alone: it is still replayable, and it still names rows this consumer
+/// was never told about. `notify` draws the same line at `--since`.
+#[tokio::test]
+async fn a_named_cursor_that_asks_for_a_resync_leaves_the_stored_position_alone() {
+    let server = MockServer::start().await;
+    let f = primed(&server).await;
+    assert_eq!(f.event("missing.new", "missing", "self", "500"), 1);
+    assert_eq!(
+        f.event(
+            "submission.state",
+            "submission_journal",
+            "assignment:500",
+            "journal-1"
+        ),
+        2
+    );
+    // The consumer has been told about the first row and no further.
+    f.set_cursor(SUBSCRIBER, 1);
+    let prefix = prefix(&f);
+    let todo = format!("{prefix}todo");
+    let receipts = format!("{prefix}receipts");
+
+    let mut mcp = f.mcp(&["--offline"]);
+    mcp.discover();
+    // A position no row of this log ever issued, named by the host itself.
+    mcp.listen_from(
+        &json!({ "resourceSubscriptions": [&todo, &receipts] }),
+        "99",
+    );
+    mcp.wait_for("notifications/subscriptions/acknowledged");
+    // The gap is reported: everything subscribed is invalidated once.
+    assert_eq!(mcp.updates(2), vec![receipts, todo]);
+    // The stored position is untouched, so a reconnection that names nothing
+    // still replays the second row instead of stepping over it.
+    assert_eq!(
+        f.cursor_of(SUBSCRIBER),
+        1,
+        "the stored position was replaced"
+    );
+    mcp.stop();
+}
+
 /// Without an identity there is nothing to serve (§14 exit 3).
 #[tokio::test]
 async fn the_server_refuses_to_start_without_an_identity() {
