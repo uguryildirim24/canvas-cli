@@ -590,15 +590,27 @@ impl Broker {
     /// The extension classifies from the document, which the host cannot see.
     /// The host classifies from the sanitized path, which the extension could
     /// have lied about. The stricter of the two wins.
+    ///
+    /// An opaque zone carries no URL at all, by design, so there is no path to
+    /// classify from. The host's own reading is then `unknown`, which is
+    /// opaque and cannot loosen anything — but taking the stricter of it and
+    /// `assessment` would report the page as merely unrecognized and lose the
+    /// one distinction that pauses sharing. With no URL, an already-opaque
+    /// classification stands as it is and anything else reads `unknown`.
     fn zone_of(observation: &Observation) -> Zone {
-        let from_route = observation
+        let Some(url) = observation
             .url
             .as_deref()
             .and_then(sanitize_url)
             .and_then(|url| reqwest::Url::parse(&url).ok())
-            .map_or(Zone::Unknown, |url| {
-                crate::bridge::wire::zone_for_route(&classify_route(url.path()))
-            });
+        else {
+            return if observation.zone.is_opaque() {
+                observation.zone
+            } else {
+                Zone::Unknown
+            };
+        };
+        let from_route = crate::bridge::wire::zone_for_route(&classify_route(url.path()));
         observation.zone.strictest(from_route)
     }
 
@@ -945,6 +957,44 @@ mod tests {
         let summary = &broker.list()[0];
         assert_eq!(summary.zone, Zone::Assessment);
         assert_eq!(summary.state, AttachmentState::Paused);
+    }
+
+    /// An assessment the companion reported as one stays an assessment.
+    ///
+    /// The extension sends no URL from an opaque zone, so the host has no path
+    /// of its own to classify. It must not read that silence as "merely
+    /// unrecognized": entering an assessment is what pauses sharing.
+    #[test]
+    fn an_assessment_that_carries_no_url_is_still_an_assessment() {
+        let (mut broker, _) = attached();
+        broker.text(
+            "doc-1",
+            1,
+            Some(&account("12345")),
+            Zone::Open,
+            extract("the prompt"),
+        );
+        // Exactly what `content.js` sends for an opaque document.
+        let mut opaque = observation("/courses/1/quizzes/5/take", "doc-2", 2);
+        opaque.zone = Zone::Assessment;
+        opaque.route = Route::opaque();
+        opaque.url = None;
+        opaque.title = None;
+        assert_eq!(broker.update(&opaque), Accepted::Updated);
+
+        let summary = &broker.list()[0];
+        assert_eq!(summary.zone, Zone::Assessment, "the assessment was lost");
+        assert_eq!(summary.state, AttachmentState::Paused);
+        assert!(!broker.has_text());
+        assert_eq!(broker.context(None, None, true), Err(Reason::Paused));
+
+        // A zone that is not opaque still cannot be believed without a path.
+        let mut lying = observation("/courses/1/assignments/2", "doc-3", 3);
+        lying.url = None;
+        let mut second = Broker::new(identity(), Some(EXTENSION.to_owned()));
+        second.hello(EXTENSION, "profile-b").expect("a port");
+        assert!(matches!(second.attach(&lying), Accepted::Attached { .. }));
+        assert_eq!(second.list()[0].zone, Zone::Unknown);
     }
 
     #[test]
