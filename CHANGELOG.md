@@ -9,8 +9,9 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-`0.1.0` is not released yet. The first tag will replace this section with the
-generated notes.
+`0.1.0` is not released yet. `release-plz` inserts each generated release
+**above** this section and never removes it, so empty it by hand when the
+first tag lands.
 
 ### Added
 

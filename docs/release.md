@@ -192,8 +192,14 @@ dist generate                      # rewrite release.yml
 dist plan                          # must be clean
 ```
 
-After any dist upgrade, re-read the generated Homebrew formula and rerun the
-`xtask dist-formula` tests: they fail on purpose when the template changes.
+After any dist upgrade, run `dist build --artifacts=global` and then `cargo
+xtask dist-formula` on the formula it writes. `dist-formula` refuses a formula
+whose template it does not recognize, so a changed template stops there with a
+message naming `xtask/src/dist_assets.rs`.
+
+The `dist-formula` unit tests cannot catch that for you: they patch a frozen
+copy of the 0.32 template and keep passing whichever template dist writes
+next. Only the live run above sees the real output.
 
 ## Verified for M5-b, 2026-09-10
 
