@@ -906,7 +906,7 @@ Built by M6-a (`docs/reviews/code-M6-a.md`) from `docs/agent-ux/REPORT.md` §3.5
 prepare  →  issue_handle  →  approve  →  execute  →  journal (§12.2)
 ```
 
-`plan::execute` is the only route from a plan to a submission journal. From the journal insert onward §12.2 is unchanged.
+`plan::execute` is the only route from a plan to a submission journal. From the journal insert onward §12.2 is unchanged. M8-b added three more plan kinds on this same layer — `discussion_reply`, `inbox_send`, and `inbox_reply` — which admit an **operation** journal instead (§25); everything in this section holds for all four kinds unless it says otherwise.
 
 ### Tables
 
@@ -960,6 +960,8 @@ Each rejection is its own refusal, so no answer says whether another handle woul
 The digest is taken over the canonical JSON of: identity key and generation, consumer, course id, assignment id, kind, each file's name, size, and `sha256`, the text `input_sha256`, `transform`, and `sent_sha256`, the URL, a digest of the comment, the baseline attempt and submission id, every observation below, and `created_at`/`expires_at`. Object keys are sorted, so the digest does not depend on struct declaration order.
 
 It deliberately excludes the outbound bytes and the local file paths. The bytes are pinned by `sent_sha256` and the files by their `sha256`, which §12.2 step 8 re-verifies against the streamed upload. Approving a digest therefore approves exact content, never a path that could later name other bytes.
+
+That exclusion describes a **submission** plan. An operation plan (§25) carries its frozen write in the same canonical document, and that block holds `body.outbound_bytes` and each `attachments[].path`, so those two are inside the digest for the three M8-b kinds. Nothing weaker follows from it: the bytes and the files are still pinned by their own digests, and execute still re-hashes every attachment from disk.
 
 ### Revalidated observations
 
@@ -1049,16 +1051,16 @@ A `--jsonl` line is self-describing and is never wrapped, so its page describes 
 
 Any other revision fails explicitly with a JSON-RPC error rather than being downgraded silently.
 
-**The tool catalog.** Exactly 30 tools. Annotations describe **effects**, not command classes: `readOnlyHint` is true only for a tool whose effect is a read, `destructiveHint` is false for every tool in the catalog, and `idempotentHint` and `openWorldHint` are set per tool.
+**The tool catalog.** Exactly 43 tools, in a stable order a test pins against the report catalog. Annotations describe **effects**, not command classes: `readOnlyHint` is true only for a tool whose effect is a read, `destructiveHint` is false for every tool in the catalog, and `idempotentHint` and `openWorldHint` are set per tool.
 
 | Effect | Tools | `readOnlyHint` |
 |---|---|---|
-| Read | `courses.list`, `course.get`, `todo.list`, `assignments.list`, `assignment.get`, `grades.get`, `files.list`, `modules.list`, `pages.list`, `page.get`, `syllabus.get`, `announcements.list`, `announcement.get`, `discussions.list`, `discussion.get`, `inbox.list`, `inbox.get`, `inbox.unread_count`, `calendar.list`, `submission.get`, `receipts.list`, `receipts.show`, `download.plan`, `open.url` | true |
-| Local organization | `sync.run`, `download.run`, `submission.prepare` | false |
-| Remote write | `submission.execute` | false |
-| Evidence retirement | `submission.reconcile`, `receipts.acknowledge` | false |
+| Read (26) | `courses.list`, `course.get`, `todo.list`, `assignments.list`, `assignment.get`, `grades.get`, `files.list`, `modules.list`, `pages.list`, `page.get`, `syllabus.get`, `announcements.list`, `announcement.get`, `discussions.list`, `discussion.get`, `inbox.list`, `inbox.get`, `inbox.unread_count`, `calendar.list`, `submission.get`, `receipts.list`, `receipts.show`, `download.plan`, `open.url`, `operation.status`, `context.here` | true |
+| Local organization (10) | `sync.run`, `download.run`, `submission.prepare`, `discussion.reply.prepare`, `inbox.send.prepare`, `inbox.reply.prepare`, `context.attach`, `context.detach`, `context.note`, `context.follow` | false |
+| Remote write (4) | `submission.execute`, `discussion.reply.execute`, `inbox.send.execute`, `inbox.reply.execute` | false |
+| Evidence retirement (3) | `submission.reconcile`, `operation.reconcile`, `receipts.acknowledge` | false |
 
-`download.plan` is a dry run and `open.url` resolves without launching, which is why both are annotated as reads; §19 item 21 records that reading. `submission.execute` is the only `RemoteWrite` tool, and a test pins that it is the only one.
+`download.plan` is a dry run and `open.url` resolves without launching, which is why both are annotated as reads; §19 item 21 records that reading, and §19 item 38 records the same question for `operation.status`, which records a readback while it reads. The four `RemoteWrite` tools are the four `*.execute` tools and no others, and a test pins that. `context.note` and `context.follow` are the two `Organize` tools that are not idempotent: each holds or dispatches something new.
 
 **What the catalog does not contain.** Credentials, token reveal, identity administration, arbitrary HTTP or shell, `--yes`, cache clearing, `download --force`, and every browser action. They are unreachable by name and by argument: every argument struct rejects unknown fields, `download.*` hard-codes `dest: None` and `force: false`, `calendar.list` hard-codes `ics: None`, `open.url` never launches a browser, and `submission.prepare` hard-codes `yes: false` and refuses `text: "-"` because stdin is the transport. `download.run` keeps the v1 `jobs` argument unclamped (§19 item 21).
 
@@ -1073,24 +1075,24 @@ Any other revision fails explicitly with a JSON-RPC error rather than being down
 | `todo` | listed | the default `todo.list` window |
 | `receipts` | listed | local receipts and unresolved journals |
 | `course/{course_id}/assignments` | template | one course's assignments, as `assignments.list` returns them |
-| `context/{consumer_handle}` | template | the M7 bridge; this release answers `refused` with `details.reason: "not_attached"` |
+| `context/{consumer_handle}` | template | the §24 bridge. The handle must be the reading session's own; naming another consumer's handle reads exactly what an unattached consumer reads, and an unattached consumer reads `refused` with `details.reason: "not_attached"` |
 
 A read goes through the same command core the matching tool uses, so a resource and a tool cannot answer differently.
 
-**The approval round trip.** `submission.execute` is the only tool that can return `input_required`, and therefore the only tool whose retry may carry a `requestState`. A retry that names any other tool is an argument error and leaves the plan untouched.
+**The approval round trip.** The four `*.execute` tools are the only tools that can return `input_required`, and therefore the only tools whose retry may carry a `requestState`. The guard asks the catalog which tools ask, rather than naming one: a retry that names any other tool is an argument error and leaves the plan untouched. M6-b bound the state to the single name `submission.execute`; with six more approval-gated tools that would have told a host its state belonged to another tool and lost the person's decision.
 
-1. `submission.execute(plan_id)` on a `prepared` plan issues a server-side approval handle and returns `input_required` with one keyed input request and the handle in `requestState`. Nothing is dispatched, and no client is built.
+1. An `*.execute(plan_id)` on a `prepared` plan issues a server-side approval handle and returns `input_required` with one keyed input request and the handle in `requestState`. Nothing is dispatched, and no client is built.
 2. The host asks a person and retries the tool with a new JSON-RPC request id, the echoed `requestState`, and keyed `inputResponses`.
 3. Accept spends the handle and approves the plan (§20); decline and cancel invalidate it.
 4. A host that declares no elicitation gets `outcome: refused`, exit 8, `details.reason: "approval_required"`, carrying the plan id and the handle, so the approval can still be recorded through another channel.
 
 **Subscriptions.** §22.
 
-**Catalog size.** `cargo xtask bench --mcp` measures the catalog at **30 tools, 220 855 bytes, about 55 224 estimated tokens** per `tools/list`, against the 22 tools and about 41 900 tokens M6-b first recorded. Most of each row is the output schema, which inlines the whole §7 envelope in both shapes because a host validator reads a tool definition on its own. §19 item 19 owns the question.
+**Catalog size.** `cargo xtask bench --mcp` measures the catalog at **43 tools, 344 878 bytes, about 86 235 estimated tokens** per `tools/list`, against the 22 tools and about 41 900 tokens M6-b first recorded. The byte column is exact; the token column is one token per four bytes of UTF-8, a rule of thumb and not a tokenizer run. Most of each row is the output schema, which inlines the whole §7 envelope in both shapes because a host validator reads a tool definition on its own. §19 item 19 owns the question.
 
 ### 21.3 The shipped skill
 
-`skill/canvas-cli/` ships `SKILL.md` and five workflows: `read-an-assignment.md`, `organize-the-week.md`, `download-course-files.md`, `prepare-and-submit.md`, and `reconcile-an-unknown-outcome.md`. The skill names exactly the tool catalog — a test diffs the two in both directions — and confines the two submission tools to the approval workflow. It states the envelope reading order, the §14 exit table including 11, and the coverage fields a model must not paper over (`replies_coverage`, `replies_total`, `messages_complete`, `embedded`). A forbidden flag appears only as an explicit statement that it does not exist.
+`skill/canvas-cli/` ships `SKILL.md` and six workflows: `read-an-assignment.md`, `organize-the-week.md`, `download-course-files.md`, `prepare-and-submit.md`, `reconcile-an-unknown-outcome.md`, and `reply-and-message-with-approval.md`. The skill names exactly the tool catalog — a test diffs the two in both directions — and confines the two submission tools to the approval workflow and the six write tools to the sixth (§25.10). It states the envelope reading order, the §14 exit table including 11, and the coverage fields a model must not paper over (`replies_coverage`, `replies_total`, `messages_complete`, `embedded`). A forbidden flag appears only as an explicit statement that it does not exist.
 
 ### 21.4 Host matrix
 
@@ -1166,9 +1168,11 @@ Within a changed entity the fields are split: a changed `due_at` is `due.changed
 
 The unread count has no removal kind and its `added` kind is unreachable: one row is the whole membership, a failed read is not observed, and a gap deletes the baseline rather than emptying it. A count that became known again is the same news to a consumer as a count that changed.
 
-**Journal events.** `submission.state` is written inside the journal's own transaction (§12.2), with `dataset: "submission_journal"` and `scope: "assignment:<id>"`, so either both land or neither does.
+**Journal events.** `submission.state` is written inside the journal's own transaction (§12.2), with `dataset: "submission_journal"` and `scope: "assignment:<id>"`, so either both land or neither does. `operation.state` is written the same way inside an operation journal's transaction (§25.4), with `dataset: "operation_journal"`, `entity_key` the journal id, and the scope `topic:<tid>`, `conversation:<id>`, or `conversation:new`. Both carry `before`/`after` as `{ "state": … }`, and the dedupe key `operation:<journal_id>:<state>` stops a replayed execute writing a second event for a state the journal already reached.
 
-**Kinds.** `assignment.added`, `assignment.changed`, `assignment.removed`, `due.changed`, `grade.changed`, `grade.posted`, `announcement.new`, `missing.new`, `submission.state`, `inbox.unread_count`, `resync_required`.
+**Plan-decision events.** A decision on a plan writes `plan.approved`, `plan.declined`, or `plan.cancelled` inside the plan transition's own transaction, with `dataset: "plans"`, `entity_key` the plan id, `before` `{ "state": "prepared" }`, `after` `{ "state": "approved"|"declined"|"cancelled" }`, and the dedupe key `plan:<plan_id>:<decision>`. The scope is `assignment:<id>` read from the plan row — `assignment:0` for an operation plan, which names no assignment — and `plan` only when the row is gone. **Nothing else is recorded**: no target, no digest, no bytes (§24.13). Invalidating a plan because a fact changed is not a decision and records no event.
+
+**Kinds.** `assignment.added`, `assignment.changed`, `assignment.removed`, `due.changed`, `grade.changed`, `grade.posted`, `announcement.new`, `missing.new`, `submission.state`, `operation.state`, `inbox.unread_count`, `plan.approved`, `plan.declined`, `plan.cancelled`, `resync_required`.
 
 **The log.** `events(cursor INTEGER PRIMARY KEY AUTOINCREMENT, observation_id, kind, observed_at, identity_key, generation, dataset, scope, entity_key, before, after)`. `AUTOINCREMENT` keeps `sqlite_sequence`, so retention never hands a deleted cursor to a second event — which is what a consumer's deduplication key relies on.
 
@@ -1198,7 +1202,7 @@ With no `--since`, `watch` replays the whole retained log before streaming live 
 
 `canvas notify [--since CURSOR] [--stdout]`. Identity-bound and local (class B): it reads the event log only. It needs no token, opens no network connection, and refreshes no dataset.
 
-It reads the events after its cursor, groups them by event-kind group (`assignments`, `grades`, `announcements`, `missing`, `submission`, `inbox`, `resync`), and writes one line per group. The position is durable in `consumer_cursor` under the consumer name `notify` and moves only **after** the lines are written, so a failed run repeats them rather than dropping them; a second run posts nothing the first one posted. Alerts are deduplicated by cursor, never by content. `--since` overrides the stored position for one run and never touches it.
+It reads the events after its cursor, groups them by event-kind group (`assignments`, `grades`, `announcements`, `missing`, `submission`, `operation`, `inbox`, `plan`, `resync`), and writes one line per group. The position is durable in `consumer_cursor` under the consumer name `notify` and moves only **after** the lines are written, so a failed run repeats them rather than dropping them; a second run posts nothing the first one posted. Alerts are deduplicated by cursor, never by content. `--since` overrides the stored position for one run and never touches it.
 
 `notify` is a raw-output command: it has no §7 payload, no Appendix D row, and `--json` is a usage error (exit 2).
 
@@ -1309,7 +1313,7 @@ Cache migration `0002_reads` adds `pages`, `discussion_topics`, `discussion_entr
 
 `pages@1`, `page@1`, `syllabus@1`, `discussions@1`, `discussion@1`, `inbox@1`, `conversation@1`, and `inbox_unread@1` are registered with fixtures (Appendix D). Ids are strings, every declared field is present, unknown values are `null`, and an array is never `null`. Text bodies are Markdown, bounded at 64 KiB per document.
 
-These eight schemas have no typed arm in the schema generator, so their `canvas schema` pages are inferred from the registry fixture and declare `result_source: "registry fixture"`. A nullable field is therefore described as non-nullable on those pages. §19 item 35 owns that gap.
+These eight schemas now have typed arms in the schema generator, so their `canvas schema` pages are derived from the result types and describe a nullable field as nullable. They declare `result_source: "result type"` rather than `"registry fixture"`. §19 item 35 records the gap and the commit that closed it.
 
 ## 24. Companion, broker, presence
 
