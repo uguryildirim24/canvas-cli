@@ -288,7 +288,7 @@ fn load_listing_files(
             size: size.and_then(|s| u64::try_from(s).ok()),
             updated_at: json_string(&data, "updated_at"),
             hidden: json_bool(&data, "hidden"),
-            locked: json_bool(&data, "locked_for_user").or_else(|| json_bool(&data, "locked")),
+            locked: json_bool(&data, "locked_for_user"),
             lock_explanation: json_string(&data, "lock_explanation"),
         });
     }
@@ -485,7 +485,11 @@ fn sort_files(files: &mut [FileEntryJson]) {
         path_key(a)
             .cmp(path_key(b))
             .then_with(|| a.name.cmp(&b.name))
-            .then_with(|| a.id.cmp(&b.id))
+            .then_with(|| {
+                a.id.parse::<i64>()
+                    .unwrap_or_default()
+                    .cmp(&b.id.parse::<i64>().unwrap_or_default())
+            })
     });
 }
 
@@ -512,18 +516,31 @@ fn print_table(files: &[FileEntryJson]) -> io::Result<()> {
 }
 
 fn print_tree(files: &[FileEntryJson]) -> io::Result<()> {
-    let mut current_path: Option<&str> = None;
+    let mut previous: Vec<&str> = Vec::new();
     for f in files {
-        let path = f.folder_path.as_deref().unwrap_or("");
-        if current_path != Some(path) {
-            if !path.is_empty() {
-                writeln!(io::stdout(), "{path}/")?;
-            }
-            current_path = Some(path);
+        let components: Vec<_> = f
+            .folder_path
+            .as_deref()
+            .unwrap_or("")
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .collect();
+        let common = previous
+            .iter()
+            .zip(&components)
+            .take_while(|(a, b)| a == b)
+            .count();
+        for (depth, component) in components.iter().enumerate().skip(common) {
+            writeln!(io::stdout(), "{}{component}/", "  ".repeat(depth))?;
         }
-        let indent = if path.is_empty() { "" } else { "  " };
         let size = f.size.map(|s| format!(" ({s})")).unwrap_or_default();
-        writeln!(io::stdout(), "{indent}{}{size}", f.name)?;
+        writeln!(
+            io::stdout(),
+            "{}{}{size}",
+            "  ".repeat(components.len()),
+            f.name
+        )?;
+        previous = components;
     }
     Ok(())
 }

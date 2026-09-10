@@ -20,7 +20,7 @@ impl Fixture {
         OpenIdentity::open(&paths, &doc).unwrap();
         Self { dir, doc }
     }
-    async fn run(&self, args: &[&str], exit: i32) -> Value {
+    fn command(&self) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_canvas"));
         cmd.env("CANVAS_DATA_ROOT", self.dir.path().join("data"))
             .env("CANVAS_IDENTITY_KEY", self.doc.key.as_str())
@@ -28,9 +28,12 @@ impl Fixture {
             .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
             .env("CANVAS_TOKEN", "review-test-token")
             .env_remove("CANVAS_HOST")
-            .env_remove("CANVAS_PROFILE")
-            .args(args)
-            .args(["--json", "--color", "never"]);
+            .env_remove("CANVAS_PROFILE");
+        cmd
+    }
+    async fn run(&self, args: &[&str], exit: i32) -> Value {
+        let mut cmd = self.command();
+        cmd.args(args).args(["--json", "--color", "never"]);
         let output = tokio::task::spawn_blocking(move || cmd.output().unwrap())
             .await
             .unwrap();
@@ -113,4 +116,42 @@ async fn actual_files_401_aborts_with_auth_and_request_telemetry() {
     assert_eq!(v["schema"], "canvas-cli/error@1");
     assert_eq!(v["result"]["http_status"], 401);
     assert_eq!(v["requests"]["api"], 3);
+}
+
+#[tokio::test]
+async fn files_sort_numeric_ids_preserve_unknown_access_and_render_nested_tree() {
+    let server = MockServer::start().await;
+    let f = Fixture::new(&server.uri());
+    Mock::given(path("/api/v1/users/self"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id":123})))
+        .mount(&server)
+        .await;
+    Mock::given(path("/api/v1/courses/5/folders")).respond_with(ResponseTemplate::new(200).set_body_json(json!([
+        {"id":1,"name":"course files"}, {"id":2,"name":"Slides","parent_folder_id":1}, {"id":3,"name":"Week 1","parent_folder_id":2}
+    ]))).mount(&server).await;
+    Mock::given(path("/api/v1/courses/5/files"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {"id":10,"display_name":"notes.pdf","folder_id":3,"locked":true,"locked_for_user":null},
+            {"id":2,"display_name":"notes.pdf","folder_id":3,"hidden":true,"locked_for_user":false}
+        ])))
+        .mount(&server)
+        .await;
+    Mock::given(path("/api/v1/courses/5/modules"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .mount(&server)
+        .await;
+    let v = f.run(&["files", "5"], 0).await;
+    assert_eq!(v["result"]["files"][0]["id"], "2");
+    assert_eq!(v["result"]["files"][1]["id"], "10");
+    assert_eq!(v["result"]["files"][1]["locked"], Value::Null);
+    let mut command = f.command();
+    command.args(["files", "5", "--offline", "--tree", "--color", "never"]);
+    let output = tokio::task::spawn_blocking(move || command.output().unwrap())
+        .await
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "Slides/\n  Week 1/\n    notes.pdf\n    notes.pdf\n"
+    );
 }
