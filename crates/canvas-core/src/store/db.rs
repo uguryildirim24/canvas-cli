@@ -1,19 +1,22 @@
 //! Dedicated `SQLite` thread and async `call` handle.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::thread::{self, JoinHandle};
+use std::sync::{Arc, OnceLock};
+use std::thread;
 
 use rusqlite::{Connection, OpenFlags};
 use thiserror::Error;
 
-use crate::identity::{IdentityDocument, Paths};
+use crate::identity::{IdentityDocument, IdentityError, IdentityLock, Paths};
 
 use super::migrate::{self, CACHE_USER_VERSION, STATE_USER_VERSION};
 
 const CHANNEL_BOUND: usize = 64;
 
-type Job = Box<dyn FnOnce(&mut StoreConns) + Send>;
+type Job = Box<dyn FnOnce(&mut HashMap<u64, StoreConns>) + Send>;
 
 /// Open cache and state connections owned by the `SQLite` thread.
 pub struct StoreConns {
@@ -21,22 +24,36 @@ pub struct StoreConns {
     pub cache: Connection,
     /// Durable state database.
     pub state: Connection,
+    // Drop connections before releasing the identity lock, including cancelled jobs.
+    _lock: Arc<IdentityLock>,
 }
 
 /// Handle to the process-wide `SQLite` worker.
 pub struct Store {
-    tx: SyncSender<JobMsg>,
-    _join: JoinHandle<()>,
+    tx: SyncSender<Job>,
+    id: u64,
+    pub(super) lock: Arc<IdentityLock>,
 }
 
-enum JobMsg {
-    Work(Job),
-    Shutdown,
+static WORKER: OnceLock<SyncSender<Job>> = OnceLock::new();
+static NEXT_STORE: AtomicU64 = AtomicU64::new(1);
+
+fn worker() -> &'static SyncSender<Job> {
+    WORKER.get_or_init(|| {
+        let (tx, rx) = mpsc::sync_channel::<Job>(CHANNEL_BOUND);
+        thread::Builder::new()
+            .name("canvas-sqlite".into())
+            .spawn(move || sqlite_thread(&rx))
+            .expect("cannot start SQLite worker");
+        tx
+    })
 }
 
 /// Database open / call errors.
 #[derive(Debug, Error)]
 pub enum DbError {
+    #[error(transparent)]
+    Identity(#[from] IdentityError),
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
     #[error(
@@ -53,19 +70,66 @@ pub enum DbError {
 
 impl Store {
     /// Open `cache.sqlite` and `state.sqlite` on a dedicated thread.
-    pub fn open(paths: &Paths, _identity: &IdentityDocument) -> Result<Self, DbError> {
-        std::fs::create_dir_all(&paths.identity_dir)
-            .map_err(|e| DbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))?;
-        let cache_path = paths.cache_db.clone();
-        let state_path = paths.state_db.clone();
-        let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), DbError>>(1);
-        let (tx, rx) = mpsc::sync_channel::<JobMsg>(CHANNEL_BOUND);
-        let join = thread::Builder::new()
-            .name("canvas-sqlite".into())
-            .spawn(move || sqlite_thread(cache_path, state_path, ready_tx, rx))
-            .map_err(|e| DbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))?;
+    pub fn open(paths: &Paths, identity: &IdentityDocument) -> Result<Self, DbError> {
+        identity.verify()?;
+        paths.verify(&identity.key)?;
+        let lock = Arc::new(IdentityLock::acquire_shared(paths, identity)?);
+        let paths = paths.clone();
+        let doc = identity.clone();
+        let db_lock = Arc::clone(&lock);
+        let id = NEXT_STORE.fetch_add(1, Ordering::Relaxed);
+        let tx = worker().clone();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        tx.send(Box::new(move |stores| {
+            let result = (|| {
+                let cache = open_db(&paths.cache_db, CACHE_USER_VERSION, migrate::migrate_cache)?;
+                let mut state =
+                    open_db(&paths.state_db, STATE_USER_VERSION, migrate::migrate_state)?;
+                let state_tx =
+                    state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                for (key, value) in [
+                    ("origin", doc.origin),
+                    ("user_id", doc.user_id.to_string()),
+                    ("key", doc.key.to_string()),
+                    ("created_at", doc.created_at),
+                    ("generation", doc.generation.to_string()),
+                ] {
+                    state_tx.execute(
+                        "INSERT INTO identity_meta (key, value) VALUES (?1, ?2)
+                        ON CONFLICT(key) DO NOTHING",
+                        rusqlite::params![key, value],
+                    )?;
+                    let stored: String = state_tx.query_row(
+                        "SELECT value FROM identity_meta WHERE key = ?1",
+                        [key],
+                        |r| r.get(0),
+                    )?;
+                    if stored != value {
+                        return Err(DbError::Identity(IdentityError::Changed));
+                    }
+                }
+                state_tx.commit()?;
+                Ok(StoreConns {
+                    cache,
+                    state,
+                    _lock: db_lock,
+                })
+            })();
+            match result {
+                Ok(conns) => {
+                    stores.insert(id, conns);
+                    if ready_tx.send(Ok(())).is_err() {
+                        stores.remove(&id);
+                    }
+                }
+                Err(e) => {
+                    let _ = ready_tx.send(Err(e));
+                }
+            }
+        }))
+        .map_err(|_| DbError::WorkerClosed)?;
         ready_rx.recv().map_err(|_| DbError::WorkerClosed)??;
-        Ok(Self { tx, _join: join })
+        Ok(Self { tx, id, lock })
     }
 
     /// Run `f` on the `SQLite` thread and return its result.
@@ -75,12 +139,21 @@ impl Store {
         T: Send + 'static,
     {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
-        let job: Job = Box::new(move |conns| {
-            let result = f(conns);
+        let id = self.id;
+        let job: Job = Box::new(move |stores| {
+            let result = stores
+                .get_mut(&id)
+                .ok_or(DbError::WorkerClosed)
+                .and_then(|conns| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(conns)))
+                        .unwrap_or(Err(DbError::WorkerPanicked))
+                });
             let _ = resp_tx.send(result);
         });
-        self.tx
-            .send(JobMsg::Work(job))
+        let tx = self.tx.clone();
+        tokio::task::spawn_blocking(move || tx.send(job))
+            .await
+            .map_err(|_| DbError::WorkerPanicked)?
             .map_err(|_| DbError::WorkerClosed)?;
         match resp_rx.await {
             Ok(r) => r,
@@ -95,58 +168,42 @@ impl Store {
         T: Send + 'static,
     {
         let (resp_tx, resp_rx) = mpsc::sync_channel(1);
-        let job: Job = Box::new(move |conns| {
-            let result = f(conns);
+        let id = self.id;
+        let job: Job = Box::new(move |stores| {
+            let result = stores
+                .get_mut(&id)
+                .ok_or(DbError::WorkerClosed)
+                .and_then(|conns| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(conns)))
+                        .unwrap_or(Err(DbError::WorkerPanicked))
+                });
             let _ = resp_tx.send(result);
         });
-        self.tx
-            .send(JobMsg::Work(job))
-            .map_err(|_| DbError::WorkerClosed)?;
+        self.tx.send(job).map_err(|_| DbError::WorkerClosed)?;
         resp_rx.recv().map_err(|_| DbError::WorkerPanicked)?
     }
 }
 
 impl Drop for Store {
     fn drop(&mut self) {
-        let _ = self.tx.send(JobMsg::Shutdown);
+        let id = self.id;
+        let job: Job = Box::new(move |stores| {
+            stores.remove(&id);
+        });
+        if let Err(mpsc::TrySendError::Full(job)) = self.tx.try_send(job) {
+            let tx = self.tx.clone();
+            // Never block the current-thread runtime when the bounded queue is full.
+            thread::spawn(move || {
+                let _ = tx.send(job);
+            });
+        }
     }
 }
 
-#[allow(clippy::needless_pass_by_value)] // worker thread owns the channel ends
-fn sqlite_thread(
-    cache_path: impl AsRef<Path>,
-    state_path: impl AsRef<Path>,
-    ready: SyncSender<Result<(), DbError>>,
-    rx: Receiver<JobMsg>,
-) {
-    let result = (|| -> Result<StoreConns, DbError> {
-        let cache = open_db(
-            cache_path.as_ref(),
-            CACHE_USER_VERSION,
-            migrate::migrate_cache,
-        )?;
-        let state = open_db(
-            state_path.as_ref(),
-            STATE_USER_VERSION,
-            migrate::migrate_state,
-        )?;
-        Ok(StoreConns { cache, state })
-    })();
-    let mut conns = match result {
-        Ok(c) => {
-            let _ = ready.send(Ok(()));
-            c
-        }
-        Err(e) => {
-            let _ = ready.send(Err(e));
-            return;
-        }
-    };
-    while let Ok(msg) = rx.recv() {
-        match msg {
-            JobMsg::Work(job) => job(&mut conns),
-            JobMsg::Shutdown => break,
-        }
+fn sqlite_thread(rx: &Receiver<Job>) {
+    let mut stores = HashMap::new();
+    while let Ok(job) = rx.recv() {
+        job(&mut stores);
     }
 }
 
@@ -155,7 +212,26 @@ fn open_db(
     supported: i32,
     migrate: fn(&Connection) -> Result<(), DbError>,
 ) -> Result<Connection, DbError> {
-    let conn = Connection::open_with_flags(
+    // Create privately before SQLite opens the database or its journal sidecars.
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    match options.open(path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(DbError::Identity(IdentityError::Io(e))),
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(IdentityError::Io)?;
+    }
+    let mut conn = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_CREATE
@@ -171,17 +247,20 @@ fn open_db(
         return Err(DbError::NewerSchema { found, supported });
     }
     if found < supported {
-        conn.execute_batch("BEGIN IMMEDIATE")?;
-        match migrate(&conn) {
-            Ok(()) => {
-                conn.execute(&format!("PRAGMA user_version = {supported}"), [])?;
-                conn.execute_batch("COMMIT")?;
-            }
-            Err(e) => {
-                let _ = conn.execute_batch("ROLLBACK");
-                return Err(e);
-            }
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        // Another process may have migrated while this one waited for the writer lock.
+        let locked_version: i32 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if locked_version > supported {
+            return Err(DbError::NewerSchema {
+                found: locked_version,
+                supported,
+            });
         }
+        if locked_version < supported {
+            migrate(&tx)?;
+            tx.pragma_update(None, "user_version", supported)?;
+        }
+        tx.commit()?;
     }
     Ok(conn)
 }
