@@ -511,7 +511,22 @@ expression: rendered
     },
     "result": {
       "course_id": "101",
-      "files": [],
+      "files": [
+        {
+          "folder_id": "2",
+          "folder_path": "Slides",
+          "hidden": false,
+          "id": "50",
+          "lock_explanation": null,
+          "locked": false,
+          "module_id": null,
+          "module_position": null,
+          "name": "lec.pdf",
+          "size": 10,
+          "source": "listing",
+          "updated_at": "2026-09-01T12:00:00Z"
+        }
+      ],
       "listing": {
         "available": true,
         "http_status": null
@@ -539,7 +554,29 @@ expression: rendered
     },
     "result": {
       "course_id": "101",
-      "modules": []
+      "modules": [
+        {
+          "id": "8",
+          "items": [
+            {
+              "completed": null,
+              "content_id": "50",
+              "html_url": null,
+              "id": "80",
+              "lock_explanation": null,
+              "locked": false,
+              "position": 1,
+              "title": "slides",
+              "type": "File"
+            }
+          ],
+          "items_complete": true,
+          "items_count": 1,
+          "name": "Week 1",
+          "position": 1,
+          "state": "unlocked"
+        }
+      ]
     },
     "schema": "canvas-cli/modules@1",
     "warnings": []

@@ -323,6 +323,67 @@ pub struct CachePathResult {
     pub path: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilesListingJson {
+    pub available: bool,
+    pub http_status: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileEntryJson {
+    pub id: String,
+    /// `"listing"` or `"module"`.
+    pub source: String,
+    pub folder_id: Option<String>,
+    pub folder_path: Option<String>,
+    pub module_id: Option<String>,
+    pub module_position: Option<i64>,
+    pub name: String,
+    pub size: Option<u64>,
+    pub updated_at: Option<String>,
+    pub hidden: Option<bool>,
+    pub locked: Option<bool>,
+    pub lock_explanation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilesResult {
+    pub course_id: String,
+    pub listing: FilesListingJson,
+    pub files: Vec<FileEntryJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModuleItemJson {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub content_id: Option<String>,
+    pub title: String,
+    pub position: i64,
+    pub locked: Option<bool>,
+    pub lock_explanation: Option<String>,
+    pub completed: Option<bool>,
+    pub html_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModuleEntryJson {
+    pub id: String,
+    pub name: String,
+    pub position: i64,
+    pub state: Option<String>,
+    pub items_count: Option<u64>,
+    pub items_complete: bool,
+    pub items: Vec<ModuleItemJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModulesResult {
+    pub course_id: String,
+    pub modules: Vec<ModuleEntryJson>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,6 +462,14 @@ mod tests {
         let path: CachePathResult =
             serde_json::from_str(include_str!("schemas/cache_path.json")).unwrap();
         assert!(!path.path.is_empty());
+
+        let files: FilesResult = serde_json::from_str(include_str!("schemas/files.json")).unwrap();
+        assert_eq!(files.course_id, "101");
+        assert!(files.listing.available);
+
+        let modules: ModulesResult =
+            serde_json::from_str(include_str!("schemas/modules.json")).unwrap();
+        assert_eq!(modules.course_id, "101");
     }
 
     #[test]

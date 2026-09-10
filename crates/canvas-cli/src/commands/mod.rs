@@ -1,4 +1,4 @@
-//! M1-b command implementations.
+//! M1-b / M3-a command implementations.
 
 pub mod alias;
 pub mod cache;
@@ -6,6 +6,8 @@ pub mod course;
 pub mod course_load;
 pub mod courses;
 pub mod emit;
+pub mod files;
+pub mod modules;
 pub mod sync;
 
 use crate::output::ColorMode;

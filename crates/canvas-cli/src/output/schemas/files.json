@@ -1,1 +1,20 @@
-{ "course_id": "101", "listing": { "available": true, "http_status": null }, "files": [] }
+{
+  "course_id": "101",
+  "listing": { "available": true, "http_status": null },
+  "files": [
+    {
+      "id": "50",
+      "source": "listing",
+      "folder_id": "2",
+      "folder_path": "Slides",
+      "module_id": null,
+      "module_position": null,
+      "name": "lec.pdf",
+      "size": 10,
+      "updated_at": "2026-09-01T12:00:00Z",
+      "hidden": false,
+      "locked": false,
+      "lock_explanation": null
+    }
+  ]
+}
