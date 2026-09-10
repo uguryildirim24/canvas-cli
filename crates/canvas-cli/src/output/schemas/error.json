@@ -1,0 +1,7 @@
+{
+  "code": "auth",
+  "message": "unauthorized",
+  "http_status": 401,
+  "server_errors": [],
+  "details": {}
+}

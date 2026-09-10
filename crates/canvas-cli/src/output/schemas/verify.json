@@ -1,0 +1,17 @@
+{
+  "outcome": "verified",
+  "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+  "attempt": 1,
+  "attribution": "observed",
+  "files": [
+    {
+      "canvas_file_id": "55001",
+      "name": "essay.pdf",
+      "expected_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "actual_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "status": "ok"
+    }
+  ],
+  "body": null,
+  "reason": null
+}

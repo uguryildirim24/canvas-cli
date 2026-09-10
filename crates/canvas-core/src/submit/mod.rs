@@ -6,7 +6,7 @@ mod preflight;
 mod reconcile;
 mod verify;
 
-pub use execute::{ExecuteOutcome, execute, post_and_finish};
+pub use execute::{ExecuteError, ExecuteOutcome, execute, post_and_finish};
 pub use freeze::{
     FreezeError, FrozenInput, InputKind, TextSource, freeze_files, freeze_html, freeze_text,
     freeze_url, validate_comment,
