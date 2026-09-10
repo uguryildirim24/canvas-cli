@@ -886,35 +886,22 @@ pub fn acknowledge(store: &Store, journal_id: &str) -> Result<String, OperationE
     Ok(stamped)
 }
 
-/// Whether a later confirmed operation on the same target supersedes this one.
-pub fn is_superseded(store: &Store, journal_id: &str) -> Result<bool, OperationError> {
-    let row = require(store, journal_id)?;
-    if row.state != OpState::OutcomeUnknown {
-        return Ok(false);
-    }
-    let created: Timestamp = row
-        .created_at
-        .parse()
-        .map_err(|_| OperationError::StateConflict)?;
-    let (_, topic_id, _, conversation_id, _) = target_columns(&row.intended.target);
-    Ok(store.call_blocking(move |conns| {
-        let mut stmt = conns.state.prepare(
-            "SELECT created_at FROM operation_journal
-             WHERE state IN ('posted','matched')
-               AND topic_id IS ?1 AND conversation_id IS ?2",
-        )?;
-        for at in stmt.query_map(params![topic_id, conversation_id], |r| {
-            r.get::<_, String>(0)
-        })? {
-            let at: Timestamp = at?
-                .parse()
-                .map_err(|_| DbError::Message("invalid timestamp".into()))?;
-            if at > created {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    })?)
+/// Whether a later operation supersedes this one. It never does.
+///
+/// A submission is superseded because a later attempt on the same assignment
+/// replaces it: the assignment holds one current attempt. A reply and a
+/// message are not like that. A second reply to a topic is a second post, and
+/// a second conversation is a second conversation, so a later write says
+/// nothing at all about whether an earlier one landed — and an unknown
+/// outcome that a later write retired would leave a person with a message
+/// they never learned the fate of, and a duplicate they never learned about.
+///
+/// The field stays, because `receipts list` prints one column for both kinds
+/// of journal; for an operation it is always `false`. Only `receipts
+/// acknowledge` and `operation reconcile` retire an unknown operation.
+#[must_use]
+pub const fn is_superseded() -> bool {
+    false
 }
 
 /// Owner status for JSON: `n/a` when terminal, else a probe.
@@ -932,16 +919,15 @@ pub fn owner_status_for(
 
 /// Every operation journal that still has no answer (the §10 pending hook).
 ///
-/// Pending means `planned` or `posting`, or `outcome_unknown` that is neither
-/// superseded nor acknowledged — the same rule the submission hook uses.
+/// Pending means `planned` or `posting`, or `outcome_unknown` that has not
+/// been acknowledged. Nothing else clears it: no later write supersedes an
+/// operation ([`is_superseded`]).
 pub fn pending(store: &Store) -> Result<Vec<String>, OperationError> {
     let mut out = Vec::new();
     for row in list(store, None)? {
         let pending = match row.state {
             OpState::Planned | OpState::Posting => true,
-            OpState::OutcomeUnknown => {
-                row.acknowledged_at.is_none() && !is_superseded(store, &row.journal_id)?
-            }
+            OpState::OutcomeUnknown => row.acknowledged_at.is_none(),
             _ => false,
         };
         if pending {

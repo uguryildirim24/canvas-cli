@@ -152,6 +152,20 @@ fn send_request<'a>(
 }
 
 /// Prepare one discussion reply and approve it.
+/// Approve a prepared plan through a freshly issued handle.
+pub(super) fn approve_plan(store: &Store, plan_id: &str) {
+    let handle = issue_handle(store, plan_id, None).unwrap();
+    approve(
+        store,
+        plan_id,
+        &handle,
+        ApprovalChannel::YesFlag,
+        None,
+        Timestamp::now(),
+    )
+    .unwrap();
+}
+
 pub(super) async fn approved_reply(
     client: &Client,
     store: &Store,
@@ -789,6 +803,88 @@ async fn an_ambiguous_timeout_stays_unknown_and_is_never_resent() {
         Admitted::Created { .. } => panic!("an unknown outcome admitted a second journal"),
     }
     assert_eq!(posts_seen(&server).await, before);
+}
+
+/// A later write never retires an earlier unknown one (M8-b review).
+///
+/// A submission is superseded by a later attempt on the same assignment. A
+/// reply and a message are not: a second reply is a second post, and a second
+/// conversation is a second conversation. A rule keyed on the target columns
+/// made every accepted `inbox_send` supersede every other unresolved send,
+/// because a send has no target column at all until Canvas answers.
+#[tokio::test]
+async fn a_later_write_never_supersedes_an_unknown_one() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_inbox(&server).await;
+    // The first send is answered by a 500, which proves nothing.
+    Mock::given(method("POST"))
+        .and(path("/api/v1/conversations"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({"errors": []})))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    let client = test_client(&server.uri());
+    let recipients = vec!["31".to_owned()];
+    let first = prepare_inbox_send(
+        &client,
+        &open.store,
+        &send_request(&paths, &doc, &recipients, "Are you free Tuesday?"),
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+    approve_plan(&open.store, &first.plan.plan_id);
+    let unknown = run(&client, &open.store, &paths, &doc, &first.plan.plan_id).await;
+    assert_eq!(unknown.state, OpState::OutcomeUnknown);
+
+    // A second, unrelated send to the same person is accepted.
+    Mock::given(method("POST"))
+        .and(path("/api/v1/conversations"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!([{
+            "id": 701,
+            "messages": [{"id": 8200, "author_id": 7, "created_at": "2026-09-10T15:00:00Z"}]
+        }])))
+        .mount(&server)
+        .await;
+    let second = prepare_inbox_send(
+        &client,
+        &open.store,
+        &send_request(&paths, &doc, &recipients, "One more thing."),
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+    approve_plan(&open.store, &second.plan.plan_id);
+    let posted = run(&client, &open.store, &paths, &doc, &second.plan.plan_id).await;
+    assert_eq!(posted.state, OpState::Posted);
+
+    // The first one is still unresolved, on every hook that names it.
+    let unknown_id = unknown.journal_id.clone();
+    let pending = open
+        .store
+        .call_blocking(move |conns| pending_operations(&conns.state, PendingTarget::Inbox))
+        .unwrap();
+    assert!(
+        pending.contains(&unknown_id),
+        "an accepted send retired an unknown one: {pending:?}"
+    );
+    assert_eq!(
+        super::ops::pending(&open.store).unwrap()[0],
+        unknown.journal_id
+    );
+    assert!(!super::ops::is_superseded());
+
+    // Acknowledging it is the only thing that clears it.
+    super::ops::acknowledge(&open.store, &unknown.journal_id).unwrap();
+    let cleared = open
+        .store
+        .call_blocking(move |conns| pending_operations(&conns.state, PendingTarget::Inbox))
+        .unwrap();
+    assert!(
+        cleared.is_empty(),
+        "an acknowledged send is the only one that clears: {cleared:?}"
+    );
 }
 
 /// A readback that finds the accepted object upgrades `accepted` to `observed`.
