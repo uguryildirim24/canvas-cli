@@ -515,3 +515,149 @@ fn module_refresh_replaces_item_membership_without_deleting_entities() {
         })
         .unwrap();
 }
+
+#[tokio::test]
+async fn module_inline_cases_fetch_all_needed_pages_and_keep_supplied_fields() {
+    use wiremock::matchers::query_param;
+    let server = MockServer::start().await;
+    Mock::given(path("/api/v1/courses/5/modules"))
+        .and(query_param("include[]", "items"))
+        .and(query_param("include[]", "content_details"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {"id":1, "items_count":1},
+            {"id":2, "items_count":1, "items":null},
+            {"id":3, "items_count":2, "items":[{"id":30}]},
+            {"id":4, "items_count":1, "state":"locked", "items":[{
+                "id":40, "type":"File", "content_id":"50", "title":"notes",
+                "html_url":"https://courses.example.test/courses/5/modules/items/40",
+                "completion_requirement":{"completed":true,"untracked":"discard"},
+                "content_details":{"locked_for_user":true,"lock_explanation":"wait"}
+            }]}
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    for id in [1, 2, 3] {
+        Mock::given(path(format!("/api/v1/courses/5/modules/{id}/items")))
+            .and(query_param("include[]", "content_details"))
+            .and(query_param("page", "2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"id":id*10+1}])))
+            .expect(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(path(format!("/api/v1/courses/5/modules/{id}/items")))
+            .and(query_param("include[]", "content_details"))
+            .respond_with(ResponseTemplate::new(200)
+                .insert_header("Link", format!("<{}/api/v1/courses/5/modules/{id}/items?include[]=content_details&page=2>; rel=\"next\"", server.uri()))
+                .set_body_json(json!([{"id":id*10}])))
+            .expect(1).with_priority(2).mount(&server).await;
+    }
+    let (_dir, open) = setup();
+    let out = super::refresh_modules(
+        &client(&server),
+        &open.store,
+        5,
+        default_ttl_modules(),
+        ts(100),
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.requests, 7);
+    open.store
+        .call_blocking(|conns| {
+            let plan = discovery_plan_input(conns, 5, "CS101")?;
+            assert_eq!(
+                plan.modules
+                    .iter()
+                    .map(|m| m.items.len())
+                    .collect::<Vec<_>>(),
+                [2, 2, 2, 1]
+            );
+            let raw: String = conns.cache.query_row(
+                "SELECT data_json FROM module_items WHERE id=40",
+                [],
+                |r| r.get(0),
+            )?;
+            let data: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            assert_eq!(data["completed"], "true");
+            assert_eq!(data["locked_for_user"], "true");
+            assert_eq!(data["lock_explanation"], "wait");
+            assert_eq!(data["module_state"], "locked");
+            assert_eq!(
+                data["html_url"],
+                "https://courses.example.test/courses/5/modules/items/40"
+            );
+            assert!(!raw.contains("discard"));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn observed_module_item_nulls_clear_values_and_absence_keeps_clocks() {
+    use super::wire::Observed;
+    let (_dir, open) = setup();
+    open.store.call_blocking(|conns| {
+        let ds = ModulesDataset::with_default_ttl(5);
+        for (time, raw) in [
+            (100, json!({"id":8,"state":"locked","items":[{"id":80,"title":"old","content_id":50,"html_url":"https://example.org/old","completion_requirement":{"completed":true},"content_details":{"locked_for_user":true,"lock_explanation":"wait"}}]})),
+            (300, json!({"id":8,"items":[{"id":80,"title":"new"}]})),
+            (200, json!({"id":8,"state":null,"items":[{"id":80,"title":"late","content_id":null,"html_url":null,"completion_requirement":null,"content_details":null}]})),
+        ] {
+            let observed: Observed<Module> = serde_json::from_value(raw).unwrap();
+            let items: Vec<_> = observed.inline_items().unwrap().into_iter().map(|i| i.entity(5,8, observed.model.state.as_deref())).collect();
+            ds.ingest(&[crate::store::IngestPage { fetched_at:ts(time), entities:vec![observed.entity(5,true,&items)] }], &ingest_ok(0), conns).unwrap();
+        }
+        let (title, content_id, raw): (String, Option<i64>, String) = conns.cache.query_row("SELECT title,content_id,data_json FROM module_items WHERE id=80", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+        assert_eq!(title, "new");
+        assert_eq!(content_id, None);
+        let data: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        for key in ["html_url","completed","locked_for_user","lock_explanation","module_state"] { assert_eq!(data.get(key), Some(&serde_json::Value::Null), "{key}"); }
+        let clock: String = conns.cache.query_row("SELECT observed_at FROM field_obs WHERE entity_kind='module_item' AND entity_key='80' AND field='completed'", [], |r| r.get(0))?;
+        assert_eq!(clock, ts(200).to_string());
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn observed_files_and_folders_preserve_normalization_and_all_nulls() {
+    use super::wire::Observed;
+    let file: Observed<File> = serde_json::from_value(
+        json!({"id":1,"updated_at":"2026-09-01T08:00:00-04:00","thumbnail_url":null}),
+    )
+    .unwrap();
+    let entity = file.entity(5);
+    assert_eq!(
+        entity
+            .fields
+            .iter()
+            .find(|f| f.name == "updated_at")
+            .unwrap()
+            .value
+            .as_deref(),
+        Some("2026-09-01T12:00:00Z")
+    );
+    assert_eq!(
+        entity
+            .fields
+            .iter()
+            .find(|f| f.name == "thumbnail_url")
+            .unwrap()
+            .value,
+        None
+    );
+    let folder: Observed<Folder> = serde_json::from_value(
+        json!({"id":1,"updated_at":null,"files_count":null,"context_id":null}),
+    )
+    .unwrap();
+    let entity = folder.entity(5);
+    for key in ["updated_at", "files_count", "context_id"] {
+        assert_eq!(
+            entity.fields.iter().find(|f| f.name == key).unwrap().value,
+            None
+        );
+    }
+}

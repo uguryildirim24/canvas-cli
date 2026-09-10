@@ -241,8 +241,16 @@ impl Observed<Folder> {
             ("hidden", FieldGroup::Status),
             ("locked", FieldGroup::Status),
             ("locked_for_user", FieldGroup::Status),
+            ("context_id", FieldGroup::Detail),
+            ("context_type", FieldGroup::Detail),
+            ("files_count", FieldGroup::Detail),
+            ("folders_count", FieldGroup::Detail),
+            ("position", FieldGroup::Detail),
+            ("updated_at", FieldGroup::Detail),
+            ("files_url", FieldGroup::Detail),
+            ("folders_url", FieldGroup::Detail),
         ] {
-            if self.raw.get(name).is_some() {
+            if self.raw.get(name).is_some_and(Value::is_null) {
                 observe(&mut entity.fields, &self.raw, name, group);
             }
         }
@@ -267,8 +275,9 @@ impl Observed<File> {
             ("lock_at", FieldGroup::Status),
             ("updated_at", FieldGroup::Detail),
             ("url", FieldGroup::Detail),
+            ("thumbnail_url", FieldGroup::Detail),
         ] {
-            if self.raw.get(name).is_some() {
+            if self.raw.get(name).is_some_and(Value::is_null) {
                 observe(&mut entity.fields, &self.raw, name, group);
             }
         }
@@ -277,13 +286,38 @@ impl Observed<File> {
 }
 
 impl Observed<Module> {
+    pub fn inline_items(&self) -> Result<Vec<Observed<ModuleItem>>, SyncError> {
+        serde_json::from_value(self.raw.get("items").cloned().unwrap_or_else(|| json!([])))
+            .map_err(|_| canvas_api::Error::Decode.into())
+    }
+
     pub fn entity(
         self,
         course_id: i64,
         items_complete: bool,
-        items: &[ModuleItem],
+        items: &[EntityIngest],
     ) -> EntityIngest {
-        let mut entity = module_to_entity(&self.model, course_id, items_complete, items);
+        let mut entity = module_to_entity(&self.model, course_id, items_complete, &[]);
+        let mut items = items.to_vec();
+        if self.raw.get("state").is_some_and(Value::is_null) {
+            for item in &mut items {
+                observe(
+                    &mut item.fields,
+                    &json!({"module_state": null}),
+                    "module_state",
+                    FieldGroup::Status,
+                );
+            }
+        }
+        entity
+            .fields
+            .iter_mut()
+            .find(|f| f.name == "items_payload")
+            .unwrap()
+            .value = Some(
+            serde_json::to_string(&super::modules::items_payload(&items))
+                .expect("allowlisted items"),
+        );
         for (name, group) in [
             ("name", FieldGroup::Core),
             ("position", FieldGroup::Core),
@@ -291,8 +325,10 @@ impl Observed<Module> {
             ("state", FieldGroup::Status),
             ("unlock_at", FieldGroup::Detail),
             ("published", FieldGroup::Detail),
+            ("require_sequential_progress", FieldGroup::Detail),
+            ("completed_at", FieldGroup::Detail),
         ] {
-            if self.raw.get(name).is_some() {
+            if self.raw.get(name).is_some_and(Value::is_null) {
                 observe(&mut entity.fields, &self.raw, name, group);
             }
         }
@@ -301,7 +337,41 @@ impl Observed<Module> {
 }
 
 impl Observed<ModuleItem> {
-    pub fn into_model(self) -> ModuleItem {
-        self.model
+    pub fn entity(self, course_id: i64, module_id: i64, state: Option<&str>) -> EntityIngest {
+        let mut entity = super::module_item_to_entity(&self.model, course_id, module_id, state);
+        for (name, group) in [
+            ("title", FieldGroup::Core),
+            ("position", FieldGroup::Core),
+            ("content_id", FieldGroup::Core),
+            ("type", FieldGroup::Core),
+            ("html_url", FieldGroup::Core),
+            ("indent", FieldGroup::Detail),
+            ("published", FieldGroup::Detail),
+        ] {
+            if self.raw.get(name).is_some_and(Value::is_null) {
+                observe(&mut entity.fields, &self.raw, name, group);
+            }
+        }
+        for (parent, names) in [
+            (
+                "content_details",
+                &["locked_for_user", "lock_explanation"][..],
+            ),
+            ("completion_requirement", &["completed"][..]),
+        ] {
+            if let Some(raw) = self.raw.get(parent) {
+                for &name in names {
+                    if raw.is_null() || raw.get(name).is_some_and(Value::is_null) {
+                        observe(
+                            &mut entity.fields,
+                            &json!({name: null}),
+                            name,
+                            FieldGroup::Status,
+                        );
+                    }
+                }
+            }
+        }
+        entity
     }
 }

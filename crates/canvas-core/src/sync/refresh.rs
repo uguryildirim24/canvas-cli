@@ -218,12 +218,16 @@ async fn resolve_module_entity(
         let mut stream = std::pin::pin!(client.get_all::<Observed<ModuleItem>>(&path));
         while let Some(page) = stream.next().await {
             let page = page?;
-            fetched.extend(page.items.into_iter().map(Observed::into_model));
+            fetched.extend(page.items);
         }
         (fetched, true)
     } else {
-        (observed.model.items.clone().unwrap_or_default(), true)
+        (observed.inline_items()?, true)
     };
+    let items: Vec<_> = items
+        .into_iter()
+        .map(|item| item.entity(course_id, module_id, observed.model.state.as_deref()))
+        .collect();
     Ok(observed.entity(course_id, items_complete, &items))
 }
 

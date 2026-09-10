@@ -226,6 +226,16 @@ pub fn module_item_to_entity(
         FieldGroup::Core,
         item.item_type.as_deref(),
     );
+    push_api_to_string(&mut fields, "html_url", FieldGroup::Core, &item.html_url);
+    push_opt_bool(
+        &mut fields,
+        "completed",
+        FieldGroup::Status,
+        item.completion_requirement
+            .as_ref()
+            .and_then(|r| r.get("completed"))
+            .and_then(Value::as_bool),
+    );
     push_opt_i64(&mut fields, "indent", FieldGroup::Detail, item.indent);
     push_opt_bool(&mut fields, "published", FieldGroup::Detail, item.published);
     if let Some(ref details) = item.content_details {
@@ -255,7 +265,7 @@ pub fn module_item_to_entity(
     }
 }
 
-fn items_payload(entities: &[EntityIngest]) -> Vec<Value> {
+pub(super) fn items_payload(entities: &[EntityIngest]) -> Vec<Value> {
     entities
         .iter()
         .map(|e| {
@@ -500,6 +510,8 @@ fn write_items_side_effect(
                 "locked_for_user" => "locked_for_user",
                 "lock_explanation" => "lock_explanation",
                 "module_state" => "module_state",
+                "html_url" => "html_url",
+                "completed" => "completed",
                 other => {
                     return Err(DbError::Message(format!(
                         "unsupported module_item field: {other}"
@@ -508,7 +520,9 @@ fn write_items_side_effect(
                 }
             };
             let group = match static_name {
-                "locked_for_user" | "lock_explanation" | "module_state" => FieldGroup::Status,
+                "locked_for_user" | "lock_explanation" | "module_state" | "completed" => {
+                    FieldGroup::Status
+                }
                 "indent" | "published" => FieldGroup::Detail,
                 _ => FieldGroup::Core,
             };
@@ -565,7 +579,8 @@ fn split_module_item_fields(fields: &[FieldWrite]) -> Result<ModuleItemSplit, In
                 column_fields.push(field.clone());
             }
             "title" | "position" | "content_id" | "type" => column_fields.push(field.clone()),
-            "indent" | "published" | "locked_for_user" | "lock_explanation" | "module_state" => {
+            "indent" | "published" | "locked_for_user" | "lock_explanation" | "module_state"
+            | "html_url" | "completed" => {
                 extra.insert(
                     field.name.to_owned(),
                     match &field.value {
