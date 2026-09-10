@@ -1,0 +1,375 @@
+//! `bridge-ipc@1`: the broker protocol on the private endpoint.
+//!
+//! Newline-delimited JSON, one request per line and one response per line.
+//! The transport is a Unix socket at mode `0600` inside a `0700` directory,
+//! or a user-restricted named pipe on Windows: it carries no authentication
+//! of its own, because the operating system's file permissions are the
+//! boundary (REPORT §3.2, "within Rolf's OS trust domain").
+//!
+//! Four operations are the surface REPORT §3.4 names, plus `release`, which
+//! is how `identity remove` asks a live owner to let go (REPORT §3.4,
+//! "cooperative release").
+
+use serde::{Deserialize, Serialize};
+
+use crate::bridge::wire::{PageKind, Zone};
+
+/// The protocol version both ends declare on every line.
+pub const IPC_PROTOCOL: &str = "bridge-ipc@1";
+
+/// The largest request line the broker reads, in bytes.
+///
+/// A request carries a consumer name and an attachment id and nothing else,
+/// so this is generous. It is enforced before the line is assembled.
+pub const MAX_REQUEST_BYTES: usize = 8 * 1024;
+
+/// Why content is unavailable (REPORT §3.2 and §3.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reason {
+    /// No attachment exists for this identity, or none for this consumer.
+    NotAttached,
+    /// An attachment exists but sharing is suspended.
+    Paused,
+    /// A new document is being re-checked; old text is already erased.
+    Validating,
+    /// The document is in an assessment, external, or unknown zone.
+    ZoneOpaque,
+    /// The probed browser account is not this identity's user.
+    AccountMismatch,
+    /// No broker is running for this identity.
+    BridgeUnavailable,
+    /// The message named a document or navigation generation that is gone.
+    StaleGeneration,
+    /// The request was not `bridge-ipc@1`.
+    Protocol,
+}
+
+impl Reason {
+    /// The wire spelling, for messages and for the `reason` field of a §7
+    /// refusal.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotAttached => "not_attached",
+            Self::Paused => "paused",
+            Self::Validating => "validating",
+            Self::ZoneOpaque => "zone_opaque",
+            Self::AccountMismatch => "account_mismatch",
+            Self::BridgeUnavailable => "bridge_unavailable",
+            Self::StaleGeneration => "stale_generation",
+            Self::Protocol => "protocol",
+        }
+    }
+
+    /// Whether this reason is one of the REPORT §3.2 refusals that exit 8.
+    ///
+    /// `zone_opaque` is not: the attachment is healthy and the answer is a
+    /// bundle with no page content in it.
+    #[must_use]
+    pub fn is_refusal(self) -> bool {
+        matches!(
+            self,
+            Self::NotAttached
+                | Self::Paused
+                | Self::Validating
+                | Self::AccountMismatch
+                | Self::BridgeUnavailable
+                | Self::StaleGeneration
+                | Self::Protocol
+        )
+    }
+}
+
+impl std::fmt::Display for Reason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// What one attachment is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttachmentState {
+    /// A new document: account and zone are being re-checked.
+    Validating,
+    /// Live.
+    Attached,
+    /// Suspended; nothing is served until it resumes.
+    Paused,
+}
+
+impl AttachmentState {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Validating => "validating",
+            Self::Attached => "attached",
+            Self::Paused => "paused",
+        }
+    }
+}
+
+/// One request line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Request {
+    /// Must equal [`IPC_PROTOCOL`].
+    pub v: String,
+    /// Correlates the response. Opaque to the broker.
+    pub id: String,
+    #[serde(flatten)]
+    pub op: Op,
+}
+
+impl Request {
+    /// Build a well-formed request.
+    #[must_use]
+    pub fn new(id: impl Into<String>, op: Op) -> Self {
+        Self {
+            v: IPC_PROTOCOL.to_owned(),
+            id: id.into(),
+            op,
+        }
+    }
+}
+
+/// The operations the broker answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op")]
+pub enum Op {
+    /// What attachments exist, with no capability and no page content.
+    #[serde(rename = "attachments.list")]
+    AttachmentsList,
+    /// Opt one consumer in, and return the opaque attachment id.
+    #[serde(rename = "attach")]
+    Attach { consumer: String },
+    /// Read the browser side of the bundle.
+    ///
+    /// `attachment_id` is the capability. `consumer` names an opted-in
+    /// consumer, which the adapter sets and a model cannot. With neither,
+    /// only the sole attachment is served, and only to the CLI.
+    #[serde(rename = "here")]
+    Here {
+        #[serde(default)]
+        attachment_id: Option<String>,
+        #[serde(default)]
+        consumer: Option<String>,
+        #[serde(default)]
+        include_text: bool,
+    },
+    /// Drop the attachment.
+    #[serde(rename = "detach")]
+    Detach { attachment_id: String },
+    /// Let go of the identity so `identity remove` can take the exclusive
+    /// lock, then exit.
+    #[serde(rename = "release")]
+    Release { reason: String },
+}
+
+/// One response line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Response {
+    pub v: String,
+    pub id: String,
+    #[serde(flatten)]
+    pub body: Body,
+}
+
+impl Response {
+    /// A successful answer.
+    #[must_use]
+    pub fn ok(id: impl Into<String>, body: Body) -> Self {
+        Self {
+            v: IPC_PROTOCOL.to_owned(),
+            id: id.into(),
+            body,
+        }
+    }
+
+    /// A refusal with an explicit reason.
+    #[must_use]
+    pub fn refused(id: impl Into<String>, reason: Reason) -> Self {
+        Self::ok(id, Body::Refused { reason })
+    }
+}
+
+/// What a response carries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "result", rename_all = "snake_case")]
+pub enum Body {
+    /// `attachments.list`.
+    Attachments { attachments: Vec<AttachmentSummary> },
+    /// `attach`: the consumer is opted in and holds the capability.
+    Attached {
+        attachment_id: String,
+        state: AttachmentState,
+    },
+    /// `here`.
+    Context(Box<Context>),
+    /// `detach`.
+    Detached { detached: bool },
+    /// `release`.
+    Released { released: bool },
+    /// Any operation that could not be served.
+    Refused { reason: Reason },
+}
+
+/// One attachment as a bystander may see it: no id, no page content.
+///
+/// `bridge status` prints this, so it names the state and the origin and
+/// nothing that identifies the page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentSummary {
+    pub state: AttachmentState,
+    pub origin: String,
+    pub account_user_id: String,
+    pub zone: Zone,
+    pub consumers: Vec<String>,
+    pub attached_at: String,
+    pub navigation_generation: u64,
+}
+
+/// The `browser` section of `ContextBundle@1`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Context {
+    pub attachment_id: String,
+    pub state: AttachmentState,
+    pub consumers: Vec<String>,
+    pub origin: String,
+    /// The account the extension probed, verified against the CLI identity.
+    pub account: VerifiedAccount,
+    pub zone: Zone,
+    pub page_kind: Option<PageKind>,
+    pub course_id: Option<String>,
+    pub assignment_id: Option<String>,
+    pub topic_id: Option<String>,
+    pub quiz_id: Option<String>,
+    pub page_url: Option<String>,
+    /// Absent in an opaque zone.
+    pub url: Option<String>,
+    /// Absent in an opaque zone.
+    pub title: Option<String>,
+    pub document_id: String,
+    pub frame_id: i64,
+    pub navigation_generation: u64,
+    pub observed_at: String,
+    /// How long this observation may be treated as current, in milliseconds.
+    pub ttl_ms: u64,
+    pub selection: Option<String>,
+    pub text: Option<String>,
+    pub selection_bytes: u64,
+    pub text_bytes: u64,
+    pub truncated: bool,
+    /// Why `selection` and `text` are absent, when they are.
+    pub content_reason: Option<Reason>,
+}
+
+/// A browser account that matched the CLI identity's user id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifiedAccount {
+    pub user_id: String,
+    pub observed_at: String,
+}
+
+/// Parse one request line, refusing anything that is not `bridge-ipc@1`.
+pub fn parse_request(line: &str) -> Result<Request, Reason> {
+    if line.len() > MAX_REQUEST_BYTES {
+        return Err(Reason::Protocol);
+    }
+    let request: Request = serde_json::from_str(line).map_err(|_| Reason::Protocol)?;
+    if request.v != IPC_PROTOCOL {
+        return Err(Reason::Protocol);
+    }
+    Ok(request)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_four_operations_round_trip() {
+        for op in [
+            Op::AttachmentsList,
+            Op::Attach {
+                consumer: "mcp:claude-code".to_owned(),
+            },
+            Op::Here {
+                attachment_id: Some("0123456789abcdef0123456789abcdef".to_owned()),
+                consumer: None,
+                include_text: true,
+            },
+            Op::Detach {
+                attachment_id: "0123456789abcdef0123456789abcdef".to_owned(),
+            },
+        ] {
+            let line = serde_json::to_string(&Request::new("1", op.clone())).expect("encode");
+            assert_eq!(parse_request(&line).expect("decode").op, op);
+        }
+    }
+
+    #[test]
+    fn the_operation_names_are_the_report_names() {
+        let line = serde_json::to_string(&Request::new("1", Op::AttachmentsList)).unwrap();
+        assert!(line.contains("\"op\":\"attachments.list\""), "{line}");
+        assert!(line.contains("\"v\":\"bridge-ipc@1\""), "{line}");
+    }
+
+    #[test]
+    fn a_line_that_is_not_this_protocol_is_refused() {
+        for line in [
+            "",
+            "{}",
+            "not json",
+            r#"{"v":"bridge-ipc@2","id":"1","op":"attach","consumer":"x"}"#,
+            r#"{"v":"bridge-ipc@1","id":"1","op":"exec","command":"rm"}"#,
+        ] {
+            assert_eq!(parse_request(line).unwrap_err(), Reason::Protocol, "{line}");
+        }
+    }
+
+    #[test]
+    fn an_oversize_line_is_refused_without_parsing() {
+        let line = format!(
+            r#"{{"v":"bridge-ipc@1","id":"1","op":"attach","consumer":"{}"}}"#,
+            "x".repeat(MAX_REQUEST_BYTES)
+        );
+        assert_eq!(parse_request(&line).unwrap_err(), Reason::Protocol);
+    }
+
+    #[test]
+    fn here_defaults_to_metadata_only() {
+        let line = r#"{"v":"bridge-ipc@1","id":"7","op":"here"}"#;
+        assert_eq!(
+            parse_request(line).unwrap().op,
+            Op::Here {
+                attachment_id: None,
+                consumer: None,
+                include_text: false,
+            }
+        );
+    }
+
+    /// Only `zone_opaque` leaves the bundle a success (§3.2 exit mapping).
+    #[test]
+    fn the_report_refusals_are_the_ones_that_refuse() {
+        for reason in [
+            Reason::NotAttached,
+            Reason::Paused,
+            Reason::Validating,
+            Reason::BridgeUnavailable,
+            Reason::AccountMismatch,
+            Reason::StaleGeneration,
+        ] {
+            assert!(reason.is_refusal(), "{reason}");
+        }
+        assert!(!Reason::ZoneOpaque.is_refusal());
+    }
+
+    #[test]
+    fn a_refusal_serializes_with_its_reason() {
+        let line = serde_json::to_string(&Response::refused("3", Reason::NotAttached)).unwrap();
+        assert!(line.contains(r#""result":"refused""#), "{line}");
+        assert!(line.contains(r#""reason":"not_attached""#), "{line}");
+    }
+}
