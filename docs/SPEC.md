@@ -1254,7 +1254,7 @@ These eight schemas have no typed arm in the schema generator, so their `canvas 
 |---|---|---|
 | clap (derive, env) | 4.6.6 | CLI |
 | clap_complete / clap_mangen | 4.6.9 / 0.3.3 | completions, man pages |
-| tokio (rt, macros, fs, time, sync, io-util, signal, net) | 1.53.1 | runtime; `net` for the broker socket (M7-a) |
+| tokio (workspace: rt, macros, fs, time, sync; per crate: io-util, signal, rt-multi-thread, process) | 1.53.1 | runtime. `net` is enabled today only in `canvas-api`'s dev-dependencies; the broker socket that needs it is M7-a (§24) |
 | reqwest (rustls, json, stream, gzip, brotli, multipart) | 0.13.5 | HTTP |
 | futures-util | 0.3.34 | streams |
 | serde / serde_json | 1.0.229 / 1.0.151 | models, JSON |
@@ -1264,21 +1264,24 @@ These eight schemas have no typed arm in the schema generator, so their `canvas 
 | figment (toml, env) + toml | 0.10.19 / 1.1.5 | config |
 | rusqlite (bundled) | 0.40.2 | DBs |
 | cap-std + cap-fs-ext (`std`) | 3.4.6 | containment, no-follow opens |
-| fs4 | latest 0.13.x | file locks (`flock` / `LockFileEx`) |
+| fs4 | 0.13.1 | file locks (`flock` / `LockFileEx`) |
 | comfy-table | 8.0.0 | tables |
 | anstyle / anstream | 1.0.14 / 1.0.0 | color |
 | indicatif | 0.18.6 | progress |
 | open | 5.4.3 | browser |
-| sha2 | 0.10.x | hashes |
-| html2text or htmd | latest (pick in M1-c) | HTML → text |
-| tracing / tracing-subscriber | latest | logs |
+| sha2 | 0.10.9 | hashes |
+| htmd (+ markup5ever_rcdom) | 0.5.5 / 0.38.0 | HTML → Markdown; M1-c picked `htmd` over `html2text` |
+| tracing / tracing-subscriber | 0.1.44 / 0.3.23 | logs |
+| uuid (serde, v4) | 1.18.1 | journal ids, plan ids, approval handles, identity generations |
 | thiserror / anyhow | 2.0.20 / 1.0.104 | errors |
-| rmcp (`=3.2.0`, `server`, `transport-io`, `local`: the command cores are `!Send`, so the service runs in a `LocalSet`) | 3.2.0 | `canvas mcp` (M6-b); brings `chrono` transitively, see §19 item 18 |
+| rmcp (`=3.2.0`, no default features; `server`, `client`, `macros`, `elicitation`, `transport-io`, `transport-async-rw`, `schemars`, `local`) | 3.2.0 | `canvas mcp` (M6-b). `local` is load-bearing: the command cores are `!Send`, so the service runs in a `LocalSet`. Brings `chrono` transitively, see §19 item 18 |
 | schemars (`=1.2.2`) | 1.2.2 | JSON Schema for `canvas schema` and the MCP tool schemas (M6-b) |
 | dev: wiremock, assert_cmd, predicates, insta | 0.6.5, 2.2.2, 3.1.4, 1.48.0 | tests |
 | tools: cargo-nextest, cargo-deny, cargo-dist, release-plz | 0.9.143, 0.20.2, 0.32.0, 0.3.164 | CI, release |
 
 Toolchain: stable 1.98.x in CI; MSRV 1.88; owner machine 1.97.1.
+
+Every version is pinned with `=`, in the workspace manifest or in the crate that uses it. Direct dependencies the table still omits: `getrandom` 0.4.3, `unicode-normalization` 0.1.25, `httpdate` 1.0.3, `rpassword` 7.4.0, and, for tests and `xtask` only, `tokio-rustls` 0.26.5, `tempfile` 3.23.0, and `url` 2.5.8. No post-v1 package added a dependency after `rmcp` and `schemars`. `uuid` names journal ids, plan ids, approval handles, and identity generations.
 
 ## Appendix B. Canvas endpoints used (v1)
 
