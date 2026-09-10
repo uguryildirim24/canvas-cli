@@ -69,7 +69,9 @@ Pure local logic: the network transport is a trait you define; no HTTP here.
   jiff, tokio, the HTML crate). Do not touch `store`, `identity`, other
   crates, `docs/`, or `tasks/`. The manifest DB is separate from the
   identity databases; do not use `canvas_core::store`.
-- Do NOT `git commit`. Leave the tree for review.
+- Work on the current branch `lane/w3` (already checked out). Commit as you go
+  with conventional messages. Do not push. Do not merge into `main`.
+- Your private build dir is `CARGO_TARGET_DIR` (already exported in this shell).
 
 ## Gates (all must pass before you report)
 ```

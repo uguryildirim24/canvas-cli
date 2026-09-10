@@ -64,7 +64,9 @@ no config, no output rendering: this crate knows only HTTP and models.
 ## Rules
 - Owner files: `crates/canvas-api/**` only. Do not touch other crates, `docs/`,
   or `tasks/`. Do not add workspace dependencies without noting it.
-- Do NOT `git commit`. Leave the tree for review.
+- Work on the current branch `lane/w1` (already checked out). Commit as you go
+  with conventional messages. Do not push. Do not merge into `main`.
+- Your private build dir is `CARGO_TARGET_DIR` (already exported in this shell).
 - Use the crate versions from SPEC Appendix A.
 
 ## Gates (all must pass before you report)

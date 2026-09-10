@@ -56,7 +56,9 @@ identity modules. No network code and no CLI rendering.
   fs4, uuid, sha2, jiff, serde, serde_json, thiserror, tokio). Do not touch
   other modules, other crates, `docs/`, or `tasks/`.
 - You own the migration list for this round; number it `0001_initial`.
-- Do NOT `git commit`. Leave the tree for review.
+- Work on the current branch `lane/w2` (already checked out). Commit as you go
+  with conventional messages. Do not push. Do not merge into `main`.
+- Your private build dir is `CARGO_TARGET_DIR` (already exported in this shell).
 
 ## Gates (all must pass before you report)
 ```
