@@ -277,6 +277,14 @@ impl Observed<File> {
                 observe(&mut entity.fields, &self.raw, name, group);
             }
         }
+        if self.raw.get("content-type").is_some_and(Value::is_null) {
+            observe(
+                &mut entity.fields,
+                &json!({"content_type": null}),
+                "content_type",
+                FieldGroup::Core,
+            );
+        }
         entity
     }
 }
