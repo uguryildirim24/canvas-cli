@@ -456,6 +456,58 @@ fn an_unread_count_observation_is_applied_once() {
     assert_eq!(payloads(&store).len(), 1, "{:?}", payloads(&store));
 }
 
+/// An unreadable count is `null`, and `null` is never a zero.
+///
+/// M8-a's rule is that a count Canvas does not report as a number stays
+/// unknown. A zero would say the inbox is clear, which is the opposite of
+/// what is known, so the payload has to carry `null` on the side that is
+/// unknown — and say it once, not on every refresh that stays unknown.
+#[test]
+fn an_unknown_unread_count_is_never_reported_as_zero() {
+    let scratch = Scratch::new("events-inbox-unread-null");
+    let (_paths, store) = open(&scratch);
+    let runtime = runtime();
+
+    seed_unread(&store, Some(4), "2026-09-09T17:00:00Z");
+    runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+
+    // The count became unknown. That is one event, and the `after` side is
+    // `null`.
+    seed_unread(&store, None, "2026-09-09T18:00:00Z");
+    let lost = runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    assert_eq!(lost.events, 1);
+    let rows = payloads(&store);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].0, EventKind::InboxUnreadCount.as_str());
+    assert_eq!(rows[0].1, r#"{"unread_count":4}"#);
+    assert_eq!(rows[0].2, r#"{"unread_count":null}"#);
+
+    // It stays unknown, so there is nothing further to report.
+    seed_unread(&store, None, "2026-09-09T19:00:00Z");
+    let still = runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    assert_eq!(
+        still.events, 0,
+        "an unchanged unknown count emitted an event"
+    );
+    assert_eq!(payloads(&store).len(), 1);
+
+    // Known again is one more event, from `null` and not from zero.
+    seed_unread(&store, Some(1), "2026-09-09T20:00:00Z");
+    runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    let rows = payloads(&store);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!(rows[1].1, r#"{"unread_count":null}"#);
+    assert_eq!(rows[1].2, r#"{"unread_count":1}"#);
+}
+
 /// The `fetch_log` rowid of the unread coverage.
 fn row_id(store: &Store) -> i64 {
     store
