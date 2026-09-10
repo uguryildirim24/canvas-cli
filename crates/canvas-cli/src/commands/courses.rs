@@ -10,17 +10,30 @@ use super::Globals;
 use super::course_load::{
     CourseRow, RefreshFail, ensure_courses, load_courses_for_scope, outcome_freshness,
 };
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use crate::output::{
     CoursesResult, SCHEMA_COURSES, apply_two_space_padding, new_table, now_timestamp,
 };
 use crate::session::{Session, ttl_courses};
 
-/// Run `canvas courses`.
+/// Run `canvas courses` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, all: bool, term: Option<String>, favorites: bool) -> ExitCode {
+    handle(globals, all, term, favorites)
+        .await
+        .emit(globals.json)
+}
+
+/// Run `canvas courses`.
+pub async fn handle(
+    globals: &Globals,
+    all: bool,
+    term: Option<String>,
+    favorites: bool,
+) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     let scope = if all {
@@ -39,14 +52,13 @@ pub async fn run(globals: &Globals, all: bool, term: Option<String>, favorites: 
     .await
     {
         Ok(o) => o,
-        Err(e) => return refresh_exit(globals, &session, e),
+        Err(e) => return refresh_exit(&session, e),
     };
 
     let rows = match load_filtered(&session, scope.as_str(), term, favorites).await {
         Ok(rows) => rows,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -73,7 +85,7 @@ pub async fn run(globals: &Globals, all: bool, term: Option<String>, favorites: 
         .await
     {
         Ok(rows) => rows,
-        Err(e) => return refresh_exit(globals, &session, RefreshFail::Db(e)),
+        Err(e) => return refresh_exit(&session, RefreshFail::Db(e)),
     };
     if outcome.freshness.source == canvas_core::sync::FreshnessSource::Network {
         for row in &mut grades_freshness {
@@ -103,7 +115,7 @@ pub async fn run(globals: &Globals, all: bool, term: Option<String>, favorites: 
     let _use_color =
         crate::output::resolve_color(globals.json, globals.color, io::stdout().is_terminal());
 
-    emit(globals.json, &envelope, || print_table(&envelope.result))
+    Handled::new(envelope, move |envelope| print_table(&envelope.result))
 }
 
 async fn load_filtered(
@@ -156,10 +168,9 @@ fn print_table(result: &CoursesResult) -> io::Result<()> {
     writeln!(io::stdout(), "{table}")
 }
 
-fn refresh_exit(globals: &Globals, session: &Session, err: RefreshFail) -> ExitCode {
+fn refresh_exit(session: &Session, err: RefreshFail) -> Handled {
     match err {
         RefreshFail::OfflineMiss | RefreshFail::Sync(SyncError::OfflineMiss) => emit_error(
-            globals.json,
             "offline",
             "offline and no complete courses cache coverage",
             7,
@@ -167,16 +178,14 @@ fn refresh_exit(globals: &Globals, session: &Session, err: RefreshFail) -> ExitC
             Some(session.identity_ref()),
         ),
         RefreshFail::NeedAuth => emit_error(
-            globals.json,
             "auth",
             "no token; set CANVAS_TOKEN or run auth login",
             3,
             session.profile.clone(),
             Some(session.identity_ref()),
         ),
-        RefreshFail::Sync(e) => super::emit::sync_error(globals, session, &e),
+        RefreshFail::Sync(e) => super::emit::sync_error(session, &e),
         RefreshFail::Db(e) => emit_error(
-            globals.json,
             "local",
             &e.to_string(),
             13,

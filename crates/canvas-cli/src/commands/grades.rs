@@ -2,6 +2,7 @@
 //!
 //! v1 shows Canvas-reported values only; no local estimation.
 
+use super::handled::Handled;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
@@ -19,7 +20,7 @@ use super::course_load::{
     CourseRow, RefreshFail, cached_outcome, ensure_courses, grade_freshness, load_course_by_id,
     load_courses_for_scope, outcome_freshness,
 };
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
 use super::grades_load::{
     PeriodSelection, PeriodTotals, course_totals_for_mode, enrollment_grades_by_course,
     load_assignment_groups, load_grading_periods, parse_period,
@@ -31,18 +32,22 @@ use crate::output::{
 };
 use crate::session::{Session, ttl_courses, ttl_grades};
 
-/// Run `canvas grades [<course>] [--period current|all|ID]`.
+/// Run `canvas grades` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, course: Option<String>, period: Option<String>) -> ExitCode {
+    handle(globals, course, period).await.emit(globals.json)
+}
+
+/// Run `canvas grades [<course>] [--period current|all|ID]`.
+pub async fn handle(globals: &Globals, course: Option<String>, period: Option<String>) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     let requested = match period.as_deref().map(parse_period).transpose() {
         Ok(v) => v,
         Err(bad) => {
             return emit_error(
-                globals.json,
                 "usage",
                 &format!("--period must be current, all, or a grading period id, not {bad}"),
                 2,
@@ -64,7 +69,7 @@ pub async fn run(globals: &Globals, course: Option<String>, period: Option<Strin
     .await
     {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
 
     let selected = match course {
@@ -83,7 +88,7 @@ pub async fn run(globals: &Globals, course: Option<String>, period: Option<Strin
                 envelope.warnings.push("served stale courses cache".into());
             }
             envelope.requests = session.requests();
-            emit(globals.json, &envelope, || print_grades(&envelope.result))
+            Handled::new(envelope, move |envelope| print_grades(&envelope.result))
         }
         Err(code) => code,
     }
@@ -97,9 +102,9 @@ async fn build(
     selected: Option<i64>,
     requested: Option<PeriodSelection>,
     courses_outcome: &RefreshOutcome,
-) -> Result<Envelope, ExitCode> {
+) -> Result<Envelope, Handled> {
     let now = now_timestamp();
-    let rows = load_rows(globals, session, selected).await?;
+    let rows = load_rows(session, selected).await?;
 
     // With no flag the default follows the course: `current` when it has
     // grading periods, `all` when it does not (SPEC §12.4).
@@ -128,7 +133,7 @@ async fn build(
             .store
             .call(move |conns| load_grading_periods(conns, course_id, now))
             .await
-            .map_err(|e| local_error(globals, session, &e.to_string()))?;
+            .map_err(|e| local_error(session, &e.to_string()))?;
     }
 
     // A period the selected course does not have has nothing to fetch: the
@@ -148,7 +153,7 @@ async fn build(
             .store
             .call(move |conns| enrollment_grades_by_course(conns, period_key))
             .await
-            .map_err(|e| local_error(globals, session, &e.to_string()))?
+            .map_err(|e| local_error(session, &e.to_string()))?
     };
 
     // With no course operand there is no period list to check against, so an id
@@ -157,7 +162,7 @@ async fn build(
         && selected.is_none()
         && by_course.is_empty()
     {
-        return Err(unknown_period(globals, session, id));
+        return Err(unknown_period(session, id));
     }
 
     // The default modes read `course_totals`, whose TTL and per-field clocks
@@ -173,13 +178,13 @@ async fn build(
                 grade_freshness(conns, &rows_for_freshness, now, offline, Some(mode))
             })
             .await
-            .map_err(|e| local_error(globals, session, &e.to_string()))?;
+            .map_err(|e| local_error(session, &e.to_string()))?;
         envelope.freshness.extend(totals_freshness);
     }
 
     let mut courses = Vec::new();
     for row in &rows {
-        let totals = totals_for(globals, session, row, period, &by_course).await?;
+        let totals = totals_for(session, row, period, &by_course).await?;
         courses.push(course_json(row, period, &periods, &totals));
     }
     courses.sort_by(|a, b| {
@@ -205,16 +210,15 @@ async fn build(
                 .store
                 .call(move |conns| load_assignment_groups(conns, course_id, key, &zone))
                 .await
-                .map_err(|e| local_error(globals, session, &e.to_string()))?
+                .map_err(|e| local_error(session, &e.to_string()))?
         };
         envelope.result.course = Some(GradesCourseViewJson { groups, periods });
     }
     Ok(envelope)
 }
 
-fn unknown_period(globals: &Globals, session: &Session, id: i64) -> ExitCode {
+fn unknown_period(session: &Session, id: i64) -> Handled {
     emit_error(
-        globals.json,
         "resolution",
         &format!("no grading period {id} for this identity"),
         6,
@@ -223,11 +227,7 @@ fn unknown_period(globals: &Globals, session: &Session, id: i64) -> ExitCode {
     )
 }
 
-async fn load_rows(
-    globals: &Globals,
-    session: &Session,
-    selected: Option<i64>,
-) -> Result<Vec<CourseRow>, ExitCode> {
+async fn load_rows(session: &Session, selected: Option<i64>) -> Result<Vec<CourseRow>, Handled> {
     let rows = session
         .open
         .store
@@ -236,7 +236,7 @@ async fn load_rows(
             None => load_courses_for_scope(conns, "active"),
         })
         .await
-        .map_err(|e| local_error(globals, session, &e.to_string()))?;
+        .map_err(|e| local_error(session, &e.to_string()))?;
     Ok(rows)
 }
 
@@ -251,12 +251,11 @@ fn default_period(rows: &[CourseRow]) -> PeriodSelection {
 
 /// Totals for one course under the selected period.
 async fn totals_for(
-    globals: &Globals,
     session: &Session,
     row: &CourseRow,
     period: PeriodSelection,
     by_course: &std::collections::HashMap<i64, PeriodTotals>,
-) -> Result<PeriodTotals, ExitCode> {
+) -> Result<PeriodTotals, Handled> {
     // An explicit period is answered by that period's enrollments only; the
     // whole-course and current-period totals belong to other modes.
     if matches!(period, PeriodSelection::Id(_)) {
@@ -272,7 +271,7 @@ async fn totals_for(
         .store
         .call(move |conns| course_totals_for_mode(conns, course_id, &mode))
         .await
-        .map_err(|e| local_error(globals, session, &e.to_string()))?;
+        .map_err(|e| local_error(session, &e.to_string()))?;
     if totals.covered {
         return Ok(totals);
     }
@@ -349,7 +348,7 @@ async fn ensure_enrollment_grades(
     globals: &Globals,
     session: &Session,
     period: PeriodKey,
-) -> Result<RefreshOutcome, ExitCode> {
+) -> Result<RefreshOutcome, Handled> {
     let now = now_timestamp();
     let ttl = ttl_grades();
     let ds = EnrollmentGradesDataset::new(period, ttl);
@@ -365,7 +364,7 @@ async fn ensure_grading_periods(
     globals: &Globals,
     session: &Session,
     course_id: i64,
-) -> Result<RefreshOutcome, ExitCode> {
+) -> Result<RefreshOutcome, Handled> {
     let now = now_timestamp();
     let ttl = ttl_grades();
     let ds = GradingPeriodsDataset::new(course_id, ttl);
@@ -382,7 +381,7 @@ async fn ensure_assignment_groups(
     session: &Session,
     course_id: i64,
     period: PeriodKey,
-) -> Result<RefreshOutcome, ExitCode> {
+) -> Result<RefreshOutcome, Handled> {
     let now = now_timestamp();
     let ttl = ttl_grades();
     let ds = AssignmentGroupsDataset::new(course_id, period, ttl);
@@ -407,7 +406,7 @@ async fn ensure<D, F>(
     session: &Session,
     dataset: D,
     refresh: F,
-) -> Result<RefreshOutcome, ExitCode>
+) -> Result<RefreshOutcome, Handled>
 where
     D: canvas_core::store::Dataset + Clone + Send + Sync + 'static,
     F: for<'a> FnOnce(
@@ -423,14 +422,13 @@ where
         .store
         .call(move |conns| lookup_dataset(conns, &ds, now, None))
         .await
-        .map_err(|e| local_error(globals, session, &e.to_string()))?;
+        .map_err(|e| local_error(session, &e.to_string()))?;
     match cached_outcome(lookup, globals.fresh, globals.offline) {
         Ok(Some(outcome)) => return Ok(outcome),
         Ok(None) => {}
         // Name the dataset that is missing, not the courses cache.
         Err(RefreshFail::OfflineMiss) => {
             return Err(emit_error(
-                globals.json,
                 "offline",
                 &format!(
                     "offline and no complete {} cache coverage for {}",
@@ -442,24 +440,23 @@ where
                 Some(session.identity_ref()),
             ));
         }
-        Err(e) => return Err(refresh_fail(globals, session, e)),
+        Err(e) => return Err(refresh_fail(session, e)),
     }
     session
         .validate_network_token()
         .await
-        .map_err(|e| refresh_fail(globals, session, RefreshFail::Sync(e)))?;
+        .map_err(|e| refresh_fail(session, RefreshFail::Sync(e)))?;
     let client = session
         .client
         .as_ref()
-        .ok_or_else(|| refresh_fail(globals, session, RefreshFail::NeedAuth))?;
+        .ok_or_else(|| refresh_fail(session, RefreshFail::NeedAuth))?;
     refresh(client, &session.open.store, globals.fresh)
         .await
-        .map_err(|e| refresh_fail(globals, session, RefreshFail::Sync(e)))
+        .map_err(|e| refresh_fail(session, RefreshFail::Sync(e)))
 }
 
-fn local_error(globals: &Globals, session: &Session, message: &str) -> ExitCode {
+fn local_error(session: &Session, message: &str) -> Handled {
     emit_error(
-        globals.json,
         "local",
         message,
         13,

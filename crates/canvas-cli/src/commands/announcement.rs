@@ -10,18 +10,24 @@ use jiff::tz::TimeZone;
 
 use super::announcements::{AnnouncementRow, load_announcement};
 use super::course_load::{RefreshFail, cached_outcome, outcome_freshness};
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use super::{Globals, assignment_read as read};
 use crate::output::{
     AnnouncementDetailJson, AnnouncementResult, SCHEMA_ANNOUNCEMENT, now_timestamp,
 };
 use crate::session::{Session, ttl_announcements};
 
-/// Run `canvas announcement <course> <id>` or `canvas announcement <url>`.
+/// Run `canvas announcement` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, target: String, id: Option<String>) -> ExitCode {
+    handle(globals, target, id).await.emit(globals.json)
+}
+
+/// Run `canvas announcement <course> <id>` or `canvas announcement <url>`.
+pub async fn handle(globals: &Globals, target: String, id: Option<String>) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     let mut freshness = Vec::new();
@@ -29,7 +35,6 @@ pub async fn run(globals: &Globals, target: String, id: Option<String>) -> ExitC
         Some(id) => {
             let Some(announcement_id) = parse_id(&id) else {
                 return emit_error(
-                    globals.json,
                     "resolution",
                     "announcement id must be a positive number",
                     6,
@@ -48,10 +53,9 @@ pub async fn run(globals: &Globals, target: String, id: Option<String>) -> ExitC
         None => match parse_announcement_url(&target, &session.identity.origin) {
             Ok(Some(pair)) => pair,
             // A bare id, a name, or a URL of another shape: §5 refuses it.
-            Ok(None) => return refuse_bare_id(globals, &session),
+            Ok(None) => return refuse_bare_id(&session),
             Err(()) => {
                 return emit_error(
-                    globals.json,
                     "resolution",
                     "url origin does not match the active identity",
                     6,
@@ -64,7 +68,7 @@ pub async fn run(globals: &Globals, target: String, id: Option<String>) -> ExitC
 
     let outcome = match ensure_announcement(globals, &session, course_id, announcement_id).await {
         Ok(o) => o,
-        Err(e) => return super::course::refresh_fail(globals, &session, e),
+        Err(e) => return super::course::refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&outcome));
 
@@ -77,7 +81,6 @@ pub async fn run(globals: &Globals, target: String, id: Option<String>) -> ExitC
         Ok(Some(row)) => row,
         Ok(None) => {
             return emit_error(
-                globals.json,
                 "resolution",
                 &format!("announcement {announcement_id} not found"),
                 6,
@@ -87,7 +90,6 @@ pub async fn run(globals: &Globals, target: String, id: Option<String>) -> ExitC
         }
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -112,7 +114,7 @@ pub async fn run(globals: &Globals, target: String, id: Option<String>) -> ExitC
         envelope.warnings.push(error);
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_human(&envelope.result.announcement)
     })
 }
@@ -149,9 +151,8 @@ fn parse_announcement_url(input: &str, origin: &str) -> Result<Option<(i64, i64)
         .and_then(|p| Some((p[1].parse().ok()?, p[3].parse().ok()?))))
 }
 
-fn refuse_bare_id(globals: &Globals, session: &Session) -> ExitCode {
+fn refuse_bare_id(session: &Session) -> Handled {
     emit_error(
-        globals.json,
         "resolution",
         "bare announcement IDs are not accepted; use <course> <id> or a URL",
         6,

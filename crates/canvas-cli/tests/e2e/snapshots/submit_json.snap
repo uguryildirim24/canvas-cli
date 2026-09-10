@@ -44,6 +44,7 @@ expression: value
       "workflow_state": "submitted"
     },
     "receipt_id": "00000000-0000-4000-8000-00000000000r",
+    "replayed": false,
     "response_kind": null,
     "server_match": null,
     "state": "submitted",

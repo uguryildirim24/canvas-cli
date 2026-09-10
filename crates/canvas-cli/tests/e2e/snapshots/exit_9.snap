@@ -29,6 +29,7 @@ expression: value
     "post_status": 500,
     "posted": null,
     "receipt_id": null,
+    "replayed": false,
     "response_kind": "canvas-error",
     "server_match": null,
     "state": "outcome_unknown",

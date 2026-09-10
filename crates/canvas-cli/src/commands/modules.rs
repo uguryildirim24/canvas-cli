@@ -11,18 +11,24 @@ use serde_json::Value;
 use super::Globals;
 use super::course::{refresh_fail, resolve_with_refresh};
 use super::course_load::outcome_freshness;
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
 use super::files::ensure_modules;
+use super::handled::Handled;
 use crate::output::{
     ModuleEntryJson, ModuleItemJson, ModulesResult, SCHEMA_MODULES, apply_two_space_padding,
     new_table,
 };
 
-/// Run `canvas modules <course> [--items]`.
+/// Run `canvas modules` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, course: String, items: bool) -> ExitCode {
+    handle(globals, course, items).await.emit(globals.json)
+}
+
+/// Run `canvas modules <course> [--items]`.
+pub async fn handle(globals: &Globals, course: String, items: bool) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     let (resolved, mut freshness, _) = match resolve_with_refresh(globals, &session, &course).await
@@ -33,7 +39,7 @@ pub async fn run(globals: &Globals, course: String, items: bool) -> ExitCode {
 
     let outcome = match ensure_modules(globals, &session, resolved.id).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&outcome));
 
@@ -46,7 +52,6 @@ pub async fn run(globals: &Globals, course: String, items: bool) -> ExitCode {
         Ok(rows) => rows,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -68,7 +73,7 @@ pub async fn run(globals: &Globals, course: String, items: bool) -> ExitCode {
         envelope.warnings.push("served stale modules cache".into());
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_table(&envelope.result, items)
     })
 }
