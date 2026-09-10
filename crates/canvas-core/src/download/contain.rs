@@ -47,8 +47,10 @@ pub fn walk_parent(root: &Dir, rel: &str) -> Result<ContainedPath, ContainError>
 
     // Inspect final entry if present (no-follow).
     match current.symlink_metadata(&name) {
-        Ok(meta) if meta.file_type().is_symlink() => return Err(ContainError::UnsafePath),
-        Ok(_) | Err(_) => {}
+        Ok(meta) if is_link(&meta) => return Err(ContainError::UnsafePath),
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
     }
 
     Ok(ContainedPath {
@@ -62,7 +64,7 @@ pub fn walk_parent(root: &Dir, rel: &str) -> Result<ContainedPath, ContainError>
 pub fn open_contained_file(contained: &ContainedPath, write: bool) -> Result<File, ContainError> {
     // Re-check immediately before open (TOCTOU: symlink swapped between inspect and open).
     match contained.parent.symlink_metadata(&contained.name) {
-        Ok(meta) if meta.file_type().is_symlink() => return Err(ContainError::UnsafePath),
+        Ok(meta) if is_link(&meta) => return Err(ContainError::UnsafePath),
         Ok(meta) if !meta.is_file() => return Err(ContainError::UnsafePath),
         Ok(_) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -79,7 +81,8 @@ pub fn open_contained_file(contained: &ContainedPath, write: bool) -> Result<Fil
         opts.write(true).create(true);
     }
     match contained.parent.open_with(&contained.name, &opts) {
-        Ok(f) => Ok(f),
+        Ok(f) if f.metadata()?.is_file() => Ok(f),
+        Ok(_) => Err(ContainError::UnsafePath),
         Err(e) if e.kind() == io::ErrorKind::NotFound && write => {
             // create_new style for first install uses separate temp; for direct open allow create.
             let mut opts = OpenOptions::new();
@@ -89,7 +92,17 @@ pub fn open_contained_file(contained: &ContainedPath, write: bool) -> Result<Fil
                 .follow(FollowSymlinks::No);
             Ok(contained.parent.open_with(&contained.name, &opts)?)
         }
-        Err(e) => Err(e.into()),
+        Err(e) => {
+            if contained
+                .parent
+                .symlink_metadata(&contained.name)
+                .is_ok_and(|m| is_link(&m))
+            {
+                Err(ContainError::UnsafePath)
+            } else {
+                Err(e.into())
+            }
+        }
     }
 }
 
@@ -99,6 +112,8 @@ pub fn create_part_file(
     final_name: &str,
     random: &str,
 ) -> Result<(File, String), ContainError> {
+    validate_name(final_name)?;
+    validate_name(random)?;
     let part_name = format!(".{final_name}.{random}.part");
     let mut opts = OpenOptions::new();
     opts.write(true)
@@ -111,23 +126,41 @@ pub fn create_part_file(
 
 /// Rename part → final within the same parent handle.
 pub fn install_rename(parent: &Dir, part_name: &str, final_name: &str) -> Result<(), ContainError> {
+    validate_name(part_name)?;
+    validate_name(final_name)?;
     // Refuse if final is currently a symlink.
     if let Ok(meta) = parent.symlink_metadata(final_name)
-        && meta.file_type().is_symlink()
+        && is_link(&meta)
     {
         return Err(ContainError::UnsafePath);
     }
     parent.rename(part_name, parent, final_name)?;
+    sync_dir(parent)?;
+    Ok(())
+}
+
+/// Persist directory entry changes where directory fsync is supported.
+pub(crate) fn sync_dir(dir: &Dir) -> Result<(), io::Error> {
+    #[cfg(unix)]
+    dir.try_clone()?.into_std_file().sync_all()?;
+    #[cfg(not(unix))]
+    let _ = dir;
     Ok(())
 }
 
 fn open_or_create_dir(parent: &Dir, name: &str) -> Result<Dir, ContainError> {
     match parent.symlink_metadata(name) {
-        Ok(meta) if meta.file_type().is_symlink() => Err(ContainError::UnsafePath),
-        Ok(meta) if meta.is_dir() => Ok(parent.open_dir_nofollow(name)?),
+        Ok(meta) if is_link(&meta) => Err(ContainError::UnsafePath),
+        Ok(meta) if meta.is_dir() => parent
+            .open_dir_nofollow(name)
+            .map_err(|_| ContainError::UnsafePath),
         Ok(_) => Err(ContainError::UnsafePath),
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            parent.create_dir(name)?;
+            match parent.create_dir(name) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e.into()),
+            }
             // Re-open nofollow; if a symlink appeared, fail.
             match parent.open_dir_nofollow(name) {
                 Ok(d) => Ok(d),
@@ -138,8 +171,26 @@ fn open_or_create_dir(parent: &Dir, name: &str) -> Result<Dir, ContainError> {
     }
 }
 
+pub(crate) fn is_link(meta: &cap_std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use cap_std::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0 {
+            return true;
+        }
+    }
+    meta.file_type().is_symlink()
+}
+
+fn validate_name(name: &str) -> Result<(), ContainError> {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', ':', '\0']) {
+        return Err(ContainError::UnsafePath);
+    }
+    Ok(())
+}
+
 fn normalize_rel_components(rel: &str) -> Result<Vec<String>, ContainError> {
-    if rel.is_empty() {
+    if rel.is_empty() || rel.contains(['\\', ':', '\0']) {
         return Err(ContainError::UnsafePath);
     }
     let path = Path::new(rel);
