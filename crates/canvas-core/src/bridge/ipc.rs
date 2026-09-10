@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::bridge::note::Note;
 use crate::bridge::wire::{PageKind, Zone};
 
 /// The protocol version both ends declare on every line.
@@ -43,6 +44,16 @@ pub enum Reason {
     StaleGeneration,
     /// The request was not `bridge-ipc@1`.
     Protocol,
+    /// The note is larger than `note::MAX_NOTE_BYTES`.
+    NoteTooLarge,
+    /// A source ref is not the granted origin and not `canvas://`.
+    SourceRefRejected,
+    /// The note is empty, or carries more refs than one note may.
+    NoteRejected,
+    /// The target is outside the granted origin, so the tab is not sent there.
+    OriginMismatch,
+    /// The companion did not acknowledge the navigation in time.
+    NavigationTimeout,
 }
 
 impl Reason {
@@ -59,6 +70,11 @@ impl Reason {
             Self::BridgeUnavailable => "bridge_unavailable",
             Self::StaleGeneration => "stale_generation",
             Self::Protocol => "protocol",
+            Self::NoteTooLarge => "note_too_large",
+            Self::SourceRefRejected => "source_ref_rejected",
+            Self::NoteRejected => "note_rejected",
+            Self::OriginMismatch => "origin_mismatch",
+            Self::NavigationTimeout => "navigation_timeout",
         }
     }
 
@@ -77,6 +93,11 @@ impl Reason {
                 | Self::BridgeUnavailable
                 | Self::StaleGeneration
                 | Self::Protocol
+                | Self::NoteTooLarge
+                | Self::SourceRefRejected
+                | Self::NoteRejected
+                | Self::OriginMismatch
+                | Self::NavigationTimeout
         )
     }
 }
@@ -178,6 +199,40 @@ pub enum Op {
         #[serde(default)]
         consumer: Option<String>,
     },
+    /// Hold one inert note for the attachment and show it in the panel.
+    ///
+    /// `generation` is the navigation generation the note was written
+    /// against. A note for a page the person has already left is refused, so
+    /// the panel never shows a note beside the wrong document.
+    ///
+    /// A note approves nothing. There is deliberately no approval operation
+    /// on this protocol at all: the only path to `plan::approve` with channel
+    /// `panel` runs from the extension over native messaging (REPORT §3.5).
+    #[serde(rename = "note")]
+    Note {
+        #[serde(default)]
+        attachment_id: Option<String>,
+        #[serde(default)]
+        consumer: Option<String>,
+        generation: u64,
+        text: String,
+        #[serde(default)]
+        source_refs: Vec<String>,
+    },
+    /// Ask the companion to navigate the attached tab inside its origin.
+    ///
+    /// The caller resolved `url` through the ordinary `open` resolver, so it
+    /// is already a canonical Canvas URL; the broker checks the granted
+    /// origin again before it asks the browser for anything.
+    #[serde(rename = "follow")]
+    Follow {
+        #[serde(default)]
+        attachment_id: Option<String>,
+        #[serde(default)]
+        consumer: Option<String>,
+        generation: u64,
+        url: String,
+    },
     /// Let go of the identity so `identity remove` can take the exclusive
     /// lock, then exit.
     #[serde(rename = "release")]
@@ -226,6 +281,14 @@ pub enum Body {
     Context(Box<Context>),
     /// `detach`.
     Detached { detached: bool },
+    /// `note`: the note is held and the panel was told about it.
+    Noted { note: Box<Note> },
+    /// `follow`: the companion accepted the navigation.
+    ///
+    /// This is the **dispatch acknowledgement** and nothing more. Whether the
+    /// page loaded is a later state, which arrives on the bundle's
+    /// `follow` section (REPORT §3.2, "report loaded/failed separately").
+    Followed { follow: Box<FollowStatus> },
     /// `release`.
     Released { released: bool },
     /// Any operation that could not be served.
@@ -280,6 +343,63 @@ pub struct Context {
     pub truncated: bool,
     /// Why `selection` and `text` are absent, when they are.
     pub content_reason: Option<Reason>,
+    /// The last navigation this consumer's `context.follow` asked for, with
+    /// the load outcome as it stands now. `null` when none was asked for.
+    pub follow: Option<FollowStatus>,
+    /// The notes held for this attachment, oldest first.
+    pub notes: Vec<Note>,
+}
+
+/// How a navigation ended, once the browser knows.
+///
+/// Dispatch and load are different facts and this enum is only the second of
+/// them: `Unknown` is the honest answer while the tab is still going, and it
+/// stays the answer if the companion never says otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadOutcome {
+    /// The tab committed the navigation and finished loading.
+    Loaded,
+    /// The tab did not get there.
+    Failed,
+    /// Still going, or the companion never reported it.
+    Unknown,
+}
+
+impl LoadOutcome {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Loaded => "loaded",
+            Self::Failed => "failed",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// One `context.follow`, from dispatch to load.
+///
+/// `dispatched` says the companion acknowledged the navigation; `load` says
+/// what became of it. They are separate fields because they are separate
+/// facts, and the second one is not known when the first one is answered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FollowStatus {
+    /// Correlates the acknowledgement with the later load outcome.
+    pub request_id: String,
+    /// The canonical Canvas URL the tab was sent to.
+    pub url: String,
+    /// The companion accepted the navigation.
+    pub dispatched: bool,
+    /// When the acknowledgement arrived.
+    pub dispatched_at: String,
+    /// How long the acknowledgement took, in milliseconds.
+    pub dispatch_ms: u64,
+    /// The navigation generation the request was bound to.
+    pub generation: u64,
+    /// What became of the navigation.
+    pub load: LoadOutcome,
+    /// When the load outcome was reported, when it was.
+    pub load_at: Option<String>,
 }
 
 /// A browser account that matched the CLI identity's user id.
