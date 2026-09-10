@@ -457,6 +457,13 @@ pub struct SubmitResult {
     pub outcome: String,
     pub state: String,
     pub journal_id: String,
+    /// True when this envelope reports a journal that already existed.
+    ///
+    /// `submission.execute` on a plan that is already executed returns the
+    /// linked journal rather than a second one (SPEC §19 item 17). The human
+    /// `submit` never reaches that path, so it always reports `false`.
+    #[serde(default)]
+    pub replayed: bool,
     #[serde(default)]
     pub receipt_id: Option<String>,
     #[serde(default)]
@@ -690,7 +697,7 @@ pub struct DownloadResult {
 }
 
 /// One frozen upload on a `plan@1` document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanFileJson {
     pub name: String,
     pub size: u64,
@@ -701,7 +708,7 @@ pub struct PlanFileJson {
 ///
 /// The digests only. `plan@1` never carries the outbound bytes: `sent_sha256`
 /// is what the approval binds, and §12.2 step 8 verifies it from the stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanTextJson {
     pub input_sha256: String,
     pub transform: String,
@@ -709,7 +716,7 @@ pub struct PlanTextJson {
 }
 
 /// The approval audit on a `plan@1` document; `null` before approval.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanApprovalJson {
     pub channel: String,
     pub at: String,
@@ -718,7 +725,7 @@ pub struct PlanApprovalJson {
 }
 
 /// A frozen plan (REPORT §3.5).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanJson {
     pub plan_id: String,
     pub state: String,
@@ -744,7 +751,7 @@ pub struct PlanJson {
 }
 
 /// `plan@1` result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanResult {
     pub plan: PlanJson,
 }

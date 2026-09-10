@@ -29,6 +29,7 @@ expression: snapshot
     "post_status": 400,
     "posted": null,
     "receipt_id": null,
+    "replayed": false,
     "response_kind": "canvas-error",
     "server_match": null,
     "state": "outcome_unknown",
