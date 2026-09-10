@@ -129,6 +129,20 @@ impl IdentityKey {
         Self(key)
     }
 
+    /// Parse a filesystem-safe identity key operand (for `identity remove`).
+    pub fn parse(raw: &str) -> Result<Self, IdentityError> {
+        if raw.is_empty()
+            || !raw
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+        {
+            return Err(IdentityError::Mismatch {
+                reason: "unsafe identity key".into(),
+            });
+        }
+        Ok(Self(raw.to_owned()))
+    }
+
     /// Borrow the key string.
     #[must_use]
     pub fn as_str(&self) -> &str {
