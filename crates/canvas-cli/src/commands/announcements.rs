@@ -88,7 +88,9 @@ pub async fn run(
     };
     freshness.push(outcome_freshness(&batch.outcome));
 
-    let scope = context_window.scope_key().to_owned();
+    // A wider cached window can serve a narrower request (§10), so the rows
+    // come from the scope of the row that answered, not from the request.
+    let scope = batch.outcome.freshness.scope.clone();
     let rows = match session
         .open
         .store
@@ -108,9 +110,13 @@ pub async fn run(
         }
     };
 
+    let start = window.start_timestamp();
+    let end = window.end_timestamp();
     let mut items: Vec<AnnouncementJson> = rows
         .iter()
         .filter(|row| only_course.is_none_or(|id| row.course_id == Some(id)))
+        // Keep the answer inside the window the command asked for.
+        .filter(|row| row.posted_at.is_none_or(|at| at >= start && at < end))
         .filter(|row| cutoff.is_none_or(|at| row.posted_at.is_none_or(|posted| posted >= at)))
         .map(|row| row.to_json(&zone))
         .collect();

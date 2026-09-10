@@ -77,6 +77,24 @@ impl Fixture {
         value
     }
 
+    fn seed_assignment(&self) {
+        let paths = Paths::for_identity(self.dir.path().join("data"), &self.doc.key);
+        let open = OpenIdentity::open(&paths, &self.doc).unwrap();
+        open.store
+            .call_blocking(|conns| {
+                conns.cache.execute(
+                    "INSERT INTO assignments
+                         (id, course_id, name, due_at, points_possible, html_url,
+                          submitted, graded, missing)
+                     VALUES (500, 1, 'Problem Set 2', '2026-09-10T03:59:00Z', 10,
+                             'https://canvas.test/courses/1/assignments/500', 0, 0, 0)",
+                    [],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
     /// Human output plus stderr, with the expected exit code.
     async fn human(&self, args: &[&str], code: i32) -> (String, String) {
         let mut cmd = self.command();
@@ -260,6 +278,27 @@ async fn announcements_isolate_a_denied_course_and_filter_unread_locally() {
     let (stdout, stderr) = f.human(&["announcements", "--offline"], 12).await;
     assert!(stderr.contains("HTTP 403"), "stderr={stderr}");
     insta::assert_snapshot!("announcements_human", stdout);
+
+    // Nothing is marked read in v1: every request was a read (§12.6).
+    let seen = server.received_requests().await.unwrap();
+    assert!(
+        seen.iter().all(|r| r.method == wiremock::http::Method::GET),
+        "a write reached Canvas"
+    );
+
+    // `--since` takes a duration.
+    f.run(&["announcements", "--since", "soon"], 2).await;
+    f.run(&["announcements", "--since", "0d"], 2).await;
+
+    // A shorter `--since` filters the same cached window to the exact instant.
+    let recent = f.run(&["announcements", "--since", "2d"], 12).await;
+    let items = recent["result"]["announcements"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "only the newer announcement is inside 2d");
+    assert_eq!(items[0]["id"], "9001");
+    assert_eq!(
+        recent["result"]["window"],
+        json!({"start":"2026-09-07","end":"2026-09-09"})
+    );
 }
 
 #[tokio::test]
@@ -352,9 +391,10 @@ fn planner_items() -> Value {
     ])
 }
 
-/// Canvas answers with the events in the requested window. The March event
-/// is here on purpose: it is the 23-hour all-day span across the spring DST
-/// change that §12.5 asks the ICS rules to cover.
+/// Canvas answers with the events in the requested window. The November
+/// event is here on purpose: it is the all-day span across a DST change that
+/// §12.5 asks the ICS rules to cover, and the tests ask for a 60-day window
+/// so it falls inside.
 fn calendar_events(_codes: &str) -> Value {
     json!([
         {
@@ -377,18 +417,22 @@ fn calendar_events(_codes: &str) -> Value {
         },
         {
             "id": 702,
-            "title": "Spring break starts",
+            "title": "Reading period starts",
             "context_code": "course_1",
-            "start_at": "2026-03-08T05:00:00Z",
-            "end_at": "2026-03-09T04:00:00Z",
+            // 25 hours across the autumn DST change; still one civil day.
+            "start_at": "2026-11-01T04:00:00Z",
+            "end_at": "2026-11-02T05:00:00Z",
             "all_day": true,
-            "all_day_date": "2026-03-08",
+            "all_day_date": "2026-11-01",
         },
     ])
 }
 
 async fn calendar_fixture(server: &MockServer) -> Fixture {
     let f = Fixture::new(&server.uri());
+    // The planner carries no points; they come from the cached assignment,
+    // which is what feeds the ICS DESCRIPTION (§12.5).
+    f.seed_assignment();
     mount(server, "/api/v1/courses", courses()).await;
     mount(server, "/api/v1/planner/items", planner_items()).await;
     Mock::given(method("GET"))
@@ -404,7 +448,7 @@ async fn calendar_deduplicates_events_and_keeps_the_event_fields() {
     let server = MockServer::start().await;
     let f = calendar_fixture(&server).await;
 
-    let out = f.run(&["calendar"], 0).await;
+    let out = f.run(&["calendar", "--days", "60"], 0).await;
     // courses, planner, one batch of three contexts.
     assert_eq!(out["requests"]["api"], 3);
     let items = out["result"]["items"].as_array().unwrap();
@@ -440,7 +484,7 @@ async fn calendar_deduplicates_events_and_keeps_the_event_fields() {
         warnings.iter().any(|w| w
             .as_str()
             .unwrap()
-            .contains("Spring break starts: all-day event with a longer span")),
+            .contains("Reading period starts: all-day event with a longer span")),
         "{warnings:#?}"
     );
     assert!(
@@ -451,11 +495,16 @@ async fn calendar_deduplicates_events_and_keeps_the_event_fields() {
     );
     insta::assert_json_snapshot!("calendar_json", normalized(out));
 
-    let (stdout, _) = f.human(&["calendar", "--offline"], 0).await;
+    let (stdout, _) = f.human(&["calendar", "--days", "60", "--offline"], 0).await;
     insta::assert_snapshot!("calendar_human", stdout);
 
     // `--course` keeps the course's own items.
-    let one_course = f.run(&["calendar", "--course", "1", "--offline"], 0).await;
+    let one_course = f
+        .run(
+            &["calendar", "--days", "60", "--course", "1", "--offline"],
+            0,
+        )
+        .await;
     assert!(
         one_course["result"]["items"]
             .as_array()
@@ -469,11 +518,20 @@ async fn calendar_deduplicates_events_and_keeps_the_event_fields() {
 async fn ics_streams_raw_text_that_follows_rfc_5545() {
     let server = MockServer::start().await;
     let f = calendar_fixture(&server).await;
-    f.run(&["calendar"], 0).await;
+    f.run(&["calendar", "--days", "60"], 0).await;
 
     let (ics, stderr) = f
         .human(
-            &["calendar", "--offline", "--ics", "-", "--alarm", "24h"],
+            &[
+                "calendar",
+                "--days",
+                "60",
+                "--offline",
+                "--ics",
+                "-",
+                "--alarm",
+                "24h",
+            ],
             0,
         )
         .await;
@@ -500,7 +558,7 @@ async fn ics_streams_raw_text_that_follows_rfc_5545() {
     assert!(ics.contains("DTSTART:20260910T150000Z\r\n"));
     assert!(ics.contains("DTEND:20260910T160000Z\r\n"));
     assert!(ics.contains("DTSTART;VALUE=DATE:20260914\r\n"));
-    assert!(ics.contains("DTSTART;VALUE=DATE:20260308\r\n"));
+    assert!(ics.contains("DTSTART;VALUE=DATE:20261101\r\n"));
     assert_eq!(
         ics.matches("DTEND").count(),
         1,
@@ -513,16 +571,32 @@ async fn ics_streams_raw_text_that_follows_rfc_5545() {
     assert!(ics.contains("TRIGGER:-PT24H\r\n"));
     assert!(ics.contains("DTSTAMP:20260909T170512Z\r\n"));
     assert_eq!(ics.matches("BEGIN:VEVENT").count(), 4);
+    // §12.5: DESCRIPTION carries points and status for a deadline.
+    assert!(ics.contains("DESCRIPTION:10 points · unknown\r\n"), "{ics}");
+    assert_eq!(
+        ics.matches("DESCRIPTION:").count(),
+        2,
+        "one alarm, one deadline"
+    );
 
     // Without `--alarm` there is no VALARM at all.
-    let (plain, _) = f.human(&["calendar", "--offline", "--ics", "-"], 0).await;
+    let (plain, _) = f
+        .human(&["calendar", "--days", "60", "--offline", "--ics", "-"], 0)
+        .await;
     assert!(!plain.contains("VALARM"));
 
     // `--ics PATH` writes the same text and keeps the envelope.
     let out = f.dir.path().join("canvas.ics");
     let written = f
         .run(
-            &["calendar", "--offline", "--ics", out.to_str().unwrap()],
+            &[
+                "calendar",
+                "--days",
+                "60",
+                "--offline",
+                "--ics",
+                out.to_str().unwrap(),
+            ],
             0,
         )
         .await;
@@ -530,8 +604,11 @@ async fn ics_streams_raw_text_that_follows_rfc_5545() {
     assert_eq!(std::fs::read_to_string(&out).unwrap(), plain);
 
     // An unparseable alarm is a usage error (§14).
-    f.run(&["calendar", "--offline", "--alarm", "soon"], 2)
-        .await;
+    f.run(
+        &["calendar", "--days", "60", "--offline", "--alarm", "soon"],
+        2,
+    )
+    .await;
 }
 
 #[tokio::test]
