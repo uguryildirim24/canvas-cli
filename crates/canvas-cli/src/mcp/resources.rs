@@ -47,13 +47,13 @@ impl Binding {
         format!("{SCHEME}{}/{}/{}", self.key, self.generation, path)
     }
 
-    /// Whether this instance serves the resource a URI names.
+    /// What a URI names, when this instance serves it.
     ///
-    /// A subscription filter is narrowed with this, so a host never holds a
-    /// subscription to a name that can never be invalidated.
+    /// A foreign identity key, another generation, and an unknown path all
+    /// address nothing here, so each reads as `None` rather than an error.
     #[must_use]
-    pub fn serves(&self, uri: &str) -> bool {
-        self.path_of(uri).and_then(target_of).is_some()
+    pub fn target(&self, uri: &str) -> Option<Target> {
+        self.path_of(uri).and_then(target_of)
     }
 
     /// The path part of a URI, if it belongs to this binding.
@@ -148,7 +148,7 @@ pub async fn read(
     binding: &Binding,
     uri: &str,
 ) -> Result<ReadResourceResult, ErrorData> {
-    let Some(target) = binding.path_of(uri).and_then(target_of) else {
+    let Some(target) = binding.target(uri) else {
         return Err(ErrorData::resource_not_found(
             "no such resource",
             Some(json!({ "uri": uri })),
