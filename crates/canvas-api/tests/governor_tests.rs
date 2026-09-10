@@ -259,3 +259,117 @@ async fn retry_delays_without_retry_after_are_powers_of_two() {
     let d3 = retry_delays(3, None, false).await;
     assert_eq!(d3, Duration::from_secs(8));
 }
+
+#[tokio::test(start_paused = true)]
+async fn older_low_sample_keeps_watermark_and_rejects_middle_high() {
+    let gov = Governor::new(gov_config());
+    let first = gov.admit(Lane::Api, "r").await;
+    let middle = gov.admit(Lane::Api, "r").await;
+    let last = gov.admit(Lane::Api, "r").await;
+    gov.observe(last.issue(), 100.0, Some(1.0));
+    gov.observe(first.issue(), 80.0, Some(1.0));
+    gov.observe(middle.issue(), 500.0, Some(1.0));
+    assert_eq!(gov.watermark(), last.issue());
+    assert!((gov.estimate() - 80.0).abs() < 1e-6);
+    assert_eq!(gov.telemetry().cost, Some(3.0));
+}
+
+#[tokio::test(start_paused = true)]
+async fn cooldown_drains_existing_requests_and_spaces_queued_probes() {
+    let gov = Governor::new(gov_config());
+    let old = gov.admit(Lane::Api, "r").await;
+    let low = gov.admit(Lane::Api, "r").await;
+    gov.observe(low.issue(), 100.0, Some(1.0));
+    drop(low);
+    let mut first = Box::pin(gov.admit(Lane::Api, "r"));
+    assert!(futures_util::poll!(&mut first).is_pending());
+    advance(Duration::from_secs(5)).await;
+    assert!(
+        futures_util::poll!(&mut first).is_pending(),
+        "old request still running"
+    );
+    drop(old);
+    assert!(
+        futures_util::poll!(&mut first).is_pending(),
+        "probe timer starts after draining"
+    );
+    advance(Duration::from_secs(5)).await;
+    let first = first.await;
+    assert_eq!(gov.in_flight(), 1);
+    let mut second = Box::pin(gov.admit(Lane::Storage, "s"));
+    assert!(futures_util::poll!(&mut second).is_pending());
+    advance(Duration::from_secs(5)).await;
+    assert!(futures_util::poll!(&mut second).is_pending());
+    gov.observe(first.issue(), 90.0, Some(1.0));
+    drop(first);
+    assert!(futures_util::poll!(&mut second).is_pending());
+    advance(Duration::from_secs(4)).await;
+    assert!(futures_util::poll!(&mut second).is_pending());
+    advance(Duration::from_secs(1)).await;
+    let _second = second.await;
+    assert_eq!(gov.in_flight(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn probes_bootstrap_refill_and_recover_under_continuous_cost_one() {
+    let gov = Governor::new(gov_config());
+    let first = gov.admit(Lane::Api, "r").await;
+    gov.observe(first.issue(), 100.0, Some(1.0));
+    drop(first);
+    let mut remaining = 100.0;
+    let mut last = Instant::now();
+    for n in 0..5 {
+        let probe = gov.admit(Lane::Api, "r").await;
+        let elapsed = last.elapsed();
+        if n == 0 {
+            assert_eq!(elapsed, Duration::from_secs(5));
+        }
+        remaining += elapsed.as_secs_f64() * 10.0 - 1.0;
+        gov.observe(probe.issue(), remaining, Some(1.0));
+        drop(probe);
+        last = Instant::now();
+    }
+    assert!(
+        remaining >= 300.0,
+        "continuous requests must escape cooldown: {remaining}"
+    );
+    let a = gov.admit(Lane::Api, "r").await;
+    let b = gov.admit(Lane::Api, "r").await;
+    assert_eq!(last.elapsed(), Duration::ZERO);
+    assert_eq!(gov.in_flight(), 2);
+    drop((a, b));
+}
+
+#[tokio::test(start_paused = true)]
+async fn silence_reset_starts_a_new_epoch_and_does_not_repeat_per_request() {
+    let gov = Governor::new(gov_config());
+    let p = gov.admit(Lane::Api, "r").await;
+    gov.observe(p.issue(), 200.0, None);
+    drop(p);
+    advance(Duration::from_secs(60)).await;
+    drop(gov.admit(Lane::Api, "r").await);
+    drop(gov.admit(Lane::Api, "r").await);
+    assert!((gov.estimate() - 698.0).abs() < 1e-6);
+    assert_eq!(gov.watermark(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn silence_cannot_reset_on_admission_with_existing_in_flight() {
+    let gov = Governor::new(gov_config());
+    let p = gov.admit(Lane::Api, "r").await;
+    gov.observe(p.issue(), 200.0, None);
+    advance(Duration::from_secs(60)).await;
+    let _q = gov.admit(Lane::Storage, "s").await;
+    assert!((gov.estimate() - 199.0).abs() < 1e-6);
+    drop(p);
+}
+
+#[tokio::test(start_paused = true)]
+async fn invalid_headers_do_not_poison_estimate_or_telemetry() {
+    let gov = Governor::new(gov_config());
+    let p = gov.admit(Lane::Api, "r").await;
+    gov.observe(p.issue(), f64::NAN, Some(f64::INFINITY));
+    gov.observe_cost_only(p.issue(), -5.0);
+    assert_eq!(gov.telemetry().cost, None);
+    assert!((gov.estimate() - 699.0).abs() < 1e-6);
+}
