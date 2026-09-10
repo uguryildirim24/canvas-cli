@@ -1,0 +1,57 @@
+---
+source: crates/canvas-cli/tests/download.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "KEY",
+    "origin": "http://example.test",
+    "user_id": "12345"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "courses": [
+      {
+        "course_code": "CS-101",
+        "course_id": "101",
+        "files": [
+          {
+            "action": "downloaded",
+            "id": "50",
+            "path": "CS-101-101/modules/01-Week 1/slides",
+            "size": 4
+          }
+        ]
+      }
+    ],
+    "dest": "/tmp/out",
+    "dry_run": false,
+    "totals": {
+      "bytes": 4,
+      "downloaded": 1,
+      "failed": 0,
+      "locked": 0,
+      "modified": 0,
+      "moved": 0,
+      "planned": 0,
+      "skipped": 0,
+      "skipped_external": 0,
+      "unavailable": 0,
+      "unmanaged": 0,
+      "unresolved_move": 0,
+      "unsafe_path": 0
+    }
+  },
+  "schema": "canvas-cli/download@1",
+  "warnings": []
+}

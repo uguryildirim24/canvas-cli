@@ -384,6 +384,53 @@ pub struct ModulesResult {
     pub modules: Vec<ModuleEntryJson>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DownloadFileJson {
+    pub id: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_path: Option<String>,
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DownloadCourseJson {
+    pub course_id: String,
+    pub course_code: String,
+    pub files: Vec<DownloadFileJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DownloadTotalsJson {
+    pub planned: u64,
+    pub downloaded: u64,
+    pub moved: u64,
+    pub skipped: u64,
+    pub unmanaged: u64,
+    pub modified: u64,
+    pub locked: u64,
+    pub unavailable: u64,
+    pub skipped_external: u64,
+    pub unsafe_path: u64,
+    pub unresolved_move: u64,
+    pub failed: u64,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DownloadResult {
+    pub dest: String,
+    pub dry_run: bool,
+    pub courses: Vec<DownloadCourseJson>,
+    pub totals: DownloadTotalsJson,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,6 +517,11 @@ mod tests {
         let modules: ModulesResult =
             serde_json::from_str(include_str!("schemas/modules.json")).unwrap();
         assert_eq!(modules.course_id, "101");
+
+        let download: DownloadResult =
+            serde_json::from_str(include_str!("schemas/download.json")).unwrap();
+        assert!(!download.dest.is_empty());
+        assert_eq!(download.courses[0].files[0].action, "downloaded");
     }
 
     #[test]
