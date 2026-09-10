@@ -81,6 +81,30 @@ fn a_rerun_over_an_existing_directory_matches_a_fresh_one() {
     assert_eq!(read_tree(reused.path()), read_tree(fresh.path()));
 }
 
+/// `--out` is an arbitrary path, so a run clears its own assets and nothing
+/// else: pointed at a populated directory it must not take a user's files.
+#[test]
+fn a_rerun_leaves_files_it_did_not_write_alone() {
+    let dir = TempDir::new().unwrap();
+    generate(dir.path());
+    let strangers = [
+        dir.path().join("man").join("gzip.1.gz"),
+        dir.path().join("completions").join("git"),
+    ];
+    for path in &strangers {
+        std::fs::write(path, b"not ours").unwrap();
+    }
+    generate(dir.path());
+    for path in &strangers {
+        assert_eq!(
+            std::fs::read(path).ok().as_deref(),
+            Some(b"not ours".as_slice()),
+            "{} was deleted or rewritten",
+            path.display()
+        );
+    }
+}
+
 #[test]
 fn assets_cover_every_command_and_every_shell() {
     let dir = TempDir::new().unwrap();

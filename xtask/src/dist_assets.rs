@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use canvas_cli::dist;
+use clap::ValueEnum;
+use clap_complete::Shell;
 
 /// Subdirectory holding the section-1 man pages.
 pub const MAN_DIR: &str = "man";
@@ -30,13 +32,13 @@ pub struct Assets {
 
 /// Generate every distribution asset under `out`.
 ///
-/// Existing `man/` and `completions/` directories are replaced, so a rerun
-/// never leaves a stale page behind from a command that was removed.
+/// A rerun never leaves a stale page behind from a command that was removed:
+/// the assets a previous run wrote are deleted first.
 pub fn generate(out: &Path) -> Result<Assets> {
     let man_dir = out.join(MAN_DIR);
     let completions_dir = out.join(COMPLETIONS_DIR);
-    reset_dir(&man_dir)?;
-    reset_dir(&completions_dir)?;
+    reset_dir(&man_dir, is_man_page)?;
+    reset_dir(&completions_dir, is_completion_script)?;
 
     let mut assets = Assets::default();
     // `build()` resolves the display names man page filenames come from
@@ -86,12 +88,39 @@ fn write_man_pages(cmd: &clap::Command, dir: &Path, written: &mut Vec<PathBuf>) 
     Ok(())
 }
 
-fn reset_dir(dir: &Path) -> Result<()> {
-    if dir.exists() {
-        fs::remove_dir_all(dir).with_context(|| format!("clear {}", dir.display()))?;
-    }
+/// Create `dir` and delete the assets a previous run left in it.
+///
+/// Only the files this task generates are removed. `--out` is an arbitrary
+/// path from the command line, and clearing the whole directory would make
+/// `--out ~/.local/share` delete a user's `man/`.
+fn reset_dir(dir: &Path, is_asset: fn(&Path) -> bool) -> Result<()> {
     fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+        let path = entry
+            .with_context(|| format!("read {}", dir.display()))?
+            .path();
+        if path.is_file() && is_asset(&path) {
+            fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+        }
+    }
     Ok(())
+}
+
+/// A section-1 page, which is every page [`write_man_pages`] writes.
+fn is_man_page(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "1")
+}
+
+/// A completion script for any shell `clap_complete` knows, not only the
+/// shells [`dist::SHELLS`] currently lists: dropping a shell has to clear its
+/// script too.
+fn is_completion_script(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    Shell::value_variants()
+        .iter()
+        .any(|&shell| dist::completion_file_name(shell) == name)
 }
 
 /// Install lines the generated Homebrew formula is missing.
