@@ -320,6 +320,30 @@ fn retention_expires_rows_without_reusing_their_cursors() {
     assert_eq!(checks.3, CursorCheck::Replay);
 }
 
+/// A consumer position moves forward on its own, and only a resync replaces
+/// it: a cursor the log cannot replay is not a position at all.
+#[test]
+fn a_consumer_position_only_moves_forward_until_a_resync_replaces_it() {
+    let scratch = Scratch::new("events-consumer-cursor");
+    let (_paths, store) = open(&scratch);
+    store
+        .call_blocking(|conns| {
+            assert_eq!(super::consumer_cursor(&conns.state, "notify")?, 0);
+            super::set_consumer_cursor(&mut conns.state, "notify", 7)?;
+            assert_eq!(super::consumer_cursor(&conns.state, "notify")?, 7);
+            // Backwards is refused: an event already reported stays reported.
+            super::set_consumer_cursor(&mut conns.state, "notify", 3)?;
+            assert_eq!(super::consumer_cursor(&conns.state, "notify")?, 7);
+            // A resync replaces it, so the same gap is reported once.
+            super::reset_consumer_cursor(&mut conns.state, "notify", 3)?;
+            assert_eq!(super::consumer_cursor(&conns.state, "notify")?, 3);
+            // Consumers are independent.
+            assert_eq!(super::consumer_cursor(&conns.state, "mcp:host")?, 0);
+            Ok(())
+        })
+        .unwrap();
+}
+
 #[test]
 fn a_cursor_from_another_generation_asks_for_a_resync() {
     let scratch = Scratch::new("events-generation");

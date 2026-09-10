@@ -18,8 +18,8 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use canvas_core::events::{
-    CursorCheck, EventKind, EventRecord, check_cursor, consumer_cursor, read_after,
-    set_consumer_cursor,
+    CursorCheck, EventKind, EventRecord, check_cursor, consumer_cursor, high_water, read_after,
+    reset_consumer_cursor, set_consumer_cursor,
 };
 
 use super::Globals;
@@ -75,6 +75,19 @@ pub async fn run(globals: &Globals, since: Option<String>, stdout: bool) -> Exit
                 out,
                 "resync_required: cursor {start} can no longer be replayed"
             );
+            // A stored position the log cannot replay is not a position: it
+            // expired, or it belongs to another identity generation. It is
+            // replaced by the log's high water mark, so the gap is reported
+            // once and the next run posts again. An explicit `--since` is the
+            // caller's own position, and it never touches the stored one.
+            if since.is_none()
+                && let Err(e) = session.open.store.call_blocking(|conns| {
+                    let mark = high_water(&conns.state)?;
+                    reset_consumer_cursor(&mut conns.state, CONSUMER, mark)
+                })
+            {
+                return local_error(globals, &e.to_string());
+            }
             return ExitCode::SUCCESS;
         }
         Ok(CursorCheck::Replay) => {}

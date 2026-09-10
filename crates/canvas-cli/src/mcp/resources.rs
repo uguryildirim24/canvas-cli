@@ -47,6 +47,15 @@ impl Binding {
         format!("{SCHEME}{}/{}/{}", self.key, self.generation, path)
     }
 
+    /// Whether this instance serves the resource a URI names.
+    ///
+    /// A subscription filter is narrowed with this, so a host never holds a
+    /// subscription to a name that can never be invalidated.
+    #[must_use]
+    pub fn serves(&self, uri: &str) -> bool {
+        self.path_of(uri).and_then(target_of).is_some()
+    }
+
     /// The path part of a URI, if it belongs to this binding.
     ///
     /// A different key or a different generation is not an error to explain;

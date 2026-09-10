@@ -82,6 +82,9 @@ impl Fixture {
             .env("CANVAS_TOKEN", TOKEN)
             // `open` is the one command that would spawn a browser window.
             .env("CANVAS_TEST_NO_LAUNCH", "1")
+            // A subscription re-reads the event log every two seconds in
+            // production. Tests wait for notifications, so they shorten it.
+            .env("CANVAS_TEST_MCP_POLL_MS", "100")
             .env_remove("CANVAS_HOST")
             .env_remove("CANVAS_PROFILE");
         command
@@ -132,11 +135,84 @@ impl Fixture {
             stdin: Some(stdin),
             stdout,
             next_id: 1,
+            pending: Vec::new(),
         }
     }
 
     fn identity_json(&self) -> std::path::PathBuf {
         Paths::for_identity(self.dir.path().join("data"), &self.doc.key).identity_json()
+    }
+
+    /// Run one job against `state.sqlite`.
+    fn state<T, F>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut canvas_core::store::StoreConns) -> Result<T, canvas_core::store::DbError>
+            + Send
+            + 'static,
+        T: Send + 'static,
+    {
+        let paths = Paths::for_identity(self.dir.path().join("data"), &self.doc.key);
+        let open = OpenIdentity::open(&paths, &self.doc).unwrap();
+        open.store.call_blocking(f).unwrap()
+    }
+
+    /// Append one event to the log, as a completed observation would.
+    ///
+    /// The producers live in `canvas-core::events` and have their own tests;
+    /// what a subscription must do with a row is what this file measures, so
+    /// the row is written directly.
+    fn event(&self, kind: &str, dataset: &str, scope: &str, entity: &str) -> i64 {
+        let key = self.doc.key.to_string();
+        let generation = self.doc.generation.to_string();
+        let (kind, dataset, scope, entity) = (
+            kind.to_owned(),
+            dataset.to_owned(),
+            scope.to_owned(),
+            entity.to_owned(),
+        );
+        self.state(move |conns| {
+            conns.state.execute(
+                "INSERT INTO events (
+                     observation_id, kind, observed_at, identity_key, generation,
+                     dataset, scope, entity_key, [before], [after]
+                 ) VALUES (?1, ?2, '2026-09-09T17:05:12Z', ?3, ?4, ?5, ?6, ?7, '{}', '{}')",
+                rusqlite::params![
+                    format!("{dataset}:{scope}:1:2026-09-09T17:05:12Z"),
+                    kind,
+                    key,
+                    generation,
+                    dataset,
+                    scope,
+                    entity,
+                ],
+            )?;
+            Ok(conns.state.last_insert_rowid())
+        })
+    }
+
+    /// Wait until one consumer's durable position reaches `want`.
+    fn wait_cursor(&self, consumer: &str, want: i64) {
+        for _ in 0..100 {
+            if self.cursor_of(consumer) == want {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert_eq!(self.cursor_of(consumer), want, "the cursor never moved");
+    }
+
+    /// The durable position of one consumer.
+    fn cursor_of(&self, consumer: &str) -> i64 {
+        let consumer = consumer.to_owned();
+        self.state(move |conns| canvas_core::events::consumer_cursor(&conns.state, &consumer))
+    }
+
+    /// Put one consumer's position where the log cannot replay it.
+    fn set_cursor(&self, consumer: &str, cursor: i64) {
+        let consumer = consumer.to_owned();
+        self.state(move |conns| {
+            canvas_core::events::set_consumer_cursor(&mut conns.state, &consumer, cursor)
+        });
     }
 }
 
@@ -146,9 +222,134 @@ struct Mcp {
     stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
+    /// Notifications read while waiting for something else.
+    pending: Vec<Value>,
 }
 
 impl Mcp {
+    /// Send a request without waiting for its response.
+    ///
+    /// `subscriptions/listen` answers only when the stream ends, so a test
+    /// that reads notifications cannot wait for the response first.
+    fn send(&mut self, method: &str, mut params: Value) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        params["_meta"] = json!({
+            "io.modelcontextprotocol/protocolVersion": PRIMARY,
+            "io.modelcontextprotocol/clientInfo": { "name": "test-host", "version": "0" },
+            "io.modelcontextprotocol/clientCapabilities": {},
+        });
+        let line = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+        let stdin = self.stdin.as_mut().expect("the pipe is open");
+        writeln!(stdin, "{line}").unwrap();
+        stdin.flush().unwrap();
+        id
+    }
+
+    /// Discover the server, as a 2026-07-28 host does before anything else.
+    ///
+    /// The SDK answers the first request of a connection inline, before its
+    /// service loop starts, so a connection whose first request is the
+    /// long-lived `subscriptions/listen` would answer nothing else. A host
+    /// discovers the surface first, which is also what this does.
+    fn discover(&mut self) {
+        assert!(
+            self.primary("server/discover", json!({}))["result"]["capabilities"]["resources"]["subscribe"]
+                == json!(true),
+            "the server does not advertise resource subscriptions"
+        );
+    }
+
+    /// Open a subscription that resumes from a cursor the host names.
+    fn listen_from(&mut self, subscriptions: &Value, cursor: &str) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "subscriptions/listen",
+            "params": {
+                "notifications": subscriptions,
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": PRIMARY,
+                    "io.modelcontextprotocol/clientInfo": { "name": "test-host", "version": "0" },
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                    "dev.canvas-cli/cursor": cursor,
+                },
+            },
+        });
+        let stdin = self.stdin.as_mut().expect("the pipe is open");
+        writeln!(stdin, "{line}").unwrap();
+        stdin.flush().unwrap();
+        id
+    }
+
+    /// Read one line, whatever it is.
+    fn line(&mut self) -> Value {
+        let mut buffer = String::new();
+        let read = self.stdout.read_line(&mut buffer).unwrap();
+        assert!(read > 0, "the server closed stdout");
+        serde_json::from_str(&buffer).unwrap_or_else(|e| panic!("not JSON-RPC: {buffer:?} ({e})"))
+    }
+
+    /// Collect whatever the server has queued, keeping notifications.
+    ///
+    /// One round trip of a cheap request drains the pipe, so this always ends:
+    /// it never blocks on a notification that may never come.
+    fn drain(&mut self) {
+        let id = self.send("tools/list", json!({}));
+        loop {
+            let message = self.line();
+            if message["id"] == json!(id) {
+                return;
+            }
+            self.pending.push(message);
+        }
+    }
+
+    /// Wait until the server sends a notification of one method, and take it.
+    fn wait_for(&mut self, method: &str) -> Value {
+        for _ in 0..100 {
+            self.drain();
+            if let Some(at) = self
+                .pending
+                .iter()
+                .position(|message| message["method"] == json!(method))
+            {
+                return self.pending.remove(at);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        panic!("the server never sent {method}: {:?}", self.pending);
+    }
+
+    /// Every resource URI the server has said is updated so far, once each.
+    fn updated(&mut self) -> Vec<String> {
+        self.drain();
+        let mut uris: Vec<String> = self
+            .pending
+            .iter()
+            .filter(|message| message["method"] == json!("notifications/resources/updated"))
+            .map(|message| message["params"]["uri"].as_str().unwrap().to_owned())
+            .collect();
+        uris.sort();
+        uris.dedup();
+        uris
+    }
+
+    /// Wait until the server has named `want` distinct updated resources.
+    fn updates(&mut self, want: usize) -> Vec<String> {
+        let mut uris = Vec::new();
+        for _ in 0..100 {
+            uris = self.updated();
+            if uris.len() >= want {
+                return uris;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        panic!("only {uris:?} were invalidated, wanted {want}");
+    }
+
     /// Send a request and read its response, skipping any notification.
     fn request(&mut self, method: &str, params: &Value) -> Value {
         let id = self.next_id;
@@ -1022,6 +1223,160 @@ async fn resources_are_private_to_the_identity_generation() {
     assert_eq!(document["result"]["code"], "refused");
     assert_eq!(document["result"]["details"]["reason"], "not_attached");
     assert_eq!(context["result"]["ttlMs"], 0);
+    mcp.stop();
+}
+
+/// The consumer name a `subscriptions/listen` stream keeps its cursor under.
+const SUBSCRIBER: &str = "mcp:test-host";
+
+/// The `canvas://` prefix of the bound identity generation.
+fn prefix(f: &Fixture) -> String {
+    let doc = IdentityDocument::read(&f.identity_json()).unwrap();
+    format!("canvas://{}/{}/", doc.key.as_str(), doc.generation)
+}
+
+/// An event on a scope invalidates the resources that read that scope, and
+/// nothing else (REPORT §3.6, item 7).
+#[tokio::test]
+async fn an_event_invalidates_the_matching_resource_and_no_other() {
+    let server = MockServer::start().await;
+    let f = primed(&server).await;
+    let mut mcp = f.mcp(&["--offline"]);
+    mcp.discover();
+    let prefix = prefix(&f);
+    let todo = format!("{prefix}todo");
+    let course_1 = format!("{prefix}course/1/assignments");
+    let course_2 = format!("{prefix}course/2/assignments");
+    let receipts = format!("{prefix}receipts");
+    let foreign = "canvas://other.test-9-99999999/11111111-1111-4111-8111-111111111111/todo";
+
+    let id = mcp.send(
+        "subscriptions/listen",
+        json!({ "notifications": {
+            "resourceSubscriptions": [&todo, &course_1, &course_2, foreign],
+        }}),
+    );
+
+    // The acknowledgment names the subscription and only the URIs this
+    // instance serves: another identity addresses nothing here.
+    let ack = mcp.wait_for("notifications/subscriptions/acknowledged");
+    assert_eq!(
+        ack["params"]["notifications"]["resourceSubscriptions"],
+        json!([&todo, &course_1, &course_2]),
+        "{ack}"
+    );
+    assert_eq!(
+        ack["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"],
+        json!(id),
+        "{ack}"
+    );
+
+    // One course's assignment membership changed. The todo window reads the
+    // assignment rows the planner names, so it changed with it.
+    f.event("assignment.changed", "assignments", "course:1", "500");
+    assert_eq!(mcp.updates(2), vec![course_1.clone(), todo.clone()]);
+    let update = mcp
+        .pending
+        .iter()
+        .find(|message| message["method"] == json!("notifications/resources/updated"))
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        update["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"],
+        json!(id),
+        "{update}"
+    );
+
+    // A journal transition invalidates the receipts, which this host did not
+    // subscribe to, and an announcement has no resource at all. Neither can
+    // name anything more, and the log position still moves past both.
+    f.event(
+        "submission.state",
+        "submission_journal",
+        "assignment:500",
+        "journal-1",
+    );
+    f.event("announcement.new", "announcements", "courses", "9");
+    f.wait_cursor(SUBSCRIBER, 3);
+    let seen = mcp.updated();
+    assert_eq!(seen, vec![course_1, todo], "{seen:?}");
+    assert!(!seen.contains(&receipts), "{seen:?}");
+    assert!(!seen.contains(&course_2), "{seen:?}");
+    mcp.stop();
+}
+
+/// A cursor this log cannot replay asks the host to re-read what it holds,
+/// exactly as `watch --since` emits `resync_required` (REPORT §3.2).
+#[tokio::test]
+async fn a_cursor_the_log_cannot_replay_asks_for_a_resync() {
+    let server = MockServer::start().await;
+    let f = primed(&server).await;
+    // A position no row of this log ever issued: another identity's cursor.
+    f.set_cursor(SUBSCRIBER, 99);
+    f.event("missing.new", "missing", "self", "500");
+
+    let mut mcp = f.mcp(&["--offline"]);
+    mcp.discover();
+    let prefix = prefix(&f);
+    let todo = format!("{prefix}todo");
+    let receipts = format!("{prefix}receipts");
+    mcp.send(
+        "subscriptions/listen",
+        json!({ "notifications": { "resourceSubscriptions": [&todo, &receipts] }}),
+    );
+    mcp.wait_for("notifications/subscriptions/acknowledged");
+
+    // Everything subscribed is invalidated once, including the resource no
+    // event names: the gap is reported, never hidden, and the host rebuilds
+    // its own baseline by reading again.
+    assert_eq!(mcp.updates(2), vec![receipts, todo]);
+    // The stream then follows the log from its high water mark, so the next
+    // connection resumes instead of reporting the same gap again.
+    f.wait_cursor(SUBSCRIBER, 1);
+    mcp.stop();
+}
+
+/// A host may name the cursor it resumes from, and the replay starts there.
+#[tokio::test]
+async fn a_host_resumes_from_the_cursor_it_names() {
+    let server = MockServer::start().await;
+    let f = primed(&server).await;
+    // Two events on two scopes, so the replay window is visible.
+    assert_eq!(f.event("missing.new", "missing", "self", "500"), 1);
+    assert_eq!(
+        f.event(
+            "submission.state",
+            "submission_journal",
+            "assignment:500",
+            "journal-1"
+        ),
+        2
+    );
+    let prefix = prefix(&f);
+    let todo = format!("{prefix}todo");
+    let receipts = format!("{prefix}receipts");
+    let subscriptions = json!({ "resourceSubscriptions": [&todo, &receipts] });
+
+    // Without a cursor the stream replays the whole log: both rows, so both
+    // resources.
+    let mut mcp = f.mcp(&["--offline"]);
+    mcp.discover();
+    mcp.send(
+        "subscriptions/listen",
+        json!({ "notifications": subscriptions }),
+    );
+    mcp.wait_for("notifications/subscriptions/acknowledged");
+    assert_eq!(mcp.updates(2), vec![receipts.clone(), todo.clone()]);
+    mcp.stop();
+
+    // The same log, resumed from cursor 1: only the second row is replayed.
+    let mut mcp = f.mcp(&["--offline"]);
+    mcp.discover();
+    mcp.listen_from(&subscriptions, "1");
+    mcp.wait_for("notifications/subscriptions/acknowledged");
+    let seen = mcp.updates(1);
+    assert_eq!(seen, vec![receipts], "cursor 1 replays only the second row");
+    assert!(!seen.contains(&todo), "{seen:?}");
     mcp.stop();
 }
 
