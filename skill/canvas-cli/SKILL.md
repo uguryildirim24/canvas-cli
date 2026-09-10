@@ -12,6 +12,10 @@ and they are the same code:
 - `canvas mcp` — an MCP server over stdio. Tools such as `todo.list`.
 - the `canvas` binary — the same commands with `--json`.
 
+It reads courses, deadlines, assignments, grades, files, modules, course
+pages, the syllabus, announcements, discussions, and the Canvas inbox, and it
+never marks any of them read.
+
 It is a **student** tool. There are no teacher, TA, or admin features, and it
 calls only endpoints a student role can call. It cannot reveal a credential,
 change an identity, run arbitrary HTTP or shell, clear the cache, overwrite a
@@ -192,7 +196,8 @@ protocol revision it negotiated, and what stayed untested.
 
 ## Without MCP
 
-Every tool has a CLI form with the same envelope. `todo.list` is
-`canvas todo --json`; `assignments.list` is `canvas assignments <course>
---json`. Add `--offline` to forbid the network, and `--fresh` to ignore the
-cache TTLs.
+Every tool has a CLI form with the same envelope, and the tool name is the
+command: `todo.list` is `canvas todo --json`, `assignments.list` is
+`canvas assignments <course> --json`, `pages.list` is `canvas pages <course>
+--json`, `inbox.unread_count` is `canvas inbox unread-count --json`. Add
+`--offline` to forbid the network, and `--fresh` to ignore the cache TTLs.

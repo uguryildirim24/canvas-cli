@@ -200,12 +200,42 @@ calls a cut or partial result complete.
     `rating_id`, `null` when Canvas does not name the rating. Fixtures
     written before M8-a still validate.
 
+## The agent surface
+
+M6-b is on `main`, so item 3 of the brief is built. Each command has one
+`handle_*` core that returns the §7 envelope and a thin `run_*` that emits
+it, and `canvas mcp` calls the same core the CLI calls. There is one
+implementation per command.
+
+| Tool | Command behind it | Arguments |
+|---|---|---|
+| `pages.list` | `pages <course>` | `course`, `unpublished` |
+| `page.get` | `page <course> <page>` | `course`, `page` |
+| `syllabus.get` | `syllabus <course>` | `course` |
+| `discussions.list` | `discussions <course>` | `course`, `unread` |
+| `discussion.get` | `discussion <course> <id>` | `course`, `discussion`, `replies`, `page` |
+| `inbox.list` | `inbox` | `scope` |
+| `inbox.get` | `inbox show <id>` | `id` |
+| `inbox.unread_count` | `inbox unread-count` | none |
+
+Every one is a read, so every one carries `readOnlyHint: true`,
+`destructiveHint: false`, and `idempotentHint: true`. They are in the catalog
+allowlist test, in the tool-versus-command comparison test, and in the
+skill's command list.
+
+Two things follow from the decisions above and are stated on the surface
+itself: `discussions.list` has no announcements argument, because the pinned
+request cannot return one, and its description points at
+`announcements.list`; `discussion.get` documents a page past the end as an
+empty window rather than an error.
+
+These eight tools enlarge the `tools/list` document, which SPEC §19 item 19
+already tracks as a cost to beat. Nothing here changes how that document is
+built.
+
 ## Left for the next round
 
-* **M6-b is not on `main`.** The handler extraction and the MCP tools
-  `pages.list`, `page.get`, `syllabus.get`, `discussions.list`,
-  `discussion.get`, `inbox.list`, `inbox.get`, and `inbox.unread_count`
-  (all `readOnlyHint: true`) are not built, per item 3 of the brief.
 * **M6-c is not on `main`.** The `inbox.unread_count` event from the
   `inbox_unread` dataset, under M6-c's baseline rules with the first
-  observation silent, is left for the next round, per item 4.
+  observation silent, is left for the next round, per item 4 of the brief.
+  Nothing in this package writes an event.
