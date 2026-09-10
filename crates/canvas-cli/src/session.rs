@@ -39,21 +39,7 @@ pub enum SessionError {
     Local(String),
 }
 
-/// Failures validating an environment token (until M0-c / sync land).
-#[derive(Debug, Error)]
-pub enum ValidateTokenError {
-    #[error("unauthorized")]
-    Auth,
-    #[error("network error")]
-    Network,
-    #[error(transparent)]
-    Api(#[from] canvas_api::Error),
-    #[error(transparent)]
-    Local(#[from] canvas_core::store::DbError),
-}
-
 #[derive(Debug, Deserialize, Default)]
-#[allow(dead_code)]
 struct ConfigFile {
     default_profile: Option<String>,
     #[serde(default)]
@@ -70,7 +56,6 @@ struct ProfileEntry {
 }
 
 #[derive(Debug, Deserialize, Default)]
-#[allow(dead_code)]
 struct CacheConfig {
     ttl_courses: Option<String>,
     ttl_grades: Option<String>,
@@ -178,76 +163,43 @@ impl Session {
         })
     }
 
-    /// Validate a newly seen environment token before network writes.
-    pub async fn validate_network_token(&self) -> Result<(), ValidateTokenError> {
+    /// Validate a newly seen environment token before it can populate this identity's cache.
+    /// Client construction failure, if any (for auth vs network exits).
+    #[must_use]
+    pub fn client_init_error(&self) -> Option<&canvas_api::Error> {
+        self.client_init_error.as_ref()
+    }
+
+    pub async fn validate_network_token(&self) -> Result<(), canvas_core::sync::SyncError> {
         let Some(client) = &self.client else {
             return Err(
                 if matches!(self.client_init_error, Some(canvas_api::Error::Network)) {
-                    ValidateTokenError::Network
+                    canvas_api::Error::Network
                 } else {
-                    ValidateTokenError::Auth
-                },
+                    canvas_api::Error::Unauthorized
+                }
+                .into(),
             );
         };
         let hash = format!("{:x}", Sha256::digest(client.token().expose().as_bytes()));
         let key = self.identity.key.to_string();
-        let recorded = self
-            .open
-            .store
-            .call({
-                let key = key.clone();
-                move |conns| {
-                    Ok(conns
-                        .state
-                        .query_row(
-                            "SELECT token_sha256 FROM credential WHERE identity_key=?1 AND validated_at IS NOT NULL",
-                            [key],
-                            |r| r.get::<_, Option<String>>(0),
-                        )
-                        .optional()?
-                        .flatten())
-                }
-            })
-            .await
-            .map_err(ValidateTokenError::Local)?;
+        let recorded = self.open.store.call({ let key = key.clone(); move |conns| {
+            Ok(conns.state.query_row("SELECT token_sha256 FROM credential WHERE identity_key=?1 AND validated_at IS NOT NULL", [key], |r| r.get::<_,Option<String>>(0)).optional()?.flatten())
+        }}).await?;
         if recorded.as_deref() == Some(&hash) {
             return Ok(());
         }
-        let user: canvas_api::models::User =
-            client
-                .get("/api/v1/users/self")
-                .await
-                .map_err(|e| match e {
-                    canvas_api::Error::Network => ValidateTokenError::Network,
-                    canvas_api::Error::Unauthorized => ValidateTokenError::Auth,
-                    other => ValidateTokenError::Api(other),
-                })?;
+        let user: canvas_api::models::User = client.get("/api/v1/users/self").await?;
         if user.id != self.identity.user_id {
-            return Err(ValidateTokenError::Auth);
+            return Err(canvas_api::Error::Unauthorized.into());
         }
         let at = crate::output::generated_at_now();
-        self.open
-            .store
-            .call(move |conns| {
-                let tx = conns
-                    .state
-                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-                tx.execute(
-                    "INSERT INTO credential (identity_key,token_sha256,validated_at) VALUES (?1,?2,?3) ON CONFLICT(identity_key) DO UPDATE SET token_sha256=excluded.token_sha256,validated_at=excluded.validated_at",
-                    rusqlite::params![key, hash, at],
-                )?;
-                tx.commit()?;
-                Ok(())
-            })
-            .await
-            .map_err(ValidateTokenError::Local)?;
+        self.open.store.call(move |conns| {
+            let tx = conns.state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            tx.execute("INSERT INTO credential (identity_key,token_sha256,validated_at) VALUES (?1,?2,?3) ON CONFLICT(identity_key) DO UPDATE SET token_sha256=excluded.token_sha256,validated_at=excluded.validated_at", rusqlite::params![key, hash, at])?;
+            tx.commit()?; Ok(())
+        }).await?;
         Ok(())
-    }
-
-    /// Client init failure when `client` is `None` and not offline.
-    #[must_use]
-    pub fn client_init_error(&self) -> Option<&canvas_api::Error> {
-        self.client_init_error.as_ref()
     }
 
     pub fn requests(&self) -> crate::output::Requests {
@@ -353,7 +305,6 @@ fn resolve_identity_key(
 
 /// Default courses TTL (6h), optionally overridden by config.
 #[must_use]
-#[allow(dead_code)]
 pub fn ttl_courses() -> jiff::Span {
     parse_ttl(
         read_config()
@@ -368,7 +319,6 @@ pub fn ttl_courses() -> jiff::Span {
 
 /// Default grades TTL (10m), optionally overridden by config.
 #[must_use]
-#[allow(dead_code)]
 pub fn ttl_grades() -> jiff::Span {
     parse_ttl(
         read_config()
@@ -381,7 +331,6 @@ pub fn ttl_grades() -> jiff::Span {
     )
 }
 
-#[allow(dead_code)]
 fn parse_ttl(raw: Option<&str>, default_amount: i64, hours: bool) -> jiff::Span {
     let Some(raw) = raw else {
         return if hours {

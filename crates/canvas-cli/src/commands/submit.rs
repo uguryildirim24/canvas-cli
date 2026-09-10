@@ -14,8 +14,7 @@ use jiff::Timestamp;
 
 use super::Globals;
 use super::emit::{
-    base_envelope, emit, emit_error, parse_numeric_id, require_client, session_error,
-    validate_token_error,
+    base_envelope, emit, emit_error, parse_numeric_id, require_client, session_error, sync_error,
 };
 use crate::output::{
     Outcome, SCHEMA_SUBMIT, SubmitCandidateJson, SubmitFileJson, SubmitResult, SubmitTextJson,
@@ -69,7 +68,7 @@ pub async fn run(
         Err(code) => return code,
     };
     if let Err(e) = session.validate_network_token().await {
-        return validate_token_error(globals.json, e, &session);
+        return sync_error(globals, &session, &e);
     }
 
     let frozen = match freeze_inputs(

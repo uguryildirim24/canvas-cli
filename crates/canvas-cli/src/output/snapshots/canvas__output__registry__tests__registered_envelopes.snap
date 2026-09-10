@@ -1,0 +1,1171 @@
+---
+source: crates/canvas-cli/src/output/registry.rs
+assertion_line: 426
+expression: rendered
+---
+[
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "courses": [
+        {
+          "code": "CS-101",
+          "enrollment_state": "active",
+          "grades": {
+            "current_grade": "A-",
+            "current_score": 92.5,
+            "final_grade": null,
+            "final_score": null,
+            "period": {
+              "id": null,
+              "mode": "current",
+              "title": null
+            }
+          },
+          "html_url": "https://example.instructure.com/courses/101",
+          "id": "101",
+          "is_favorite": true,
+          "name": "Intro to Computing",
+          "restricted": false,
+          "term": {
+            "end_at": "2026-12-15T05:00:00Z",
+            "id": "7",
+            "name": "Fall 2026",
+            "start_at": "2026-08-25T04:00:00Z"
+          }
+        }
+      ]
+    },
+    "schema": "canvas-cli/courses@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course": {
+        "code": "CS-101",
+        "enrollment_state": "active",
+        "grades": {
+          "current_grade": "A-",
+          "current_score": 92.5,
+          "final_grade": null,
+          "final_score": null,
+          "period": {
+            "id": null,
+            "mode": "current",
+            "title": null
+          }
+        },
+        "html_url": "https://example.instructure.com/courses/101",
+        "id": "101",
+        "is_favorite": true,
+        "modules_count": 4,
+        "name": "Intro to Computing",
+        "restricted": false,
+        "syllabus_markdown": null,
+        "teachers": [
+          {
+            "id": "55",
+            "name": "Ada Lovelace"
+          }
+        ],
+        "term": {
+          "end_at": "2026-12-15T05:00:00Z",
+          "id": "7",
+          "name": "Fall 2026",
+          "start_at": "2026-08-25T04:00:00Z"
+        },
+        "time_zone": "America/New_York"
+      }
+    },
+    "schema": "canvas-cli/course@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "counts": {
+        "due_today": 0,
+        "due_week": 0,
+        "hidden": 0,
+        "missing": 0
+      },
+      "items": [],
+      "window": {
+        "days": 7,
+        "end": "2026-09-16",
+        "start": "2026-09-09"
+      }
+    },
+    "schema": "canvas-cli/todo@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "assignments": [],
+      "bucket": "open",
+      "course_id": "101"
+    },
+    "schema": "canvas-cli/assignments@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "assignment": {
+        "allowed_attempts": null,
+        "allowed_extensions": [],
+        "availability": {
+          "external": false,
+          "lock_at": null,
+          "lock_at_local": null,
+          "lock_explanation": null,
+          "locked": null,
+          "submittable": true,
+          "unlock_at": null,
+          "unlock_at_local": null
+        },
+        "can_submit": true,
+        "comments_count": 0,
+        "course_id": "101",
+        "description_markdown": null,
+        "due_at": null,
+        "due_at_local": null,
+        "external_tool_name": null,
+        "extra_attempts": null,
+        "group_assignment": false,
+        "html_url": "https://example.instructure.com/courses/101/assignments/1",
+        "id": "1",
+        "name": "HW1",
+        "points_possible": 10,
+        "rubric": [],
+        "rubric_assessed": false,
+        "rubric_assessment": [],
+        "status": {
+          "attempt": null,
+          "excused": false,
+          "grade": null,
+          "graded": false,
+          "late": false,
+          "missing": false,
+          "pending": false,
+          "posted_at": null,
+          "score": null,
+          "submitted": false,
+          "submitted_at": null,
+          "submitted_at_local": null,
+          "workflow_state": null
+        },
+        "submission_types": [
+          "online_upload"
+        ]
+      }
+    },
+    "schema": "canvas-cli/assignment@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "attribution": "observed",
+      "candidates": [],
+      "error": null,
+      "files": [
+        {
+          "canvas_file_id": "55001",
+          "name": "essay.pdf",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "size": 24576
+        }
+      ],
+      "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+      "outcome": "ok",
+      "post_status": 201,
+      "posted": {
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "attempt": 1,
+        "body_sha256": null,
+        "evidence": "post-response",
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "submission_id": "9001",
+        "submission_type": "online_upload",
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "url": null,
+        "workflow_state": "submitted"
+      },
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+      "response_kind": null,
+      "server_match": null,
+      "state": "submitted",
+      "text": null,
+      "url": null
+    },
+    "schema": "canvas-cli/submit@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "history": [
+        {
+          "attachments": [
+            {
+              "content_type": "application/pdf",
+              "display_name": "essay.pdf",
+              "id": "55001",
+              "size": 24576
+            }
+          ],
+          "attempt": 1,
+          "score": null,
+          "submitted_at": "2026-09-09T16:05:00Z",
+          "submitted_at_local": "2026-09-09T12:05:00-04:00"
+        }
+      ],
+      "pending_journals": [],
+      "submission": {
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "attempt": 1,
+        "body_sha256": null,
+        "comments": [],
+        "excused": false,
+        "grade": null,
+        "graded": false,
+        "late": false,
+        "missing": false,
+        "pending": false,
+        "posted_at": null,
+        "rubric_assessed": false,
+        "rubric_assessment": [],
+        "score": null,
+        "submission_type": "online_upload",
+        "submitted": true,
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "url": null,
+        "workflow_state": "submitted"
+      }
+    },
+    "schema": "canvas-cli/submission@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "assignment_id": "202",
+      "assignment_name": "Essay 1",
+      "attribution": "observed",
+      "baseline_attempt": 0,
+      "cli_version": "0.1.0",
+      "course_code": "CS-101",
+      "course_id": "101",
+      "created_at": "2026-09-09T16:04:58Z",
+      "due_at": "2026-09-15T23:59:59Z",
+      "files": [
+        {
+          "canvas_file_id": "55001",
+          "name": "essay.pdf",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "size": 24576
+        }
+      ],
+      "identity": {
+        "key": "example.instructure.com-1-deadbeef",
+        "origin": "https://example.instructure.com",
+        "user_id": "1"
+      },
+      "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+      "kind": "online_upload",
+      "posted": {
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "attempt": 1,
+        "body_sha256": null,
+        "evidence": "post-response",
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "submission_id": "9001",
+        "submission_type": "online_upload",
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "url": null,
+        "workflow_state": "submitted"
+      },
+      "readback": {
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "body_sha256": null,
+        "late": false,
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00"
+      },
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+      "text": null,
+      "url": null
+    },
+    "schema": "canvas-cli/receipt@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "journals": [
+        {
+          "acknowledged_at": null,
+          "assignment_id": "202",
+          "assignment_name": "Essay 1",
+          "baseline_attempt": 0,
+          "course_code": "CS-101",
+          "course_id": "101",
+          "created_at": "2026-09-09T16:04:58Z",
+          "error": null,
+          "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+          "kind": "online_upload",
+          "not_submitted_evidence": null,
+          "owner": "n/a",
+          "post_status": 201,
+          "posted": {
+            "attachments": [
+              {
+                "content_type": "application/pdf",
+                "display_name": "essay.pdf",
+                "id": "55001",
+                "size": 24576
+              }
+            ],
+            "attempt": 1,
+            "body_sha256": null,
+            "evidence": "post-response",
+            "excused": false,
+            "late": false,
+            "missing": false,
+            "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "submission_id": "9001",
+            "submission_type": "online_upload",
+            "submitted_at": "2026-09-09T16:05:00Z",
+            "submitted_at_local": "2026-09-09T12:05:00-04:00",
+            "url": null,
+            "workflow_state": "submitted"
+          },
+          "readback": null,
+          "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+          "response_kind": null,
+          "server_match": null,
+          "state": "submitted",
+          "superseded": false,
+          "updated_at": "2026-09-09T16:05:01Z",
+          "uploaded_file_ids": [
+            "55001"
+          ]
+        }
+      ]
+    },
+    "schema": "canvas-cli/receipts@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "attempt": 1,
+      "attribution": "observed",
+      "body": null,
+      "files": [
+        {
+          "actual_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "canvas_file_id": "55001",
+          "expected_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "name": "essay.pdf",
+          "status": "ok"
+        }
+      ],
+      "outcome": "verified",
+      "reason": null,
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde"
+    },
+    "schema": "canvas-cli/verify@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "assume_available": false,
+      "attribution": "unproven",
+      "candidates": [
+        {
+          "attachment_ids": [
+            "55001"
+          ],
+          "attempt": 1,
+          "submitted_at": "2026-09-09T16:05:00Z",
+          "submitted_at_local": "2026-09-09T12:05:00-04:00"
+        }
+      ],
+      "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+      "message": "matched via history attachment set",
+      "not_submitted_evidence": null,
+      "outcome": "ok",
+      "owner": "n/a",
+      "posted": {
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "attempt": 1,
+        "body_sha256": null,
+        "evidence": "history-files",
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "response_sha256": null,
+        "submission_id": "9001",
+        "submission_type": "online_upload",
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "url": null,
+        "workflow_state": "submitted"
+      },
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+      "response_kind": null,
+      "server_match": null,
+      "state": "matched"
+    },
+    "schema": "canvas-cli/reconcile@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course": null,
+      "courses": [],
+      "period_mode": "current"
+    },
+    "schema": "canvas-cli/grades@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course_id": "101",
+      "files": [],
+      "listing": {
+        "available": true,
+        "http_status": null
+      }
+    },
+    "schema": "canvas-cli/files@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course_id": "101",
+      "modules": []
+    },
+    "schema": "canvas-cli/modules@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "courses": [],
+      "dest": "/tmp/out",
+      "dry_run": true,
+      "totals": {
+        "bytes": 0,
+        "downloaded": 0,
+        "failed": 0,
+        "locked": 0,
+        "modified": 0,
+        "moved": 0,
+        "planned": 0,
+        "skipped": 0,
+        "skipped_external": 0,
+        "unavailable": 0,
+        "unmanaged": 0,
+        "unresolved_move": 0,
+        "unsafe_path": 0
+      }
+    },
+    "schema": "canvas-cli/download@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "announcements": [],
+      "window": {
+        "end": "2026-09-09",
+        "start": "2026-09-01"
+      }
+    },
+    "schema": "canvas-cli/announcements@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "announcement": {
+        "author": null,
+        "course_code": "CS-101",
+        "course_id": "101",
+        "html_url": "https://example.instructure.com/courses/101/discussion_topics/1",
+        "id": "1",
+        "message_markdown": null,
+        "posted_at": "2026-09-09T12:00:00Z",
+        "posted_at_local": "2026-09-09T08:00:00-04:00",
+        "read": true,
+        "title": "Hello"
+      }
+    },
+    "schema": "canvas-cli/announcement@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "items": [],
+      "window": {
+        "end": "2026-09-16",
+        "start": "2026-09-09"
+      }
+    },
+    "schema": "canvas-cli/calendar@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "id": "101",
+      "launched": true,
+      "target_kind": "course",
+      "url": "https://example.instructure.com/courses/101"
+    },
+    "schema": "canvas-cli/open@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "datasets": [
+        {
+          "complete": true,
+          "count": 1,
+          "dataset": "courses",
+          "error": null,
+          "fetched_at": "2026-09-09T17:05:12Z",
+          "requests": 1,
+          "scope": "active",
+          "source": "network",
+          "stale": false
+        }
+      ]
+    },
+    "schema": "canvas-cli/sync@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "datasets": [
+        {
+          "complete": true,
+          "count": 1,
+          "dataset": "courses",
+          "fetched_at": "2026-09-09T17:05:12Z",
+          "scope": "active",
+          "source": "cache",
+          "stale": false
+        }
+      ],
+      "path": "/tmp/canvas-cli/cache",
+      "size_bytes": 4096,
+      "tables": [
+        {
+          "name": "entities",
+          "rows": 10
+        }
+      ]
+    },
+    "schema": "canvas-cli/cache@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "aliases": [
+        {
+          "course_code": "CS-101",
+          "course_id": "101",
+          "name": "cs"
+        }
+      ]
+    },
+    "schema": "canvas-cli/alias@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "backend": "keyring",
+      "identity": {
+        "key": "example.instructure.com-1-deadbeef",
+        "origin": "https://example.instructure.com",
+        "user_id": "1"
+      },
+      "profile": "default",
+      "stray_sources": [],
+      "token_source": "keyring",
+      "validated_at": "2026-09-09T17:05:12Z"
+    },
+    "schema": "canvas-cli/auth_status@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "backend": "keyring",
+      "identity": {
+        "key": "example.instructure.com-1-deadbeef",
+        "origin": "https://example.instructure.com",
+        "user_id": "1"
+      },
+      "profile": "default",
+      "removed": []
+    },
+    "schema": "canvas-cli/auth_login@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "backend": "keyring",
+      "identity": {
+        "key": "example.instructure.com-1-deadbeef",
+        "origin": "https://example.instructure.com",
+        "user_id": "1"
+      },
+      "profile": "default",
+      "removed": [
+        "keyring"
+      ]
+    },
+    "schema": "canvas-cli/auth_logout@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": null,
+    "outcome": "ok",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "identities": []
+    },
+    "schema": "canvas-cli/identity@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": null,
+    "outcome": "ok",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "key": "default_profile",
+      "value": "default"
+    },
+    "schema": "canvas-cli/config@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": null,
+    "outcome": "ok",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "checks": [],
+      "identity_selected": false,
+      "recovered_journals": []
+    },
+    "schema": "canvas-cli/doctor@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": null,
+    "outcome": "ok",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "commit": null,
+      "target": "aarch64-apple-darwin",
+      "version": "0.1.0"
+    },
+    "schema": "canvas-cli/version@1",
+    "warnings": []
+  },
+  {
+    "exit": 3,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": null,
+    "outcome": "error",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "code": "auth",
+      "details": {},
+      "http_status": 401,
+      "message": "unauthorized",
+      "server_errors": []
+    },
+    "schema": "canvas-cli/error@1",
+    "warnings": []
+  }
+]
