@@ -176,8 +176,8 @@ enum Commands {
     Submission {
         #[command(subcommand)]
         command: Option<SubmissionCommand>,
-        /// Course id/code/alias followed by assignment id/name.
-        #[arg(required = true, num_args = 2, value_names = ["COURSE", "ASSIGNMENT"])]
+        /// Course id/code/alias followed by assignment id/name (both required).
+        #[arg(required = true, num_args = 1..=2, value_names = ["COURSE", "ASSIGNMENT"])]
         target: Vec<String>,
         /// Include submission history.
         #[arg(long)]
@@ -477,6 +477,15 @@ impl Cli {
         };
         if let Some(message) = conflict {
             return Err(Self::command().error(clap::error::ErrorKind::ArgumentConflict, message));
+        }
+        // A multi-value positional is checked per contiguous group by clap.
+        // Allow options between groups, then require exactly two values overall.
+        if matches!(&self.command, Commands::Submission { command: None, target, .. } if target.len() != 2)
+        {
+            return Err(Self::command().error(
+                clap::error::ErrorKind::WrongNumberOfValues,
+                "submission requires exactly two operands: COURSE and ASSIGNMENT",
+            ));
         }
         Ok(())
     }
