@@ -4,7 +4,9 @@ mod announcement;
 mod assignment;
 mod assignment_group;
 mod calendar;
+mod conversation;
 mod course;
+mod discussion;
 mod enrollment;
 mod file;
 mod folder;
@@ -15,12 +17,17 @@ mod planner;
 mod submission;
 mod term;
 mod user;
+mod wiki_page;
 
 pub use announcement::Announcement;
 pub use assignment::{Assignment, ExternalToolTagAttributes, MissingSubmission};
 pub use assignment_group::{AssignmentGroup, AssignmentGroupRules};
 pub use calendar::CalendarEvent;
+pub use conversation::{
+    Conversation, ConversationAttachment, ConversationMessage, ConversationParticipant, UnreadCount,
+};
 pub use course::{Course, CourseEnrollment};
+pub use discussion::{DiscussionEntry, DiscussionTopic, GroupTopicChild};
 pub use enrollment::{Enrollment, EnrollmentGrades};
 pub use file::File;
 pub use folder::Folder;
@@ -33,3 +40,4 @@ pub use submission::{
 };
 pub use term::Term;
 pub use user::User;
+pub use wiki_page::WikiPage;

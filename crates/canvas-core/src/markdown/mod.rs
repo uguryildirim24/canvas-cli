@@ -4,7 +4,14 @@
 //! announcements use Markdown in JSON schemas; plain text is extracted from the parsed HTML tree
 //! when callers need it.
 
+pub mod extract;
+
 use htmd::HtmlToMarkdown;
+
+pub use extract::{
+    BODY_LIMIT, BodyRefs, EmbeddedRef, ExternalLink, FileRef, RawEmbed, RawLink, ResolvedRefs,
+    RichText, rich_text, rich_text_opt,
+};
 
 /// Convert HTML on the blocking pool.
 pub async fn html_to_markdown(html: &str) -> Result<String, MarkdownError> {

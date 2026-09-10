@@ -67,6 +67,24 @@ fn decode_percent(input: &str) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+/// Is this a query-parameter or header name that carries a capability?
+///
+/// The name is percent-decoded and lowercased first, so an encoded key is
+/// recognized. Callers that persist or print a URL use this to drop the
+/// capability-bearing parameters and keep the rest (§15).
+#[must_use]
+pub fn is_capability_key(key: &str) -> bool {
+    let mut decoded = key.to_owned();
+    loop {
+        let next = decode_percent(&decoded);
+        if next == decoded {
+            break;
+        }
+        decoded = next;
+    }
+    is_sensitive_key(&decoded.to_ascii_lowercase())
+}
+
 fn is_sensitive_key(key: &str) -> bool {
     matches!(
         key,

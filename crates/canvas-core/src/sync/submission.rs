@@ -458,10 +458,29 @@ pub fn rubric_json(raw: &Value) -> Value {
                 serde_json::json!({
                     "criterion_id": id, "points": v.get("points").and_then(Value::as_f64),
                     "comments": v.get("comments").and_then(Value::as_str),
+                    // M8-a: which rating the grader picked, when Canvas says.
+                    "rating_id": v.get("rating_id").and_then(|r| r
+                        .as_str()
+                        .map(str::to_owned)
+                        .or_else(|| r.as_i64().map(|n| n.to_string()))),
                 })
             })
             .collect(),
     )
+}
+
+/// One stored rubric-assessment row with every field the schema declares.
+///
+/// A row written before M8-a added `rating_id` has no such key; re-projecting
+/// it on read keeps `rubric_assessment[]` the same shape whatever wrote it.
+#[must_use]
+pub fn assessment_row_json(raw: &Value) -> Value {
+    serde_json::json!({
+        "criterion_id": raw.get("criterion_id").and_then(Value::as_str),
+        "points": raw.get("points").and_then(Value::as_f64),
+        "comments": raw.get("comments").and_then(Value::as_str),
+        "rating_id": raw.get("rating_id").and_then(Value::as_str),
+    })
 }
 
 /// Preserve absence/null/value while storing only the submission's allowlisted projection.

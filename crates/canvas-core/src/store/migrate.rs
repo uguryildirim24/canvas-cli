@@ -8,13 +8,14 @@
 //! |---|---|---|---|
 //! | `0001_initial` | both | M1-a | the v1 cache and state schema |
 //! | `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link |
+//! | `0002_reads` | cache | M8-a | `pages`, `discussion_topics`, `discussion_entries`, `conversations` |
 
 use rusqlite::Connection;
 
 use super::db::DbError;
 
 /// Current cache.sqlite schema version.
-pub const CACHE_USER_VERSION: i32 = 1;
+pub const CACHE_USER_VERSION: i32 = 2;
 /// Current state.sqlite schema version.
 pub const STATE_USER_VERSION: i32 = 2;
 
@@ -22,6 +23,9 @@ pub const STATE_USER_VERSION: i32 = 2;
 pub fn migrate_cache(conn: &Connection, from: i32) -> Result<(), DbError> {
     if from < 1 {
         conn.execute_batch(CACHE_0001)?;
+    }
+    if from < 2 {
+        conn.execute_batch(CACHE_0002)?;
     }
     Ok(())
 }
@@ -36,6 +40,75 @@ pub fn migrate_state(conn: &Connection, from: i32) -> Result<(), DbError> {
     }
     Ok(())
 }
+
+/// Richer read entities: pages, discussions, and the inbox (M8-a).
+///
+/// Every entity is keyed by its Canvas id, as the v1 tables are. A page keeps
+/// its `url` slug in a column as well, because a course addresses its pages by
+/// slug and the coverage scope names whichever form the caller asked for.
+const CACHE_0002: &str = r"
+CREATE TABLE pages (
+    id INTEGER PRIMARY KEY NOT NULL,
+    course_id INTEGER,
+    url TEXT,
+    title TEXT,
+    body TEXT,
+    updated_at TEXT,
+    data_json TEXT NOT NULL DEFAULT '{}',
+    observed_at_core TEXT,
+    observed_at_detail TEXT,
+    observed_at_status TEXT
+);
+
+CREATE INDEX pages_course_url ON pages(course_id, url);
+
+CREATE TABLE discussion_topics (
+    id INTEGER PRIMARY KEY NOT NULL,
+    course_id INTEGER,
+    title TEXT,
+    message TEXT,
+    posted_at TEXT,
+    data_json TEXT NOT NULL DEFAULT '{}',
+    observed_at_core TEXT,
+    observed_at_detail TEXT,
+    observed_at_status TEXT
+);
+
+CREATE TABLE discussion_entries (
+    id INTEGER PRIMARY KEY NOT NULL,
+    topic_id INTEGER,
+    parent_id INTEGER,
+    user_id INTEGER,
+    message TEXT,
+    created_at TEXT,
+    data_json TEXT NOT NULL DEFAULT '{}',
+    observed_at_core TEXT,
+    observed_at_detail TEXT,
+    observed_at_status TEXT
+);
+
+CREATE INDEX discussion_entries_topic ON discussion_entries(topic_id);
+
+CREATE TABLE conversations (
+    id INTEGER PRIMARY KEY NOT NULL,
+    subject TEXT,
+    workflow_state TEXT,
+    last_message_at TEXT,
+    data_json TEXT NOT NULL DEFAULT '{}',
+    observed_at_core TEXT,
+    observed_at_detail TEXT,
+    observed_at_status TEXT
+);
+
+CREATE TABLE conversation_unread (
+    id INTEGER PRIMARY KEY NOT NULL,
+    unread_count INTEGER,
+    data_json TEXT NOT NULL DEFAULT '{}',
+    observed_at_core TEXT,
+    observed_at_detail TEXT,
+    observed_at_status TEXT
+);
+";
 
 /// Cache entity and coverage tables (SPEC §10).
 const CACHE_0001: &str = r"
