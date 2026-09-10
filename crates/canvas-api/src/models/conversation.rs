@@ -1,7 +1,7 @@
 //! Conversation (inbox) models.
 
 use jiff::Timestamp;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::serde_util::{deserialize_id, deserialize_opt_id, deserialize_opt_timestamp};
 
@@ -67,6 +67,24 @@ pub struct Conversation {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct UnreadCount {
-    /// Canvas returns this as a string.
+    /// Canvas documents this as a string and some deployments send a number,
+    /// so both are accepted and anything else stays unknown.
+    #[serde(deserialize_with = "deserialize_lenient_count")]
     pub unread_count: Option<String>,
+}
+
+/// A count as a string, as a number, or unknown; never a decode failure.
+///
+/// The count is the whole answer of `inbox unread-count`; refusing the read
+/// because the wire type moved would be worse than reporting it unknown.
+fn deserialize_lenient_count<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Ok(
+        match Option::<serde_json::Value>::deserialize(deserializer)? {
+            Some(serde_json::Value::String(s)) => Some(s),
+            Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+            _ => None,
+        },
+    )
 }
