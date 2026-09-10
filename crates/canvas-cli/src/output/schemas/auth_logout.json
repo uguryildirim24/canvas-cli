@@ -1,0 +1,1 @@
+{ "profile": "default", "identity": { "origin": "https://example.instructure.com", "user_id": "1", "key": "example.instructure.com-1-deadbeef" }, "backend": "keyring", "removed": ["keyring"] }
