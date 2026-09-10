@@ -66,14 +66,22 @@ impl Interest {
 
 impl Drop for Interest {
     fn drop(&mut self) {
-        if let Ok(conn) = self.conn.lock() {
-            let _ = conn.execute(
-                "DELETE FROM interest WHERE assignment_id = ?1",
-                params![self.assignment_id],
-            );
+        if let Ok(mut conn) = self.conn.lock() {
+            let _ = remove(&mut conn, self.assignment_id);
         }
         let _ = FileExt::unlock(&self.file);
     }
+}
+
+/// Delete one interest row. Every state write is `BEGIN IMMEDIATE` (§10).
+fn remove(conn: &mut rusqlite::Connection, assignment_id: i64) -> Result<(), CoordError> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute(
+        "DELETE FROM interest WHERE assignment_id = ?1",
+        params![assignment_id],
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 fn lock_path(locks_dir: &Path, assignment_id: i64) -> PathBuf {
@@ -126,11 +134,8 @@ pub(super) fn any_live(
         if FileExt::try_lock_exclusive(&file)? {
             // Nobody holds it: the registrant is gone, so the row is stale.
             let _ = FileExt::unlock(&file);
-            let guard = conn.lock().expect("coordinator connection");
-            guard.execute(
-                "DELETE FROM interest WHERE assignment_id = ?1",
-                params![assignment_id],
-            )?;
+            let mut guard = conn.lock().expect("coordinator connection");
+            remove(&mut guard, assignment_id)?;
         } else {
             live = true;
         }

@@ -127,7 +127,7 @@ pub async fn run(globals: &Globals, since: Option<String>, stdout: bool) -> Exit
         && let Err(e) = session
             .open
             .store
-            .call_blocking(move |conns| set_consumer_cursor(&conns.state, CONSUMER, cursor))
+            .call_blocking(move |conns| set_consumer_cursor(&mut conns.state, CONSUMER, cursor))
     {
         return local_error(globals, &e.to_string());
     }
