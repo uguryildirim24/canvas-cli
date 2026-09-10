@@ -1,0 +1,29 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses/103/folders",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "files_count": 4,
+      "folders_count": 1,
+      "full_name": "course files",
+      "hidden": false,
+      "id": 1030,
+      "locked_for_user": false,
+      "name": "course files",
+      "parent_folder_id": null
+    },
+    {
+      "files_count": 2,
+      "folders_count": 0,
+      "full_name": "course files/Readings",
+      "hidden": false,
+      "id": 1031,
+      "locked_for_user": false,
+      "name": "Readings",
+      "parent_folder_id": 1030
+    }
+  ]
+}

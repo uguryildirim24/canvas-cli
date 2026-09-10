@@ -280,11 +280,26 @@ async fn sync_always_refreshes_and_reports_partial_course_denials() {
         .expect(2)
         .mount(&server)
         .await;
+    // M4-b: `sync` also refreshes assignments, missing, the planner window,
+    // and announcements (SPEC §5).
+    for endpoint in [
+        "/api/v1/courses/1/assignments",
+        "/api/v1/courses/2/assignments",
+        "/api/v1/users/self/missing_submissions",
+        "/api/v1/planner/items",
+        "/api/v1/announcements",
+    ] {
+        Mock::given(path(endpoint))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .expect(2)
+            .mount(&server)
+            .await;
+    }
     for _ in 0..2 {
         let result = f.run(&["sync"], 12).await;
         assert_eq!(result["outcome"], "partial");
         assert_eq!(result["partial"][0]["http_status"], 403);
-        assert_eq!(result["requests"]["api"], 4);
+        assert_eq!(result["requests"]["api"], 9);
         let rows = result["result"]["datasets"].as_array().unwrap();
         let keys: Vec<_> = rows
             .iter()

@@ -4,8 +4,10 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use canvas_core::sync::{
-    CoursesScope, PeriodKey, RefreshOutcome, SyncError, refresh_courses, refresh_enrollment_grades,
-    refresh_grading_periods,
+    ContextWindow, CoursesScope, PeriodKey, PlannerWindow, RefreshOutcome, SyncError,
+    refresh_announcements, refresh_assignments, refresh_calendar_events, refresh_courses,
+    refresh_enrollment_grades, refresh_files, refresh_folders, refresh_grading_periods,
+    refresh_missing, refresh_modules, refresh_planner,
 };
 use comfy_table::Row;
 
@@ -16,7 +18,10 @@ use crate::output::{
     FreshnessSource, SCHEMA_SYNC, SyncDatasetJson, SyncResult, apply_two_space_padding, new_table,
     now_timestamp,
 };
-use crate::session::{Session, ttl_courses, ttl_grades};
+use crate::session::{
+    Session, ttl_announcements, ttl_assignments, ttl_calendar, ttl_courses, ttl_files, ttl_grades,
+    ttl_missing, ttl_modules, ttl_planner,
+};
 
 /// Run `canvas sync`.
 pub async fn run(globals: &Globals, full: bool) -> ExitCode {
@@ -51,12 +56,9 @@ pub async fn run(globals: &Globals, full: bool) -> ExitCode {
         return super::emit::sync_error(globals, &session, &e);
     }
 
-    let mut warnings = Vec::new();
-    if full {
-        warnings.push("--full is assembled in M4-b; refreshing M1-b datasets only".into());
-    }
+    let warnings = Vec::new();
 
-    let refreshed = match refresh_all(globals, &session, client).await {
+    let refreshed = match refresh_all(globals, &session, client, full).await {
         Ok(d) => d,
         Err(code) => return code,
     };
@@ -92,6 +94,7 @@ async fn refresh_all(
     globals: &Globals,
     session: &Session,
     client: &canvas_api::Client,
+    full: bool,
 ) -> Result<Refreshed, ExitCode> {
     let now = now_timestamp();
     let ttl_c = ttl_courses();
@@ -146,7 +149,7 @@ async fn refresh_all(
             )
         })?;
 
-    for course_id in course_ids {
+    for course_id in course_ids.iter().copied() {
         let before = client.telemetry().api;
         match refresh_grading_periods(
             client,
@@ -181,6 +184,114 @@ async fn refresh_all(
             Err(e) => return Err(sync_err(globals, session, &e)),
         }
     }
+    // §5: the base refresh also covers assignments (with `include[]=submission`,
+    // which is where submission status comes from), missing, the default
+    // planner window, and announcements.
+    let window = PlannerWindow::todo_default(now.to_zoned(session.time_zone()).date(), 14);
+    for course_id in &course_ids {
+        let outcome = refresh_assignments(
+            client,
+            &session.open.store,
+            *course_id,
+            ttl_assignments(),
+            now,
+            true,
+            false,
+        )
+        .await
+        .map_err(|e| sync_err(globals, session, &e))?;
+        datasets.push(to_dataset(&outcome));
+    }
+    let missing = refresh_missing(client, &session.open.store, ttl_missing(), now, true, false)
+        .await
+        .map_err(|e| sync_err(globals, session, &e))?;
+    datasets.push(to_dataset(&missing));
+    let planner = refresh_planner(
+        client,
+        &session.open.store,
+        window.clone(),
+        ttl_planner(),
+        now,
+        true,
+        false,
+    )
+    .await
+    .map_err(|e| sync_err(globals, session, &e))?;
+    datasets.push(to_dataset(&planner));
+
+    let announcements = refresh_announcements(
+        client,
+        &session.open.store,
+        ContextWindow::courses(window.clone(), &course_ids),
+        ttl_announcements(),
+        now,
+        true,
+        false,
+    )
+    .await
+    .map_err(|e| sync_err(globals, session, &e))?;
+    datasets.push(to_dataset(&announcements.outcome));
+    partial.extend(denial_partials("announcements", &announcements.denials));
+
+    if full {
+        for course_id in &course_ids {
+            for outcome in [
+                refresh_folders(
+                    client,
+                    &session.open.store,
+                    *course_id,
+                    ttl_files(),
+                    now,
+                    true,
+                    false,
+                )
+                .await
+                .map_err(|e| sync_err(globals, session, &e))?,
+                refresh_files(
+                    client,
+                    &session.open.store,
+                    *course_id,
+                    ttl_files(),
+                    now,
+                    true,
+                    false,
+                )
+                .await
+                .map_err(|e| sync_err(globals, session, &e))?,
+                // `modules` fetches the module items it needs in the same
+                // refresh (§10).
+                refresh_modules(
+                    client,
+                    &session.open.store,
+                    *course_id,
+                    ttl_modules(),
+                    now,
+                    true,
+                    false,
+                )
+                .await
+                .map_err(|e| sync_err(globals, session, &e))?,
+            ] {
+                datasets.push(to_dataset(&outcome));
+            }
+        }
+        let mut contexts = vec![format!("user_{}", session.identity.user_id)];
+        contexts.extend(course_ids.iter().map(|id| format!("course_{id}")));
+        let events = refresh_calendar_events(
+            client,
+            &session.open.store,
+            ContextWindow::contexts(window, &contexts),
+            ttl_calendar(),
+            now,
+            true,
+            false,
+        )
+        .await
+        .map_err(|e| sync_err(globals, session, &e))?;
+        datasets.push(to_dataset(&events.outcome));
+        partial.extend(denial_partials("calendar_events", &events.denials));
+    }
+
     let derived = session.open.store.call(|conns| {
         let mut stmt = conns.cache.prepare("SELECT dataset,scope FROM fetch_log WHERE (dataset='terms' AND scope='active') OR (dataset='course_totals' AND scope IN (SELECT 'course:' || entity_id FROM membership WHERE dataset='courses' AND scope='active'))")?;
         let keys = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
@@ -207,18 +318,46 @@ async fn refresh_all(
 
     for dataset in &datasets {
         let scope = format!("{}:{}", dataset.dataset, dataset.scope);
-        if let Some(message) = &dataset.error
+        if let Some(message) = &dataset
+            .error
+            // Per-context denials are already reported per course.
+            .as_deref()
+            .filter(|e| !canvas_core::store::is_context_denial(e))
             && !partial.iter().any(|p| p.scope == scope)
         {
             partial.push(crate::output::PartialScope {
                 scope,
                 http_status: None,
-                message: message.clone(),
+                message: (*message).to_owned(),
             });
         }
     }
     partial.sort_by(|a, b| a.scope.cmp(&b.scope));
+    partial.dedup_by(|a, b| a.scope == b.scope);
     Ok(Refreshed { datasets, partial })
+}
+
+/// One `partial[]` row per context a batch could not read (§12.6).
+fn denial_partials(
+    dataset: &str,
+    denials: &[canvas_core::sync::ContextDenial],
+) -> Vec<crate::output::PartialScope> {
+    denials
+        .iter()
+        .map(|denial| {
+            let scope = denial
+                .course_id()
+                .map_or_else(|| denial.context.clone(), |id| format!("course:{id}"));
+            crate::output::PartialScope {
+                scope: format!("{dataset}:{scope}"),
+                http_status: Some(denial.http_status),
+                message: format!(
+                    "{dataset} for {} unavailable (HTTP {})",
+                    denial.context, denial.http_status
+                ),
+            }
+        })
+        .collect()
 }
 
 fn print_table(result: &SyncResult) -> io::Result<()> {

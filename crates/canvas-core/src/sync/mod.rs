@@ -1,8 +1,12 @@
 //! Dataset refresh and sync (SPEC §10).
 
+mod announcements;
 mod assignment_detail;
 mod assignment_groups;
 mod assignments;
+mod batched;
+mod calendar_events;
+mod context_window;
 mod course;
 mod course_totals;
 mod courses;
@@ -30,6 +34,11 @@ mod review_tests;
 #[cfg(test)]
 mod tests;
 
+pub use announcements::{
+    AnnouncementDetailDataset, AnnouncementsDataset, announcement_path, announcement_to_entity,
+    announcements_path, announcements_to_ingest_page, course_id_from_context,
+    default_ttl_announcements, refresh_announcement,
+};
 pub use assignment_groups::{
     AssignmentGroupsDataset, assignment_group_to_entity, assignment_groups_path,
     assignment_groups_to_ingest_page,
@@ -38,6 +47,12 @@ pub use assignments::{
     AssignmentsDataset, assignment_detail_path, assignment_to_entity, assignments_path,
     assignments_to_ingest_page, default_ttl_assignments, upsert_assignment,
 };
+pub use batched::{BatchOutcome, ContextDenial, refresh_announcements, refresh_calendar_events};
+pub use calendar_events::{
+    CalendarEventsDataset, calendar_event_to_entity, calendar_events_path,
+    calendar_events_to_ingest_page, default_ttl_calendar,
+};
+pub use context_window::{CONTEXT_BATCH, ContextWindow, context_codes_query};
 pub use course::{CourseDetailDataset, refresh_course};
 pub use course_totals::{
     CourseTotalMode, CourseTotalsDataset, default_ttl_grades, totals_from_enrollment,
@@ -85,3 +100,5 @@ pub use assignment_detail::{AssignmentDetailDataset, refresh_assignment};
 
 #[cfg(test)]
 mod m1c_review_tests;
+#[cfg(test)]
+mod m4b_tests;

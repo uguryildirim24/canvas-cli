@@ -1,0 +1,134 @@
+---
+source: crates/canvas-cli/tests/m4b.rs
+expression: normalized(out)
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "planner",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-09-08..2026-11-06",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "active",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 3,
+      "dataset": "calendar_events",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-09-08..2026-11-06:ctx:<hash>",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 3,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "items": [
+      {
+        "all_day": false,
+        "all_day_date": null,
+        "course_code": "CHEM",
+        "course_id": "1",
+        "due_at": "2026-09-10T03:59:00Z",
+        "due_at_local": "2026-09-09T23:59:00-04:00",
+        "end_at": null,
+        "end_at_local": null,
+        "html_url": "https://canvas.test/courses/1/assignments/500",
+        "id": "500",
+        "is_deadline": true,
+        "kind": "assignment",
+        "start_at": null,
+        "start_at_local": null,
+        "title": "Problem Set 2",
+        "uid": "canvas-assignment-500@fixture"
+      },
+      {
+        "all_day": false,
+        "all_day_date": null,
+        "course_code": "CHEM",
+        "course_id": "1",
+        "due_at": null,
+        "due_at_local": null,
+        "end_at": "2026-09-10T16:00:00Z",
+        "end_at_local": "2026-09-10T12:00:00-04:00",
+        "html_url": "https://canvas.test/calendar?event_id=700",
+        "id": "700",
+        "is_deadline": false,
+        "kind": "event",
+        "start_at": "2026-09-10T15:00:00Z",
+        "start_at_local": "2026-09-10T11:00:00-04:00",
+        "title": "Review session; bring notes, please",
+        "uid": "canvas-event-700@fixture"
+      },
+      {
+        "all_day": true,
+        "all_day_date": "2026-09-14",
+        "course_code": null,
+        "course_id": null,
+        "due_at": null,
+        "due_at_local": null,
+        "end_at": "2026-09-14T04:00:00Z",
+        "end_at_local": "2026-09-14T00:00:00-04:00",
+        "html_url": null,
+        "id": "701",
+        "is_deadline": false,
+        "kind": "event",
+        "start_at": "2026-09-14T04:00:00Z",
+        "start_at_local": "2026-09-14T00:00:00-04:00",
+        "title": "Reading day",
+        "uid": "canvas-event-701@fixture"
+      },
+      {
+        "all_day": true,
+        "all_day_date": "2026-11-01",
+        "course_code": "CHEM",
+        "course_id": "1",
+        "due_at": null,
+        "due_at_local": null,
+        "end_at": "2026-11-02T05:00:00Z",
+        "end_at_local": "2026-11-02T00:00:00-05:00",
+        "html_url": null,
+        "id": "702",
+        "is_deadline": false,
+        "kind": "event",
+        "start_at": "2026-11-01T04:00:00Z",
+        "start_at_local": "2026-11-01T00:00:00-04:00",
+        "title": "Reading period starts",
+        "uid": "canvas-event-702@fixture"
+      }
+    ],
+    "window": {
+      "end": "2026-11-06",
+      "start": "2026-09-08"
+    }
+  },
+  "schema": "canvas-cli/calendar@1",
+  "warnings": [
+    "Reading period starts: all-day event with a longer span is shown as one day in v1"
+  ]
+}

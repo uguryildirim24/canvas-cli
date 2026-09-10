@@ -1,1 +1,59 @@
-{ "window": { "start": "2026-09-09", "end": "2026-09-16" }, "items": [] }
+{
+  "window": { "start": "2026-09-08", "end": "2026-09-22" },
+  "items": [
+    {
+      "uid": "canvas-assignment-500@example.instructure.com-1-deadbeef",
+      "kind": "assignment",
+      "id": "500",
+      "course_id": "101",
+      "course_code": "CS-101",
+      "title": "Problem Set 2",
+      "is_deadline": true,
+      "due_at": "2026-09-09T23:59:00Z",
+      "due_at_local": "2026-09-09T19:59:00-04:00",
+      "start_at": null,
+      "start_at_local": null,
+      "end_at": null,
+      "end_at_local": null,
+      "all_day": false,
+      "all_day_date": null,
+      "html_url": "https://example.instructure.com/courses/101/assignments/500"
+    },
+    {
+      "uid": "canvas-event-700@example.instructure.com-1-deadbeef",
+      "kind": "event",
+      "id": "700",
+      "course_id": "101",
+      "course_code": "CS-101",
+      "title": "Review session",
+      "is_deadline": false,
+      "due_at": null,
+      "due_at_local": null,
+      "start_at": "2026-09-10T15:00:00Z",
+      "start_at_local": "2026-09-10T11:00:00-04:00",
+      "end_at": "2026-09-10T16:00:00Z",
+      "end_at_local": "2026-09-10T12:00:00-04:00",
+      "all_day": false,
+      "all_day_date": null,
+      "html_url": "https://example.instructure.com/calendar?event_id=700&include_contexts=course_101"
+    },
+    {
+      "uid": "canvas-event-701@example.instructure.com-1-deadbeef",
+      "kind": "event",
+      "id": "701",
+      "course_id": null,
+      "course_code": null,
+      "title": "Reading day",
+      "is_deadline": false,
+      "due_at": null,
+      "due_at_local": null,
+      "start_at": "2026-09-14T04:00:00Z",
+      "start_at_local": "2026-09-14T00:00:00-04:00",
+      "end_at": "2026-09-14T04:00:00Z",
+      "end_at_local": "2026-09-14T00:00:00-04:00",
+      "all_day": true,
+      "all_day_date": "2026-09-14",
+      "html_url": null
+    }
+  ]
+}

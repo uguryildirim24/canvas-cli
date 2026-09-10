@@ -131,9 +131,12 @@ pub trait Dataset {
         opts: &IngestOpts<'_>,
         conns: &mut super::db::StoreConns,
     ) -> Result<(), IngestError> {
-        // Only folders/files 403/404 denials are successful coverage with an error.
-        let recorded_denial = matches!(self.name(), "files" | "folders")
-            && matches!(opts.error, Some("unavailable:403" | "unavailable:404"));
+        // Two error shapes are successful coverage: a folders/files listing
+        // denial, and a window dataset whose batches were isolated per context.
+        let recorded_denial = (matches!(self.name(), "files" | "folders")
+            && matches!(opts.error, Some("unavailable:403" | "unavailable:404")))
+            || (matches!(self.name(), "announcements" | "calendar_events")
+                && opts.error.is_some_and(super::ops::is_context_denial));
         if !opts.complete || opts.stale || (opts.error.is_some() && !recorded_denial) {
             return mark_refresh_failed(self, opts.error.unwrap_or("refresh incomplete"), conns);
         }
