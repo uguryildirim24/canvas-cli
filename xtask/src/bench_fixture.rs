@@ -21,6 +21,10 @@ use crate::fixture::{Manifest, REDACTION_VERSION, Recorded, write_manifest, writ
 /// The instant every generated timestamp is relative to.
 pub const BASE: &str = "2026-01-05T12:00:00Z";
 
+/// The user the set belongs to. `sync --full` asks for that user's calendar
+/// context by id, so the two have to agree.
+pub const USER_ID: i64 = 1001;
+
 /// Course IDs in the set.
 pub const COURSES: [i64; 5] = [101, 102, 103, 104, 105];
 
@@ -153,6 +157,40 @@ fn planner_item(course_id: i64, n: i64) -> Value {
     })
 }
 
+fn announcement(course_id: i64, n: i64) -> Value {
+    let id = course_id * 100 + 50 + n;
+    json!({
+        "id": id,
+        "title": format!("Announcement {n}"),
+        "message": format!("<p>Notice {n} for course {course_id}.</p>"),
+        "posted_at": at(n, 9),
+        "published": true,
+        "locked": false,
+        "is_announcement": true,
+        "context_code": format!("course_{course_id}"),
+        "html_url": format!("{LINK_HOST}/courses/{course_id}/discussion_topics/{id}")
+    })
+}
+
+/// A timed event. The set holds no all-day event on purpose: `bench` shifts a
+/// body by whole days by rewriting RFC 3339 timestamps, and `all_day_date` is
+/// a bare date it leaves alone, so an all-day row would drift out of the
+/// window the run asks for.
+fn calendar_event(context_code: &str, id: i64, n: i64) -> Value {
+    json!({
+        "id": id,
+        "title": format!("Event {n}"),
+        "start_at": at(n, 15),
+        "end_at": at(n, 16),
+        "workflow_state": "active",
+        "hidden": false,
+        "all_day": false,
+        "all_day_date": Value::Null,
+        "context_code": context_code,
+        "html_url": format!("{LINK_HOST}/calendar?event_id={id}")
+    })
+}
+
 /// Every response in the set.
 #[allow(clippy::too_many_lines)]
 pub fn responses() -> Vec<Recorded> {
@@ -161,7 +199,7 @@ pub fn responses() -> Vec<Recorded> {
     out.push(get(
         "/api/v1/users/self".to_owned(),
         json!({
-            "id": 1001, "name": "Name 1", "short_name": "Name 1",
+            "id": USER_ID, "name": "Name 1", "short_name": "Name 1",
             "sortable_name": "Name 1", "login_id": "user1"
         }),
     ));
@@ -286,6 +324,31 @@ pub fn responses() -> Vec<Recorded> {
         ));
     }
 
+    // `sync` refreshes announcements for every course in one request, and
+    // `sync --full` adds the calendar events of those courses and of the user.
+    // Both routes answer whatever `context_codes[]` set they are asked for:
+    // the fixture is stored without query pairs, so `mount_set` matches them
+    // on method and path alone.
+    let announcements: Vec<Value> = COURSES
+        .iter()
+        .flat_map(|course_id| (1..=2).map(move |n| announcement(*course_id, n)))
+        .collect();
+    out.push(get(
+        "/api/v1/announcements".to_owned(),
+        json!(announcements),
+    ));
+
+    let mut events = vec![calendar_event(&format!("user_{USER_ID}"), 6000, 1)];
+    for (index, course_id) in COURSES.iter().enumerate() {
+        let n = i64::try_from(index).unwrap_or(0);
+        events.push(calendar_event(
+            &format!("course_{course_id}"),
+            course_id * 10 + 7,
+            n + 2,
+        ));
+    }
+    out.push(get("/api/v1/calendar_events".to_owned(), json!(events)));
+
     // Per-file metadata for the course the benchmark downloads.
     for (id, size) in DOWNLOAD_FILES {
         out.push(get(format!("/api/v1/files/{id}"), file_row(id, size)));
@@ -384,6 +447,9 @@ mod tests {
             "/api/v1/users/self/enrollments",
             "/api/v1/planner/items",
             "/api/v1/users/self/missing_submissions",
+            // `sync` reads announcements, and `sync --full` reads the calendar.
+            "/api/v1/announcements",
+            "/api/v1/calendar_events",
         ] {
             assert!(paths.contains(&want), "{want} missing");
         }
@@ -404,14 +470,46 @@ mod tests {
         assert_eq!(planner.body.as_array().unwrap().len(), 30);
     }
 
+    /// `sync --full` asks for the calendar of the user and of every course in
+    /// one request. A context the set answers with nothing is a denial, and
+    /// `sync` reports that as `partial` (exit 12), which fails the run.
+    #[test]
+    fn the_calendar_covers_the_user_and_every_course() {
+        let responses = responses();
+        let events = responses
+            .iter()
+            .find(|r| r.path == "/api/v1/calendar_events")
+            .expect("calendar events");
+        let contexts: Vec<&str> = events
+            .body
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["context_code"].as_str().unwrap())
+            .collect();
+        assert!(contexts.contains(&format!("user_{USER_ID}").as_str()));
+        for course_id in COURSES {
+            assert!(
+                contexts.contains(&format!("course_{course_id}").as_str()),
+                "course_{course_id} has no event"
+            );
+        }
+
+        let announcements = responses
+            .iter()
+            .find(|r| r.path == "/api/v1/announcements")
+            .expect("announcements");
+        assert_eq!(announcements.body.as_array().unwrap().len(), 10);
+    }
+
     /// The generated bodies must decode with the models the binary uses.
     /// A fixture the client cannot parse turns into an unexplained `decode`
     /// error deep inside a benchmark run.
     #[test]
     fn every_body_decodes_with_the_real_models() {
         use canvas_api::models::{
-            Assignment, Course, Enrollment, File, Folder, GradingPeriod, MissingSubmission, Module,
-            PlannerItem, User, WrappedCollection,
+            Announcement, Assignment, CalendarEvent, Course, Enrollment, File, Folder,
+            GradingPeriod, MissingSubmission, Module, PlannerItem, User, WrappedCollection,
         };
         fn check<T: serde::de::DeserializeOwned>(path: &str, body: &Value) {
             serde_json::from_value::<T>(body.clone())
@@ -442,6 +540,10 @@ mod tests {
                     check::<Vec<File>>(path, body);
                 } else if path.ends_with("/modules") {
                     check::<Vec<Module>>(path, body);
+                } else if path == "/api/v1/announcements" {
+                    check::<Vec<Announcement>>(path, body);
+                } else if path == "/api/v1/calendar_events" {
+                    check::<Vec<CalendarEvent>>(path, body);
                 } else if path.starts_with("/api/v1/files/") {
                     check::<File>(path, body);
                 } else {
