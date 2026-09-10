@@ -861,7 +861,7 @@ SQLite keeps `NULL` values distinct in a unique index, so a journal written befo
 | `expired` | the admission deadline passed before execute | `prepared`, `approved` |
 | `invalidated` | a meaningful fact changed, or the plan was declined or cancelled | `prepared`, `approved`, `expired` |
 
-Every transition is one `BEGIN IMMEDIATE` with a `WHERE … state IN (…)` guard, the discipline §12.2 sets for the journal. An `executed` plan is history: no statement rewrites it. A transition that matches zero rows is a lost expected-state guard and exits 13.
+Every transition is one `BEGIN IMMEDIATE` with an expected-state guard on the row, the discipline §12.2 sets for the journal. An `executed` plan is history: `expire` and `invalidate` both name the states they may leave, so no statement rewrites it. A guard that matches zero rows is read by the transition that ran it, not by one rule: `approve` reports a lost race as a local failure (exit 13), the execute link takes it as another execute having consumed the approval and answers with that execute's journal, and `expire` and `invalidate` leave a plan they may not move untouched.
 
 ### Admission expiry
 
@@ -898,7 +898,7 @@ It deliberately excludes the outbound bytes and the local file paths. The bytes 
 
 ### Prepare
 
-`prepare` runs §12.2 pre-flight step 1, freezes the payload, and stores a `prepared` plan. It takes the admission lock for its own pre-flight only and releases it before returning: **no lock is held while a person considers a plan.** Preparing uploads nothing and posts nothing.
+`prepare` runs the whole §12.2 pre-flight — step 1 fresh `GET`, step 2 admission and owner-absent recovery, steps 3–4 eligibility, step 5 freeze, step 6 baseline — and stores a `prepared` plan. It takes the admission lock for its own pre-flight only and releases it before returning: **no lock is held while a person considers a plan.** Preparing uploads nothing and posts nothing.
 
 ### Execute
 
@@ -909,7 +909,7 @@ In order:
 3. Refuse a plan that belongs to another identity, or to another identity generation.
 4. Register foreground interest (§22) and re-read the assignment (pre-flight step 1 again).
 5. Take assignment admission. When another process holds it, wait up to 5 seconds for **this plan's own** concurrent execute to publish its journal, then return that journal; anything else is the ordinary `in_progress` refusal. (§19 item 16.)
-6. Re-read the plan under admission and re-check steps 2 and 3, so a decline that landed during the read names itself.
+6. Re-read the plan under admission and re-check the expiry, the invalidation, and the recorded approval, so a decline that landed during the read names itself. The digest and the identity checks of steps 2 and 3 are not repeated.
 7. Compare every frozen observation against the fresh read. The first difference invalidates the plan and needs a fresh plan and a fresh approval.
 8. Run §12.2 steps 3–4 (eligibility, group, kinds), then compare the baseline attempt and submission id, then the allowed extensions, then re-hash every frozen file from disk.
 9. One state transaction consumes the approval, inserts the journal with `plan_id` and the approval audit, and marks the plan `executed`. Two guards make it exactly one journal per plan: the partial unique index, and `UPDATE plans … WHERE plan_id = ? AND state = 'approved'`.
@@ -1059,7 +1059,7 @@ The coordinator reads and writes the row through its own `state.sqlite` connecti
 
 A waiter gives up after 30 seconds. It then serves the coverage the cache already holds with honest §7 metadata — `source: "cache"`, `stale: true`, and the row's own `complete` and `error` — and makes no second fetch. With nothing usable it reports the §14 exit 13 lock timeout. A `--fresh` waiter accepts the holder's row only when its `fetched_at` is at or after the waiter's own start. §19 item 25 records the cold-cache case.
 
-**Foreground interest and priority.** `canvas submit` and `plan execute` register interest before their first pre-flight request and hold it until the command returns. The row lives in `interest(assignment_id, kind, registered_at)` with `kind ∈ {submit, plan_execute}`; liveness is the matching lock file, so a registrant that dies frees its interest with its descriptor and polling can never be starved by a crash.
+**Foreground interest and priority.** `plan execute` registers interest before its first pre-flight request; `canvas submit` registers it as soon as the assignment id exists, which is after its resolution reads (§19 item 29). Both hold it until the command returns. The row lives in `interest(assignment_id, kind, registered_at)` with `kind ∈ {submit, plan_execute}`; liveness is the matching lock file, so a registrant that dies frees its interest with its descriptor and polling can never be starved by a crash.
 
 While a live registration exists, or while any journal is in state `planned`, `uploading`, `uploaded`, or `posting` (§10's pending hook), `watch` admits no new polling request and holds no slot. `watch` re-reads that state before it polls each refresh, so interest that arrives during a tick stops the rest of that tick. A terminal `outcome_unknown` journal is **not** in flight: polling continues, so its readback can still happen. A refresh already admitted finishes its own pagination; §19 item 23 records that bound, and §19 item 29 records where `submit` registers.
 
