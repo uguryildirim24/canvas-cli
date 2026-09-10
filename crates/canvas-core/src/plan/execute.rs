@@ -16,7 +16,7 @@ use crate::store::Store;
 use crate::submit::{FrozenInput, InputKind, freeze_files};
 
 use super::ops;
-use super::record::{Observations, PlanRow, PlanState};
+use super::record::{Observations, PlanKind, PlanRow, PlanState};
 use super::{HandleRefusal, PlanError};
 
 /// What one execute produced.
@@ -159,7 +159,7 @@ pub async fn execute(
             &format!("{field} changed since the plan was prepared"),
         ));
     }
-    crate::submit::check_admissible(&assignment, plan.kind, now)?;
+    crate::submit::check_admissible(&assignment, submission_kind(&plan)?, now)?;
 
     // Step 6: the baseline the plan promised must still be the baseline.
     let facts = crate::submit::facts_of(&assignment, now);
@@ -236,7 +236,7 @@ pub(super) fn link(
         identity_key: plan.identity_key.clone(),
         course_id: plan.course_id,
         assignment_id: plan.assignment_id,
-        kind: plan.kind.as_str().to_owned(),
+        kind: submission_kind(plan)?.as_str().to_owned(),
         intended_payload_json: serde_json::to_string(&plan.payload)?,
         baseline_attempt: Some(plan.baseline_attempt),
         baseline_submission_id: plan.baseline_submission_id,
@@ -261,10 +261,23 @@ pub(super) fn link(
     }
 }
 
+/// The submission kind of a plan, or the refusal an operation plan gets here.
+///
+/// `canvas_core::plan::execute` admits submissions. An operation plan takes
+/// `canvas_core::operations::execute`, which revalidates its own target; a
+/// caller that sends one here is refused rather than silently treated as an
+/// upload.
+fn submission_kind(plan: &PlanRow) -> Result<InputKind, PlanError> {
+    plan.kind.submission().ok_or(PlanError::Refused {
+        reason: "invalidated",
+        message: format!("plan {} is an operation, not a submission", plan.kind),
+    })
+}
+
 /// Rebuild the frozen input the plan stored.
 pub(super) fn frozen_of(plan: &PlanRow) -> FrozenInput {
     FrozenInput {
-        kind: plan.kind,
+        kind: plan.kind.submission().unwrap_or(InputKind::OnlineUpload),
         payload: plan.payload.clone(),
         file_paths: plan.file_paths.iter().map(PathBuf::from).collect(),
     }
@@ -277,7 +290,7 @@ pub(super) fn frozen_of(plan: &PlanRow) -> FrozenInput {
 /// bytes behind them are read again here. §12.2 step 8 still verifies the
 /// streamed hash; this check refuses the change before a journal exists.
 fn verify_local_bytes(store: &Store, plan: &PlanRow) -> Result<(), PlanError> {
-    if plan.kind != InputKind::OnlineUpload {
+    if plan.kind != PlanKind::Submission(InputKind::OnlineUpload) {
         return Ok(());
     }
     if plan.file_paths.len() != plan.payload.files.len() {

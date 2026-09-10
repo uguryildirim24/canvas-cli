@@ -28,5 +28,7 @@
     ],
     "subject": "Lab partner",
     "workflow_state": "unread"
-  }
+  },
+  "pending": false,
+  "pending_journals": []
 }

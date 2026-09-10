@@ -21,6 +21,8 @@ pub enum EventKind {
     MissingNew,
     /// A submission journal changed state (§12.2).
     SubmissionState,
+    /// An operation journal changed state (M8-b, §12.2 discipline).
+    OperationState,
     /// The unread-conversation count changed (M8-a `inbox_unread`).
     InboxUnreadCount,
     /// The recorded observation could not be applied; rebuild the baseline.
@@ -41,6 +43,7 @@ impl EventKind {
             Self::AnnouncementNew => "announcement.new",
             Self::MissingNew => "missing.new",
             Self::SubmissionState => "submission.state",
+            Self::OperationState => "operation.state",
             Self::InboxUnreadCount => "inbox.unread_count",
             Self::ResyncRequired => "resync_required",
         }
@@ -65,6 +68,7 @@ impl EventKind {
             Self::AnnouncementNew,
             Self::MissingNew,
             Self::SubmissionState,
+            Self::OperationState,
             Self::InboxUnreadCount,
             Self::ResyncRequired,
         ]
@@ -82,6 +86,7 @@ impl EventKind {
             Self::AnnouncementNew => "announcements",
             Self::MissingNew => "missing",
             Self::SubmissionState => "submission",
+            Self::OperationState => "operation",
             Self::InboxUnreadCount => "inbox",
             Self::ResyncRequired => "resync",
         }

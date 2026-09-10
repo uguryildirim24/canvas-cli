@@ -20,5 +20,7 @@
     "available": true,
     "http_status": null
   },
-  "scope": "inbox"
+  "scope": "inbox",
+  "pending": false,
+  "pending_journals": []
 }

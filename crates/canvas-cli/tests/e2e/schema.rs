@@ -55,6 +55,11 @@ const SHAPES: &[Shape] = shapes![
     ("canvas-cli/receipts@1", "receipts_acknowledge.json"),
     ("canvas-cli/verify@1", "verify.json"),
     ("canvas-cli/reconcile@1", "reconcile.json"),
+    ("canvas-cli/operation@1", "operation.json"),
+    (
+        "canvas-cli/operation_reconcile@1",
+        "operation_reconcile.json"
+    ),
     ("canvas-cli/grades@1", "grades.json"),
     ("canvas-cli/files@1", "files.json"),
     ("canvas-cli/modules@1", "modules.json"),
@@ -545,8 +550,12 @@ fn the_plan_fields_are_nullable_in_every_shape_that_carries_them() {
     }
 
     for shape in SHAPES {
-        // A plan names itself, so only its approval can be null.
-        let keys: &[&str] = if shape.schema == "canvas-cli/plan@1" {
+        // A plan names itself, so only its approval can be null. So does an
+        // operation journal: it exists only because a plan admitted it, and
+        // the unique index on `plan_id` is what makes that one journal.
+        let names_its_own_plan =
+            matches!(shape.schema, "canvas-cli/plan@1" | "canvas-cli/operation@1");
+        let keys: &[&str] = if names_its_own_plan {
             &["approval"]
         } else {
             &["plan_id", "approval"]

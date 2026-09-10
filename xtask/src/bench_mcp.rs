@@ -8,7 +8,7 @@
 //!   once per session, before the model has read a single course.
 //! - **Warm `todo.list` round trip** over stdio, p50 and p95. The target is
 //!   p95 < 100 ms, excluding model time.
-//! - **Tool calls per workflow** for the five workflows the shipped skill
+//! - **Tool calls per workflow** for the six workflows the shipped skill
 //!   documents. A workflow that needs four round trips costs four turns.
 //!
 //! The client here is hand-written JSON-RPC over the child's pipes, so the
@@ -204,7 +204,7 @@ struct Workflow {
     unmeasured_note: &'static str,
 }
 
-/// The five workflows the shipped skill documents.
+/// The six workflows the shipped skill documents.
 ///
 /// Each entry is the sequence this harness can issue offline, plus the count
 /// of calls the workflow needs that it cannot: a submission needs the network
@@ -263,6 +263,17 @@ fn workflows(course: i64, assignment: i64) -> Vec<Workflow> {
             ],
             unmeasured: 1,
             unmeasured_note: "`submission.reconcile`, which needs an unresolved journal",
+        },
+        Workflow {
+            name: "reply and message with approval",
+            calls: vec![
+                ("discussions.list", json!({ "course": course })),
+                ("inbox.list", json!({})),
+            ],
+            unmeasured: 4,
+            unmeasured_note: "a prepare, then an execute twice (the first returns \
+                              `input_required`, the retry carries the approval), and \
+                              `operation.status`: all four need the network and a person",
         },
         Workflow {
             name: "download course files",
@@ -361,7 +372,7 @@ mod tests {
     /// Every workflow the skill documents is measured, and every one that
     /// cannot be measured in full says why.
     #[test]
-    fn the_five_skill_workflows_are_covered() {
+    fn the_six_skill_workflows_are_covered() {
         let workflows = workflows(101, 10101);
         let names: Vec<&str> = workflows.iter().map(|w| w.name).collect();
         assert_eq!(
@@ -371,6 +382,7 @@ mod tests {
                 "read an assignment",
                 "prepare and submit with approval",
                 "reconcile an unknown outcome",
+                "reply and message with approval",
                 "download course files",
             ]
         );
