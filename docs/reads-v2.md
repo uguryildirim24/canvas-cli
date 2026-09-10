@@ -244,9 +244,62 @@ per-tool cost item 19 names — every tool inlines the whole §7 envelope in
 both shapes — and nothing here changes how the document is built. The
 decision is still the owner's.
 
+## The `inbox.unread_count` event (item 4, done in M8-a3)
+
+M6-c is on `main`, so the `inbox_unread` dataset now produces the
+`inbox.unread_count` event kind REPORT §3.6 registers. Nothing about the
+read changed: the same request, the same dataset, the same TTL.
+
+The dataset joins `canvas-core::events::SHAPES` as one more observed shape,
+so it follows the M6-c rules without a second implementation:
+
+* The table is `conversation_unread`, and the one allowlisted column is
+  `unread_count`. A conversation subject, a participant, and a message body
+  never reach the event log.
+* The first complete observation of `inbox_unread` / `all` sets the baseline
+  and emits nothing.
+* Only a complete observation of the same scope is compared. A failed or
+  partial read is not observed at all.
+* A changed count is one event whose payload is the count before and after:
+  `before: { "unread_count": 2 }`, `after: { "unread_count": 5 }`. An
+  unchanged count emits nothing.
+* The count has no removal kind. One row is the whole membership, and a read
+  that failed is not observed at all, so the row never leaves a membership
+  that was compared.
+* Replay is idempotent. An observation is keyed by the exact cache row it
+  saw, so applying it again — after a crash, or from `watch`'s pending
+  sweep — emits nothing a consumer has not already seen.
+
+Two producers reach the same path, because both go through
+`refresh_inbox_unread` and the observation hook in `canvas-core::sync`:
+
+* `inbox unread-count` records and applies its own observation, so an agent
+  that never runs `watch` still gets the event.
+* A `watch` tick refreshes `inbox_unread` last, after the coursework
+  datasets. It is the cheapest and the least urgent dataset, so a slow or
+  failing inbox never delays what a deadline depends on; a failure backs off
+  like any other scope.
+
+### Choices where the report was silent
+
+1. **Which kind an added row carries.** `added` is unreachable for this
+   dataset, and is named for completeness. The first complete observation is
+   silent; a gap deletes the baseline rather than emptying it, so the
+   observation after a gap is silent too; and the refresh always writes the
+   single row, so no complete observation compares against a baseline that
+   lacks it. `Shape` still requires a kind, and the kind named is
+   `inbox.unread_count`: a count that became known again is the same news to
+   a consumer as a count that changed, and a second kind would make every
+   consumer handle two that mean one thing.
+2. **No removal kind**, as above. An observation the log cannot trust already
+   has its own signal in `resync_required`.
+3. **Where the count sits in a `watch` tick.** Last. §3.6 fixes no order,
+   and a deadline is what the tick exists for.
+4. **An unreadable count.** `unread_count` is `null` when Canvas sends
+   something that is not a number (the M8-a rule). `null` compares like any
+   other value, so a count that becomes unknown is reported once, and does
+   not repeat while it stays unknown.
+
 ## Left for the next round
 
-* **M6-c is not on `main`.** The `inbox.unread_count` event from the
-  `inbox_unread` dataset, under M6-c's baseline rules with the first
-  observation silent, is left for the next round, per item 4 of the brief.
-  Nothing in this package writes an event.
+Nothing from this package's brief remains.
