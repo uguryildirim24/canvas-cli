@@ -228,12 +228,7 @@ pub fn module_item_to_entity(
     );
     let html_url = match &item.html_url {
         canvas_api::Supplied::Value(url) => {
-            let mut url = url.clone();
-            url.set_query(None);
-            url.set_fragment(None);
-            let _ = url.set_username("");
-            let _ = url.set_password(None);
-            canvas_api::Supplied::Value(url)
+            canvas_api::Supplied::Value(without_capability_url(url))
         }
         other => other.clone(),
     };
@@ -716,4 +711,26 @@ fn upsert_module_item(
         applied.status,
     )?;
     Ok(())
+}
+
+/// A display URL with nothing capability-bearing left on it (§15).
+///
+/// The query, the fragment, and the userinfo can all carry a capability
+/// (`verifier`, a signature, a password), and none of them is needed to name
+/// the page a link points at, so a persisted `html_url` keeps only the origin
+/// and the path.
+#[must_use]
+pub(super) fn without_capability_url(url: &reqwest::Url) -> reqwest::Url {
+    let mut url = url.clone();
+    url.set_query(None);
+    url.set_fragment(None);
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url
+}
+
+/// [`without_capability_url`], rendered for storage.
+#[must_use]
+pub(super) fn without_capability(url: &reqwest::Url) -> String {
+    without_capability_url(url).to_string()
 }

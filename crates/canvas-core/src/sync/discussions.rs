@@ -343,7 +343,7 @@ pub fn topic_to_entity(item: &DiscussionTopic, course_id: i64) -> EntityIngest {
         fields.push(FieldWrite {
             name: "html_url",
             group: FieldGroup::Detail,
-            value: Some(url.to_string()),
+            value: Some(super::modules::without_capability(url)),
         });
     }
     EntityIngest {
