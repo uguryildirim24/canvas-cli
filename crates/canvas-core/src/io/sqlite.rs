@@ -1,42 +1,19 @@
-//! Process-wide `SQLite` worker. Synchronous callers must be on the blocking pool.
+//! Download database bridge to the process-wide store worker.
+//! Synchronous callers must be on the blocking pool and retain the identity lock.
 use rusqlite::Connection;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::{OnceLock, mpsc};
-
-type Connections = HashMap<PathBuf, Connection>;
-type Job = Box<dyn FnOnce(&mut Connections) + Send>;
+use std::path::Path;
+use std::time::Duration;
 
 pub(crate) fn call<T: Send + 'static>(
     path: &Path,
     f: impl FnOnce(&mut Connection) -> Result<T, rusqlite::Error> + Send + 'static,
 ) -> Result<T, rusqlite::Error> {
-    static WORKER: OnceLock<mpsc::SyncSender<Job>> = OnceLock::new();
-    let worker = WORKER.get_or_init(|| {
-        let (tx, rx) = mpsc::sync_channel::<Job>(32);
-        std::thread::Builder::new()
-            .name("canvas-sqlite".into())
-            .spawn(move || {
-                let mut connections = Connections::new();
-                while let Ok(job) = rx.recv() {
-                    job(&mut connections);
-                }
-            })
-            .expect("start SQLite worker");
-        tx
-    });
     let path = path.to_owned();
-    let (tx, rx) = mpsc::sync_channel(1);
-    worker
-        .send(Box::new(move |connections| {
-            let result = (|| {
-                if !connections.contains_key(&path) {
-                    connections.insert(path.clone(), Connection::open(&path)?);
-                }
-                f(connections.get_mut(&path).expect("opened connection"))
-            })();
-            let _ = tx.send(result);
-        }))
-        .map_err(|_| rusqlite::Error::InvalidQuery)?;
-    rx.recv().map_err(|_| rusqlite::Error::InvalidQuery)?
+    crate::store::auxiliary_sqlite(move || {
+        // Close before returning to the caller: no cached manifest handle may
+        // outlive the identity lock retained by the download session.
+        let mut connection = Connection::open(path)?;
+        connection.busy_timeout(Duration::from_secs(5))?;
+        f(&mut connection)
+    })
 }

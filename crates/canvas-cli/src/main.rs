@@ -156,6 +156,33 @@ async fn main() -> ExitCode {
                 Commands::Modules { course, items } => {
                     commands::modules::run(&m1b_globals(&globals), course, items).await
                 }
+                Commands::Download {
+                    course,
+                    all_courses,
+                    dest,
+                    module,
+                    files,
+                    jobs,
+                    dry_run,
+                    force,
+                    verify,
+                } => {
+                    commands::download::run(
+                        &m1b_globals(&globals),
+                        commands::download::DownloadArgs {
+                            course,
+                            all_courses,
+                            dest,
+                            module,
+                            files,
+                            jobs,
+                            dry_run,
+                            force,
+                            verify,
+                        },
+                    )
+                    .await
+                }
                 Commands::Todo {
                     days,
                     all,
@@ -176,7 +203,6 @@ async fn main() -> ExitCode {
                     commands::open::run(&m1b_globals(&globals), command, target).await
                 }
                 Commands::Grades { .. }
-                | Commands::Download { .. }
                 | Commands::Announcements { .. }
                 | Commands::Announcement { .. }
                 | Commands::Calendar { .. } => not_implemented(globals.json),

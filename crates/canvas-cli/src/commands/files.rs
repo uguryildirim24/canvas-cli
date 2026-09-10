@@ -134,7 +134,7 @@ pub async fn run(
     })
 }
 
-async fn ensure_folders(
+pub(crate) async fn ensure_folders(
     globals: &Globals,
     session: &Session,
     course_id: i64,
@@ -169,7 +169,7 @@ async fn ensure_folders(
     .map_err(RefreshFail::Sync)
 }
 
-async fn ensure_files(
+pub(crate) async fn ensure_files(
     globals: &Globals,
     session: &Session,
     course_id: i64,
