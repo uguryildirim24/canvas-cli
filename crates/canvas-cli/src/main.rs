@@ -55,6 +55,11 @@ fn not_implemented(json: bool) -> ExitCode {
     )
 }
 
+/// Peer-lane Round-3 stub: exit 2 with `not implemented`.
+fn not_implemented_r3(json: bool) -> ExitCode {
+    commands::emit::emit_error(json, "not_implemented", "not implemented", 2, None, None)
+}
+
 fn m1b_globals(globals: &Globals) -> commands::Globals {
     commands::Globals {
         json: globals.json,
@@ -146,17 +151,18 @@ async fn main() -> ExitCode {
                 Commands::Todo { .. }
                 | Commands::Assignments { .. }
                 | Commands::Assignment { .. }
-                | Commands::Submit { .. }
-                | Commands::Submission { .. }
-                | Commands::Receipts { .. }
                 | Commands::Grades { .. }
-                | Commands::Files { .. }
                 | Commands::Download { .. }
-                | Commands::Modules { .. }
                 | Commands::Announcements { .. }
                 | Commands::Announcement { .. }
                 | Commands::Calendar { .. }
                 | Commands::Open { .. } => not_implemented(globals.json),
+                // Round-3 peer-lane stubs (M2-b / M3-a): exit 2.
+                Commands::Submit { .. }
+                | Commands::Submission { .. }
+                | Commands::Receipts { .. }
+                | Commands::Files { .. }
+                | Commands::Modules { .. } => not_implemented_r3(globals.json),
             }
         })
     })
