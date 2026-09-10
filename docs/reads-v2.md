@@ -263,8 +263,9 @@ so it follows the M6-c rules without a second implementation:
 * A changed count is one event whose payload is the count before and after:
   `before: { "unread_count": 2 }`, `after: { "unread_count": 5 }`. An
   unchanged count emits nothing.
-* The count has no removal kind. One row is the whole membership, and a row
-  that leaves it means the read failed, which is not news about the inbox.
+* The count has no removal kind. One row is the whole membership, and a read
+  that failed is not observed at all, so the row never leaves a membership
+  that was compared.
 * Replay is idempotent. An observation is keyed by the exact cache row it
   saw, so applying it again — after a crash, or from `watch`'s pending
   sweep — emits nothing a consumer has not already seen.
@@ -281,11 +282,17 @@ Two producers reach the same path, because both go through
 
 ### Choices where the report was silent
 
-1. **Which kind an added row carries.** The single row can only "join" the
-   membership after a gap dropped the baseline. The count became known
-   again, which is the same news as a change, so `added` is
-   `inbox.unread_count` too, with an empty `before`.
-2. **No removal kind**, as above.
+1. **Which kind an added row carries.** `added` is unreachable for this
+   dataset, and is named for completeness. The first complete observation is
+   silent; a gap deletes the baseline rather than emptying it, so the
+   observation after a gap is silent too; and the refresh always writes the
+   single row, so no complete observation compares against a baseline that
+   lacks it. `Shape` still requires a kind, and the kind named is
+   `inbox.unread_count`: a count that became known again is the same news to
+   a consumer as a count that changed, and a second kind would make every
+   consumer handle two that mean one thing.
+2. **No removal kind**, as above. An observation the log cannot trust already
+   has its own signal in `resync_required`.
 3. **Where the count sits in a `watch` tick.** Last. §3.6 fixes no order,
    and a deadline is what the tick exists for.
 4. **An unreadable count.** `unread_count` is `null` when Canvas sends

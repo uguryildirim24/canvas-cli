@@ -32,11 +32,12 @@ pub struct Shape {
     /// Emitted when an allowlisted field of a member changed, for a dataset
     /// that compares fields at all.
     ///
-    /// `None` means membership only: `missing` and `announcements` report that
-    /// something joined a list, and REPORT §3.6 names no kind for a change
-    /// inside one of their rows. A dataset that does compare fields names the
-    /// kind its remaining field changes carry; `due_at`, the score, and the
-    /// grade keep their own kinds wherever they are allowlisted.
+    /// `None` turns field comparison off for the whole shape: `missing` and
+    /// `announcements` report that something joined a list, and REPORT §3.6
+    /// names no kind for any change inside one of their rows, not even the
+    /// `due_at` `missing` allowlists for its payload. A dataset that does
+    /// compare fields names the kind its remaining field changes carry, and
+    /// `due_at`, the score, and the grade keep their own kinds inside it.
     pub changed: Option<EventKind>,
 }
 
@@ -98,9 +99,14 @@ pub const SHAPES: &[Shape] = &[
         table: "conversation_unread",
         columns: &["unread_count"],
         json_keys: &[],
-        // The first complete observation sets the baseline and says nothing,
-        // so `added` can only follow a gap that dropped that baseline. The
-        // count became known again, which is the same news as a change.
+        // `added` is unreachable here, and is named for completeness. The
+        // first complete observation is silent, and `report_gap` deletes the
+        // baseline rather than emptying it, so the observation after a gap is
+        // silent too; the refresh always writes the single row, so no complete
+        // observation ever compares against a baseline that lacks it. It names
+        // the change kind rather than a second one, because a count that
+        // became known again is the same news to a consumer as a count that
+        // changed.
         added: EventKind::InboxUnreadCount,
         removed: None,
         changed: Some(EventKind::InboxUnreadCount),
