@@ -11,6 +11,7 @@ canvas-api.workspace = true
 cap-fs-ext.workspace = true
 cap-std.workspace = true
 fs4.workspace = true
+futures-util.workspace = true
 getrandom = "=0.4.3"
 htmd = "=0.5.5"
 jiff.workspace = true
