@@ -5,5 +5,5 @@ expression: body
 exit: 0
 --- stdout ---
 cleared: true
-rows_deleted: 101
+rows_deleted: 102
 --- stderr ---

@@ -818,12 +818,11 @@ pub(super) async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'stat
             if matches!(
                 dataset.name(),
                 "files" | "folders" | "pages" | "discussions" | "inbox"
-            )
-                && row
-                    .error
-                    .as_deref()
-                    .and_then(listing_denial_status)
-                    .is_some() =>
+            ) && row
+                .error
+                .as_deref()
+                .and_then(listing_denial_status)
+                .is_some() =>
         {
             row.error.clone()
         }

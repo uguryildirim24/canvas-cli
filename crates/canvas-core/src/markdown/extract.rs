@@ -1,25 +1,64 @@
 //! Bounded rich-text projection: Markdown plus what the Markdown cannot show.
 //!
-//! An agent that reads a page body must be told what it did not get. Every
-//! `<iframe>`, LTI launch, `<video>`, and `<audio>` becomes an `embedded` row
-//! and a one-line placeholder in the Markdown; a same-origin `/files/:id`
-//! reference becomes a `files` row; anything on another origin is listed as an
-//! external link and is never fetched.
+//! An agent that reads a body must be told what it did not get. Every
+//! `<iframe>`, LTI launch, `<video>`, and `<audio>` becomes an embedded row and
+//! a one-line placeholder in the Markdown; every link and image source is kept
+//! as written, so the reader can resolve it against its own identity origin.
+//!
+//! Conversion never keeps the source HTML: [`BodyRefs`] is the projection the
+//! cache may store, and [`BodyRefs::resolve`] turns it into same-origin file
+//! references and external links at read time.
 
 use std::sync::{Arc, Mutex};
 
 use htmd::{Element, HtmlToMarkdown, element_handler::Handlers};
 use markup5ever_rcdom::{Handle, NodeData};
+use serde::{Deserialize, Serialize};
 
 use super::MarkdownError;
 
 /// Text bodies are bounded at 64 KiB per document (M8-a).
 pub const BODY_LIMIT: usize = 64 * 1024;
 
-/// One piece of content the Markdown cannot carry.
+/// One piece of content the Markdown cannot carry, as written in the source.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RawEmbed {
+    /// `iframe`, `lti`, `video`, `audio`, or `unknown`.
+    pub kind: String,
+    /// The source as the document wrote it; may be relative.
+    pub src: Option<String>,
+}
+
+/// One link or image source, as written in the source.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RawLink {
+    pub href: String,
+    pub label: Option<String>,
+}
+
+/// Everything a converted body refers to but does not contain.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BodyRefs {
+    /// True when the Markdown these came from was cut at [`BODY_LIMIT`].
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default)]
+    pub embedded: Vec<RawEmbed>,
+    #[serde(default)]
+    pub links: Vec<RawLink>,
+}
+
+/// A converted body and everything the conversion had to leave out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RichText {
+    /// `None` when the source HTML held no text at all.
+    pub markdown: Option<String>,
+    pub refs: BodyRefs,
+}
+
+/// One piece of content this tool will not fetch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedRef {
-    /// `iframe`, `lti`, `video`, `audio`, or `unknown`.
     pub kind: String,
     /// Origin of the source when it is absolute; `None` when it is relative.
     pub src_origin: Option<String>,
@@ -39,43 +78,32 @@ pub struct ExternalLink {
     pub url: String,
 }
 
-/// A converted body and everything the conversion had to leave out.
+/// References resolved against one identity origin.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RichText {
-    /// `None` when the source HTML held no text at all.
-    pub markdown: Option<String>,
-    /// True when the body was cut at [`BODY_LIMIT`].
-    pub truncated: bool,
+pub struct ResolvedRefs {
     pub embedded: Vec<EmbeddedRef>,
     pub files: Vec<FileRef>,
     pub external_links: Vec<ExternalLink>,
 }
 
 /// Convert one HTML body on the blocking pool and report what it hides.
-///
-/// `origin` is the active identity origin; a reference to any other origin is
-/// external by definition and stays unfetched.
-pub async fn rich_text(html: &str, origin: &str) -> Result<RichText, MarkdownError> {
+pub async fn rich_text(html: &str) -> Result<RichText, MarkdownError> {
     let html = html.to_owned();
-    let origin = origin.to_owned();
-    tokio::task::spawn_blocking(move || convert(&html, &origin))
+    tokio::task::spawn_blocking(move || convert(&html))
         .await
         .map_err(|_| MarkdownError::Worker)?
 }
 
 /// Same as [`rich_text`], for an optional body that may be absent or blank.
-pub async fn rich_text_opt(
-    html: Option<&str>,
-    origin: &str,
-) -> Result<RichText, MarkdownError> {
+pub async fn rich_text_opt(html: Option<&str>) -> Result<RichText, MarkdownError> {
     match html.filter(|s| !s.trim().is_empty()) {
-        Some(html) => rich_text(html, origin).await,
+        Some(html) => rich_text(html).await,
         None => Ok(RichText::default()),
     }
 }
 
-fn convert(html: &str, origin: &str) -> Result<RichText, MarkdownError> {
-    let embedded: Arc<Mutex<Vec<EmbeddedRef>>> = Arc::new(Mutex::new(Vec::new()));
+fn convert(html: &str) -> Result<RichText, MarkdownError> {
+    let embedded: Arc<Mutex<Vec<RawEmbed>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&embedded);
     let converter = HtmlToMarkdown::builder()
         .add_handler(
@@ -88,11 +116,11 @@ fn convert(html: &str, origin: &str) -> Result<RichText, MarkdownError> {
                         .find(|a| a.name.local.as_ref() == name)
                         .map(|a| a.value.to_string())
                 };
-                let src = get("src").or_else(|| get("data")).unwrap_or_default();
-                let kind = embed_kind(element.tag, &src);
-                let row = EmbeddedRef {
+                let src = get("src").or_else(|| get("data"));
+                let kind = embed_kind(element.tag, src.as_deref().unwrap_or_default());
+                let row = RawEmbed {
                     kind: kind.to_owned(),
-                    src_origin: absolute_origin(&src),
+                    src,
                 };
                 let line = format!("\n\n[embedded {kind}: unavailable to this tool]\n\n");
                 if let Ok(mut rows) = sink.lock()
@@ -108,10 +136,9 @@ fn convert(html: &str, origin: &str) -> Result<RichText, MarkdownError> {
     let tree = converter
         .html_to_tree(html)
         .map_err(|_| MarkdownError::Convert)?;
-    let mut refs = Refs::default();
-    collect_refs(&tree, origin, &mut refs);
-    let markdown = converter.tree_to_markdown(&tree);
-    let markdown = markdown.trim().to_owned();
+    let mut links = Vec::new();
+    collect_links(&tree, &mut links);
+    let markdown = converter.tree_to_markdown(&tree).trim().to_owned();
     let (markdown, truncated) = bound(markdown);
 
     Ok(RichText {
@@ -120,14 +147,58 @@ fn convert(html: &str, origin: &str) -> Result<RichText, MarkdownError> {
         } else {
             Some(markdown)
         },
-        truncated,
-        embedded: embedded
-            .lock()
-            .map(|rows| rows.clone())
-            .unwrap_or_default(),
-        files: refs.files,
-        external_links: refs.external,
+        refs: BodyRefs {
+            truncated,
+            embedded: embedded.lock().map(|rows| rows.clone()).unwrap_or_default(),
+            links,
+        },
     })
+}
+
+impl BodyRefs {
+    /// Resolve every reference against `origin`.
+    ///
+    /// A `/files/:id` reference on the identity origin is a Canvas file this
+    /// tool could read; anything on another origin is listed and never fetched.
+    #[must_use]
+    pub fn resolve(&self, origin: &str) -> ResolvedRefs {
+        let mut out = ResolvedRefs {
+            embedded: self
+                .embedded
+                .iter()
+                .map(|e| EmbeddedRef {
+                    kind: e.kind.clone(),
+                    src_origin: e.src.as_deref().and_then(absolute_origin),
+                })
+                .collect(),
+            ..ResolvedRefs::default()
+        };
+        for link in &self.links {
+            match resolved(&link.href, origin) {
+                Resolution::SameOrigin(url) => {
+                    let Some(file_id) = file_id_of(url.path()) else {
+                        continue;
+                    };
+                    if out.files.iter().any(|f| f.file_id == file_id) {
+                        continue;
+                    }
+                    out.files.push(FileRef {
+                        file_id,
+                        name: link.label.clone(),
+                        url: url.to_string(),
+                    });
+                }
+                Resolution::CrossOrigin(url) => {
+                    let row = ExternalLink { url };
+                    if !out.external_links.contains(&row) {
+                        out.external_links.push(row);
+                    }
+                }
+                Resolution::Unusable => {}
+            }
+        }
+        out
+    }
 }
 
 /// Cut at [`BODY_LIMIT`] bytes, never inside a character.
@@ -144,13 +215,7 @@ fn bound(markdown: String) -> (String, bool) {
     (out, true)
 }
 
-#[derive(Default)]
-struct Refs {
-    files: Vec<FileRef>,
-    external: Vec<ExternalLink>,
-}
-
-fn collect_refs(node: &Handle, origin: &str, out: &mut Refs) {
+fn collect_links(node: &Handle, out: &mut Vec<RawLink>) {
     if let NodeData::Element { name, attrs, .. } = &node.data {
         let attrs = attrs.borrow();
         let get = |wanted: &str| {
@@ -159,53 +224,34 @@ fn collect_refs(node: &Handle, origin: &str, out: &mut Refs) {
                 .find(|a| a.name.local.as_ref() == wanted)
                 .map(|a| a.value.to_string())
         };
-        let tag = name.local.as_ref();
-        let raw = match tag {
+        let href = match name.local.as_ref() {
             "a" | "area" => get("href"),
             "img" | "source" => get("src"),
             _ => None,
         };
-        if let Some(raw) = raw.filter(|r| !r.trim().is_empty()) {
+        if let Some(href) = href.filter(|h| usable(h)) {
             let label = get("title")
                 .filter(|s| !s.trim().is_empty())
                 .or_else(|| text_of(node))
                 .or_else(|| get("alt"));
-            classify(&raw, label, origin, out);
+            let row = RawLink { href, label };
+            if !out.contains(&row) {
+                out.push(row);
+            }
         }
     }
     for child in node.children.borrow().iter() {
-        collect_refs(child, origin, out);
+        collect_links(child, out);
     }
 }
 
-fn classify(raw: &str, label: Option<String>, origin: &str, out: &mut Refs) {
-    // A fragment or a mail link is neither a Canvas file nor a fetchable page.
-    if raw.starts_with('#') || raw.starts_with("mailto:") || raw.starts_with("javascript:") {
-        return;
-    }
-    match resolved(raw, origin) {
-        Resolution::SameOrigin(url) => {
-            if let Some(file_id) = file_id_of(url.path()) {
-                let row = FileRef {
-                    file_id,
-                    name: label,
-                    url: url.to_string(),
-                };
-                if !out.files.iter().any(|f| f.file_id == row.file_id) {
-                    out.files.push(row);
-                }
-            }
-        }
-        Resolution::CrossOrigin(url) => {
-            // An `<img>` on another origin is a reference too; it stays listed
-            // and unfetched, exactly like a cross-origin link.
-            let row = ExternalLink { url };
-            if !out.external.contains(&row) {
-                out.external.push(row);
-            }
-        }
-        Resolution::Unusable => {}
-    }
+/// A fragment, a mail link, or a script URL is not a fetchable reference.
+fn usable(href: &str) -> bool {
+    let href = href.trim();
+    !href.is_empty()
+        && !href.starts_with('#')
+        && !href.starts_with("mailto:")
+        && !href.starts_with("javascript:")
 }
 
 enum Resolution {
@@ -236,7 +282,7 @@ fn file_id_of(path: &str) -> Option<String> {
     let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
     let index = parts.iter().rposition(|p| *p == "files")?;
     let id = parts.get(index + 1)?;
-    if id.chars().all(|c| c.is_ascii_digit()) && !id.is_empty() {
+    if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
         Some((*id).to_owned())
     } else {
         None
@@ -289,11 +335,12 @@ mod tests {
     #[tokio::test]
     async fn reports_embedded_content_and_leaves_a_placeholder() {
         let html = r#"<p>Watch this.</p><iframe src="https://player.test/v/1"></iframe>"#;
-        let out = rich_text(html, ORIGIN).await.unwrap();
-        assert_eq!(out.embedded.len(), 1);
-        assert_eq!(out.embedded[0].kind, "iframe");
+        let out = rich_text(html).await.unwrap();
+        let refs = out.refs.resolve(ORIGIN);
+        assert_eq!(refs.embedded.len(), 1);
+        assert_eq!(refs.embedded[0].kind, "iframe");
         assert_eq!(
-            out.embedded[0].src_origin.as_deref(),
+            refs.embedded[0].src_origin.as_deref(),
             Some("https://player.test")
         );
         let md = out.markdown.unwrap();
@@ -304,10 +351,10 @@ mod tests {
     #[tokio::test]
     async fn an_lti_launch_is_named_as_one() {
         let html = r#"<iframe src="/courses/1/external_tools/retrieve?url=x"></iframe>"#;
-        let out = rich_text(html, ORIGIN).await.unwrap();
-        assert_eq!(out.embedded[0].kind, "lti");
+        let refs = rich_text(html).await.unwrap().refs.resolve(ORIGIN);
+        assert_eq!(refs.embedded[0].kind, "lti");
         // A relative source has no origin of its own.
-        assert!(out.embedded[0].src_origin.is_none());
+        assert!(refs.embedded[0].src_origin.is_none());
     }
 
     #[tokio::test]
@@ -316,28 +363,40 @@ mod tests {
             r#"<a href="/courses/7/files/42?wrap=1">Syllabus.pdf</a>"#,
             r#"<a href="https://elsewhere.test/files/9">away</a>"#,
         );
-        let out = rich_text(html, ORIGIN).await.unwrap();
-        assert_eq!(out.files.len(), 1);
-        assert_eq!(out.files[0].file_id, "42");
-        assert_eq!(out.files[0].name.as_deref(), Some("Syllabus.pdf"));
-        assert!(out.files[0].url.starts_with(ORIGIN));
-        assert_eq!(out.external_links.len(), 1);
-        assert_eq!(out.external_links[0].url, "https://elsewhere.test/files/9");
+        let refs = rich_text(html).await.unwrap().refs.resolve(ORIGIN);
+        assert_eq!(refs.files.len(), 1);
+        assert_eq!(refs.files[0].file_id, "42");
+        assert_eq!(refs.files[0].name.as_deref(), Some("Syllabus.pdf"));
+        assert!(refs.files[0].url.starts_with(ORIGIN));
+        assert_eq!(refs.external_links.len(), 1);
+        assert_eq!(refs.external_links[0].url, "https://elsewhere.test/files/9");
+    }
+
+    /// The stored projection carries no HTML, so a cache that keeps it never
+    /// keeps a raw response body.
+    #[tokio::test]
+    async fn the_stored_projection_is_json_without_markup() {
+        let html = r#"<p>Hi</p><iframe src="https://player.test/v/1"></iframe>"#;
+        let refs = rich_text(html).await.unwrap().refs;
+        let stored = serde_json::to_string(&refs).unwrap();
+        assert!(!stored.contains('<'));
+        let back: BodyRefs = serde_json::from_str(&stored).unwrap();
+        assert_eq!(back, refs);
     }
 
     #[tokio::test]
     async fn a_long_body_is_cut_and_says_so() {
         let html = format!("<p>{}</p>", "x".repeat(BODY_LIMIT + 100));
-        let out = rich_text(&html, ORIGIN).await.unwrap();
-        assert!(out.truncated);
+        let out = rich_text(&html).await.unwrap();
+        assert!(out.refs.truncated);
         assert!(out.markdown.unwrap().len() <= BODY_LIMIT);
     }
 
     #[tokio::test]
     async fn an_empty_body_has_no_markdown() {
-        let out = rich_text_opt(Some("   "), ORIGIN).await.unwrap();
+        let out = rich_text_opt(Some("   ")).await.unwrap();
         assert!(out.markdown.is_none());
-        assert!(!out.truncated);
-        assert!(out.embedded.is_empty());
+        assert!(!out.refs.truncated);
+        assert!(out.refs.embedded.is_empty());
     }
 }

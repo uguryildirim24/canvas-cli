@@ -157,7 +157,7 @@ pub(crate) async fn resolve_with_refresh(
     }
 }
 
-async fn ensure_detail(
+pub(crate) async fn ensure_detail(
     globals: &Globals,
     session: &Session,
     id: i64,

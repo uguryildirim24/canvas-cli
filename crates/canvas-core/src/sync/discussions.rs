@@ -215,7 +215,12 @@ pub fn topic_to_entity(item: &DiscussionTopic, course_id: i64) -> EntityIngest {
         group: FieldGroup::Core,
         value: Some(course_id.to_string()),
     }];
-    push_opt_str(&mut fields, "title", FieldGroup::Core, item.title.as_deref());
+    push_opt_str(
+        &mut fields,
+        "title",
+        FieldGroup::Core,
+        item.title.as_deref(),
+    );
     push_opt_str(
         &mut fields,
         "message",
@@ -580,12 +585,8 @@ fn upsert_topic(
         .filter(|f| f.name != "entries_payload")
         .cloned()
         .collect();
-    let (columns, extra) = split_fields(
-        "discussion topic",
-        &real_fields,
-        TOPIC_COLUMNS,
-        TOPIC_EXTRA,
-    )?;
+    let (columns, extra) =
+        split_fields("discussion topic", &real_fields, TOPIC_COLUMNS, TOPIC_EXTRA)?;
     validate_fields(&columns, TOPIC_COLUMNS)?;
     tx.execute(
         "INSERT INTO discussion_topics (id, course_id) VALUES (?1, ?2)
@@ -819,8 +820,7 @@ pub async fn refresh_discussion(
             let mut entity = topic_to_entity(&topic, course_id);
             if with_replies {
                 let gated = topic.require_initial_post.unwrap_or(false);
-                let (entries, coverage) =
-                    fetch_replies(client, course_id, topic_id, gated).await?;
+                let (entries, coverage) = fetch_replies(client, course_id, topic_id, gated).await?;
                 entity = attach_replies(entity, topic_id, &entries, coverage);
             }
             Ok(FetchBundle {
