@@ -20,16 +20,16 @@ use serde_json::Value;
 use crate::cli::AssignmentBucket;
 use crate::commands::{
     Globals, announcement, announcements, assignment, assignments, calendar, course, courses,
-    discussions, download, files, grades, handled::Handled, inbox, modules, open, pages, receipts,
-    submission, submit, sync, todo,
+    discussions, download, files, grades, handled::Handled, inbox, modules, open, operation, pages,
+    receipts, submission, submit, sync, todo,
 };
 use crate::output::{
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
     SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DISCUSSION,
     SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_INBOX,
-    SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_PLAN,
-    SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYLLABUS,
-    SCHEMA_SYNC, SCHEMA_TODO,
+    SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_OPERATION, SCHEMA_OPERATION_RECONCILE,
+    SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_PLAN, SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION,
+    SCHEMA_SUBMIT, SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_TODO,
 };
 
 /// What a tool does to its environment (§3.5).
@@ -425,6 +425,84 @@ pub struct SubmissionExecuteArgs {
     pub plan_id: String,
 }
 
+/// `discussion.reply.prepare` freezes one public reply to one topic.
+///
+/// The reply is a public post in a course: REPORT §3.5 puts it in the same
+/// tier as a submission, so nothing here sends anything on its own.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DiscussionReplyPrepareArgs {
+    /// A numeric id, an alias, a URL, or a code substring (§6).
+    pub course: String,
+    /// The discussion id, or a Canvas discussion URL in this course.
+    pub discussion: String,
+    /// Reply to this entry instead of to the topic.
+    #[serde(default)]
+    pub to: Option<String>,
+    /// The reply text. Canvas is sent HTML built from it.
+    pub text: String,
+    /// Local files to attach. Refused at prepare in this version.
+    #[serde(default)]
+    pub attachments: Vec<String>,
+}
+
+/// `inbox.send.prepare` freezes one new conversation.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InboxSendPrepareArgs {
+    /// Canvas user ids to send to, in order. Each one is resolved at prepare.
+    pub recipients: Vec<String>,
+    /// The subject line.
+    #[serde(default)]
+    pub subject: Option<String>,
+    /// The message text.
+    pub text: String,
+    /// Local files to attach.
+    #[serde(default)]
+    pub attachments: Vec<String>,
+}
+
+/// `inbox.reply.prepare` freezes one message added to one conversation.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InboxReplyPrepareArgs {
+    /// The conversation to add a message to.
+    pub conversation_id: String,
+    /// The message text.
+    pub text: String,
+    /// Local files to attach.
+    #[serde(default)]
+    pub attachments: Vec<String>,
+}
+
+/// Every operation execute names one prepared plan and nothing else.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OperationExecuteArgs {
+    /// The plan the matching prepare returned.
+    pub plan_id: String,
+}
+
+/// `operation.status` reads one operation journal back.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OperationStatusArgs {
+    /// The operation journal to read.
+    pub journal_id: String,
+}
+
+/// `operation.reconcile` resolves one operation journal.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OperationReconcileArgs {
+    /// The operation journal to resolve.
+    pub journal_id: String,
+    /// Record that nothing was posted. Refused while the outcome is not
+    /// unknown, while a matching object is visible, or before the §12.2 wait.
+    #[serde(default)]
+    pub assume_not_posted: bool,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ReconcileArgs {
@@ -777,6 +855,106 @@ pub fn specs() -> &'static [ToolSpec] {
             input_schema: schema_of::<ReconcileArgs>,
         },
         ToolSpec {
+            name: "discussion.reply.prepare",
+            title: "Prepare a discussion reply",
+            description: "Freeze a public reply to a discussion topic as a plan and return it. \
+                          Nothing is sent: the plan needs a recorded human approval, and \
+                          `discussion.reply.execute` asks for it.",
+            schema: SCHEMA_PLAN,
+            variant: None,
+            effect: Effect::Organize,
+            idempotent: false,
+            open_world: true,
+            input_schema: schema_of::<DiscussionReplyPrepareArgs>,
+        },
+        ToolSpec {
+            name: "discussion.reply.execute",
+            title: "Post an approved discussion reply",
+            description: "Post an approved reply to Canvas. On a plan that is not approved yet \
+                          this asks a person first and dispatches nothing.",
+            schema: SCHEMA_OPERATION,
+            variant: None,
+            effect: Effect::RemoteWrite,
+            // A plan admits at most one journal (SPEC §19 item 17).
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<OperationExecuteArgs>,
+        },
+        ToolSpec {
+            name: "inbox.send.prepare",
+            title: "Prepare a new conversation",
+            description: "Freeze a new conversation to named recipients as a plan and return it. \
+                          Nothing is sent: the plan needs a recorded human approval, and \
+                          `inbox.send.execute` asks for it.",
+            schema: SCHEMA_PLAN,
+            variant: None,
+            effect: Effect::Organize,
+            idempotent: false,
+            open_world: true,
+            input_schema: schema_of::<InboxSendPrepareArgs>,
+        },
+        ToolSpec {
+            name: "inbox.send.execute",
+            title: "Send an approved conversation",
+            description: "Send an approved conversation to Canvas. Canvas accepting it is not \
+                          proof that anyone received it.",
+            schema: SCHEMA_OPERATION,
+            variant: None,
+            effect: Effect::RemoteWrite,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<OperationExecuteArgs>,
+        },
+        ToolSpec {
+            name: "inbox.reply.prepare",
+            title: "Prepare a conversation reply",
+            description: "Freeze a message added to one conversation as a plan and return it. \
+                          Nothing is sent: the plan needs a recorded human approval, and \
+                          `inbox.reply.execute` asks for it.",
+            schema: SCHEMA_PLAN,
+            variant: None,
+            effect: Effect::Organize,
+            idempotent: false,
+            open_world: true,
+            input_schema: schema_of::<InboxReplyPrepareArgs>,
+        },
+        ToolSpec {
+            name: "inbox.reply.execute",
+            title: "Send an approved conversation reply",
+            description: "Add an approved message to a conversation. Canvas accepting it is not \
+                          proof that anyone received it.",
+            schema: SCHEMA_OPERATION,
+            variant: None,
+            effect: Effect::RemoteWrite,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<OperationExecuteArgs>,
+        },
+        ToolSpec {
+            name: "operation.status",
+            title: "Show one write operation",
+            description: "Read one operation journal, and read its thread back. \
+                          It changes no state and posts nothing.",
+            schema: SCHEMA_OPERATION,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<OperationStatusArgs>,
+        },
+        ToolSpec {
+            name: "operation.reconcile",
+            title: "Reconcile a write operation",
+            description: "Resolve an operation journal an interrupted write left behind. \
+                          It never reposts.",
+            schema: SCHEMA_OPERATION_RECONCILE,
+            variant: None,
+            effect: Effect::Retire,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<OperationReconcileArgs>,
+        },
+        ToolSpec {
             name: "receipts.acknowledge",
             title: "Acknowledge an unknown outcome",
             description: "Accept a journal whose outcome stays unknown. Local, and final.",
@@ -1042,6 +1220,76 @@ pub async fn dispatch(
             .await
             .into()
         }
+        "discussion.reply.prepare" => {
+            let args: DiscussionReplyPrepareArgs = parse(arguments)?;
+            operation::agent_prepare(
+                globals,
+                operation::WriteArgs::DiscussionReply(Box::new(operation::DiscussionReplyArgs {
+                    course: args.course,
+                    discussion: args.discussion,
+                    to: args.to,
+                    text: Some(literal(args.text)?),
+                    text_file: None,
+                    attach: paths(args.attachments),
+                    yes: false,
+                })),
+                consumer,
+            )
+            .await
+            .into()
+        }
+        "inbox.send.prepare" => {
+            let args: InboxSendPrepareArgs = parse(arguments)?;
+            operation::agent_prepare(
+                globals,
+                operation::WriteArgs::InboxSend(Box::new(operation::InboxSendArgs {
+                    to: args.recipients,
+                    subject: args.subject,
+                    text: Some(literal(args.text)?),
+                    text_file: None,
+                    attach: paths(args.attachments),
+                    yes: false,
+                })),
+                consumer,
+            )
+            .await
+            .into()
+        }
+        "inbox.reply.prepare" => {
+            let args: InboxReplyPrepareArgs = parse(arguments)?;
+            operation::agent_prepare(
+                globals,
+                operation::WriteArgs::InboxReply(Box::new(operation::InboxReplyArgs {
+                    conversation_id: args.conversation_id,
+                    text: Some(literal(args.text)?),
+                    text_file: None,
+                    attach: paths(args.attachments),
+                    yes: false,
+                })),
+                consumer,
+            )
+            .await
+            .into()
+        }
+        "discussion.reply.execute" | "inbox.send.execute" | "inbox.reply.execute" => {
+            let args: OperationExecuteArgs = parse(arguments)?;
+            match operation::agent_execute(globals, &args.plan_id, consumer).await {
+                submit::Admitted::Done(handled) => Dispatched::Done(handled),
+                submit::Admitted::NeedsApproval(pending) => Dispatched::Approval(pending),
+            }
+        }
+        "operation.status" => {
+            let args: OperationStatusArgs = parse(arguments)?;
+            operation::handle_status(globals, args.journal_id)
+                .await
+                .into()
+        }
+        "operation.reconcile" => {
+            let args: OperationReconcileArgs = parse(arguments)?;
+            operation::handle_reconcile(globals, args.journal_id, args.assume_not_posted)
+                .await
+                .into()
+        }
         "receipts.acknowledge" => {
             let args: AcknowledgeArgs = parse(arguments)?;
             receipts::handle(
@@ -1060,6 +1308,21 @@ pub async fn dispatch(
         }
         other => return Err(format!("unknown tool {other}")),
     })
+}
+
+/// A literal body from a tool argument.
+///
+/// `-` is refused: on this surface stdin carries the protocol, so it can never
+/// mean "read the message from stdin".
+fn literal(text: String) -> Result<String, String> {
+    if text.trim() == "-" {
+        return Err("text must be the message itself: stdin carries the protocol here".to_owned());
+    }
+    Ok(text)
+}
+
+fn paths(raw: Vec<String>) -> Vec<PathBuf> {
+    raw.into_iter().map(PathBuf::from).collect()
 }
 
 /// Turn the tool arguments into the operands `canvas submit` takes.
@@ -1119,6 +1382,14 @@ mod tests {
             "submission.prepare",
             "submission.execute",
             "submission.reconcile",
+            "discussion.reply.prepare",
+            "discussion.reply.execute",
+            "inbox.send.prepare",
+            "inbox.send.execute",
+            "inbox.reply.prepare",
+            "inbox.reply.execute",
+            "operation.status",
+            "operation.reconcile",
             "receipts.acknowledge",
             "open.url",
         ];
@@ -1140,7 +1411,15 @@ mod tests {
             .filter(|spec| spec.effect == Effect::RemoteWrite)
             .map(|spec| spec.name)
             .collect();
-        assert_eq!(writers, ["submission.execute"]);
+        assert_eq!(
+            writers,
+            [
+                "submission.execute",
+                "discussion.reply.execute",
+                "inbox.send.execute",
+                "inbox.reply.execute",
+            ]
+        );
         for spec in specs() {
             let name = spec.name;
             for forbidden in [
@@ -1196,6 +1475,20 @@ mod tests {
             }
         }
         assert_eq!(retiring, ["submission.reconcile"]);
+        // `assume_not_posted` is the operation-journal counterpart, and
+        // `operation.reconcile` is the only tool that takes it.
+        let mut assuming = Vec::new();
+        for spec in specs() {
+            let schema = (spec.input_schema)();
+            if schema
+                .get("properties")
+                .and_then(Value::as_object)
+                .is_some_and(|properties| properties.contains_key("assume_not_posted"))
+            {
+                assuming.push(spec.name);
+            }
+        }
+        assert_eq!(assuming, ["operation.reconcile"]);
     }
 
     /// Hints describe effects (§3.2): only a pure read is read-only, and
@@ -1226,6 +1519,13 @@ mod tests {
             "submission.prepare",
             "submission.execute",
             "submission.reconcile",
+            "discussion.reply.prepare",
+            "discussion.reply.execute",
+            "inbox.send.prepare",
+            "inbox.send.execute",
+            "inbox.reply.prepare",
+            "inbox.reply.execute",
+            "operation.reconcile",
             "receipts.acknowledge",
         ] {
             let spec = spec(name).expect(name);

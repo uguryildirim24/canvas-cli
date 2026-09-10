@@ -49,6 +49,14 @@ const CATALOG: &[&str] = &[
     "submission.prepare",
     "submission.execute",
     "submission.reconcile",
+    "discussion.reply.prepare",
+    "discussion.reply.execute",
+    "inbox.send.prepare",
+    "inbox.send.execute",
+    "inbox.reply.prepare",
+    "inbox.reply.execute",
+    "operation.status",
+    "operation.reconcile",
     "receipts.acknowledge",
     "open.url",
 ];
@@ -1041,6 +1049,31 @@ const EQUIVALENTS: &[(&str, &str, &[&str])] = &[
         &["submission", "reconcile", "no-such-journal"],
     ),
     (
+        "discussion.reply.prepare",
+        r#"{"course":"1","discussion":"3001","text":"a reply"}"#,
+        &["discussion", "reply", "1", "3001", "--text", "a reply"],
+    ),
+    (
+        "inbox.send.prepare",
+        r#"{"recipients":["77"],"text":"a message"}"#,
+        &["inbox", "send", "--to", "77", "--text", "a message"],
+    ),
+    (
+        "inbox.reply.prepare",
+        r#"{"conversation_id":"700","text":"a message"}"#,
+        &["inbox", "reply", "700", "--text", "a message"],
+    ),
+    (
+        "operation.status",
+        r#"{"journal_id":"no-such-journal"}"#,
+        &["operation", "status", "no-such-journal"],
+    ),
+    (
+        "operation.reconcile",
+        r#"{"journal_id":"no-such-journal"}"#,
+        &["operation", "reconcile", "no-such-journal"],
+    ),
+    (
         "receipts.acknowledge",
         r#"{"journal_id":"no-such-journal"}"#,
         &["receipts", "acknowledge", "no-such-journal"],
@@ -1057,7 +1090,9 @@ async fn every_tool_returns_the_envelope_the_cli_prints() {
 
     let covered: Vec<&str> = EQUIVALENTS.iter().map(|(tool, ..)| *tool).collect();
     let mut expected: Vec<&str> = CATALOG.to_vec();
-    expected.retain(|name| *name != "submission.execute");
+    // Every execute is left out: it needs a recorded approval, and the CLI
+    // has no equivalent that runs one without a person.
+    expected.retain(|name| !name.ends_with(".execute"));
     assert_eq!(covered, expected, "a tool has no command behind it");
 
     for (tool, arguments, args) in EQUIVALENTS {

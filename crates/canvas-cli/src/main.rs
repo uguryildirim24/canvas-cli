@@ -282,6 +282,34 @@ async fn main() -> ExitCode {
                     commands::discussions::run_list(&m1b_globals(&globals), course, unread).await
                 }
                 Commands::Discussion {
+                    command:
+                        Some(cli::DiscussionCommand::Reply {
+                            course,
+                            discussion,
+                            to,
+                            text,
+                            text_file,
+                            attach,
+                            yes,
+                        }),
+                    ..
+                } => {
+                    commands::operation::run_discussion_reply(
+                        &m1b_globals(&globals),
+                        commands::operation::DiscussionReplyArgs {
+                            course,
+                            discussion,
+                            to,
+                            text,
+                            text_file,
+                            attach,
+                            yes,
+                        },
+                    )
+                    .await
+                }
+                Commands::Discussion {
+                    command: None,
                     course,
                     discussion,
                     replies,
@@ -289,8 +317,8 @@ async fn main() -> ExitCode {
                 } => {
                     commands::discussions::run_show(
                         &m1b_globals(&globals),
-                        course,
-                        discussion,
+                        course.unwrap_or_default(),
+                        discussion.unwrap_or_default(),
                         replies,
                         page,
                     )
@@ -303,7 +331,63 @@ async fn main() -> ExitCode {
                     Some(cli::InboxCommand::UnreadCount) => {
                         commands::inbox::run_unread_count(&m1b_globals(&globals)).await
                     }
+                    Some(cli::InboxCommand::Send {
+                        to,
+                        subject,
+                        text,
+                        text_file,
+                        attach,
+                        yes,
+                    }) => {
+                        commands::operation::run_inbox_send(
+                            &m1b_globals(&globals),
+                            commands::operation::InboxSendArgs {
+                                to,
+                                subject,
+                                text,
+                                text_file,
+                                attach,
+                                yes,
+                            },
+                        )
+                        .await
+                    }
+                    Some(cli::InboxCommand::Reply {
+                        conversation_id,
+                        text,
+                        text_file,
+                        attach,
+                        yes,
+                    }) => {
+                        commands::operation::run_inbox_reply(
+                            &m1b_globals(&globals),
+                            commands::operation::InboxReplyArgs {
+                                conversation_id,
+                                text,
+                                text_file,
+                                attach,
+                                yes,
+                            },
+                        )
+                        .await
+                    }
                     None => commands::inbox::run_list(&m1b_globals(&globals), scope).await,
+                },
+                Commands::Operation { command } => match command {
+                    cli::OperationCommand::Status { journal_id } => {
+                        commands::operation::run_status(&m1b_globals(&globals), journal_id).await
+                    }
+                    cli::OperationCommand::Reconcile {
+                        journal_id,
+                        assume_not_posted,
+                    } => {
+                        commands::operation::run_reconcile(
+                            &m1b_globals(&globals),
+                            journal_id,
+                            assume_not_posted,
+                        )
+                        .await
+                    }
                 },
                 Commands::Calendar {
                     days,

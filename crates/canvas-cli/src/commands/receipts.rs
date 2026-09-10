@@ -152,9 +152,12 @@ fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> Handled
                 } else {
                     state.to_owned()
                 };
+                // The kind column says which machine wrote the journal: a
+                // submission kind, or one of the three M8-b operations.
                 writeln!(
                     io::stdout(),
-                    "{id}  {label}  owner={}  superseded={}  acknowledged={}",
+                    "{id}  {}  {label}  owner={}  superseded={}  acknowledged={}",
+                    j["kind"].as_str().unwrap_or("?"),
                     j["owner"].as_str().unwrap_or("n/a"),
                     j["superseded"],
                     !j["acknowledged_at"].is_null()

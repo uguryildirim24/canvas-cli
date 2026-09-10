@@ -97,7 +97,9 @@ expression: "normalized(out, &server.uri())"
       "title": "Topic 55",
       "truncated": false,
       "unread_count": 2
-    }
+    },
+    "pending": false,
+    "pending_journals": []
   },
   "schema": "canvas-cli/discussion@1",
   "warnings": []
