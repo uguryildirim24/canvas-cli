@@ -17,6 +17,7 @@ pub use dataset::{
 };
 pub(crate) use db::auxiliary_sqlite;
 pub use db::{DbError, Store, StoreConns};
+pub use migrate::{CACHE_USER_VERSION, STATE_USER_VERSION};
 pub use ops::{
     CACHE_TABLES, CacheStats, EpochAbort, FetchLogRow, LookupQuery, WindowQuery, bump_epochs,
     cache_clear, cache_path, cache_stats, load_fetch_log, lookup, lookup_dataset,

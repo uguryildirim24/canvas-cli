@@ -165,6 +165,12 @@ fn normalize(value: &mut Value, jid: &str, rid: &str, root: &str) {
                 ) && !v.is_null()
                 {
                     *v = json!("<time>");
+                } else if key == "plan_id" && !v.is_null() {
+                    *v = json!("<plan>");
+                } else if key == "approval" && !v.is_null() {
+                    // The audit is real; its digest and timestamp vary per run.
+                    v["at"] = json!("<time>");
+                    v["plan_sha256"] = json!("<digest>");
                 } else if key == "origin" {
                     *v = json!("<origin>");
                 } else if key == "key" {

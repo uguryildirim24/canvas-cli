@@ -12,9 +12,9 @@ use jiff::Timestamp;
 use crate::store::Store;
 use crate::submit::{FreezeError, FrozenInput, InputKind, Plan, PreflightError};
 
+use super::PlanError;
 use super::ops::{self, NewPlan};
 use super::record::{Observations, PlanRow};
-use super::PlanError;
 
 /// What [`prepare`] needs besides the client, the store, and the input.
 #[derive(Debug, Clone, Copy)]

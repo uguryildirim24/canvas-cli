@@ -157,9 +157,10 @@ impl PlanError {
     pub fn refusal_reason(&self) -> Option<&str> {
         match self {
             Self::Refused { reason, .. } => Some(reason),
-            Self::Invalidated { .. } => Some("invalidated"),
+            // A plan that is gone can no longer be approved; it reads as
+            // invalidated rather than as a missing local file.
+            Self::Invalidated { .. } | Self::NotFound => Some("invalidated"),
             Self::Handle(_) => Some("approval_required"),
-            Self::NotFound => Some("invalidated"),
             _ => None,
         }
     }
