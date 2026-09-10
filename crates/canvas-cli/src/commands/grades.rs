@@ -25,8 +25,9 @@ use super::grades_load::{
     load_assignment_groups, load_grading_periods, parse_period,
 };
 use crate::output::{
-    CourseBaseJson, GradeJson, GradesCourseJson, GradesCourseViewJson, GradesResult, PeriodJson,
-    SCHEMA_GRADES, TermJson, apply_two_space_padding, new_table, now_timestamp,
+    CourseBaseJson, GradeJson, GradesCourseJson, GradesCourseViewJson, GradesResult,
+    GroupRulesJson, PeriodJson, SCHEMA_GRADES, TermJson, apply_two_space_padding, new_table,
+    now_timestamp,
 };
 use crate::session::{Session, ttl_courses, ttl_grades};
 
@@ -459,11 +460,11 @@ fn total_label(grades: &GradeJson) -> String {
         .unwrap_or_else(|| "unavailable".into())
 }
 
-fn print_grades(result: &GradesResult) -> io::Result<()> {
-    let mut out = io::stdout();
+/// The overview table; it also closes the course view (SPEC §12.4).
+fn write_course_table(out: &mut impl Write, courses: &[GradesCourseJson]) -> io::Result<()> {
     let mut table = new_table();
     table.set_header(Row::from(vec!["CODE", "NAME", "PERIOD", "GRADE"]));
-    for c in &result.courses {
+    for c in courses {
         let period = c
             .grades
             .period
@@ -478,16 +479,42 @@ fn print_grades(result: &GradesResult) -> io::Result<()> {
         ]));
     }
     apply_two_space_padding(&mut table);
-    writeln!(out, "{table}")?;
+    writeln!(out, "{table}")
+}
 
+/// Canvas drop rules, printed under the group name (SPEC §12.4).
+fn rules_label(rules: &GroupRulesJson) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(n) = rules.drop_lowest.filter(|n| *n > 0) {
+        parts.push(format!("drop lowest {n}"));
+    }
+    if let Some(n) = rules.drop_highest.filter(|n| *n > 0) {
+        parts.push(format!("drop highest {n}"));
+    }
+    if !rules.never_drop.is_empty() {
+        parts.push(format!("never drop {}", rules.never_drop.join(", ")));
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn print_grades(result: &GradesResult) -> io::Result<()> {
+    let mut out = io::stdout();
     let Some(ref view) = result.course else {
-        return Ok(());
+        return write_course_table(&mut out, &result.courses);
     };
+    // Course view: the course, its groups, then the Canvas totals for the
+    // selected mode closing the table (SPEC §12.4).
+    if let Some(course) = result.courses.first() {
+        writeln!(out, "{}  {}", course.course.code, course.course.name)?;
+    }
     for group in &view.groups {
         let weight = group
             .weight
             .map_or_else(String::new, |w| format!("  ({w}%)"));
         writeln!(out, "\n{}{weight}", group.name)?;
+        if let Some(rules) = rules_label(&group.rules) {
+            writeln!(out, "  {rules}")?;
+        }
         let mut t = new_table();
         t.set_header(Row::from(vec!["ASSIGNMENT", "SCORE", "OUT OF", "STATUS"]));
         for a in &group.assignments {
@@ -513,7 +540,8 @@ fn print_grades(result: &GradesResult) -> io::Result<()> {
             )?;
         }
     }
-    Ok(())
+    writeln!(out)?;
+    write_course_table(&mut out, &result.courses)
 }
 
 fn assignment_status(a: &crate::output::GroupAssignmentJson) -> String {
