@@ -316,7 +316,8 @@ async fn a_changed_unread_count_is_one_event_from_the_watch_tick() {
 }
 
 /// The `inbox unread-count` command observes through the same path, so an
-/// agent that never runs `watch` still gets the event.
+/// agent that never runs `watch` still gets the event — and a tick that
+/// follows the command does not report the same change a second time.
 #[tokio::test(flavor = "current_thread")]
 async fn the_unread_count_command_records_its_own_observation() {
     let server = CanvasServer::start().await;
@@ -339,14 +340,46 @@ async fn the_unread_count_command_records_its_own_observation() {
     )
     .assert_code(0);
 
+    // A tick after the command refreshes the same dataset and compares
+    // against the baseline the command wrote, so the move from 2 to 9 is news
+    // once. Both producers reach one observation path; neither is a second
+    // source of the same event. This watch has no stored position, so it
+    // replays the log from the start: the one line it prints is the command's
+    // event, not a second one the tick made.
+    let tick = watch(
+        &env,
+        &["watch", "--jsonl", "--once"],
+        &[("CANVAS_NOW", LATEST)],
+    );
+    tick.assert_code(0);
+    let (events, _) = stream(&tick);
+    let counted: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["kind"] == json!("inbox.unread_count"))
+        .collect();
+    assert_eq!(counted.len(), 1, "the tick repeated the event: {events:?}");
+    assert_eq!(counted[0]["observed_at"], json!(LATER));
+    assert_eq!(counted[0]["before"], json!({ "unread_count": 2 }));
+    assert_eq!(counted[0]["after"], json!({ "unread_count": 9 }));
+
     // `notify` reads the log and nothing else, so a line under the `inbox`
-    // group is proof the command wrote the event itself.
+    // group is proof the command wrote the event itself, and its per-kind
+    // count is proof there is exactly one.
     let posted = env.run_local(&["notify", "--stdout"]);
     posted.assert_code(0);
+    let inbox = posted
+        .stdout
+        .lines()
+        .find(|line| line.starts_with("inbox:"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the command recorded no unread-count event: {}",
+                posted.stdout
+            )
+        });
     assert!(
-        posted.stdout.lines().any(|line| line.starts_with("inbox:")),
-        "the command recorded no unread-count event: {}",
-        posted.stdout
+        inbox.contains("(inbox.unread_count x1)"),
+        "the unread count was not reported exactly once: {inbox}"
     );
 }
 
