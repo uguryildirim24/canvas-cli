@@ -3971,11 +3971,22 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "canvas-api",
+ "canvas-core",
  "canvas-lms-cli",
  "clap",
  "clap_complete",
  "clap_mangen",
+ "jiff",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "tempfile",
+ "tokio",
+ "url",
+ "wiremock",
 ]
 
 [[package]]

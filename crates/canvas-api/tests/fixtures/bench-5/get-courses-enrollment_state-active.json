@@ -1,0 +1,139 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses",
+  "query": [
+    [
+      "enrollment_state",
+      "active"
+    ]
+  ],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "course_code": "BIO-110",
+      "enrollments": [
+        {
+          "computed_current_grade": "B+",
+          "computed_current_score": 88.0,
+          "computed_final_grade": "B",
+          "computed_final_score": 85.0,
+          "current_grading_period_id": "700",
+          "current_grading_period_title": "Term 1",
+          "current_period_computed_current_grade": "A-",
+          "current_period_computed_current_score": 90.0,
+          "enrollment_state": "active",
+          "type": "student"
+        }
+      ],
+      "id": 101,
+      "is_favorite": true,
+      "name": "Course BIO-110",
+      "term": {
+        "id": 900,
+        "name": "Spring 2026"
+      },
+      "workflow_state": "available"
+    },
+    {
+      "course_code": "CHEM-101",
+      "enrollments": [
+        {
+          "computed_current_grade": "B+",
+          "computed_current_score": 89.0,
+          "computed_final_grade": "B",
+          "computed_final_score": 86.0,
+          "current_grading_period_id": "700",
+          "current_grading_period_title": "Term 1",
+          "current_period_computed_current_grade": "A-",
+          "current_period_computed_current_score": 91.0,
+          "enrollment_state": "active",
+          "type": "student"
+        }
+      ],
+      "id": 102,
+      "is_favorite": true,
+      "name": "Course CHEM-101",
+      "term": {
+        "id": 901,
+        "name": "Spring 2026"
+      },
+      "workflow_state": "available"
+    },
+    {
+      "course_code": "HIST-240",
+      "enrollments": [
+        {
+          "computed_current_grade": "B+",
+          "computed_current_score": 90.0,
+          "computed_final_grade": "B",
+          "computed_final_score": 87.0,
+          "current_grading_period_id": "700",
+          "current_grading_period_title": "Term 1",
+          "current_period_computed_current_grade": "A-",
+          "current_period_computed_current_score": 92.0,
+          "enrollment_state": "active",
+          "type": "student"
+        }
+      ],
+      "id": 103,
+      "is_favorite": true,
+      "name": "Course HIST-240",
+      "term": {
+        "id": 902,
+        "name": "Spring 2026"
+      },
+      "workflow_state": "available"
+    },
+    {
+      "course_code": "MATH-201",
+      "enrollments": [
+        {
+          "computed_current_grade": "B+",
+          "computed_current_score": 91.0,
+          "computed_final_grade": "B",
+          "computed_final_score": 88.0,
+          "current_grading_period_id": "700",
+          "current_grading_period_title": "Term 1",
+          "current_period_computed_current_grade": "A-",
+          "current_period_computed_current_score": 93.0,
+          "enrollment_state": "active",
+          "type": "student"
+        }
+      ],
+      "id": 104,
+      "is_favorite": false,
+      "name": "Course MATH-201",
+      "term": {
+        "id": 903,
+        "name": "Spring 2026"
+      },
+      "workflow_state": "available"
+    },
+    {
+      "course_code": "PHYS-150",
+      "enrollments": [
+        {
+          "computed_current_grade": "B+",
+          "computed_current_score": 92.0,
+          "computed_final_grade": "B",
+          "computed_final_score": 89.0,
+          "current_grading_period_id": "700",
+          "current_grading_period_title": "Term 1",
+          "current_period_computed_current_grade": "A-",
+          "current_period_computed_current_score": 94.0,
+          "enrollment_state": "active",
+          "type": "student"
+        }
+      ],
+      "id": 105,
+      "is_favorite": false,
+      "name": "Course PHYS-150",
+      "term": {
+        "id": 904,
+        "name": "Spring 2026"
+      },
+      "workflow_state": "available"
+    }
+  ]
+}
