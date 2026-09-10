@@ -82,7 +82,7 @@ fn redacting_layer_scrubs_secret_fields() {
         let _entered = span.enter();
         tracing::info!(
             Authorization = "FIELD_SECRET",
-            Expires = 987654321_u64,
+            Expires = 987_654_321_u64,
             "inside span"
         );
         span.record("token", "UPDATED_SECRET");

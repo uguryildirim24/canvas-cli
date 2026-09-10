@@ -3,7 +3,7 @@
 use std::io::Write as _;
 
 use reqwest::Url;
-use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue, LOCATION};
+use reqwest::header::{CONTENT_TYPE, HeaderValue, LOCATION};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -67,7 +67,7 @@ pub async fn upload_submission_file(
 
     let mut hasher = Sha256::new();
     let mut file_bytes = Vec::new();
-    let mut buf = [0u8; 64 * 1024];
+    let mut buf = vec![0u8; 64 * 1024];
     loop {
         let n = body.read(&mut buf).await.map_err(|_| Error::Network)?;
         if n == 0 {
@@ -111,9 +111,8 @@ async fn complete_upload(client: &Client, resp: &crate::TransferResponse) -> Res
         {
             return Ok(id);
         }
-        let location = match location_from(&resp.headers, &resp.final_url) {
-            Ok(u) => u,
-            Err(_) => return Err(Error::UploadIncomplete { status }),
+        let Ok(location) = location_from(&resp.headers, &resp.final_url) else {
+            return Err(Error::UploadIncomplete { status });
         };
         if !client.same_origin(&location) {
             return Err(Error::UploadIncomplete { status });
@@ -132,7 +131,7 @@ async fn fetch_file_id(client: &Client, location: Url) -> Result<i64, Error> {
 fn json_id(value: &serde_json::Value) -> Option<i64> {
     value.get("id").and_then(|v| {
         v.as_i64()
-            .or_else(|| v.as_u64().map(|u| u as i64))
+            .or_else(|| v.as_u64().map(i64::try_from).and_then(Result::ok))
             .or_else(|| v.as_str()?.parse().ok())
     })
 }
@@ -175,10 +174,14 @@ fn build_multipart(
     .map_err(|_| Error::Decode)?;
     out.extend_from_slice(file_bytes);
     write!(out, "\r\n--{boundary}--\r\n").map_err(|_| Error::Decode)?;
-    let _ = HeaderName::from_static("content-type"); // keep import used if clippy
     Ok(out)
 }
 
 fn hex_short(bytes: &[u8; 32]) -> String {
-    bytes[..8].iter().map(|b| format!("{b:02x}")).collect()
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(16);
+    for b in &bytes[..8] {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
 }

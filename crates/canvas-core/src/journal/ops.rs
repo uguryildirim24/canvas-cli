@@ -28,7 +28,7 @@ pub enum JournalError {
     /// Lock error.
     #[error(transparent)]
     Lock(#[from] LockError),
-    /// Store / SQLite error.
+    /// Store / `SQLite` error.
     #[error(transparent)]
     Store(#[from] DbError),
     /// I/O error.
