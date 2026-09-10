@@ -970,6 +970,64 @@ async fn a_digest_match_with_no_id_link_is_unproven() {
     assert_eq!(found.body_sha256, sent);
 }
 
+/// A threaded reply is read back where Canvas puts it (M8-b review).
+///
+/// `--to` posts to `…/entries/:eid/replies`, and Canvas lists only top-level
+/// entries at `…/entries`. Reading the topic listing reported every threaded
+/// reply as absent, so `accepted` could never become `observed` and an
+/// unknown outcome could be asserted away on evidence that never covered it.
+#[tokio::test]
+async fn a_threaded_reply_is_read_back_under_its_parent_entry() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_topic(&server, open_topic()).await;
+    mount_reply_post(&server, 200, posted_entry()).await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/api/v1/courses/5/discussion_topics/55/entries/900/replies",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(posted_entry()))
+        .mount(&server)
+        .await;
+    let client = test_client(&server.uri());
+
+    let mut request = reply_request(&paths, &doc, "My reply.");
+    request.parent_entry_id = Some(900);
+    let prepared = prepare_discussion_reply(&client, &open.store, &request, Timestamp::now())
+        .await
+        .unwrap();
+    approve_plan(&open.store, &prepared.plan.plan_id);
+    let posted = run(&client, &open.store, &paths, &doc, &prepared.plan.plan_id).await;
+    assert_eq!(posted.state, OpState::Posted);
+    assert_eq!(posted.attribution, Attribution::Accepted);
+
+    // The topic's own entry listing does not hold the nested reply; the
+    // parent entry's replies do, and that is what the readback reads.
+    server.reset().await;
+    mount_get(
+        &server,
+        "/api/v1/courses/5/discussion_topics/55/entries",
+        json!([entry(900)]),
+    )
+    .await;
+    mount_get(
+        &server,
+        "/api/v1/courses/5/discussion_topics/55/entries/900/replies",
+        json!([posted_entry()]),
+    )
+    .await;
+    let seen = status(
+        &test_client(&server.uri()),
+        &open.store,
+        &paths.identity_dir,
+        &posted.journal_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(seen.verdict, Verdict::Observed);
+    assert_eq!(seen.row.attribution, Attribution::Observed);
+}
+
 /// A readback that covered nothing cannot support "never posted" (review).
 ///
 /// The exposed case is a send Canvas never named a conversation for: there is

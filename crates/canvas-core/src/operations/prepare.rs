@@ -499,14 +499,40 @@ pub(super) async fn get(client: &Client, path: &str) -> Result<Value, OperationE
     }
 }
 
-/// Every entry of a topic, following the pagination Canvas returns.
+/// Every **top-level** entry of a topic, following Canvas' pagination.
+///
+/// Canvas nests a threaded reply under its parent and never lists it here, so
+/// a caller that wants a nested reply asks [`entry_replies_of`].
 pub(super) async fn entries_of(
     client: &Client,
     course_id: i64,
     topic_id: i64,
 ) -> Result<Vec<Value>, OperationError> {
-    let path = format!("/api/v1/courses/{course_id}/discussion_topics/{topic_id}/entries");
-    match client.get_all_vec::<Value>(&path).await {
+    read_entries(
+        client,
+        &format!("/api/v1/courses/{course_id}/discussion_topics/{topic_id}/entries"),
+    )
+    .await
+}
+
+/// Every reply nested under one entry, following Canvas' pagination.
+pub(super) async fn entry_replies_of(
+    client: &Client,
+    course_id: i64,
+    topic_id: i64,
+    entry_id: i64,
+) -> Result<Vec<Value>, OperationError> {
+    read_entries(
+        client,
+        &format!(
+            "/api/v1/courses/{course_id}/discussion_topics/{topic_id}/entries/{entry_id}/replies"
+        ),
+    )
+    .await
+}
+
+async fn read_entries(client: &Client, path: &str) -> Result<Vec<Value>, OperationError> {
+    match client.get_all_vec::<Value>(path).await {
         Ok(entries) => Ok(entries),
         Err(
             ApiError::Unauthorized
