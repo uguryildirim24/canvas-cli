@@ -155,6 +155,7 @@ impl Fixture {
             stdin: Some(stdin),
             stdout: Some(stdout),
             log: Arc::new(Mutex::new(Vec::new())),
+            from_host: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -168,6 +169,8 @@ struct Host {
     stdout: Option<ChildStdout>,
     /// Every message that crossed either pipe, as raw JSON.
     log: Arc<Mutex<Vec<String>>>,
+    /// Only the messages the host wrote.
+    from_host: Arc<Mutex<Vec<String>>>,
 }
 
 impl Host {
@@ -203,10 +206,9 @@ impl Host {
             .expect("stdout")
             .read_exact(&mut body)
             .expect("a message body");
-        self.log
-            .lock()
-            .unwrap()
-            .push(String::from_utf8_lossy(&body).into_owned());
+        let text = String::from_utf8_lossy(&body).into_owned();
+        self.log.lock().unwrap().push(text.clone());
+        self.from_host.lock().unwrap().push(text);
         serde_json::from_slice(&body).expect("json")
     }
 
@@ -224,6 +226,11 @@ impl Host {
     /// Everything that crossed either pipe, as one string.
     fn wire(&self) -> String {
         self.log.lock().unwrap().join("\n")
+    }
+
+    /// Only what the host wrote, which is the half this package promises.
+    fn from_host(&self) -> String {
+        self.from_host.lock().unwrap().join("\n")
     }
 
     fn hello(&mut self, extension_id: &str) {
@@ -380,6 +387,12 @@ fn an_attached_tab_is_served_to_the_cli_and_only_to_an_opted_in_consumer() {
 }
 
 /// M7-a acceptance: no secret, cookie file, or token appears on either pipe.
+///
+/// The secrets are planted, not merely absent. The companion is made to
+/// report a URL carrying a capability parameter, so the assertion has
+/// something to catch, and the host's own half of the wire is checked apart
+/// from the extension's, because only the host's half is this package's to
+/// promise.
 #[test]
 fn nothing_on_the_wire_carries_a_secret() {
     let f = Fixture::new();
@@ -387,19 +400,41 @@ fn nothing_on_the_wire_carries_a_secret() {
     host.recv_type("ready");
     host.hello(EXTENSION);
 
-    // A page whose URL carries a capability the companion already stripped.
-    host.attach(&observation());
+    // A page whose URL carries capabilities a careless companion would send.
+    let mut page = observation();
+    page["url"] = json!(format!(
+        "{ORIGIN}/courses/45679/files/9/download?verifier={PAGE_SECRET}\
+         &X-Amz-Signature=deadbeef&wrap=1"
+    ));
+    host.attach(&page);
     host.recv_type("attached");
     wait_for("the endpoint", || exists(&f.endpoint()));
-    f.json(&["--offline", "here"]);
+    let (here, code) = f.json(&["--offline", "here"]);
+    assert_eq!(code, 0, "{here}");
     f.json(&["bridge", "status"]);
 
+    // The host stripped them before it stored the URL, so nothing downstream
+    // of the broker carries them either.
+    let bundle = here.to_string();
+    for forbidden in [PAGE_SECRET, "verifier", "X-Amz-Signature", "deadbeef"] {
+        assert!(
+            !bundle.contains(forbidden),
+            "{forbidden} reached the bundle:\n{bundle}"
+        );
+    }
+    assert!(
+        here["result"]["browser"]["url"]
+            .as_str()
+            .expect("a sanitized url")
+            .contains("wrap=1"),
+        "sanitizing the URL threw the route away: {here}"
+    );
+
+    // The whole wire, and the host's half of it on its own.
     let wire = host.wire();
+    let from_host = host.from_host();
     for forbidden in [
         TOKEN,
-        PAGE_SECRET,
-        "verifier",
-        "X-Amz-Signature",
         "Cookie",
         "cookie",
         "authenticity_token",
@@ -411,6 +446,12 @@ fn nothing_on_the_wire_carries_a_secret() {
         assert!(
             !wire.contains(forbidden),
             "{forbidden} crossed the pipe:\n{wire}"
+        );
+    }
+    for forbidden in [PAGE_SECRET, "verifier", "X-Amz-Signature", "deadbeef"] {
+        assert!(
+            !from_host.contains(forbidden),
+            "the host echoed {forbidden}:\n{from_host}"
         );
     }
     host.stop();
