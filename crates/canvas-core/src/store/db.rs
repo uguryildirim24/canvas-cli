@@ -238,10 +238,24 @@ fn open_db(
             | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
-    conn.execute_batch(
-        "PRAGMA journal_mode=WAL;
-         PRAGMA foreign_keys=ON;",
-    )?;
+    // SQLite can return BUSY immediately while another process changes journal
+    // mode, bypassing busy_timeout. Retry that initialization operation only.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match conn.pragma_update(None, "journal_mode", "WAL") {
+            Ok(()) => break,
+            Err(rusqlite::Error::SqliteFailure(error, _))
+                if matches!(
+                    error.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                ) && std::time::Instant::now() < deadline =>
+            {
+                thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    conn.pragma_update(None, "foreign_keys", "ON")?;
     let found: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if found > supported {
         return Err(DbError::NewerSchema { found, supported });
