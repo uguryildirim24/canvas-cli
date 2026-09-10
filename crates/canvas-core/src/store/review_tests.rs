@@ -36,10 +36,9 @@ fn direct_store_open_verifies_identity_and_holds_lock() {
     assert!(!FileExt::try_lock_exclusive(&file).unwrap());
     store
         .call_blocking(|conns| {
-            let count: i64 =
-                conns
-                    .state
-                    .query_row("SELECT count(*) FROM identity_meta", [], |r| r.get(0))?;
+            let count: i64 = conns
+                .state
+                .query_row("SELECT count(*) FROM identity", [], |r| r.get(0))?;
             assert_eq!(count, 5);
             Ok(())
         })
@@ -544,4 +543,70 @@ fn grade_letters_are_written_with_independent_period_clocks() {
             Ok(())
         })
         .unwrap();
+}
+
+#[test]
+fn journal_pending_states_acknowledgment_and_subsecond_supersession() {
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store.call_blocking(|conns| {
+        let tx = conns.state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        tx.execute("INSERT INTO submission_journal (journal_id, identity_key, course_id, assignment_id, kind, state, created_at)
+            VALUES ('old', 'key', 1, 7, 'online_upload', 'planned', '2026-01-01T00:00:00Z')", [])?;
+        assert!(pending_for_assignment(&tx, 7)?);
+        assert!(tx.execute("INSERT INTO submission_journal (journal_id, identity_key, course_id, assignment_id, kind, state, created_at)
+            VALUES ('conflict', 'key', 1, 7, 'online_upload', 'uploading', '2026-01-01T00:00:00Z')", []).is_err());
+        for state in ["uploading", "uploaded", "posting", "outcome_unknown"] {
+            tx.execute("UPDATE submission_journal SET state=?1", [state])?;
+            assert!(pending_for_assignment(&tx, 7)?);
+        }
+        tx.execute("UPDATE submission_journal SET acknowledged_at='2026-01-01T00:00:01Z'", [])?;
+        assert!(!pending_for_assignment(&tx, 7)?);
+        tx.execute("UPDATE submission_journal SET acknowledged_at=NULL", [])?;
+        tx.execute("INSERT INTO submission_journal (journal_id, identity_key, course_id, assignment_id, kind, state, created_at)
+            VALUES ('later', 'key', 1, 7, 'online_upload', 'matched', '2026-01-01T00:00:00.5Z')", [])?;
+        assert!(!pending_for_assignment(&tx, 7)?);
+        tx.execute("UPDATE submission_journal SET state='refused' WHERE journal_id='later'", [])?;
+        assert!(pending_for_assignment(&tx, 7)?);
+        tx.execute("UPDATE submission_journal SET state='uploaded_not_submitted' WHERE journal_id='old'", [])?;
+        assert!(!pending_for_assignment(&tx, 7)?);
+        // Every failure/recovery transition keeps its own timestamp when reconciled.
+        tx.execute("UPDATE submission_journal SET upload_incomplete_at=?1, uploaded_not_submitted_at=?1,
+            outcome_unknown_at=?1, refused_at=?1 WHERE journal_id='old'", [ts(1).to_string()])?;
+        tx.commit()?;
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn schema_contains_all_cache_tables_and_refuses_newer_state() {
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store
+        .call_blocking(|conns| {
+            let mut stmt = conns
+                .cache
+                .prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")?;
+            let tables = stmt
+                .query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut expected = CACHE_TABLES.to_vec();
+            expected.sort_unstable();
+            assert_eq!(tables, expected);
+            for table in CACHE_TABLES
+                .iter()
+                .filter(|t| !["membership", "field_obs", "fetch_log"].contains(t))
+            {
+                conns.cache.prepare(&format!(
+                    "SELECT observed_at_core, observed_at_detail, observed_at_status FROM {table}"
+                ))?;
+            }
+            conns.state.execute_batch("PRAGMA user_version=99")?;
+            Ok(())
+        })
+        .unwrap();
+    assert!(matches!(
+        Store::open(&paths, &doc),
+        Err(DbError::NewerSchema { found: 99, .. })
+    ));
 }

@@ -95,12 +95,12 @@ impl Store {
                     ("generation", doc.generation.to_string()),
                 ] {
                     state_tx.execute(
-                        "INSERT INTO identity_meta (key, value) VALUES (?1, ?2)
+                        "INSERT INTO identity (key, value) VALUES (?1, ?2)
                         ON CONFLICT(key) DO NOTHING",
                         rusqlite::params![key, value],
                     )?;
                     let stored: String = state_tx.query_row(
-                        "SELECT value FROM identity_meta WHERE key = ?1",
+                        "SELECT value FROM identity WHERE key = ?1",
                         [key],
                         |r| r.get(0),
                     )?;

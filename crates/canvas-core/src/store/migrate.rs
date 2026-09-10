@@ -215,7 +215,7 @@ CREATE TABLE enrollment_grades (
 
 CREATE TABLE course_totals (
     course_id INTEGER NOT NULL,
-    mode TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('all', 'current')),
     current_score REAL,
     final_score REAL,
     current_grade TEXT,
@@ -295,7 +295,7 @@ CREATE TABLE scope_epoch (
 
 CREATE TABLE credential (
     identity_key TEXT PRIMARY KEY NOT NULL,
-    active_source TEXT NOT NULL DEFAULT 'none',
+    active_source TEXT NOT NULL DEFAULT 'none' CHECK (active_source IN ('keyring', 'file', 'none')),
     token_sha256 TEXT,
     validated_at TEXT,
     cleanup_keyring INTEGER NOT NULL DEFAULT 0,
@@ -308,7 +308,8 @@ CREATE TABLE submission_journal (
     course_id INTEGER NOT NULL,
     assignment_id INTEGER NOT NULL,
     kind TEXT NOT NULL,
-    state TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('planned', 'uploading', 'uploaded', 'posting',
+        'submitted', 'matched', 'upload_incomplete', 'uploaded_not_submitted', 'outcome_unknown', 'refused')),
     intended_payload_json TEXT NOT NULL DEFAULT '{}',
     baseline_attempt INTEGER,
     baseline_submission_id INTEGER,
@@ -321,10 +322,14 @@ CREATE TABLE submission_journal (
     submitted_at TEXT,
     matched_at TEXT,
     terminal_at TEXT,
+    upload_incomplete_at TEXT,
+    uploaded_not_submitted_at TEXT,
+    outcome_unknown_at TEXT,
+    refused_at TEXT,
     uploaded_file_ids_json TEXT NOT NULL DEFAULT '[]',
     post_status INTEGER,
-    response_kind TEXT,
-    not_submitted_evidence TEXT,
+    response_kind TEXT CHECK (response_kind IN ('canvas-error', 'other', 'none')),
+    not_submitted_evidence TEXT CHECK (not_submitted_evidence IN ('never_sent', 'assumed')),
     response_record_json TEXT,
     readback_record_json TEXT,
     server_match_json TEXT,
@@ -344,7 +349,7 @@ CREATE TABLE alias (
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE identity_meta (
+CREATE TABLE identity (
     key TEXT PRIMARY KEY NOT NULL,
     value TEXT NOT NULL
 );
