@@ -1022,6 +1022,24 @@ mod tests {
         assert!(!accepted.all_courses && !accepted.verify);
     }
 
+    /// stdin carries the protocol here, so `--text -` has no meaning.
+    #[test]
+    fn a_text_entry_cannot_read_the_protocol_channel() {
+        let args = |text: &str| SubmissionPrepareArgs {
+            course: "1".to_owned(),
+            assignment: "2".to_owned(),
+            files: Vec::new(),
+            text: Some(text.to_owned()),
+            html: None,
+            url: None,
+            comment: None,
+        };
+        assert!(submit_args(args("-")).is_err());
+        let accepted = submit_args(args("answer.txt")).expect("a file is fine");
+        assert_eq!(accepted.text.as_deref(), Some("answer.txt"));
+        assert!(!accepted.yes, "the agent surface has no --yes");
+    }
+
     #[test]
     fn reconcile_does_not_assume_anything_by_default() {
         let args: ReconcileArgs = parse(Some(
