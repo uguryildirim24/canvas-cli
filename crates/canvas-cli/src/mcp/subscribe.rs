@@ -194,7 +194,8 @@ pub async fn listen(
             .await
             .map_err(db_error)?
     };
-    let since = requested_cursor(&context.request_context().meta).unwrap_or(stored);
+    let named = requested_cursor(&context.request_context().meta);
+    let since = named.unwrap_or(stored);
     let generation = binding.generation.clone();
     let begin = store
         .call(move |conns| start(&conns.state, since, &generation))
@@ -209,15 +210,19 @@ pub async fn listen(
                     return Ok(());
                 }
             }
-            // The jump is durable at once, and it replaces the stored
-            // position instead of moving it forward: a cursor the log cannot
-            // replay is not a position, so the same gap is never reported to
-            // the same consumer twice.
-            let named = consumer.clone();
-            store
-                .call(move |conns| reset_consumer_cursor(&mut conns.state, &named, cursor))
-                .await
-                .map_err(db_error)?;
+            // A stored position the log cannot replay is not a position, so it
+            // is replaced at once and the same gap is never reported to the
+            // same consumer twice. A position the host named in `_meta` is the
+            // host's own, and it never replaces the stored one: that one is
+            // still replayable, and it still names rows this consumer has not
+            // been told about. `notify` draws the same line at `--since`.
+            if named.is_none() {
+                let who = consumer.clone();
+                store
+                    .call(move |conns| reset_consumer_cursor(&mut conns.state, &who, cursor))
+                    .await
+                    .map_err(db_error)?;
+            }
             cursor
         }
     };
