@@ -676,3 +676,34 @@ async fn schema_names_the_new_commands() {
         assert_eq!(doc["result_source"], "result type", "{command}");
     }
 }
+
+/// A `--text-file` is read under the §12.2 bound, not into memory whole.
+///
+/// The submission road reads text through `read_bounded`; the write road used
+/// an unbounded `read_to_string`, so a path naming a huge file was read in
+/// full before the 1 MiB refusal could apply.
+#[tokio::test]
+async fn an_over_long_body_is_refused_and_never_read_whole() {
+    let server = MockServer::start().await;
+    mount_reads(&server, json!([somebody_else()])).await;
+    let f = Fixture::new(&server.uri());
+
+    let big = f.dir.path().join("big.txt");
+    std::fs::write(&big, "x".repeat(2 * 1024 * 1024)).unwrap();
+    let out = f
+        .run(
+            &[
+                "discussion",
+                "reply",
+                "5",
+                "55",
+                "--text-file",
+                big.to_str().unwrap(),
+                "--yes",
+            ],
+            8,
+        )
+        .await;
+    assert_eq!(out["result"]["details"]["reason"], "unsupported", "{out}");
+    assert_eq!(posts_seen(&server).await, 0);
+}
