@@ -46,6 +46,7 @@ const SHAPES: &[Shape] = shapes![
     ("canvas-cli/assignments@1", "assignments.json"),
     ("canvas-cli/assignment@1", "assignment.json"),
     ("canvas-cli/submit@1", "submit.json"),
+    ("canvas-cli/plan@1", "plan.json"),
     ("canvas-cli/submission@1", "submission.json"),
     ("canvas-cli/receipt@1", "receipt.json"),
     ("canvas-cli/receipts@1", "receipts.json"),
@@ -109,11 +110,24 @@ const NULLABLE_WITH_EXAMPLE: &[&str] = &[
     "canvas-cli/grades@1:course",
     "canvas-cli/grades@1:courses[].grades.period.id",
     "canvas-cli/grades@1:courses[].grades.period.title",
+    "canvas-cli/plan@1:plan.approval",
+    "canvas-cli/plan@1:plan.assignment_name",
+    "canvas-cli/plan@1:plan.comment_chars",
+    "canvas-cli/plan@1:plan.course_code",
+    "canvas-cli/plan@1:plan.due_at",
+    "canvas-cli/receipt@1:approval",
+    "canvas-cli/receipt@1:plan_id",
+    "canvas-cli/receipts@1:journal.approval",
+    "canvas-cli/receipts@1:journal.plan_id",
     "canvas-cli/receipts@1:journal.course_code",
     "canvas-cli/receipts@1:journal.posted.excused",
     "canvas-cli/receipts@1:journals[].course_code",
     "canvas-cli/receipts@1:journals[].posted.excused",
+    "canvas-cli/receipts@1:journals[].approval",
+    "canvas-cli/receipts@1:journals[].plan_id",
+    "canvas-cli/receipts@1:receipt.approval",
     "canvas-cli/receipts@1:receipt.course_code",
+    "canvas-cli/receipts@1:receipt.plan_id",
     "canvas-cli/receipts@1:receipt.posted.excused",
     "canvas-cli/receipts@1:receipt.readback.late",
     "canvas-cli/receipts@1:receipt.readback.submitted_at",
@@ -490,4 +504,46 @@ fn repo_path(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(relative)
+}
+
+/// A journal created before plans exposes `plan_id` and `approval` as null.
+///
+/// Appendix D's nullable convention makes that the correct legacy shape, and
+/// REPORT §3.5 makes `plan@1`'s `approval` null until a person approves. Every
+/// submission in this suite runs through the plan path, so no snapshot carries
+/// the legacy shape yet and nothing else would notice a fixture that declares
+/// these fields as always-present.
+#[test]
+fn the_plan_fields_are_nullable_in_every_shape_that_carries_them() {
+    fn blank(value: &mut Value, keys: &[&str]) {
+        match value {
+            Value::Object(map) => {
+                for (key, entry) in map.iter_mut() {
+                    if keys.contains(&key.as_str()) {
+                        *entry = Value::Null;
+                    } else {
+                        blank(entry, keys);
+                    }
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(|item| blank(item, keys)),
+            _ => {}
+        }
+    }
+
+    for shape in SHAPES {
+        // A plan names itself, so only its approval can be null.
+        let keys: &[&str] = if shape.schema == "canvas-cli/plan@1" {
+            &["approval"]
+        } else {
+            &["plan_id", "approval"]
+        };
+        let fixture: Value = serde_json::from_str(shape.fixture).expect("fixture JSON");
+        let mut legacy = fixture.clone();
+        blank(&mut legacy, keys);
+        if legacy == fixture {
+            continue;
+        }
+        compare(shape.fixture_file, shape.schema, "", &fixture, &legacy);
+    }
 }

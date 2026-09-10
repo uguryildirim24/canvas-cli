@@ -45,7 +45,14 @@
     "readback": null,
     "server_match": null,
     "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
-    "error": null
+    "error": null,
+    "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
+    "approval": {
+      "channel": "tty",
+      "at": "2026-09-09T16:04:52Z",
+      "consumer": null,
+      "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
   },
   "receipt": {
     "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
@@ -111,6 +118,13 @@
     "url": null,
     "due_at": "2026-09-15T23:59:59Z",
     "cli_version": "0.1.0",
-    "created_at": "2026-09-09T16:04:58Z"
+    "created_at": "2026-09-09T16:04:58Z",
+    "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
+    "approval": {
+      "channel": "tty",
+      "at": "2026-09-09T16:04:52Z",
+      "consumer": null,
+      "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
   }
 }

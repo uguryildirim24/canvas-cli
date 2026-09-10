@@ -15,7 +15,7 @@ expression: value
   "partial": [],
   "profile": null,
   "requests": {
-    "api": 3,
+    "api": 4,
     "cost": null,
     "storage": 0
   },
