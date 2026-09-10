@@ -19,16 +19,18 @@ canvas-api.workspace = true
 canvas-core.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
+comfy-table.workspace = true
 etcetera.workspace = true
 figment.workspace = true
 fs4.workspace = true
+futures-util.workspace = true
 jiff.workspace = true
 keyring.workspace = true
+open.workspace = true
 reqwest.workspace = true
 rpassword = "=7.4.0"
-open.workspace = true
 rusqlite.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
@@ -42,12 +44,13 @@ rustix = { version = "=1.1.4", features = ["fs", "process"] }
 
 [dev-dependencies]
 assert_cmd.workspace = true
-predicates.workspace = true
-tempfile = "=3.23.0"
-wiremock.workspace = true
-serde_json.workspace = true
 canvas-core.workspace = true
+insta = { workspace = true, features = ["json"] }
+predicates.workspace = true
+serde_json.workspace = true
+tempfile = "=3.23.0"
 tokio = { version = "=1.53.1", features = ["rt", "macros", "time", "sync", "test-util"] }
+wiremock.workspace = true
 
 [lints]
 workspace = true
