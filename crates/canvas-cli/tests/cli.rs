@@ -303,7 +303,12 @@ fn command_choices_accept_documented_forms() {
             "3",
         ],
     ] {
-        assert_stub(&args);
+        // M3-b is implemented: without an identity these exit 3 (auth).
+        Command::cargo_bin("canvas")
+            .unwrap()
+            .args(&args)
+            .assert()
+            .code(3);
     }
     for args in [
         vec![
@@ -394,9 +399,7 @@ fn nested_help_lists_registered_commands() {
 
 #[test]
 fn every_v1_stub_is_callable() {
-    // Implemented by M0-c (auth/identity/config/doctor), M1-b
-    // (courses/course/alias/sync/cache), and M3-a (files/modules) are
-    // covered elsewhere.
+    // Implemented by M0-c, M1-b, M3-a, and M3-b (download) are covered elsewhere.
     let own_stubs: &[&[&str]] = &[
         &["todo"],
         &["assignments", "chem"],
@@ -406,7 +409,6 @@ fn every_v1_stub_is_callable() {
             "https://canvas.example.test/courses/1/assignments/2",
         ],
         &["grades"],
-        &["download", "chem"],
         &["announcements"],
         &["announcement", "chem", "123"],
         &[
@@ -440,7 +442,7 @@ fn every_v1_stub_is_callable() {
     }
 }
 
-/// M1-b / M3-a commands need an identity; without one they exit 3 with an error envelope.
+/// M1-b / M3-a / M3-b commands need an identity; without one they exit 3 with an error envelope.
 #[test]
 fn m1b_commands_exit_auth_without_identity() {
     let empty = tempfile::TempDir::new().unwrap();
@@ -456,6 +458,7 @@ fn m1b_commands_exit_auth_without_identity() {
         vec!["cache", "path"],
         vec!["files", "chem"],
         vec!["modules", "chem"],
+        vec!["download", "chem", "--dest", "/tmp/out"],
     ] {
         let assert = Command::cargo_bin("canvas")
             .unwrap()

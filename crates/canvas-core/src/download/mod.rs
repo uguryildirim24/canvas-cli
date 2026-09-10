@@ -5,6 +5,7 @@ pub mod install;
 pub mod manifest;
 pub mod plan;
 pub mod sanitize;
+pub mod transport;
 
 pub use contain::{ContainError, ContainedPath, open_contained_file, walk_parent};
 pub use install::{
@@ -17,6 +18,7 @@ pub use manifest::{
     LOCK_TIMEOUT, Manifest, ManifestError, ManifestRow, SCHEMA_USER_VERSION,
     SqliteDestinationRegistry, open_destination,
 };
+pub use transport::{ApiTransfer, FileFetchMeta, ProgressFn, file_remote_meta};
 
 pub use plan::{
     PlanCourse, PlanError, PlanFile, PlanFolder, PlanInput, PlanModule, PlanModuleItem,

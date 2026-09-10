@@ -156,11 +156,37 @@ async fn main() -> ExitCode {
                 Commands::Modules { course, items } => {
                     commands::modules::run(&m1b_globals(&globals), course, items).await
                 }
+                Commands::Download {
+                    course,
+                    all_courses,
+                    dest,
+                    module,
+                    files,
+                    jobs,
+                    dry_run,
+                    force,
+                    verify,
+                } => {
+                    commands::download::run(
+                        &m1b_globals(&globals),
+                        commands::download::DownloadArgs {
+                            course,
+                            all_courses,
+                            dest,
+                            module,
+                            files,
+                            jobs,
+                            dry_run,
+                            force,
+                            verify,
+                        },
+                    )
+                    .await
+                }
                 Commands::Todo { .. }
                 | Commands::Assignments { .. }
                 | Commands::Assignment { .. }
                 | Commands::Grades { .. }
-                | Commands::Download { .. }
                 | Commands::Announcements { .. }
                 | Commands::Announcement { .. }
                 | Commands::Calendar { .. }
