@@ -1251,11 +1251,468 @@ These eight schemas have no typed arm in the schema generator, so their `canvas 
 
 ## 24. Companion, broker, presence
 
-*Reserved for M7-a and M7-b (`extension/`, `canvas bridge`, `canvas here`, `context.*`, follow, panel approvals). Both packages are in flight and no part of them is on `main`; §19 items 30–32 already record their open questions. This section is written when they merge.*
+Built by M7-a (`docs/reviews/code-M7-a.md`) and M7-b (`docs/reviews/code-M7-b.md`), from `docs/agent-ux/REPORT.md` §3.3 and §3.4. `canvas-cli` reads the Canvas page a person already has open. It does that with a Chrome extension attached to one tab and a broker process Chrome starts on the same machine. **There is no cookie import, no token in the browser, and no fetch proxy.** The browser never becomes a way to reach Canvas: the one request the companion makes is a fixed account probe, and everything else it reports is the page it was given.
+
+```text
+the tab a person attached          this machine
+ content script  ── bridge-native@1 ──  canvas bridge host  ── bridge-ipc@1 ──  canvas here
+                                                                                canvas mcp (context.*)
+```
+
+Nothing is shared until the person acts. `activeTab` grants one tab for as long as it stays on the origin the gesture happened on; a cross-origin navigation revokes the grant, and with it the attachment.
+
+### 24.1 The extension
+
+`extension/` ships in the release archives and is loaded unpacked. Manifest V3, `minimum_chrome_version` 116, and **exactly four permissions**:
+
+| Permission | Why |
+|---|---|
+| `activeTab` | one tab, granted by the gesture, revoked by a cross-origin navigation |
+| `nativeMessaging` | the pipe to `canvas bridge host` |
+| `scripting` | Chrome requires it for `chrome.scripting.executeScript` even under `activeTab` (§19 item 30) |
+| `sidePanel` | the panel is a page of this extension; it reaches no site (§19 item 44) |
+
+There is no `host_permissions`, no `content_scripts`, no `externally_connectable`, and no `cookies`, `webRequest`, `declarativeNetRequest`, `webNavigation`, `history`, `tabs`, `storage`, `downloads`, or `debugger`. `tests/companion.rs` asserts every one of those against the shipped manifest, and asserts that no file the panel page loads contains `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `eval(`, `new Function`, or `srcdoc`. The package has no dependency: `cd extension && npm test` installs nothing.
+
+`activeTab` is the whole access model. The extension is injected only by `chrome.scripting.executeScript` inside a gesture — a click on the toolbar action or `Alt+Shift+C` — and only into the tab that gesture named. A declarative `content_scripts` entry would need `host_permissions` and would inject into every Canvas page unasked.
+
+**The lifecycle.** A gesture on an unattached tab opens the side panel, connects the native port, injects the isolated-world scripts, and offers one observation. A second gesture on the same tab detaches: the toolbar button is the way to stop sharing as well as to start. A committed navigation of the attached tab increments a **navigation generation** when the origin is unchanged and ends the attachment when it is not. Sharing pauses on a hidden tab after `bridge.pause_hidden_after`, on entering an assessment, on a tab close, and on host loss. Every message the extension sends carries the tab id and the navigation generation the service worker holds.
+
+The service worker performs no fetch and reads no page. It relays; it composes nothing that the panel shows, and the panel's one message back — a decision on a plan — travels to the host unchanged, for the host to check.
+
+### 24.2 Zones
+
+The content script classifies the document **before** it reads any of it. The route gives one classification, the frames on the page give another, and the stricter of the two wins.
+
+| Zone | What it is | What leaves the browser |
+|---|---|---|
+| `open` | an ordinary course page, assignment, discussion, page, or module listing | route, sanitized URL, title; text only when a consumer asks |
+| `graded` | a gradebook or submission view | the same. Grades are read from the API, never scraped |
+| `assessment` | a quiz or graded assessment | nothing at all |
+| `external` | an LTI or external-tool frame | nothing at all |
+| `unknown` | a frame this build does not recognize | nothing at all |
+
+`assessment`, `external`, and `unknown` are the **opaque** zones. For them the bundle carries no route ids, no URL, no title, and no text, and `content_reason` is `zone_opaque`. Entering an assessment also pauses sharing, before anything is asked for.
+
+A frame is read as attributes only — id, name, src, title, class — and never by first reading its contents. A frame naming `quiz`, `assessment`, `exam`, `proctor`, or `lockdown` makes the page `assessment`; one naming `tool_content`, `lti`, `external_tool`, or `basic_lti` makes it `external`; `preview_frame`, `wiki_page_show`, and `speed_grader_iframe` are Canvas' own and stay `open`; **anything else makes the whole page `unknown`**, because the safe reading of a frame nobody recognizes is that it might be an assessment.
+
+Both ends classify. The extension classifies from the document it can see; the host classifies again from the sanitized URL it was sent and takes the stricter reading, so the extension cannot talk the host into a more permissive zone. An opaque page sends no URL at all, so the host has no path of its own to read: an already-opaque classification stands, and anything else reads `unknown` (M7-a defect 3).
+
+Routes are recognized from numeric ids only, and the page kinds are `dashboard`, `course`, `assignment`, `announcement`, `discussion`, `quiz`, `grades`, `modules`, `files`, `page`, `calendar`, and `other`.
+
+### 24.3 The account probe
+
+The companion makes exactly one Canvas request, and it makes it in the isolated-world content script, where it is same-origin and needs no host permission of any kind: `GET <origin>/api/v1/users/self`, with `redirect: "error"`, `credentials: "same-origin"`, `cache: "no-store"`, and `Accept: application/json`. A redirect is a login wall or another origin and is a failure, not an answer. The response is reduced to `{ user_id, observed_at }` **inside the content script**: no name, no email, no login id, no avatar leaves the page.
+
+The broker joins browser and API facts only when that probe's `user_id` equals the active identity's user id. A mismatch erases the stored observation, pauses the attachment, and refuses with `account_mismatch`. A failed probe releases no text.
+
+### 24.4 Text release
+
+Metadata is served from the broker's own memory. It triggers no probe and no page read.
+
+Text — the selected passage and the visible editor excerpt — is released only when a consumer asks for it (`canvas here --text`, or `context.here` with `include_text: true`), and only after the extension probes the account again and the broker verifies it against the identity. An opaque zone releases none.
+
+Hidden inputs, credential-looking field names, and capability-bearing query parameters are stripped before anything leaves the page. The stripped parameters are `verifier`, `signature`, `token`, `access_token`, `sig`, `policy`, `expires`, and `session_token`, matched case-insensitively, plus every parameter whose name begins `x-amz-`. A sanitized URL keeps http and https only and loses its fragment, its username, and its password. The whole payload is bounded at **64 KiB of UTF-8**, cut on a character boundary, with `truncated: true` when it was cut.
+
+### 24.5 The native host and the broker
+
+`canvas bridge host` is the broker. Chrome starts it as `canvas chrome-extension://<id>/`, and `canvas` recognizes an extension origin in that position and runs the host. It is class B in every respect that matters — it opens no network connection and needs no token — and it is the one raw-output command that speaks a binary framing (§7).
+
+`serve()` runs in this order, and refuses at the first step that fails:
+
+1. **Check the caller origin.** A missing origin, a non-extension origin, and an extension id other than `bridge.extension_id` are each refused with exit 8. An extension id is 32 characters from `a`–`p`.
+2. **Take the shared §10 identity lock**, so `identity remove` sees the host as a live consumer.
+3. **Take the ownership lock** `<data root>/bridge/<identity-key>.lock`, exclusively, for the host's lifetime. A second host for the same identity reports the first one's pid and start time and exits 8.
+4. **Clear a stale socket**, but only while holding that lock, so a live endpoint is never unlinked by a newcomer.
+5. **Bind and restrict the endpoint**, then send `ready`.
+
+The host re-reads `identity.json` every two seconds. If the identity is gone or was replaced, it stops. The same watchdog pushes a fresh panel state whenever the event log has moved.
+
+**Endpoint.** `<data root>/bridge/<identity-key>.sock` inside `<data root>/bridge/`, directory mode `0700` and socket mode `0600`. On Windows it is the named pipe `\\.\pipe\canvas-cli-<identity-key>` with the DACL `D:P(A;;GA;;;{owner SID})(A;;GA;;;SY)` — the owner and `SY`, nobody else. The socket path is length-checked against the 103-byte `sockaddr_un` bound before the bind, and an overrun is a named local failure that says to set `CANVAS_DATA_ROOT` somewhere shorter, not an opaque `bind` error.
+
+**Identity removal.** `identity remove` sends `release` on the socket **before** it takes the identity lock exclusively. The host detaches, tells the extension, and exits. If it has not let go within five seconds, `identity remove` reports the identity busy, names `canvas bridge detach`, and changes nothing. After a successful removal the broker directory entry is forgotten; the persistent lock files stay, as §10 requires.
+
+### 24.6 `bridge-native@1`
+
+Chrome's native-messaging framing: a 4-byte **native-endian** length, then UTF-8 JSON. A message over 1 MiB is refused from the length alone, before any buffer is allocated for it.
+
+| Extension → host | Host → extension |
+|---|---|
+| `hello` — protocol, extension id, browser-profile instance | `ready` — protocol, identity key, origin, `pause_hidden_after_ms` |
+| `attach` — one observation | `attached` — the attachment state |
+| `update` — a navigation, a visibility change, a re-probe | `request_text` — ask for the selection and the excerpt |
+| `text` — the answer, with a fresh account probe | `refused` — a named reason |
+| `pause` / `detach` — with a cause | `detach` — sharing is over |
+| `navigate_ack` — the companion took a navigation, or refused it | `navigate` — go to this URL, inside the granted origin |
+| `navigate_outcome` — what became of it, later | `note` — one note for the panel to display |
+| `decision` — the person approved, declined, or cancelled a plan | `panel` — everything the panel shows |
+| `panel_hello` — the panel opened, or reloaded | |
+
+A pause carries its cause: `hidden`, `assessment`, `tab_closed`, `user_detached`, or `cross_origin`.
+
+**What `Broker::update` does with an observation.** A different origin ends the attachment. A different tab is a protocol error. A different browser-profile instance ends it. A **lower** navigation generation is `stale_generation`. An unverified account erases the stored observation, pauses, and refuses. `zone == assessment` erases and pauses. A new document id moves the attachment to `validating`, and nothing is released until the extension confirms it. An **equal** generation with a different document id is accepted as a new document; §19 item 32 owns that reading. One identity holds one attachment: a newer tab replaces an older one.
+
+### 24.7 `bridge-ipc@1`
+
+Newline-delimited JSON on the endpoint above. A request line over **64 KiB** is refused as it arrives. `MAX_REQUEST_BYTES` is deliberately larger than the 8 KiB note bound, so a note at its own limit comes back as `note_too_large`, which a person can act on, rather than `protocol`, which nobody can.
+
+| Operation | Who may call it |
+|---|---|
+| `attachments.list` | anyone. It carries no attachment id and no page content |
+| `attach` | a consumer, naming itself. It receives the attachment id and the state, never the page |
+| `here` | a consumer that attached, or the CLI when there is one attachment. The caller is checked **before** the browser is asked for anything |
+| `detach` | a named consumer gives up its own share; the CLI ends the attachment |
+| `release` | `identity remove`, before it takes the exclusive lock |
+| `note` | a consumer that attached, or the CLI. It holds one note for display and writes nothing |
+| `follow` | the same callers. It asks the browser to move the tab inside the granted origin |
+
+**There is no approval operation on this socket.** A plan is approved over the native-messaging path, from the panel, and nowhere else. Anything that reaches this socket has, by construction, nothing to say about a plan; asking it to approve answers `refused: protocol`, and a test drives that path.
+
+**Refusal reasons.** Every one is exit 8 except `zone_opaque`, which is exit 0.
+
+| `reason` | Meaning |
+|---|---|
+| `not_attached` | nothing is attached, or the caller has not attached |
+| `paused` | sharing is paused |
+| `validating` | the page just changed and has not been confirmed |
+| `zone_opaque` | the attachment is healthy and this page carries nothing. **Not a refusal**; exit 0 |
+| `account_mismatch` | the browser is signed in as another Canvas account. Nothing was joined |
+| `bridge_unavailable` | no host is running |
+| `stale_generation` | the named generation is not the tab's current one, in either direction |
+| `protocol` | a message this protocol does not name, or a request over its bound |
+| `note_too_large` | the note is over 8 KiB. Nothing was held |
+| `source_ref_rejected` | a source ref is not `canvas://` or `https` on the attached origin. Nothing was held |
+| `note_rejected` | the note was empty, carried more than 16 refs, or the attachment already holds its 32. Nothing was held |
+| `origin_mismatch` | the follow target is outside the granted origin |
+| `navigation_timeout` | the companion did not acknowledge within two seconds. The tab may still have moved |
+
+`not_attached` and the rest are the `details.reason` values §14 records.
+
+### 24.8 Consumers and the trust boundary
+
+A consumer is a name: `mcp` for an anonymous MCP client, `mcp:<client name>` when the client identifies itself, and the CLI when no name is given. `attach`, `here`, `note`, `follow`, and `detach` take the consumer as a field, so **any process that can open the `0600` socket in the `0700` directory can call under any name.** REPORT §3.2 says consumer handles express routing within the owner's OS trust domain, not isolation from another unrestricted local process, and that is the boundary this release implements. §19 item 31 states it.
+
+What the boundary does hold is everything above the socket:
+
+- **A consumer handle is set by the adapter, never by a model.** `context.here` from `canvas mcp` always carries the calling host's own handle, so one MCP consumer cannot read another's attachment even with a stolen attachment id.
+- **`attachments.list` carries no attachment id and no page content.** The attachment id is the capability, so a listing must not hand it out. `bridge status` therefore names the state, the origin, the account id, the zone, the consumers, and the generation, and never the page.
+- **`context.detach` gives up only the caller's share.** Ending the attachment for everyone is `canvas bridge detach`, a human act.
+- **`context.attach` returns the handle and the state, never the page.** Opting in and reading are two decisions.
+
+### 24.9 Commands
+
+Every command here opens the session locally and reaches Canvas only where §5's class says so.
+
+| Command | Class | What it does |
+|---|---|---|
+| `bridge install [--extension-id ID] [--browser chrome\|chromium\|edge]` | B | writes the native-messaging host manifest, mode `0600`, and stores the id in `bridge.extension_id` |
+| `bridge host [CALLER_ORIGIN] [--parent-window HANDLE]` | B | the broker. Chrome starts it; raw output (§7) |
+| `bridge status` | B | the manifest, the owner, and the attachments |
+| `bridge detach [--attachment ID]` | B | asks the live owner to end the attachment |
+| `here [--attachment ID] [--text]` | C | the context bundle: the browser side, and the API side for what its route names |
+| `note --text T [--source-ref REF]… [--attachment ID] [--generation N]` | B | holds one inert note for the panel |
+| `open <target> --follow [--attachment ID]` | B | navigates the attached tab instead of opening a window |
+
+`bridge install` writes this file to the browser's `NativeMessagingHosts` directory — `~/Library/Application Support/{Google/Chrome|Chromium|Microsoft Edge}/NativeMessagingHosts/` on macOS, `~/.config/{google-chrome|chromium|microsoft-edge}/NativeMessagingHosts/` on other Unix:
+
+```json
+{
+  "name": "com.canvas_cli.bridge",
+  "description": "canvas-cli companion broker",
+  "path": "/absolute/path/to/canvas",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://<ID>/"]
+}
+```
+
+Windows registers native messaging hosts in the registry, which `canvas bridge install` does not write: it refuses with exit 8 rather than guessing. Without an id and without `bridge.extension_id`, the command is a usage error, exit 2.
+
+`canvas here` is **class C**, not class B: its browser half comes from the socket, and its API half calls the same `course`, `assignment`, and `announcement` cores the CLI calls, each of which may fetch. Those envelopes travel whole, with their own freshness. `bridge install|status|detach`, `note`, and `open --follow` reach the socket only and are class B.
+
+### 24.10 The side panel
+
+The panel is a page of the extension. It opens on the same gesture that shares the tab — opening it needs that gesture — and it shows four things: what is attached, the plans waiting for a decision, the notes an agent left, and the journals for the page the person is on.
+
+It has **no model and no chat backend**, it opens no database, and it makes no request of its own — not to Canvas, not anywhere. Everything it draws arrives from `canvas bridge host` as one `panel` message. The service worker relays that message and composes none of it.
+
+The API side travels as whole §7 envelopes, the same documents `canvas course --json` and `canvas assignment --json` print, each keeping its own freshness. **The host reads them offline, and only offline.** A panel is redrawn whenever the event log moves or the person opens it, and a surface that fetched on every redraw would make the browser the reason Canvas is called. A row the cache has not refreshed is shown as stale, and a fact the CLI does not hold is shown as not held — never borrowed from the browser observation beside it, which is a hint and not a fact. There is no page text in any of it.
+
+**The status feed.** The panel is one more consumer of the §22 event log and follows its cursor rules. A position the log can no longer replay is not quietly restarted: the panel says **refresh** and starts again. It draws at most 20 journals. Journal and receipt states are shown with their exact §12.2 names, and the sentence beside a name explains it rather than replacing it: `matched` says the attribution is unproven, `outcome_unknown` says the outcome was never observed, and nothing is drawn as finished except `submitted`, which is the one state in which this machine saw the response that created the attempt.
+
+### 24.11 Notes
+
+`canvas note --text …`, or `context.note` from an agent, holds one note for the attachment. A note is inert:
+
+- **it is not a Canvas write.** Nothing about it reaches Canvas;
+- **it is not an approval.** No note, whatever its text or its refs say, can approve, decline, or cancel a plan;
+- **it is not HTML.** The text travels as Markdown source and the panel renders a small subset — headings, paragraphs, lists, quotes, code, bold, italic, links — as elements built one at a time with their text set as text. There is no HTML parser in that path, so a tag stays a tag on screen; no image is ever fetched; and a link survives only when it is `https` on the granted origin with no credentials in it. Everything else is shown struck through and marked *(link removed)*, so the reader sees that something claimed to be a link rather than seeing a link that lies.
+
+Bounds, and what breaking one costs:
+
+| Bound | Value | On breach |
+|---|---|---|
+| Note size | 8 KiB | `note_too_large`; the whole note is refused, never truncated |
+| Source refs | 16 per note | `note_rejected` |
+| Notes held per attachment | 32 | `note_rejected` — the thirty-third is refused, and no older note is pushed out |
+| Emphasis nesting | 4 deep | rendered as text past the bound |
+| Block-quote nesting | 6 deep | rendered as text past the bound |
+
+Each ref is either `canvas://…`, non-empty and free of control characters, or an `https` URL whose origin equals the granted origin **and which carries no username and no password**: `Url::origin()` ignores credentials, so `https://you@canvas.example/…` has the right origin and reads as another host to a person. The nesting bounds exist because each level is a recursive call and a note well inside 8 KiB can otherwise carry enough of them to overflow the stack (M7-b defect 2). A note that still fails to render costs that one row, which is shown unrendered; the plans waiting for a decision draw either way.
+
+Notes are held for the attachment's lifetime, survive a navigation and a pause, and are erased on detach. Every panel push carries every held note, which is the second reason the count is bounded: a native message stops at 1 MiB, and a host that cannot send a message treats the pipe as lost.
+
+### 24.12 Follow
+
+`canvas open <target> --follow`, or `context.follow`, asks the attached tab to go somewhere inside the granted origin. The target goes through the ordinary `canvas open` resolver first, so a target outside this identity's Canvas fails at exit 6 and never reaches the browser. `may_follow` is checked before anything is dispatched.
+
+The answer is a **dispatch acknowledgement**: the companion took the request. It is not a page load. What became of the page arrives later and lands on `here@1` as `browser.follow.load` — `loaded` or `unknown`. **This build never reports `failed`**: seeing a load failure needs `webNavigation`, which would grant standing visibility of every navigation in the browser. Ten seconds after a navigation with nothing observed, the answer is `unknown`, which is what is actually known. A late outcome that names a request the bundle no longer reports changes nothing.
+
+A follow belongs to the consumer that asked for it: one agent's navigation is not reported to another as its own.
+
+**Navigating is not a preview.** A preview promises to change nothing; handing a URL to a browser promises no such thing, because Canvas' own page controllers run and the discussion controller marks a topic read when it renders it. `follow@1` says so in `side_effects`, and `canvas open --follow` says so on stderr.
+
+**Generations bind in both directions.** A note or a follow naming a generation **behind** the tab is stale; one naming a generation **ahead** of it is `stale_generation` too, because an agent that names a generation the tab has not reached is working from something other than what it read. The CLI may omit `--generation`, because a person typing a note is looking at the tab; the agent tools may not, because an agent works from a bundle it read earlier.
+
+### 24.13 Panel approvals
+
+When a plan is waiting for a decision, the panel shows the frozen plan — the files with their sizes and hashes, a bounded text preview of at most 512 characters, the digests, the baseline attempt, and when the plan expires — and offers **approve**, **decline**, and **cancel**. Those three words are the only decisions `Decision::parse` accepts.
+
+The decision travels from the panel to the host over native messaging, carrying the handle the panel was shown. The host then checks, in order and before anything moves:
+
+1. the handle is one it issued for that plan and is still unspent, **compared in constant time**, and the echoed handle *selects* a stored row rather than supplying one;
+2. the digest the panel echoed is that plan's;
+3. the stored plan still describes itself (`plan.digest() == plan.plan_sha256`);
+4. the plan belongs to the current identity generation.
+
+Only then does it call `plan::approve` with `channel = "panel"` (§20), which checks the handle, the consumer, and the expiry again inside its own transaction. Each rejection is its own refusal: `unknown_decision`, `unknown_plan`, `not_prepared`, `bad_handle`, `plan_digest_mismatch`, `stale_generation`, and `refused` when the plan layer itself refuses.
+
+The panel draws **every** plan waiting for a decision, whichever kind it is, and it draws the submission half of one: an operation plan (§25) shows its kind, its digests and its expiry, but no body, no thread, and no recipients, because those live in the plan's operation block and `PanelPlan` does not carry it. §19 item 45 owns that gap.
+
+A page script cannot reach any of this. It runs in the extension's own surface, and the socket a page might reach through a consumer names no approval operation at all. §19 item 41 records that `background.js` does not yet check `sender` on the relay, which is defence in depth rather than a live hole.
+
+**Approval events are private.** The log records `plan.approved`, `plan.declined`, or `plan.cancelled` with the plan id and the decision, and nothing else — no target, no digest, no bytes (§22.2). Invalidating a plan because a fact changed is not a decision and records no event.
+
+### 24.14 The agent surface
+
+Five tools join the §21.2 catalog, and one resource template becomes readable.
+
+| Tool | Effect | `idempotentHint` |
+|---|---|---|
+| `context.attach` | Organize | true |
+| `context.here` | Read | true |
+| `context.detach` | Organize | true |
+| `context.note` | Organize | false |
+| `context.follow` | Organize | false |
+
+`context.note` and `context.follow` require `generation`; `attachment_id` is optional on all five, and every argument struct rejects unknown fields.
+
+`canvas://<identity-key>/<generation>/context/{consumer_handle}` reads the bundle the calling session's own handle names. Reading it attaches nobody: until that consumer calls `context.attach` the resource answers `not_attached`. **The handle in the URI must be the reading session's own.** Naming another consumer's handle reads exactly what an unattached consumer reads — the same `here@1` refusal, the same reason, the same exit — so the resource never reports whether that other handle attached, or even whether a broker is running. It stays readable but not subscribable (§22.5).
+
+**Browser context is never cacheable.** `ttl_ms` is `0` and the bundle carries no `freshness` row of its own, so nothing downstream can serve a stale observation as a fact. The API and browser sides stay separate documents: `api` holds whole §7 envelopes, each with its own freshness, and a browser extract never updates one of them.
+
+### 24.15 Schemas
+
+`here@1`, `note@1`, `follow@1`, and `bridge@1` are registered with fixtures (Appendix D). `bridge@1` has three variants — `status`, `install`, and `detach` — one schema for three shapes. `follow@1` has no command name of its own, because `--follow` is a flag on `open`.
+
+### 24.16 What has been run, and what has not
+
+This is the record, and nothing here claims a flow that was not executed.
+
+**Run, against the shipped host.** `tests/bridge.rs` and `tests/m7b.rs` start the real `canvas bridge host` the way Chrome starts it and drive it with hand-written native-messaging frames. Between them they cover the `ready` handshake; `hello` and `attach`; `bridge status` and `here --json` over the real socket; a wrong extension id, a non-extension origin, and no origin at all, each exit 8; a stale socket cleared under ownership and a live endpoint never unlinked; a second host reporting the first; `identity remove` completing after the cooperative release, with the ownership lock gone and the root identity lock untouched; notes and follows bound to the generation in both directions; a stale and a cross-origin follow that never reach the browser; a dispatch acknowledgement separated from its load outcome, and a late outcome for a replaced navigation changing nothing; approve, decline, and cancel through the panel path, each with its recorded event; and every forgery path — a note shaped like an approval, the socket asked to approve, a guessed handle, the digest used as a handle, a rewritten digest, another plan's id, and a fourth decision word — each refused with the plan still `prepared`, followed by the real decision working. One assertion reads every byte that crossed either pipe and fails on a token or cookie name, with a capability parameter and a planted secret put on a URL the companion reports so the assertion has something to catch.
+
+Two consumers are exercised over a real `canvas mcp`: only the consumer that attached reads the bundle, a stolen attachment id does not serve the other one, reading the other consumer's resource by name does not either, and one consumer letting go leaves the tab attached for the person. `canvas-core::bridge` unit-tests the framing bounds, account mismatch, a failed or redirected probe, stale document and navigation generations, opaque zones, and the 64 KiB ceiling. `cd extension && npm test` runs the route classifier, the zone classifier, the sanitizer, the byte bounds, the note renderer, and the panel view model against fixture HTML and hostile fixture notes, importing the shipped files rather than a copy.
+
+**Not run: a real Chrome.** The companion has never been loaded into a browser on the owner's machine. Installing the manifest writes into the user's own Chrome profile directory, and both the probe and the API side need a real Canvas account. So the following are untested and unverified: load unpacked, the toolbar gesture, a same-origin navigation keeping the grant, a cross-origin navigation revoking it, an account switch producing `account_mismatch`, two tabs, a broker restart driven by Chrome, the side panel opening on the gesture, a note rendered on screen, hostile markup proving inert in a real document rather than in the node tree the tests read, `chrome.tabs.update` moving a tab, a `loaded` outcome from a real navigation, the approve, decline, and cancel buttons, and a forged approval refused with a real page in the tab. Every Chrome-facing rule above rests on Chrome's documentation plus the tests, not on observation. `docs/companion.md` carries the check table for running them.
+
+**Not run: Windows.** The named pipe and its SDDL descriptor compile and unit-test on every platform, but no pipe was created and no registry key was written.
+
+**Measured.** `cargo xtask bench --bridge` starts a real host and times a warm metadata `here` over the socket at p50 0.026 ms against a 100 ms target, and a follow acknowledgement at p50 1.234 ms against a 300 ms target; the answer is 673 bytes on the wire. `docs/bench.md` holds the run.
 
 ## 25. Discussion and inbox writes
 
-*Reserved for M8-b (per-operation prepare, execute, status, and reconcile for conversation and discussion writes, on the §20 plan layer). The package is in flight and no part of it is on `main`. This section is written when it merges.*
+Built by M8-b (`docs/reviews/code-M8-b.md`) from `docs/agent-ux/REPORT.md` §3.5 and §4's M8-b row. Three remote writes join `submit`: a discussion reply, a new conversation, and a message added to a conversation. Every one is **class D**, runs `prepare → approve → execute` on the §20 plan layer, and lands in an **operation journal** that keeps the §12.2 discipline with the submission target replaced by an operation target.
+
+**Nothing is dispatched without a recorded human approval, nothing is ever resent, and nothing claims more than it observed.**
+
+### 25.1 Contract
+
+| Command | Request on execute | Admission lock |
+|---|---|---|
+| `discussion reply <course> <topic\|URL> [--to ENTRY_ID] (--text T \| --text-file P \| --text -) [--attach P]… [--yes]` | `POST /courses/:cid/discussion_topics/:tid/entries` with `message`, or `POST …/entries/:eid/replies` with `--to` | `journals/topic-<tid>.lock` |
+| `inbox send --to USER_ID[,…] [--subject S] (--text …) [--attach P]… [--yes]` | `POST /conversations` with `recipients[]`, `subject`, `body`, `group_conversation=false`, `attachment_ids[]` | `journals/conversation-new-<plan-id>.lock` |
+| `inbox reply <conversation_id> (--text …) [--attach P]… [--yes]` | `POST /conversations/:id/add_message` with `body`, `attachment_ids[]` | `journals/conversation-<id>.lock` |
+| `operation status <journal_id>` | the readback below; no write | owner lock only |
+| `operation reconcile <journal_id> [--assume-not-posted]` | the readback below; no write | owner lock only |
+
+Prepare reads, all `GET`, all before anything is frozen:
+
+| Purpose | Request |
+|---|---|
+| the topic, to check the gates | `GET /courses/:cid/discussion_topics/:tid` |
+| a `--to` entry, to check it is in the topic | `GET /courses/:cid/discussion_topics/:tid/entries` |
+| the conversation, for `inbox reply` | `GET /conversations/:id?auto_mark_as_read=false` |
+| each recipient id | `GET /search/recipients?user_id=<id>` |
+
+The readback both `operation status` and `operation reconcile` run:
+
+| Kind | Request |
+|---|---|
+| `discussion_reply` without `--to` | `GET /courses/:cid/discussion_topics/:tid/entries` |
+| `discussion_reply` with `--to ENTRY_ID` | `GET /courses/:cid/discussion_topics/:tid/entries/:eid/replies` |
+| `inbox_reply`, and `inbox_send` once Canvas has named a conversation | `GET /conversations/:id?auto_mark_as_read=false` |
+
+A threaded reply is read on the replies route because that is where Canvas puts it: the topic's entry listing is top-level only, so reading it would report every threaded reply as absent. `auto_mark_as_read=false` is on every conversation read, as in §23: reading to check a write must never mark it read.
+
+`operation reconcile --offline` is exit 2, the class-D rule. `operation status --offline` returns the stored journal instead — an honest local answer that reads nothing; §19 item 37 owns that difference.
+
+### 25.2 The plan
+
+Three plan kinds join `submission`: `discussion_reply`, `inbox_send`, and `inbox_reply`. They share the §20 plan layer unchanged — the 15-minute admission expiry, the channels `tty`, `yes-flag`, `elicitation`, and `panel`, the handle binding, the digest the approval is bound to, and the rule that one plan admits at most one journal.
+
+A plan freezes:
+
+- the exact thread: `course_id` and `topic_id`, with `parent_entry_id` when `--to` was given, or `conversation_id`, or the exact recipient ids;
+- the subject, for a send;
+- the body, as `input_sha256` over the normalized input (CRLF folded to LF, so the digest does not change with a `--text-file`'s line endings) and `sent_sha256` over the outbound bytes, with the transform named;
+- every attachment as name, size, SHA-256, and absolute path.
+
+Execute re-hashes every attachment from disk. Changed bytes are `invalidated`, exit 8, and nothing is sent. Limits: **1 MiB** of body text, the same `MAX_TEXT_BYTES` `submit` uses, and at most **10 attachments**.
+
+Storage. An operation plan lives in the same `plans` table. `course_id` and `assignment_id` stay `NOT NULL` there and hold `0` for a write that names no course and no assignment; `plans.operation_json` carries the real target, and `plan@1` prints `null` for the fields that mean nothing. The submission half of the row is empty: no frozen files, no baseline, no observations.
+
+**The body transform.** `discussion_reply` sends `text-to-html`: the text is escaped and wrapped in `<p>`/`<br>` by the same `text_to_html` a text submission uses, because Canvas renders a discussion `message` as HTML, so a `<` the person typed is never markup. Both inbox writes send `plain`: Canvas treats a conversation `body` as plain text and escapes it itself, so escaping here would show the person their own entities.
+
+**What the digest covers.** `plan_sha256` is taken over the canonical plan document, which for these kinds includes the frozen operation. §20's rule that the digest excludes the outbound bytes and the local file paths holds for a submission plan; an operation plan's canonical document carries `operation.body.outbound_bytes` and each `operation.attachments[].path`, so approving one binds the exact bytes and the exact paths as well. Both are pinned by their digests too, and execute re-verifies every attachment from disk before anything is uploaded.
+
+### 25.3 Refusals at prepare
+
+Every one is exit 8 with `result.details.reason`, and every one happens **before any `POST`**.
+
+| `reason` | When |
+|---|---|
+| `group_write` | the topic has a `group_category_id`, or a non-empty `group_topic_children` |
+| `locked` | the topic is `locked` or `locked_for_user` |
+| `initial_post_required` | `require_initial_post` is set and this identity has not posted |
+| `unresolved` | a `--to` entry outside the topic, or a recipient id Canvas does not return |
+| `empty_body` | the body is empty or only whitespace |
+| `denied` | a `401`/`403` on the course, topic, or conversation |
+| `unsupported` | an attachment on a discussion reply, a body over 1 MiB, or more than 10 attachments |
+
+A cross-origin URL is exit 6 (`resolution`), not exit 8: it is not a Canvas object this identity was refused, it is not this identity's Canvas at all.
+
+**The initial-post gate is never opened.** The tool posts no placeholder to reveal a thread, and the skill tells a host not to either.
+
+A discussion reply cannot carry an attachment in this version. Canvas takes one on the entries route, but freezing and uploading it needs the entry-scoped upload route; it is refused at prepare rather than dropped silently.
+
+### 25.4 The operation journal
+
+Migration `0004_operations` on `state.sqlite` (§10) adds `operation_journal`, its unique index on `plan_id`, indexes on state and course, and the nullable column `plans.operation_json`. `STATE_USER_VERSION` moves to 4.
+
+States: `planned → posting → posted | matched | outcome_unknown | refused | failed`. `posted` and `matched` are the two ways an operation ends as done, `refused` is the terminal for one that was never sent, `failed` for one Canvas answered with a non-2xx, and `outcome_unknown` for one whose outcome was never observed.
+
+The discipline is §12.2's:
+
+- the **admission lock** is held across the insert, so two executes never publish a journal for one target at the same moment. It is released once the row exists. Unlike a submission — where §12.2 step 2 refuses `in_progress` while a live journal holds the assignment — a second **separately approved** write to the same topic or conversation is admitted while the first is still `posting`, because a second reply is a second post, not a replacement. Two executes of the *same* plan are still exactly one journal, by the plan-state guard and the unique index on `plan_id`. §19 item 39 owns that rule;
+- an **owner lock** is held for the whole operation;
+- every transition is a guarded `UPDATE … WHERE state = ?`, so a lost race changes nothing;
+- the row update, the `operation.state` event, the receipt, and the cache epochs commit in **one transaction**.
+
+`inbox_send` locks on the plan id, because until Canvas names a conversation there is no target to lock. `conversation-new-<plan id>` still stops one plan from being admitted twice, and does not stop a person from writing to two people at once.
+
+**Execute, in order.** A plan already executed returns its journal at once. Then: the admission guard; the recorded approval; the digest re-check; the identity key; the identity generation; a **revalidation** that re-reads the target and re-applies every §25.3 refusal; the admission lock by target name, where a contended lock waits up to 5 seconds for this plan's own concurrent execute to publish its journal; a re-read of the plan under admission; owner-absent recovery over the target's non-terminal journals; re-verification of every attachment from disk; and the linked insert. **Expiry is checked at admission only**: a plan that expires while the request is on the wire does not invalidate the request, because the message is already gone.
+
+**Uploads.** An inbox attachment goes through the §11 upload transport: `POST /users/self/files` with `parent_folder_path` set to `conversation attachments` and `on_duplicate: "rename"`, then the returned upload URL, with the streamed SHA-256 verified against the frozen digest. An upload failure is `refused`, not `failed`: nothing reached the conversation endpoint, so the journal records `never_sent` and names the attachment that stopped it.
+
+**Events.** Each transition writes an `operation.state` event in the same transaction as the row update, with `dataset: "operation_journal"`, `entity_key` the journal id, `before`/`after` carrying `{ "state": … }`, and the scope `topic:<tid>`, `conversation:<id>`, or `conversation:new`. The dedupe key is `operation:<journal_id>:<state>`, so a replayed execute never writes a second event for a state the journal already reached.
+
+**Cache epochs.** A success bumps, in the same transaction:
+
+| Kind | Scopes |
+|---|---|
+| `discussion_reply` | `discussion:topic:<tid>`, `discussion:topic:<tid>:replies`, `discussions:course:<cid>` |
+| `inbox_send` | `inbox:*`, `inbox_unread:*` |
+| `inbox_reply` | `conversation:conversation:<id>`, `inbox:*`, `inbox_unread:*` |
+
+### 25.5 Recovery and ambiguous outcomes
+
+When the owner lock is free but the journal is not terminal, the row is given the state its interruption implies **before** anything is concluded from a readback:
+
+| State found | Recovered to | Why |
+|---|---|---|
+| `planned` | `refused`, `not_posted_evidence: "never_sent"` | the process died before the request was built; nothing was on the wire |
+| `posting` | `outcome_unknown`, `response_kind: "none"` | the request may have been on the wire; the answer is not known |
+| any terminal state | unchanged | there is nothing to recover |
+
+This runs over every non-terminal journal of a target before a new one is admitted, so an abandoned operation never blocks a target forever and never turns into a second message. Only `execute` and `operation reconcile` recover; a readback is not a recoverer.
+
+**Nothing is ever resent automatically.** A journal reaches `outcome_unknown` from a timeout, a transport failure after the request was written, a crash during `posting`, or a **5xx answer**. A `5xx` is `outcome_unknown` and not `failed`, because §12.2 records that Canvas can answer `500` after it has committed, so the answer proves nothing and calling it failed would invite a resend. A `4xx` stays `failed`: Canvas rejected the request.
+
+Only `operation reconcile` moves a journal out of `outcome_unknown`, and only on evidence. `--assume-not-posted` records that nothing was posted. It is refused while a matching message is visible in the thread, while the journal is younger than **30 minutes**, and while the readback did not cover the thread — a readback that is not `complete` cannot prove absence, so `not_found` then carries a warning and the assertion is refused however old the journal is. The refusal is a warning on an exit-9 envelope, not a silent success. When it is recorded, the answer states the residual risk §12.2 requires: the original request can still land, and Canvas can store a body whose digest no longer matches what was sent, so writing again may leave two messages.
+
+**A live owner stops recovery, not reading.** When another process holds the owner lock, `status` and `reconcile` still read the thread and report `verdict: "not_read"` with a warning. `operation status` never changes journal state; `operation reconcile` may. Both record what they saw, because recording an observation is not a state change.
+
+### 25.6 Attribution, and what may be claimed
+
+Attribution is **evidence, not confidence**. It is per operation, and it is the only thing a caller may repeat.
+
+| `attribution` | State | What is true |
+|---|---|---|
+| `accepted` | `posted` | Canvas answered 2xx and named the object it created |
+| `observed` | `posted` | a later readback shows that same object id |
+| `unproven` | `matched` | the thread holds a message with the same `sent_sha256`, and nothing links it to this request |
+| `none` | any other | nothing links this journal to an object in Canvas |
+
+A digest match is `unproven` and never `observed`: two people can write the same sentence, and one person can write it twice. The candidate must also be this identity's own writing — an object Canvas attributes to somebody else resolves nothing, and an object with no author at all leaves the question open.
+
+`delivery` is a separate field, and it is about what Canvas can report at all: `observable` for a discussion reply, `not_observable` for both inbox writes. **A conversation Canvas accepted is not delivered mail.** The human line says "accepted by Canvas". Nothing in either output mode prints "delivered", "received", or "has read", and a test asserts it.
+
+**The response record.** Only an allowlist of the Canvas answer is stored, and the body never is: `id`, `conversation_id`, `created_at`, `created_at_local`, `user_id`, `body_sha256` (of the body Canvas echoed), `attachment_ids`, and `response_sha256` (of the raw HTTP response). A readback stores the same fields plus `scanned` and `complete`.
+
+### 25.7 Exits
+
+These extend §14. No new exit code is added.
+
+| Exit | When |
+|---|---|
+| 0 | `posted` or `matched` |
+| 6 | an unknown journal id, a cross-origin URL, an unparseable operand |
+| 8 | every §25.3 refusal, an invalidated plan, a spent handle, and a `4xx` from Canvas (`failed`) |
+| 9 | `planned`, `posting`, or `outcome_unknown` — the outcome is unknown, not failed |
+| 11 | a declined or cancelled approval |
+
+Exit 9 carries `outcome: "recovery"`. It means "ask again", never "it failed".
+
+### 25.8 Receipts and the pending hook
+
+`receipts list|show|export|acknowledge` cover operation journals beside submissions, in the same `Journal` shape, and the `kind` column is what tells them apart. On an operation row `assignment_id`, `assignment_name`, `baseline_attempt`, `posted`, `readback`, and `server_match` are `null`, the new `operation` block carries the write, and `superseded` is always `false`, because a reply or a message is never superseded (§19 item 40). The course filter still applies, and a journal with no course is kept only when no course was asked for. `receipts show` and `receipts export` accept a journal id or a receipt id, and both id spaces are searched before either is reported missing. `receipt@1` gains the same nullable `operation` block, carrying the kind, the target, the recipients and subject, the digests, the allowlisted response, the readback, the server match, the attribution, and the delivery field.
+
+The §10 **pending hook** covers operation journals. A journal is pending while it is `planned` or `posting`, and an `outcome_unknown` one is pending until it is acknowledged; there is no superseding rule. `discussion@1`, `inbox@1`, `conversation@1`, and `inbox_unread@1` gain `pending: bool` and `pending_journals: [id]`. While `pending` is true the read is not a settled picture of the thread. A send belongs to no conversation until Canvas names one, so the `inbox` and `inbox_unread` reads report it and `inbox show` cannot; the pending query for a conversation therefore also matches any unresolved `inbox_send`.
+
+### 25.9 Schemas
+
+`operation@1` is the result of all three writes and of `operation status`. `operation_reconcile@1` is the result of `operation reconcile`. Both are registered with fixtures (Appendix D). `plan@1` gains a nullable `operation` block and makes `course_id` and `assignment_id` nullable, because an inbox write has neither. `Journal` and `receipt@1` gain the same block (§25.8). Every addition is additive, so each schema keeps `@1`.
+
+`operation@1` names its own plan, so `plan_id` is never `null` there: the unique index on `plan_id` makes the link one-to-one, and the registry's nullability test carries an explicit exception for the two schemas that name their own plan.
+
+### 25.10 The agent surface and the skill
+
+Eight tools join the §21.2 catalog, each calling the same core the CLI calls:
+
+| Tool | Effect | Command behind it |
+|---|---|---|
+| `discussion.reply.prepare` / `.execute` | Organize / RemoteWrite | `discussion reply` |
+| `inbox.send.prepare` / `.execute` | Organize / RemoteWrite | `inbox send` |
+| `inbox.reply.prepare` / `.execute` | Organize / RemoteWrite | `inbox reply` |
+| `operation.status` | Read | `operation status` |
+| `operation.reconcile` | Retire | `operation reconcile` |
+
+A `*.prepare` freezes a plan and posts nothing. `operation.reconcile` is a retirement because `--assume-not-posted` records a durable local decision about what did not happen. `operation.status` keeps `readOnlyHint: true` while it records a readback and can move `attribution` from `accepted` to `observed`; §19 item 38 owns that reading.
+
+An execute on a prepared plan returns `input_required` with a `requestState` and one `elicitation/create` request — the same round trip `submission.execute` uses (§21.2). A host that declares no elicitation support gets a domain refusal instead: exit 8, `details.reason: "approval_required"`, with the handle, and **nothing is dispatched**. An execute on an already-executed plan returns that journal's `operation@1` with `replayed: true` and creates no second message. **There is no argument anywhere that asserts an approval.**
+
+The retry guard asks the catalog which tools ask for approval: any `*.execute` in the catalog may carry a `requestState`, and a replayed state aimed at a read is still rejected as an argument error.
+
+`skill/canvas-cli/reply-and-message-with-approval.md` is the sixth workflow. It carries the REPORT §3.5 course-policy boundary in plain words: **an approval to post is not permission for AI-generated academic work**, and the rule is the course's, not the tool's. It also says never write a placeholder, never invent a recipient, show the exact text and every attachment before the approval, and never turn an acceptance into delivered mail.
 
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
