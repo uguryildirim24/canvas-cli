@@ -32,6 +32,7 @@ fn help_lists_v1_commands() {
         .assert()
         .success();
     let help = String::from_utf8_lossy(&assert.get_output().stdout);
+    let commands = help.split("\nOptions:").next().unwrap();
     for name in [
         "auth",
         "identity",
@@ -58,13 +59,11 @@ fn help_lists_v1_commands() {
         "doctor",
         "completions",
         "version",
-        "login",
-        "verify",
-        "reconcile",
-        "acknowledge",
     ] {
         assert!(
-            help.contains(name),
+            commands
+                .lines()
+                .any(|line| line.split_whitespace().next() == Some(name)),
             "help missing command {name:?}:\n{help}"
         );
     }
@@ -196,4 +195,224 @@ fn mixed_command_help_lists_real_operands() {
             assert!(help.contains(operand), "help={help}");
         }
     }
+}
+
+#[test]
+fn command_choices_reject_invalid_combinations() {
+    for args in [
+        vec!["download"],
+        vec!["download", "chem", "--all-courses"],
+        vec!["download", "chem", "--file"],
+        vec!["download", "chem", "--file", "not-an-id"],
+        vec!["assignments", "chem", "--bucket", "typo"],
+        vec!["submit", "chem", "123"],
+    ] {
+        assert_usage_error(&args);
+    }
+    let modes = [
+        ("--file", "a.txt"),
+        ("--text", "-"),
+        ("--html", "a.html"),
+        ("--url", "https://example.test"),
+    ];
+    for (index, first) in modes.iter().enumerate() {
+        for second in &modes[index + 1..] {
+            assert_usage_error(&[
+                "submit", "chem", "123", first.0, first.1, second.0, second.1,
+            ]);
+        }
+    }
+}
+
+#[test]
+fn command_choices_accept_documented_forms() {
+    for bucket in [
+        "open",
+        "upcoming",
+        "overdue",
+        "past",
+        "undated",
+        "unsubmitted",
+        "ungraded",
+        "future",
+        "all",
+    ] {
+        assert_stub(&["assignments", "chem", "--bucket", bucket]);
+    }
+    for args in [
+        vec!["download", "chem"],
+        vec!["download", "--all-courses"],
+        vec!["download", "chem", "--file", "1", "2"],
+        vec![
+            "download",
+            "--all-courses",
+            "--file",
+            "1",
+            "--file",
+            "2",
+            "3",
+        ],
+        vec![
+            "submit", "chem", "123", "--file", "a.txt", "--file", "b.txt",
+        ],
+        vec!["submit", "chem", "123", "--text", "-"],
+        vec!["submit", "chem", "123", "--html", "a.html"],
+        vec!["submit", "chem", "123", "--url", "https://example.test"],
+        vec![
+            "submit",
+            "https://canvas.example.test/courses/1/assignments/2",
+            "--file",
+            "a.txt",
+        ],
+    ] {
+        assert_stub(&args);
+    }
+}
+
+#[test]
+fn raw_output_rejects_json_at_every_command_level() {
+    for command in [
+        vec!["completions", "bash"],
+        vec!["auth", "token", "--reveal"],
+        vec!["config", "edit"],
+        vec!["calendar", "--ics", "-"],
+        vec!["receipts", "export", "receipt-1", "--out", "-"],
+    ] {
+        for position in 0..=command.len() {
+            // Do not insert a flag between a value-taking option and its value.
+            if position > 0 && ["--ics", "--out"].contains(&command[position - 1]) {
+                continue;
+            }
+            let mut args = command.clone();
+            args.insert(position, "--json");
+            assert_usage_error(&args);
+        }
+    }
+}
+
+#[test]
+fn nonraw_variants_continue_to_accept_json() {
+    for args in [
+        vec!["auth", "token", "--json"],
+        vec!["calendar", "--ics", "calendar.ics", "--json"],
+        vec!["receipts", "export", "receipt-1", "--json"],
+        vec![
+            "receipts",
+            "export",
+            "receipt-1",
+            "--out",
+            "receipt.json",
+            "--json",
+        ],
+    ] {
+        assert_stub(&args);
+    }
+}
+
+#[test]
+fn nested_help_lists_registered_commands() {
+    for (parent, names) in [
+        ("auth", vec!["login", "status", "logout", "token"]),
+        ("identity", vec!["list", "remove"]),
+        ("submission", vec!["verify", "reconcile"]),
+        ("receipts", vec!["list", "show", "export", "acknowledge"]),
+        ("cache", vec!["stats", "clear", "path"]),
+        ("config", vec!["path", "edit", "get", "set"]),
+        ("alias", vec!["set", "list", "remove"]),
+        ("open", vec!["assignment", "file", "announcement"]),
+    ] {
+        let assert = Command::cargo_bin("canvas")
+            .unwrap()
+            .args([parent, "--help"])
+            .assert()
+            .success();
+        let help = String::from_utf8_lossy(&assert.get_output().stdout);
+        let commands = help.split("\nOptions:").next().unwrap();
+        for name in names {
+            assert!(
+                commands
+                    .lines()
+                    .any(|line| line.split_whitespace().next() == Some(name)),
+                "help missing {parent} {name}: {help}"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_v1_stub_is_callable() {
+    let cases: &[&[&str]] = &[
+        &["auth", "login"],
+        &["auth", "status"],
+        &["auth", "logout"],
+        &["auth", "token", "--reveal"],
+        &["identity", "list"],
+        &["identity", "remove", "identity-1"],
+        &["courses"],
+        &["course", "chem"],
+        &["todo"],
+        &["assignments", "chem"],
+        &["assignment", "chem", "123"],
+        &[
+            "assignment",
+            "https://canvas.example.test/courses/1/assignments/2",
+        ],
+        &["submit", "chem", "123", "--file", "a.txt"],
+        &["submission", "chem", "123", "--history"],
+        &["submission", "verify", "receipt-1"],
+        &["submission", "reconcile", "journal-1"],
+        &["receipts", "list"],
+        &["receipts", "show", "receipt-1"],
+        &["receipts", "export", "receipt-1"],
+        &["receipts", "acknowledge", "journal-1"],
+        &["grades"],
+        &["files", "chem"],
+        &["download", "chem"],
+        &["modules", "chem"],
+        &["announcements"],
+        &["announcement", "chem", "123"],
+        &[
+            "announcement",
+            "https://canvas.example.test/courses/1/discussion_topics/2",
+        ],
+        &["calendar"],
+        &["open", "chem"],
+        &["open", "https://canvas.example.test/courses/1"],
+        &["open", "assignment", "chem", "123"],
+        &["open", "file", "123"],
+        &["open", "announcement", "chem", "123"],
+        &["sync"],
+        &["cache", "stats"],
+        &["cache", "clear"],
+        &["cache", "path"],
+        &["config", "path"],
+        &["config", "edit"],
+        &["config", "get", "key"],
+        &["config", "set", "key", "value"],
+        &["alias", "set", "chem", "123"],
+        &["alias", "list"],
+        &["alias", "remove", "chem"],
+        &["doctor"],
+    ];
+    for args in cases {
+        assert_stub(args);
+    }
+}
+
+#[test]
+fn completions_support_every_documented_shell() {
+    for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
+        let assert = Command::cargo_bin("canvas")
+            .unwrap()
+            .args(["completions", shell])
+            .assert()
+            .success()
+            .stderr("");
+        let output = String::from_utf8_lossy(&assert.get_output().stdout);
+        assert!(
+            output.contains("canvas"),
+            "missing canvas completion for {shell}"
+        );
+    }
+    assert_usage_error(&["completions", "unknown-shell"]);
 }
