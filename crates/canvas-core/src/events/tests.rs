@@ -87,6 +87,59 @@ fn seed(store: &Store, rows: &[Row], fetched_at: &str) {
         .unwrap();
 }
 
+/// Write a complete `inbox_unread` coverage for the identity (M8-a).
+///
+/// The dataset is one row, so `all` is its only scope. The shape of the write
+/// is the one `refresh_inbox_unread` produces: the count in
+/// `conversation_unread`, one membership row, and complete coverage.
+fn seed_unread(store: &Store, count: Option<i64>, fetched_at: &str) {
+    let fetched_at = fetched_at.to_owned();
+    store
+        .call_blocking(move |conns| {
+            let tx = conns
+                .cache
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            tx.execute(
+                "INSERT INTO conversation_unread (id, unread_count) VALUES (1, ?1)
+                 ON CONFLICT(id) DO UPDATE SET unread_count = excluded.unread_count",
+                params![count],
+            )?;
+            tx.execute(
+                "DELETE FROM membership WHERE dataset = 'inbox_unread' AND scope = 'all'",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
+                 VALUES ('inbox_unread', 'all', 'inbox_unread', '1', 0)",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale)
+                 VALUES ('inbox_unread', 'all', ?1, 1, 1, 0)
+                 ON CONFLICT(dataset, scope) DO UPDATE SET
+                    fetched_at = excluded.fetched_at, complete = 1, stale = 0,
+                    count = 1, error = NULL",
+                params![fetched_at],
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// Every event with its payload, oldest first.
+fn payloads(store: &Store) -> Vec<(String, String, String)> {
+    store
+        .call_blocking(|conns| {
+            let mut stmt = conns
+                .state
+                .prepare("SELECT kind, [before], [after] FROM events ORDER BY cursor ASC")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .unwrap()
+}
+
 /// Mark the coverage stale, as a failed page does.
 fn mark_stale(store: &Store) {
     store
@@ -318,6 +371,102 @@ fn retention_expires_rows_without_reusing_their_cursors() {
     assert_eq!(checks.1, CursorCheck::Replay);
     assert_eq!(checks.2, CursorCheck::Resync, "a cursor beyond the log");
     assert_eq!(checks.3, CursorCheck::Replay);
+}
+
+// -------------------------------------------------- the unread count (M8-a)
+
+/// The first observation of the count is silent, a changed count reports the
+/// count before and after, and an unchanged one reports nothing.
+#[test]
+fn the_unread_count_reports_only_what_changed() {
+    let scratch = Scratch::new("events-inbox-unread");
+    let (_paths, store) = open(&scratch);
+    let runtime = runtime();
+
+    // First complete observation: the baseline, and nothing said.
+    seed_unread(&store, Some(3), "2026-09-09T17:00:00Z");
+    let first = runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    assert!(first.baseline, "the first observation set no baseline");
+    assert_eq!(first.events, 0);
+    assert!(events(&store).is_empty(), "{:?}", events(&store));
+
+    // The same count again: a refresh is not news.
+    seed_unread(&store, Some(3), "2026-09-09T18:00:00Z");
+    let unchanged = runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    assert_eq!(unchanged.events, 0, "an unchanged count emitted an event");
+    assert!(events(&store).is_empty(), "{:?}", events(&store));
+
+    // A changed count: exactly one event, carrying the count and nothing else.
+    seed_unread(&store, Some(5), "2026-09-09T19:00:00Z");
+    let changed = runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    assert_eq!(changed.events, 1);
+    let rows = payloads(&store);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].0, EventKind::InboxUnreadCount.as_str());
+    assert_eq!(rows[0].1, r#"{"unread_count":3}"#);
+    assert_eq!(rows[0].2, r#"{"unread_count":5}"#);
+    assert_eq!(
+        events(&store),
+        vec![("inbox.unread_count".to_owned(), Some("1".to_owned()))]
+    );
+
+    // Back to a count already seen is still a change, and still one event.
+    seed_unread(&store, Some(0), "2026-09-09T20:00:00Z");
+    runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    assert_eq!(payloads(&store).len(), 2);
+}
+
+/// Replaying one observation changes nothing: the outbox row is keyed by the
+/// exact cache row it saw, and an applied row is applied once.
+#[test]
+fn an_unread_count_observation_is_applied_once() {
+    let scratch = Scratch::new("events-inbox-unread-replay");
+    let (_paths, store) = open(&scratch);
+    let runtime = runtime();
+    seed_unread(&store, Some(3), "2026-09-09T17:00:00Z");
+    runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    seed_unread(&store, Some(5), "2026-09-09T18:00:00Z");
+
+    // Record the observation, then apply it twice: through `apply_pending`,
+    // and through a second `observe_refresh` of the same cache row.
+    let recorded = runtime
+        .block_on(super::record_observation(&store, "inbox_unread", "all"))
+        .unwrap()
+        .expect("the count is observable");
+    assert_eq!(
+        recorded,
+        format!("inbox_unread:all:{}:2026-09-09T18:00:00Z", row_id(&store))
+    );
+    assert_eq!(runtime.block_on(apply_pending(&store)).unwrap().events, 1);
+    assert_eq!(runtime.block_on(apply_pending(&store)).unwrap().events, 0);
+    let repeat = runtime
+        .block_on(observe_refresh(&store, "inbox_unread", "all"))
+        .unwrap();
+    assert_eq!(repeat.events, 0, "the same observation reported twice");
+    assert_eq!(payloads(&store).len(), 1, "{:?}", payloads(&store));
+}
+
+/// The `fetch_log` rowid of the unread coverage.
+fn row_id(store: &Store) -> i64 {
+    store
+        .call_blocking(|conns| {
+            Ok(conns.cache.query_row(
+                "SELECT rowid FROM fetch_log WHERE dataset = 'inbox_unread' AND scope = 'all'",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap()
 }
 
 /// A consumer position moves forward on its own, and only a resync replaces
