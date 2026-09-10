@@ -256,12 +256,34 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
 ///
 /// The name is the command path with any separator: `auth status`,
 /// `auth_status`, and `auth-status` all name `canvas-cli/auth_status@1`.
+///
+/// A schema with several result shapes has one entry per shape, named after
+/// the subcommand that emits it, so `receipts show` finds the `show` entry.
+/// A bare `receipts` finds the first entry, which is what the bare command
+/// prints.
 #[must_use]
 pub fn entry_for_command(name: &str) -> Option<&'static SchemaEntry> {
     let wanted = normalize_command(name);
     all_schemas()
         .iter()
-        .find(|entry| normalize_command(&crate::output::command_name(entry.id)) == wanted)
+        .find(|entry| normalize_command(&crate::output::entry_command(entry)) == wanted)
+        .or_else(|| {
+            all_schemas()
+                .iter()
+                .find(|entry| normalize_command(&crate::output::command_name(entry.id)) == wanted)
+        })
+}
+
+/// The entry for one schema id and one of its result shapes.
+///
+/// `None` takes the first entry of that id, which is the shape the bare
+/// command prints. A variant that is not registered resolves to nothing
+/// rather than silently describing another shape.
+#[must_use]
+pub fn entry_for_schema(id: &str, variant: Option<&str>) -> Option<&'static SchemaEntry> {
+    all_schemas()
+        .iter()
+        .find(|entry| entry.id == id && (variant.is_none() || entry.variant == variant))
 }
 
 fn normalize_command(name: &str) -> String {

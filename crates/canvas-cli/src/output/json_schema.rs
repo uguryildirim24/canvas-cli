@@ -133,7 +133,7 @@ pub fn document(entry: &SchemaEntry) -> Value {
     let mut document = Map::new();
     document.insert("$schema".into(), json!(DIALECT));
     document.insert("contract".into(), json!(SCHEMA_SCHEMA));
-    document.insert("command".into(), json!(command_name(entry.id)));
+    document.insert("command".into(), json!(entry_command(entry)));
     document.insert("schema".into(), json!(entry.id));
     document.insert("result_source".into(), json!(source));
     document.insert(
@@ -158,16 +158,27 @@ pub fn document_for_command(name: &str) -> Option<Value> {
     registry::entry_for_command(name).map(document)
 }
 
-/// The `schema@1` document for a schema id, if one is registered.
+/// The `schema@1` document for a schema id and one of its result shapes.
 ///
 /// `canvas mcp` describes a tool's output this way, so a tool and the CLI
-/// cannot disagree about the shape of the same result.
+/// cannot disagree about the shape of the same result. A schema whose
+/// Appendix D row lists several shapes — `receipts@1`, `cache@1`, `config@1`,
+/// `identity@1` — has one entry per shape, so the variant selects which one;
+/// `None` takes the first, which is the shape the bare command prints.
 #[must_use]
-pub fn document_for_schema(schema_id: &str) -> Option<Value> {
-    registry::all_schemas()
-        .iter()
-        .find(|entry| entry.id == schema_id)
-        .map(document)
+pub fn document_for_schema(schema_id: &str, variant: Option<&str>) -> Option<Value> {
+    registry::entry_for_schema(schema_id, variant).map(document)
+}
+
+/// The full command name of one entry: the command, plus its variant when the
+/// schema has more than one result shape.
+#[must_use]
+pub fn entry_command(entry: &SchemaEntry) -> String {
+    let command = command_name(entry.id);
+    match entry.variant {
+        Some(variant) => format!("{command} {variant}"),
+        None => command,
+    }
 }
 
 /// The command name a schema id belongs to: `canvas-cli/auth_status@1` is
@@ -187,7 +198,7 @@ pub fn command_name(schema_id: &str) -> String {
 pub fn list() -> String {
     let mut lines: Vec<String> = registry::all_schemas()
         .iter()
-        .map(|entry| format!("{}\t{}", command_name(entry.id), entry.id))
+        .map(|entry| format!("{}\t{}", entry_command(entry), entry.id))
         .collect();
     lines.sort();
     lines.push(String::new());
