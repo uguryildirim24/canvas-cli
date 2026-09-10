@@ -1084,6 +1084,98 @@ A resync invalidates every subscribed resource once and then follows the log fro
 
 The subscription holds a shared identity lease for the life of the stream, which makes a subscribed host a resident consumer under §3.4. It writes nothing but cursor rows and needs no token and no network. The SDK answers the first request of a connection inline, so a connection whose *first* request is `subscriptions/listen` gets no other answer while the stream is open.
 
+## 23. Richer reads
+
+Built by M8-a (`docs/reviews/code-M8-a.md`) and M8-a2 (`docs/reviews/code-M8-a2.md`), from `docs/agent-ux/REPORT.md` §4's M8-a row. Every command in this section is **class C**. Every request is a `GET`. Nothing here marks anything read.
+
+### 23.1 Contract
+
+| Command | Request | Dataset / scope / TTL |
+|---|---|---|
+| `pages <course> [--unpublished]` | `GET /courses/:id/pages?sort=title` | `pages` / `course:<id>` / `ttl_pages` |
+| `page <course> <slug\|id\|URL>` | `GET /courses/:id/pages/:url_or_id` | `page` / `page:<course>:<operand>` / `ttl_pages` |
+| `syllabus <course>` | none of its own | `course` / `course:<id>` / `ttl_courses` |
+| `discussions <course> [--unread]` | `GET /courses/:id/discussion_topics?only_announcements=false` | `discussions` / `course:<id>` / `ttl_discussions` |
+| `discussion <course> <id\|URL> [--replies] [--page N]` | `GET /courses/:id/discussion_topics/:tid`; with `--replies` also `GET …/discussion_topics/:tid/entries` and `GET …/entries/:eid/replies` | `discussion` / `topic:<id>` or `topic:<id>:replies` / `ttl_discussions` |
+| `inbox [--scope inbox\|unread\|sent\|archived]` | `GET /conversations?scope=<scope>&auto_mark_as_read=false` | `inbox` / `scope:<scope>` / `ttl_inbox` |
+| `inbox show <id>` | `GET /conversations/:id?auto_mark_as_read=false` | `conversation` / `conversation:<id>` / `ttl_inbox` |
+| `inbox unread-count` | `GET /conversations/unread_count` | `inbox_unread` / `all` / `ttl_inbox` |
+
+`per_page=100` is appended by the client when a path does not already carry it (§11).
+
+**Nothing is marked read.** Every conversation request carries `auto_mark_as_read=false`. The materialized `/view` discussion endpoint is never used: it marks entries read as a side effect of reading them. `--unread` filters on the stored `read_state` and `unread_count`; it marks nothing.
+
+`sync` and `sync --full` do not refresh these datasets. They keep their v1 request budgets and their §13 targets; the new reads refresh on demand.
+
+### 23.2 Reading rules
+
+- **The pages listing never asks for bodies.** `include[]=body` would pull one full body per page for a listing that shows titles. A body arrives only from `page`, and the per-field write rule (§10) merges it into the same row, so a later listing refresh does not drop it.
+- **`--unpublished` filters; it does not fetch.** The request is the same either way. Without the flag a page Canvas reports as `published: false` is hidden; a page with no `published` field is shown, because absence is not a denial.
+- **A page is keyed by `page_id`, and its coverage scope keeps the operand the caller used.** Canvas accepts a slug and an id, and the two are different cache keys until a fetch says which page they name. Both write the same row.
+- **`page` and `discussion` need their course operand even for a URL.** A URL naming a different course than the operand is exit 6, and so is a URL on another origin.
+- **`syllabus` sends no request of its own.** It reads the `course` dataset. The cache stores `syllabus_markdown` and the JSON `syllabus_refs` projection beside it, never the source HTML. A cache written before M8-a has no projection, so its reference lists are empty rather than wrong.
+- **`syllabus.updated_at` is the course's own `updated_at`.** Canvas reports no revision time for a syllabus body, so the field is `null` today rather than a guess.
+- **`discussions` lists discussion topics only.** The request is pinned at `only_announcements=false`, so Canvas never returns an announcement through it. There is no `--announcements` flag (§19 item 27), and the human output points at `canvas announcements`. `is_announcement` stays in `discussions@1` and `discussion@1`, because Canvas sends it on a topic: it is a topic property, not a filter.
+- **Replies have their own coverage scope.** A read without `--replies` covers `topic:<id>`; with `--replies` it covers `topic:<id>:replies`. One can never make the other look covered. Without `--replies` the answer is `replies: []` with `replies_coverage { pages_fetched: 0, complete: false, blocked: "not_requested" }` — never `complete`.
+- **Nested replies are followed only when Canvas truncated them.** An entry carries its `recent_replies` inline; only an entry with `has_more_replies` costs a second request. `pages_fetched` counts every page across both routes.
+- **A reply-page failure keeps what was stored.** Fetching stops at the first failure, the pages already read are ingested, and the topic row records `replies_complete = false` with `replies_blocked`. The coverage lives on the row, so a later cached read reports the same incompleteness and the same exit.
+- **`--page N` selects which stored replies to show, 100 per page.** The fetch still covers the whole set. A page past the end is exit 0 with an empty `replies` list, not an error (§19 item 28). `discussion@1` carries `replies_page` (1 when `--page` is absent) and `replies_total`, so an empty window is never read as a thread with no replies. `replies_total` is `null` when `--replies` was not asked: no count was made.
+- **`discussion@1` replies carry `parent_id`.** The reply list is flat and holds both top-level entries and nested replies.
+- **A conversation listing row is not a conversation.** `inbox show` reports `messages_complete`, which is false when only the listing row is cached, so an empty `messages` array is never read as "no messages".
+- **A conversation message body is plain text.** Canvas sends it as text, not HTML, so it is not converted to Markdown. It is bounded like every other body.
+- **The unread count may be unknown.** Canvas returns it as a string or a number. A value that is absent or unparseable stays `null` rather than becoming `0`. The count lives in a one-row table, because the cache is per identity.
+
+### 23.3 Bodies, embedded content, and file references
+
+One HTML body is converted to Markdown and a `BodyRefs` projection. The projection holds no HTML.
+
+- Every `<iframe>`, `<video>`, `<audio>`, `<embed>`, and `<object>` becomes an `embedded` row and a one-line placeholder in the Markdown, so a reader is told what it cannot see. `kind` is `video`, `audio`, `lti` (an `<iframe>` whose source names `external_tools` or `/lti/`), `iframe`, or `unknown`. `reported` is always `unavailable`; nothing embedded is fetched.
+- Every `<a href>`, `<area href>`, `<img src>`, and `<source src>` is resolved against the active identity origin at read time. A same-origin reference whose path ends in `/files/:id` becomes a `files` row; every other origin becomes an `external_links` row and is never fetched. A fragment, a `mailto:`, and a `javascript:` URL are dropped.
+- **Every reference is stripped of its capability-bearing parts before it is stored or shown** (§15): the userinfo, and every query parameter §11's redaction list names — `access_token`, `verifier`, `sig`, `token`, `Signature`, `Policy`, `Expires`, `X-Amz-*`. The rest of the reference is kept as written, because that is what tells the reader where it points. The rewrite happens before the Markdown is rendered, so a converted body carries no capability either. A persisted `html_url` keeps only its origin and path, the rule `modules` already used.
+- **A body over 64 KiB is cut on a character boundary.** `truncated` is `true`, the envelope gains a `partial[]` row, and the exit is 12. A cut body is never reported as complete. The bound counts per document: a page, a syllabus, a topic message, one reply, and one conversation message each count on their own.
+
+Raw HTML bodies stay in `pages.body`, `discussion_topics.message`, and `discussion_entries.message` and are converted at read time, following the v1 `announcements.message` pattern; the syllabus converts before storing. §19 item 26 owns that difference.
+
+### 23.4 Exits
+
+| Case | Outcome |
+|---|---|
+| Listing denied (`403`/`404`, not a throttle) | `partial[]` row `pages:course:<id>`, `discussions:course:<id>`, or `inbox:scope:<scope>`; `listing.available = false`; exit 12. The denial is stored as coverage, so a later cached read reports it too. |
+| Single item denied | exit 8, `code: refused` |
+| Not found | exit 6, through the resolver path |
+| Cross-origin URL operand | exit 6, `code: resolution` |
+| `require_initial_post` gate with `--replies` | exit 8, `code: refused`, message starting `initial_post_required` |
+| A reply page failed after earlier pages were stored | `replies_coverage.complete = false`, `blocked: "page_failed"`, `partial[]` row `discussion_entries:topic:<id>`, exit 12 |
+| A body cut at 64 KiB | `truncated: true`, `partial[]`, exit 12 |
+| `--offline` with no complete coverage | exit 7 |
+| Bad `--scope`; `--page` without `--replies`; `--page 0` | exit 2 |
+
+A `403` on the entries route of a topic whose `require_initial_post` is true is the initial-post refusal, and only when `--replies` was asked; reading the topic itself still succeeds. A `403` on a topic without that flag is an ordinary incomplete page set. Auth (`401`) and throttling (`429`, or a rate-limited `403`) always propagate as exit 3 and exit 5; they are never recorded as coverage.
+
+### 23.5 The rubric extension
+
+Additive on `assignment@1` and `submission@1`. A rubric criterion keeps `id`, `description`, and `points`, and gains `long_description`, `criterion_use_range` (false when Canvas does not say), and `ratings[]` (empty when Canvas does not send one), each rating being `{ id, description, long_description?, points? }`. A rubric assessment gains `rating_id`, `null` when Canvas does not name the rating. Both are re-projected on read, so a row cached by an earlier build still carries every declared field. Fixtures written before M8-a still validate, and both schemas keep `@1`.
+
+### 23.6 Cache and config
+
+Cache migration `0002_reads` adds `pages`, `discussion_topics`, `discussion_entries`, `conversations`, and `conversation_unread`, and moves `CACHE_USER_VERSION` to 2. Each table is keyed by its Canvas id, as the v1 tables are. Nested arrays — `group_topic_children`, conversation `participants` and `messages` — live in `data_json`; reply entries live in `discussion_entries` with membership under `discussion_entries` / `topic:<id>`.
+
+`cache.ttl_pages` (default `1h`), `cache.ttl_discussions` (default `15m`), and `cache.ttl_inbox` (default `5m`) join the §9 keys.
+
+### 23.7 Schemas
+
+`pages@1`, `page@1`, `syllabus@1`, `discussions@1`, `discussion@1`, `inbox@1`, `conversation@1`, and `inbox_unread@1` are registered with fixtures (Appendix D). Ids are strings, every declared field is present, unknown values are `null`, and an array is never `null`. Text bodies are Markdown, bounded at 64 KiB per document.
+
+These eight schemas have no typed arm in the schema generator, so their `canvas schema` pages are inferred from the registry fixture and declare `result_source: "registry fixture"`. A nullable field is therefore described as non-nullable on those pages. §19 item 35 owns that gap.
+
+## 24. Companion, broker, presence
+
+*Reserved for M7-a and M7-b (`extension/`, `canvas bridge`, `canvas here`, `context.*`, follow, panel approvals). Both packages are in flight and no part of them is on `main`; §19 items 30–32 already record their open questions. This section is written when they merge.*
+
+## 25. Discussion and inbox writes
+
+*Reserved for M8-b (per-operation prepare, execute, status, and reconcile for conversation and discussion writes, on the §20 plan layer). The package is in flight and no part of it is on `main`. This section is written when it merges.*
+
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
 | Crate | Version | Role |
