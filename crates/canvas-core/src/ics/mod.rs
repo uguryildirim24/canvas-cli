@@ -96,8 +96,12 @@ fn validate(item: &CalendarItem) -> Result<(), IcsError> {
     Ok(())
 }
 
-// RFC duration grammar for a positive offset before a deadline.
-fn valid_alarm(s: &str) -> bool {
+/// RFC 5545 duration grammar for a positive offset before a deadline.
+///
+/// Public so a caller can reject an `--alarm` operand as a usage error (§14)
+/// before it builds any calendar item.
+#[must_use]
+pub fn valid_alarm(s: &str) -> bool {
     let Some(mut rest) = s.strip_prefix('P') else {
         return false;
     };
