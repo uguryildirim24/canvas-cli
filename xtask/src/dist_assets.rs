@@ -143,3 +143,73 @@ pub fn patch_formula(path: &Path) -> Result<bool> {
     fs::write(path, patched).with_context(|| format!("write formula {}", path.display()))?;
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The tail of a `dist` 0.32 Homebrew formula, as generated.
+    const GENERATED: &str = r#"  def install
+    if OS.mac? && Hardware::CPU.arm?
+      bin.install "canvas"
+    end
+
+    install_binary_aliases!
+
+    # Homebrew will automatically install these, so we don't need to do that
+    doc_files = Dir["README.*", "readme.*", "LICENSE", "LICENSE.*", "CHANGELOG.*"]
+    leftover_contents = Dir["*"] - doc_files
+
+    # Install any leftover files in pkgshare; these are probably config or
+    # sample files.
+    pkgshare.install(*leftover_contents) unless leftover_contents.empty?
+  end
+end
+"#;
+
+    use tempfile::TempDir;
+
+    fn write(dir: &TempDir, body: &str) -> PathBuf {
+        let path = dir.path().join("canvas-lms-cli.rb");
+        fs::write(&path, body).unwrap();
+        path
+    }
+
+    #[test]
+    fn patch_installs_man_pages_and_completions() {
+        let dir = TempDir::new().unwrap();
+        let path = write(&dir, GENERATED);
+        assert!(patch_formula(&path).unwrap());
+        let patched = fs::read_to_string(&path).unwrap();
+        for line in [
+            r#"man1.install Dir["man/*.1"]"#,
+            r#"bash_completion.install "completions/canvas.bash" => "canvas""#,
+            r#"zsh_completion.install "completions/_canvas""#,
+            r#"fish_completion.install "completions/canvas.fish""#,
+            r#"pkgshare.install "completions/_canvas.ps1", "completions/canvas.elv""#,
+        ] {
+            assert!(patched.contains(line), "missing {line}\n{patched}");
+        }
+        // The generic sweep must no longer claim the two directories.
+        assert!(patched.contains(FORMULA_LEFTOVERS_PATCHED));
+        assert_eq!(patched.matches("pkgshare.install").count(), 2);
+    }
+
+    #[test]
+    fn patch_is_idempotent() {
+        let dir = TempDir::new().unwrap();
+        let path = write(&dir, GENERATED);
+        assert!(patch_formula(&path).unwrap());
+        let once = fs::read_to_string(&path).unwrap();
+        assert!(!patch_formula(&path).unwrap());
+        assert_eq!(once, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn patch_refuses_a_template_it_does_not_recognize() {
+        let dir = TempDir::new().unwrap();
+        let path = write(&dir, "class CanvasLmsCli < Formula\nend\n");
+        let err = patch_formula(&path).unwrap_err().to_string();
+        assert!(err.contains("dist Homebrew template changed"), "{err}");
+    }
+}
