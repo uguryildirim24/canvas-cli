@@ -9,6 +9,7 @@
 //! documentation only. Enforcement lives in the plan and approval core.
 
 use std::borrow::Cow;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use rmcp::model::{JsonObject, Tool, ToolAnnotations};
@@ -19,13 +20,14 @@ use serde_json::Value;
 use crate::cli::AssignmentBucket;
 use crate::commands::{
     Globals, announcement, announcements, assignment, assignments, calendar, course, courses,
-    download, files, grades, handled::Handled, modules, open, receipts, submission, sync, todo,
+    download, files, grades, handled::Handled, modules, open, receipts, submission, submit, sync,
+    todo,
 };
 use crate::output::{
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
     SCHEMA_CALENDAR, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOWNLOAD, SCHEMA_FILES, SCHEMA_GRADES,
-    SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SYNC,
-    SCHEMA_TODO,
+    SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_PLAN, SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION,
+    SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO,
 };
 
 /// What a tool does to its environment (§3.5).
@@ -37,6 +39,8 @@ pub enum Effect {
     Organize,
     /// A durable local decision that retires evidence.
     Retire,
+    /// Bytes reach Canvas.
+    RemoteWrite,
 }
 
 impl Effect {
@@ -301,6 +305,47 @@ pub struct DownloadArgs {
     pub verify: bool,
 }
 
+/// `submission.prepare` takes the `canvas submit` operands, without `--yes`.
+///
+/// One of `files`, `text`, `html`, or `url` is required, exactly as §5 says.
+/// The plan this freezes still needs a recorded human approval, so nothing
+/// here can send anything.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SubmissionPrepareArgs {
+    /// A numeric id, an alias, a URL, or a code substring (§6).
+    pub course: String,
+    /// The assignment inside that course.
+    pub assignment: String,
+    /// Local files to upload, in order.
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// A local file holding the text entry. `-` is not accepted: stdin is the
+    /// protocol channel.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// A local HTML file to submit as an HTML entry.
+    #[serde(default)]
+    pub html: Option<String>,
+    /// A website URL to submit.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// A comment to send with the attempt.
+    #[serde(default)]
+    pub comment: Option<String>,
+}
+
+/// `submission.execute` names one prepared plan and nothing else.
+///
+/// An approval cannot be asserted by an argument: it is a recorded decision
+/// against a server-issued handle (REPORT §3.5).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SubmissionExecuteArgs {
+    /// The plan `submission.prepare` returned.
+    pub plan_id: String,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ReconcileArgs {
@@ -505,6 +550,31 @@ pub fn specs() -> &'static [ToolSpec] {
             input_schema: schema_of::<DownloadArgs>,
         },
         ToolSpec {
+            name: "submission.prepare",
+            title: "Prepare a submission",
+            description: "Freeze a submission as a plan and return it. Nothing is sent: the plan \
+                          needs a recorded human approval, and `submission.execute` asks for it.",
+            schema: SCHEMA_PLAN,
+            effect: Effect::Organize,
+            // Each call freezes a new plan.
+            idempotent: false,
+            open_world: true,
+            input_schema: schema_of::<SubmissionPrepareArgs>,
+        },
+        ToolSpec {
+            name: "submission.execute",
+            title: "Execute an approved submission",
+            description: "Submit an approved plan to Canvas. On a plan that is not approved yet \
+                          this asks a person first and dispatches nothing.",
+            schema: SCHEMA_SUBMIT,
+            effect: Effect::RemoteWrite,
+            // A plan admits at most one journal, so a second call returns the
+            // journal the first one created (SPEC §19 item 17).
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<SubmissionExecuteArgs>,
+        },
+        ToolSpec {
             name: "submission.reconcile",
             title: "Reconcile a journal",
             description: "Resolve a journal an interrupted submit left behind. \
@@ -550,56 +620,94 @@ fn parse<T: for<'de> Deserialize<'de>>(arguments: Option<JsonObject>) -> Result<
     serde_json::from_value(value).map_err(|e| e.to_string())
 }
 
+/// What one dispatched tool produced.
+pub enum Dispatched {
+    /// A finished command and its §7 envelope.
+    Done(Handled),
+    /// The tool needs a recorded human decision before it can run. Nothing
+    /// has been dispatched.
+    Approval(Box<submit::Pending>),
+}
+
+impl From<Handled> for Dispatched {
+    fn from(handled: Handled) -> Self {
+        Self::Done(handled)
+    }
+}
+
 /// Run one tool through the command core behind it.
 ///
 /// `Err` is an argument failure: the caller turns it into a JSON-RPC error,
 /// because the tool never ran. Every outcome the command itself produces —
-/// including a refusal — comes back as `Ok(Handled)` with its envelope.
+/// including a refusal — comes back as `Ok(Dispatched::Done)` with its
+/// envelope.
+///
+/// `consumer` names the host on the surface: it is recorded with a plan and
+/// with every approval handle issued for it.
 pub async fn dispatch(
     globals: &Globals,
+    consumer: &str,
     name: &str,
     arguments: Option<JsonObject>,
-) -> Result<Handled, String> {
+) -> Result<Dispatched, String> {
     Ok(match name {
         "courses.list" => {
             let args: CoursesListArgs = parse(arguments)?;
-            courses::handle(globals, args.all, args.term, args.favorites).await
+            courses::handle(globals, args.all, args.term, args.favorites)
+                .await
+                .into()
         }
         "course.get" => {
             let args: CourseGetArgs = parse(arguments)?;
-            course::handle(globals, args.course).await
+            course::handle(globals, args.course).await.into()
         }
         "todo.list" => {
             let args: TodoListArgs = parse(arguments)?;
-            todo::handle(globals, args.days, args.all, args.missing, args.course).await
+            todo::handle(globals, args.days, args.all, args.missing, args.course)
+                .await
+                .into()
         }
         "assignments.list" => {
             let args: AssignmentsListArgs = parse(arguments)?;
-            assignments::handle(globals, args.course, args.bucket, args.search).await
+            assignments::handle(globals, args.course, args.bucket, args.search)
+                .await
+                .into()
         }
         "assignment.get" => {
             let args: AssignmentGetArgs = parse(arguments)?;
-            assignment::handle(globals, args.course, args.assignment).await
+            assignment::handle(globals, args.course, args.assignment)
+                .await
+                .into()
         }
         "grades.get" => {
             let args: GradesGetArgs = parse(arguments)?;
-            grades::handle(globals, args.course, args.period).await
+            grades::handle(globals, args.course, args.period)
+                .await
+                .into()
         }
         "files.list" => {
             let args: FilesListArgs = parse(arguments)?;
-            files::handle(globals, args.course, args.tree, args.search).await
+            files::handle(globals, args.course, args.tree, args.search)
+                .await
+                .into()
         }
         "modules.list" => {
             let args: ModulesListArgs = parse(arguments)?;
-            modules::handle(globals, args.course, args.items).await
+            modules::handle(globals, args.course, args.items)
+                .await
+                .into()
         }
         "announcements.list" => {
             let args: AnnouncementsListArgs = parse(arguments)?;
-            announcements::handle(globals, args.course, args.since, args.unread).await
+            announcements::handle(globals, args.course, args.since, args.unread)
+                .await
+                .into()
         }
         "announcement.get" => {
             let args: AnnouncementGetArgs = parse(arguments)?;
-            announcement::handle(globals, args.course, args.id).await
+            announcement::handle(globals, args.course, args.id)
+                .await
+                .into()
         }
         "calendar.list" => {
             let args: CalendarListArgs = parse(arguments)?;
@@ -615,6 +723,7 @@ pub async fn dispatch(
                 },
             )
             .await
+            .into()
         }
         "submission.get" => {
             let args: SubmissionGetArgs = parse(arguments)?;
@@ -627,6 +736,7 @@ pub async fn dispatch(
                 },
             )
             .await
+            .into()
         }
         "receipts.list" => {
             let args: ReceiptsListArgs = parse(arguments)?;
@@ -637,14 +747,15 @@ pub async fn dispatch(
                     state: args.state,
                 },
             )
+            .into()
         }
         "receipts.show" => {
             let args: ReceiptsShowArgs = parse(arguments)?;
-            receipts::handle(globals, receipts::ReceiptsCmd::Show { id: args.id })
+            receipts::handle(globals, receipts::ReceiptsCmd::Show { id: args.id }).into()
         }
         "sync.run" => {
             let args: SyncRunArgs = parse(arguments)?;
-            sync::handle(globals, args.full).await
+            sync::handle(globals, args.full).await.into()
         }
         "download.plan" | "download.run" => {
             let args: DownloadArgs = parse(arguments)?;
@@ -665,6 +776,20 @@ pub async fn dispatch(
                 },
             )
             .await
+            .into()
+        }
+        "submission.prepare" => {
+            let args: SubmissionPrepareArgs = parse(arguments)?;
+            submit::agent_prepare(globals, submit_args(args)?, consumer)
+                .await
+                .into()
+        }
+        "submission.execute" => {
+            let args: SubmissionExecuteArgs = parse(arguments)?;
+            match submit::agent_execute(globals, &args.plan_id, consumer).await {
+                submit::Admitted::Done(handled) => Dispatched::Done(handled),
+                submit::Admitted::NeedsApproval(pending) => Dispatched::Approval(pending),
+            }
         }
         "submission.reconcile" => {
             let args: ReconcileArgs = parse(arguments)?;
@@ -676,6 +801,7 @@ pub async fn dispatch(
                 },
             )
             .await
+            .into()
         }
         "receipts.acknowledge" => {
             let args: AcknowledgeArgs = parse(arguments)?;
@@ -685,12 +811,36 @@ pub async fn dispatch(
                     journal_id: args.journal_id,
                 },
             )
+            .into()
         }
         "open.url" => {
             let args: OpenUrlArgs = parse(arguments)?;
-            open::handle(globals, None, Some(args.target), open::Launch::No).await
+            open::handle(globals, None, Some(args.target), open::Launch::No)
+                .await
+                .into()
         }
         other => return Err(format!("unknown tool {other}")),
+    })
+}
+
+/// Turn the tool arguments into the operands `canvas submit` takes.
+///
+/// `-` is refused: on this surface stdin carries the protocol, so a text
+/// entry must name a file.
+fn submit_args(args: SubmissionPrepareArgs) -> Result<submit::SubmitArgs, String> {
+    if args.text.as_deref() == Some("-") {
+        return Err("text must name a file: stdin carries the protocol here".to_owned());
+    }
+    Ok(submit::SubmitArgs {
+        target: args.course,
+        assignment: Some(args.assignment),
+        files: args.files.into_iter().map(PathBuf::from).collect(),
+        text: args.text,
+        html: args.html.map(PathBuf::from),
+        url: args.url,
+        comment: args.comment,
+        // `--yes` is absent by design (§3.2): the approval is a round trip.
+        yes: false,
     })
 }
 
@@ -719,6 +869,8 @@ mod tests {
             "sync.run",
             "download.plan",
             "download.run",
+            "submission.prepare",
+            "submission.execute",
             "submission.reconcile",
             "receipts.acknowledge",
             "open.url",
@@ -730,8 +882,18 @@ mod tests {
     /// Absent by design (§3.2): credentials, token reveal, identity
     /// administration, arbitrary HTTP or shell, cache clearing, and any
     /// browser action.
+    ///
+    /// Arbitrary execution is named by `shell`, `eval`, and `spawn` here.
+    /// `exec` is not in the list, because `submission.execute` runs one
+    /// approved plan and nothing else; the write surface is pinned below.
     #[test]
     fn no_tool_reaches_a_forbidden_surface() {
+        let writers: Vec<&str> = specs()
+            .iter()
+            .filter(|spec| spec.effect == Effect::RemoteWrite)
+            .map(|spec| spec.name)
+            .collect();
+        assert_eq!(writers, ["submission.execute"]);
         for spec in specs() {
             let name = spec.name;
             for forbidden in [
@@ -743,7 +905,8 @@ mod tests {
                 "config",
                 "http",
                 "shell",
-                "exec",
+                "eval",
+                "spawn",
                 "browser",
                 "launch",
                 "quiz",
@@ -813,6 +976,8 @@ mod tests {
         for name in [
             "sync.run",
             "download.run",
+            "submission.prepare",
+            "submission.execute",
             "submission.reconcile",
             "receipts.acknowledge",
         ] {

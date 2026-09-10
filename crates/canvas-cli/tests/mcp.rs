@@ -37,6 +37,8 @@ const CATALOG: &[&str] = &[
     "sync.run",
     "download.plan",
     "download.run",
+    "submission.prepare",
+    "submission.execute",
     "submission.reconcile",
     "receipts.acknowledge",
     "open.url",

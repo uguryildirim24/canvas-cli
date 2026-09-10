@@ -30,17 +30,18 @@ const CATALOG: &[&str] = &[
     "sync.run",
     "download.plan",
     "download.run",
+    "submission.prepare",
+    "submission.execute",
     "submission.reconcile",
     "receipts.acknowledge",
     "open.url",
 ];
 
-/// Tools the skill documents that the catalog does not serve yet.
+/// The two tools that can send anything to Canvas.
 ///
-/// The approval flow needs the plan core from package M6-a. The skill
-/// describes it because the two ship together; this list is empty once the
-/// tools are wired, and the test below refuses anything else.
-const PENDING: &[&str] = &["submission.prepare", "submission.execute"];
+/// They belong to one workflow, because a submission is one procedure: freeze
+/// a plan, show it to a person, then execute what was approved.
+const SUBMISSION: &[&str] = &["submission.prepare", "submission.execute"];
 
 fn skill_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -126,8 +127,8 @@ fn the_skill_ships_one_file_per_workflow() {
 }
 
 #[test]
-fn every_tool_the_skill_names_exists_or_is_pending() {
-    let known: BTreeSet<&str> = CATALOG.iter().chain(PENDING).copied().collect();
+fn every_tool_the_skill_names_exists() {
+    let known: BTreeSet<&str> = CATALOG.iter().copied().collect();
     for name in mentioned() {
         assert!(known.contains(name.as_str()), "the skill names {name}");
     }
@@ -144,12 +145,13 @@ fn every_catalog_tool_appears_in_the_skill() {
     assert!(missing.is_empty(), "no workflow mentions {missing:?}");
 }
 
-/// A skill that names an absent tool must at least say it needs approval.
+/// A submission is described in one place, so no other workflow can imply
+/// that it sends anything.
 #[test]
-fn the_pending_tools_are_only_named_by_the_approval_workflow() {
+fn the_submission_tools_are_only_named_by_the_approval_workflow() {
     let approval = skill_dir().join("prepare-and-submit.md");
     let text = std::fs::read_to_string(&approval).expect("the approval workflow ships");
-    for name in PENDING {
+    for name in SUBMISSION {
         assert!(text.contains(name), "{name} has no workflow");
     }
     for path in files() {
@@ -157,7 +159,7 @@ fn the_pending_tools_are_only_named_by_the_approval_workflow() {
             continue;
         }
         let other = std::fs::read_to_string(&path).expect("read a skill file");
-        for name in PENDING {
+        for name in SUBMISSION {
             assert!(
                 !other.contains(name),
                 "{} names {name} outside the approval workflow",

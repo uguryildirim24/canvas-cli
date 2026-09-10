@@ -207,9 +207,9 @@ struct Workflow {
 /// The five workflows the shipped skill documents.
 ///
 /// Each entry is the sequence this harness can issue offline, plus the count
-/// of calls the workflow needs that it cannot: an approval round trip has no
-/// plan core in this build, a reconciliation has no journal to resolve, and a
-/// transfer needs the network.
+/// of calls the workflow needs that it cannot: a submission needs the network
+/// and a person, a reconciliation has no journal to resolve, and a transfer
+/// needs the network.
 fn workflows(course: i64, assignment: i64) -> Vec<Workflow> {
     let course = course.to_string();
     let assignment = assignment.to_string();
@@ -247,9 +247,10 @@ fn workflows(course: i64, assignment: i64) -> Vec<Workflow> {
                     json!({ "course": course, "assignment": assignment }),
                 ),
             ],
-            unmeasured: 2,
-            unmeasured_note: "`submission.prepare` and `submission.execute`, plus one \
-                              `input_required` round trip for the approval",
+            unmeasured: 3,
+            unmeasured_note: "`submission.prepare`, then `submission.execute` twice: the \
+                              first returns `input_required`, the retry carries the \
+                              approval. All three need the network and a real file",
         },
         Workflow {
             name: "reconcile an unknown outcome",
