@@ -194,6 +194,18 @@ async fn watch(
     };
     let generation = session.identity.generation.to_string();
 
+    // The interrupt handler is installed before the first tick, not between
+    // ticks. `tokio::signal` registers on the first poll of the future, and
+    // until then SIGINT keeps its default action, which would kill the process
+    // mid-tick instead of closing the stream. One poll here registers it; a
+    // signal that arrives during a tick is then caught at the next wait.
+    let mut interrupt = std::pin::pin!(tokio::signal::ctrl_c());
+    tokio::select! {
+        biased;
+        _ = &mut interrupt => return Ok(summary),
+        () = std::future::ready(()) => {}
+    }
+
     // A cursor this log cannot replay is reported once, and the run closes
     // normally: the consumer establishes a fresh baseline (§3.2 exit row).
     if let Some(since) = since {
@@ -250,7 +262,7 @@ async fn watch(
         // `state.sqlite`, so nothing is lost by stopping between ticks.
         tokio::select! {
             biased;
-            _ = tokio::signal::ctrl_c() => break,
+            _ = &mut interrupt => break,
             () = tokio::time::sleep(tick_interval()) => {}
         }
     }

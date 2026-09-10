@@ -300,6 +300,73 @@ async fn notify_posts_one_line_per_kind_group_and_never_repeats_a_cursor() {
     );
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn sigint_closes_the_stream_cleanly_with_the_cursor_durable() {
+    let server = CanvasServer::start().await;
+    let env = E2e::with_server(&server);
+    env.write_config(NO_TTL);
+
+    // Put one event in the log, so the resident run has something to replay.
+    watch(&env, &["watch", "--jsonl", "--once"], &[]).assert_code(0);
+    let mut assignment = Fixtures::assignment();
+    assignment["due_at"] = json!("2026-09-30T03:59:00Z");
+    server
+        .override_get(
+            &format!("/api/v1/courses/{COURSE_ID}/assignments"),
+            200,
+            json!([assignment]),
+        )
+        .await;
+    watch(
+        &env,
+        &["watch", "--jsonl", "--once"],
+        &[("CANVAS_NOW", LATER)],
+    )
+    .assert_code(0);
+
+    let out = env.scratch_path().join("watch-stream.jsonl");
+    let mut command: Command = env.command();
+    command
+        .args(["watch", "--jsonl", "--since", "0", "--color", "never"])
+        .env("CANVAS_TOKEN", TOKEN)
+        .env("CANVAS_TEST_WATCH_TICK_MS", "100")
+        .stdout(std::fs::File::create(&out).expect("the stream file"))
+        .stderr(Stdio::null());
+    let mut child = command.spawn().expect("watch starts");
+
+    // Wait for the replay to reach the file, so the interrupt lands on a
+    // running stream rather than on start-up.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while std::fs::read_to_string(&out)
+        .unwrap_or_default()
+        .lines()
+        .count()
+        < 1
+    {
+        assert!(Instant::now() < deadline, "the replay never reached stdout");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    let signalled = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("kill runs");
+    assert!(signalled.success(), "SIGINT was not delivered");
+    let status = child.wait().expect("watch exits");
+    assert_eq!(status.code(), Some(0), "SIGINT did not close cleanly");
+
+    let text = std::fs::read_to_string(&out).expect("the stream file");
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let first: Value = serde_json::from_str(lines[0]).expect("the replayed event");
+    let last: Value = serde_json::from_str(lines[lines.len() - 1]).expect("the summary");
+    assert_eq!(first["schema"], json!("canvas-cli/event@1"));
+    assert_eq!(last["schema"], json!("canvas-cli/watch@1"));
+    assert_eq!(
+        last["result"]["cursor"], first["cursor"],
+        "the closing summary lost the cursor it streamed"
+    );
+}
+
 #[test]
 fn notify_refuses_json_like_every_other_raw_output_command() {
     let env = E2e::new();
