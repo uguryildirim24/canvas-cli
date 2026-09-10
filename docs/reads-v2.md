@@ -53,6 +53,9 @@ under `discussion_entries` / `topic:<id>`.
 fixtures and are listed in the e2e shape table. Every field is present;
 unknown values are `null`; an array is never `null`.
 
+`discussion@1` carries `replies_page` and `replies_total` beside `replies`
+and `replies_coverage` (SPEC §19 item 28); see decision 12.
+
 Ids are strings (§7). Text bodies are Markdown produced by
 `canvas-core::markdown`, bounded at 64 KiB per document.
 
@@ -166,6 +169,12 @@ calls a cut or partial result complete.
 12. **`--page N` selects which stored replies to show, 100 per page.** The
     fetch still covers the whole set, so `replies_coverage` can tell the
     truth. `--page` without `--replies` is exit 2, and `--page 0` is exit 2.
+    A page past the end is exit 0 with an empty `replies` list, not an error
+    (SPEC §19 item 28): the set is covered, and the window is simply beyond
+    it. `discussion@1` carries `replies_page` (the window shown, 1 when
+    `--page` is absent) and `replies_total` (the replies the covered set
+    holds, across every page) so an empty window is never read as a thread
+    with no replies. Both fields are additive; nothing existing is renamed.
 13. **`discussion@1` replies carry `parent_id`.** The reply list is flat and
     holds both top-level entries and nested replies; without `parent_id` a
     reader could not tell them apart.

@@ -445,6 +445,42 @@ async fn paginated_replies_report_complete_and_incomplete_coverage() {
     }
 }
 
+/// SPEC §19 item 28: a `--page` past the end is an empty page, not an error.
+///
+/// `replies_total` is what tells an empty page apart from a thread with no
+/// replies, so both are asserted here.
+#[tokio::test]
+async fn a_replies_page_past_the_end_is_empty_at_exit_zero() {
+    let server = MockServer::start().await;
+    mount_all(&server).await;
+    mount_replies(&server, true).await;
+    let f = Fixture::new(&server.uri());
+
+    let first = f.run(&["discussion", "5", "55", "--replies"], 0).await;
+    let shown = &first["result"]["discussion"];
+    assert_eq!(shown["replies_page"], 1);
+    assert_eq!(shown["replies_total"], 3);
+    assert_eq!(shown["replies"].as_array().unwrap().len(), 3);
+
+    // Page 2 is past the end of three replies. The window is empty, the total
+    // still says the thread has replies, and the exit stays 0.
+    let past = f
+        .run(&["discussion", "5", "55", "--replies", "--page", "2"], 0)
+        .await;
+    let empty = &past["result"]["discussion"];
+    assert_eq!(empty["replies_page"], 2);
+    assert_eq!(empty["replies_total"], 3);
+    assert!(empty["replies"].as_array().unwrap().is_empty());
+    assert_eq!(past["outcome"], "ok");
+    assert_eq!(empty["replies_coverage"]["complete"], true);
+
+    // A thread nobody replied to reports a total of 0, so the two cases are
+    // never the same document.
+    let none = f.run(&["discussion", "5", "57"], 0).await;
+    assert_eq!(none["result"]["discussion"]["replies_total"], 0);
+    assert_only_get(&server).await;
+}
+
 #[tokio::test]
 async fn a_topic_read_without_replies_never_claims_the_thread_is_covered() {
     let server = MockServer::start().await;

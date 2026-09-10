@@ -90,6 +90,8 @@ expression: "normalized(out, &server.uri())"
         "complete": true,
         "pages_fetched": 2
       },
+      "replies_page": 1,
+      "replies_total": 3,
       "reply_count": 3,
       "require_initial_post": false,
       "title": "Topic 55",
