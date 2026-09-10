@@ -151,9 +151,10 @@ back rate limited, and the first dataset failure ends the command before a
 second route is asked.
 
 The **completed-command order** — 9 > 10 > 8 > 12 > 11 > 0 — has the same
-limit and a tighter one: 9, 8 and 11 are terminal for the command that can
+limit and a tighter one: 8 and 11 are terminal for the command that can
 produce them, so no invocation carries one of them beside a lower-ranked
-outcome. `12 > 0` is asserted in `precedence.rs`; `10 > 12` is asserted by
+outcome. `9 > 12` (a `submit` left `upload_incomplete` by a partial upload)
+and `12 > 0` are asserted in `precedence.rs`; `10 > 12` is asserted by
 `download.rs::modified_force_mismatch_precedence_and_move_previous_path`;
 `canvas-core`'s `download::install::outcome_exit_code` ranks the whole list and
 is unit tested against every action.

@@ -11,18 +11,19 @@
 //! back rate limited, and the first dataset failure ends the command before a
 //! second route is asked.
 //!
-//! The completed-command order has the same limit, and a tighter one: 9, 8 and
-//! 11 are terminal for the command that can produce them, so no invocation ever
+//! The completed-command order has the same limit, and a tighter one: 8 and 11
+//! are terminal for the command that can produce them, so no invocation ever
 //! carries one of them next to a lower-ranked outcome. The orderings a single
-//! invocation can hold are `10 > 12` (`download --verify`, covered by
+//! invocation can hold are `9 > 12` (a `submit` left `upload_incomplete` by a
+//! partial upload), `10 > 12` (`download --verify`, covered by
 //! `download.rs::modified_force_mismatch_precedence_and_move_previous_path`)
-//! and `12 > 0`, which is asserted here. `canvas-core`'s
+//! and `12 > 0`; the first and the last are asserted here. `canvas-core`'s
 //! `download::install::outcome_exit_code` ranks the full list and is unit
 //! tested against every action.
 
 use serde_json::json;
 
-use crate::harness::{COURSE_ID, CanvasServer, E2e};
+use crate::harness::{ASSIGNMENT_ID, COURSE_ID, CanvasServer, E2e};
 
 /// Assert the earlier of two applicable conditions decided the exit.
 fn earlier_wins(name: &str, run: &crate::harness::Run, code: i32, error_code: &str) {
@@ -181,4 +182,56 @@ async fn success_when_nothing_is_partial() {
     run.assert_code(0);
     assert_eq!(run.json()["outcome"], "ok");
     assert_eq!(run.json()["partial"], json!([]));
+}
+
+/// 9 over a partial upload: the journal decides the exit, the files do not.
+///
+/// A `submit --file` whose upload session is refused leaves the journal
+/// `upload_incomplete`, which §14 ranks 9. The frozen files are still reported,
+/// and the envelope is the command's own `submit@1` — a partial file list never
+/// downgrades the invocation to the exit 12 a dataset command would use.
+#[tokio::test]
+async fn recovery_outranks_a_partial_upload() {
+    let server = CanvasServer::start().await;
+    server.allow_file_submission().await;
+    server
+        .override_post_or_get(
+            &format!(
+                "/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}/submissions/self/files"
+            ),
+            wiremock::ResponseTemplate::new(500).set_body_json(json!({
+                "status": "internal_server_error",
+                "message": "no upload session",
+            })),
+        )
+        .await;
+    let env = E2e::with_server(&server);
+    let one = env.write_file("one.txt", b"first\n");
+    let two = env.write_file("two.txt", b"second\n");
+    let run = env.run(&[
+        "submit",
+        &COURSE_ID.to_string(),
+        &ASSIGNMENT_ID.to_string(),
+        "--file",
+        one.to_str().unwrap(),
+        "--file",
+        two.to_str().unwrap(),
+        "--yes",
+        "--json",
+    ]);
+    run.assert_code(9);
+    let value = run.json();
+    assert_eq!(value["schema"], "canvas-cli/submit@1");
+    assert_eq!(value["outcome"], "recovery");
+    assert_eq!(value["result"]["state"], "upload_incomplete");
+    assert_eq!(
+        value["result"]["files"].as_array().map(Vec::len),
+        Some(2),
+        "the frozen files are reported even though neither upload finished"
+    );
+    assert_eq!(
+        value["partial"],
+        json!([]),
+        "a submission outcome is never reported as a partial dataset"
+    );
 }

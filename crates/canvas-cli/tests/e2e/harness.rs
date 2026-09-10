@@ -314,6 +314,26 @@ impl CanvasServer {
             .await;
     }
 
+    /// Let assignment 9 take a file submission with no attempts used.
+    ///
+    /// The shipped fixture spends one of its two attempts, so a `submit --file`
+    /// would be refused before it ever asked for an upload session.
+    pub async fn allow_file_submission(&self) {
+        let mut assignment = Fixtures::assignment();
+        assignment["allowed_extensions"] = json!(["txt"]);
+        assignment["submission"] = json!({ "attempt": 0 });
+        assignment["html_url"] = json!(format!(
+            "{}/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}",
+            self.uri()
+        ));
+        self.override_get(
+            &format!("/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}"),
+            200,
+            assignment,
+        )
+        .await;
+    }
+
     /// Let assignment 9 take a text submission with no attempts used.
     ///
     /// The shipped fixture is upload-only with one attempt already spent, so a
