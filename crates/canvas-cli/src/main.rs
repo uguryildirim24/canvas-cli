@@ -190,8 +190,10 @@ async fn main() -> ExitCode {
                 Commands::Open { command, target } => {
                     commands::open::run(&m1b_globals(&globals), command, target).await
                 }
-                Commands::Grades { .. }
-                | Commands::Announcements { .. }
+                Commands::Grades { course, period } => {
+                    commands::grades::run(&m1b_globals(&globals), course, period).await
+                }
+                Commands::Announcements { .. }
                 | Commands::Announcement { .. }
                 | Commands::Calendar { .. } => not_implemented(globals.json),
                 // Round-3 peer-lane stubs (M2-b): exit 2.

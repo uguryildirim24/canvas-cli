@@ -15,6 +15,8 @@ pub mod doctor;
 pub mod download;
 pub mod emit;
 pub mod files;
+pub mod grades;
+pub mod grades_load;
 pub mod identity;
 pub mod modules;
 pub mod open;
