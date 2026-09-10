@@ -611,6 +611,25 @@ async fn every_inbox_request_refuses_to_mark_anything_read() {
     );
 }
 
+/// Canvas documents the unread count as a string; a deployment that sends a
+/// number must not turn the whole read into a decode failure.
+#[tokio::test]
+async fn an_unread_count_is_read_as_a_string_or_a_number() {
+    for (body, expected) in [
+        (json!({"unread_count": "7"}), json!(7)),
+        (json!({"unread_count": 7}), json!(7)),
+        (json!({}), Value::Null),
+        (json!({"unread_count": "many"}), Value::Null),
+    ] {
+        let server = MockServer::start().await;
+        mount(&server, "/api/v1/users/self", json!({"id": 123})).await;
+        mount(&server, "/api/v1/conversations/unread_count", body).await;
+        let f = Fixture::new(&server.uri());
+        let out = f.run(&["inbox", "unread-count"], 0).await;
+        assert_eq!(out["result"]["unread_count"], expected);
+    }
+}
+
 #[tokio::test]
 async fn a_bad_inbox_scope_is_a_usage_error_and_sends_nothing() {
     let server = MockServer::start().await;
