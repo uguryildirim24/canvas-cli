@@ -626,7 +626,7 @@ fn observed_module_item_nulls_clear_values_and_absence_keeps_clocks() {
 fn observed_files_and_folders_preserve_normalization_and_all_nulls() {
     use super::wire::Observed;
     let file: Observed<File> = serde_json::from_value(
-        json!({"id":1,"updated_at":"2026-09-01T08:00:00-04:00","lock_explanation":null}),
+        json!({"id":1,"updated_at":"2026-09-01T08:00:00-04:00","lock_explanation":null,"content-type":null}),
     )
     .unwrap();
     let entity = file.entity(5);
@@ -645,6 +645,15 @@ fn observed_files_and_folders_preserve_normalization_and_all_nulls() {
             .fields
             .iter()
             .find(|f| f.name == "lock_explanation")
+            .unwrap()
+            .value,
+        None
+    );
+    assert_eq!(
+        entity
+            .fields
+            .iter()
+            .find(|f| f.name == "content_type")
             .unwrap()
             .value,
         None
@@ -810,4 +819,91 @@ fn discovery_never_persists_capability_urls_or_untracked_response_fields() {
         assert_eq!(data["html_url"], "https://example.org/courses/5/modules/items/80");
         Ok(())
     }).unwrap();
+}
+
+#[tokio::test]
+async fn discovery_lists_follow_all_pages_and_failed_items_leave_previous_rows() {
+    use wiremock::matchers::query_param;
+    let server = MockServer::start().await;
+    let (_dir, open) = setup();
+    let api = client(&server);
+    for dataset in ["files", "folders", "modules"] {
+        let endpoint = format!("/api/v1/courses/5/{dataset}");
+        let records = if dataset == "modules" {
+            [
+                json!({"id":8,"name":"Week 1","items":[{"id":80,"type":"File","content_id":50}]}),
+                json!({"id":9,"items":[]}),
+            ]
+        } else {
+            [json!({"id":50}), json!({"id":51})]
+        };
+        Mock::given(path(&endpoint))
+            .and(query_param("page", "2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([records[1]])))
+            .expect(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(path(&endpoint))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header(
+                        "Link",
+                        format!("<{}{endpoint}?page=2>; rel=\"next\"", server.uri()),
+                    )
+                    .set_body_json(json!([records[0]])),
+            )
+            .expect(1)
+            .with_priority(2)
+            .mount(&server)
+            .await;
+    }
+    let ttl = default_ttl_files();
+    for out in [
+        refresh_files(&api, &open.store, 5, ttl, ts(100), true, false)
+            .await
+            .unwrap(),
+        refresh_folders(&api, &open.store, 5, ttl, ts(100), true, false)
+            .await
+            .unwrap(),
+        super::refresh_modules(&api, &open.store, 5, ttl, ts(100), true, false)
+            .await
+            .unwrap(),
+    ] {
+        assert_eq!(out.requests, 2);
+        assert_eq!(out.freshness.count, 2);
+    }
+    server.reset().await;
+    Mock::given(path("/api/v1/courses/5/modules"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {"id":8,"name":"SHOULD NOT COMMIT","items":[]},
+            {"id":10,"items":null}
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/api/v1/courses/5/modules/10/items"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("bad JSON"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let failed = super::refresh_modules(&api, &open.store, 5, ttl, ts(200), true, false)
+        .await
+        .unwrap();
+    assert!(failed.freshness.stale);
+    assert_eq!(failed.requests, 2);
+    open.store
+        .call_blocking(|conns| {
+            let plan = discovery_plan_input(conns, 5, "CS101")?;
+            assert_eq!(
+                plan.modules.iter().map(|m| m.id).collect::<Vec<_>>(),
+                [8, 9]
+            );
+            assert_eq!(plan.modules[0].name, "Week 1");
+            assert_eq!(plan.modules[0].items.len(), 1);
+            assert_eq!(plan.files.len(), 2);
+            assert_eq!(plan.folders.len(), 2);
+            Ok(())
+        })
+        .unwrap();
 }
