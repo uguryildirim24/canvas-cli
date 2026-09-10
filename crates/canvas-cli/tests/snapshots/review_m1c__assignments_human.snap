@@ -1,0 +1,7 @@
+---
+source: crates/canvas-cli/tests/review_m1c.rs
+expression: "f.human(&[\"assignments\", \"1\", \"--bucket\", \"all\", \"--offline\"]).await"
+---
+  ID    Course    Name          Due                             Status   
+  2               Homework 2    Wed Sep 9, 11:59 PM (in 10h)    unknown  
+  3               Homework 3    —                               unknown

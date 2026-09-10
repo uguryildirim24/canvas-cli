@@ -45,7 +45,7 @@ pub async fn run(
     command: Option<OpenCommand>,
     target: Option<String>,
 ) -> ExitCode {
-    let session = match globals.open_session() {
+    let session = match globals.open_local_session() {
         Ok(s) => s,
         Err(e) => return session_error(globals.json, e, globals.profile.clone()),
     };
@@ -89,12 +89,20 @@ pub async fn run(
                 ),
             )
         }
-        Some(OpenCommand::File { id }) => (
-            "file",
-            id.clone(),
-            format!("{}/files/{id}", origin.trim_end_matches('/')),
-        ),
+        Some(OpenCommand::File { id }) => {
+            let Ok(id) = id.parse::<i64>() else {
+                return resolve_fail(globals, &session, ResolveError::NeedIdOrUrl);
+            };
+            (
+                "file",
+                id.to_string(),
+                format!("{}/files/{id}", origin.trim_end_matches('/')),
+            )
+        }
         Some(OpenCommand::Announcement { course, id }) => {
+            let Ok(id) = id.parse::<i64>() else {
+                return resolve_fail(globals, &session, ResolveError::NeedIdOrUrl);
+            };
             let resolved = match call_resolve(&session, {
                 let course = course.clone();
                 let origin = origin.clone();
@@ -108,7 +116,7 @@ pub async fn run(
             };
             (
                 "announcement",
-                id.clone(),
+                id.to_string(),
                 format!(
                     "{}/courses/{}/discussion_topics/{id}",
                     origin.trim_end_matches('/'),
@@ -154,21 +162,52 @@ pub async fn run(
         }
     };
 
-    let launched = open::that(&url).is_ok();
-    let result = json!({
+    let result = launch_result(kind, &id, &url, || open::that(&url).is_ok());
+    let envelope = base_envelope(SCHEMA_OPEN, &session, result);
+    emit(globals.json, &envelope, || {
+        writeln!(io::stdout(), "{}", human_result(&envelope.result))
+    })
+}
+
+fn launch_result(
+    kind: &str,
+    id: &str,
+    url: &str,
+    launch: impl FnOnce() -> bool,
+) -> serde_json::Value {
+    json!({
         "target_kind": kind,
         "id": id,
         "url": url,
-        "launched": launched,
-    });
-    let envelope = base_envelope(SCHEMA_OPEN, &session, result);
-    emit(globals.json, &envelope, || {
-        writeln!(io::stdout(), "{kind} {url} launched={launched}")
+        "launched": launch(),
     })
+}
+
+fn human_result(result: &serde_json::Value) -> String {
+    format!(
+        "{} {} launched={}",
+        result["target_kind"].as_str().unwrap_or(""),
+        result["url"].as_str().unwrap_or(""),
+        result["launched"]
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn open_json_and_human_snapshots_report_launch_result() {
+        let result = super::launch_result(
+            "assignment",
+            "2",
+            "https://canvas.test/courses/1/assignments/2",
+            || true,
+        );
+        insta::assert_json_snapshot!("open_json", result);
+        insta::assert_snapshot!("open_human", super::human_result(&result));
+        let failed = super::launch_result("file", "3", "https://canvas.test/files/3", || false);
+        assert_eq!(failed["launched"], false);
+    }
+
     #[test]
     fn browser_urls_require_exact_origin() {
         let origin = "https://canvas.example.test";

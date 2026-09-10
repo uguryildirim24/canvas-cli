@@ -1,0 +1,5 @@
+---
+source: crates/canvas-cli/src/commands/open.rs
+expression: "super::human_result(&result)"
+---
+assignment https://canvas.test/courses/1/assignments/2 launched=true

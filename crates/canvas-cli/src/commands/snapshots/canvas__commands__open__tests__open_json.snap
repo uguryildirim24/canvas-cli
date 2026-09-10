@@ -1,0 +1,10 @@
+---
+source: crates/canvas-cli/src/commands/open.rs
+expression: result
+---
+{
+  "id": "2",
+  "launched": true,
+  "target_kind": "assignment",
+  "url": "https://canvas.test/courses/1/assignments/2"
+}
