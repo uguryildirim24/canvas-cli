@@ -554,7 +554,8 @@ expression: document(entry)
         "title": "canvas-cli/error@1",
         "type": "object"
       }
-    ]
+    ],
+    "type": "object"
   },
   "error": {
     "description": "Single-document JSON envelope for one invocation.",
