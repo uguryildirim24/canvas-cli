@@ -21,6 +21,9 @@ pub mod journal;
 /// Local receipt export and verification helpers.
 pub mod receipts;
 
+/// Submit, reconcile, and verify orchestration.
+pub mod submit;
+
 /// Module-aware file download planning and install.
 pub mod download;
 

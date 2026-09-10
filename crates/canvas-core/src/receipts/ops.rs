@@ -531,6 +531,56 @@ fn load_identity(store: &Store) -> Result<ReceiptIdentity, ReceiptError> {
     })?)
 }
 
+/// Rebuild a document from a loaded journal row (submitted/matched only).
+pub fn document_from_row(row: &JournalRow) -> Result<ReceiptDocument, ReceiptError> {
+    if !matches!(row.state, State::Submitted | State::Matched) {
+        return Err(ReceiptError::Refused);
+    }
+    if let Some(raw) = row.receipt_record_json.as_deref()
+        && let Ok(mut doc) = serde_json::from_str::<ReceiptDocument>(raw)
+    {
+        doc.recompute_server_body_sha256();
+        return Ok(doc);
+    }
+    Err(ReceiptError::Corrupt)
+}
+
+/// Parse a receipt document from JSON bytes.
+pub fn parse_document(bytes: &[u8]) -> Result<ReceiptDocument, ReceiptError> {
+    let mut doc: ReceiptDocument = serde_json::from_slice(bytes)?;
+    doc.recompute_server_body_sha256();
+    Ok(doc)
+}
+
+/// Default on-disk path for a receipt export.
+#[must_use]
+pub fn receipt_path(identity_dir: &Path, receipt_id: &str) -> PathBuf {
+    identity_dir
+        .join("receipts")
+        .join(format!("{receipt_id}.json"))
+}
+
+/// Export a journal's receipt to the default identity receipts directory.
+pub fn export_journal(
+    store: &Store,
+    identity_dir: &Path,
+    journal_id: &str,
+) -> Result<ExportResult, ReceiptError> {
+    let doc = rebuild_from_journal(store, journal_id)?;
+    let bytes = serde_json::to_vec_pretty(&doc)?;
+    let receipt_id = doc.receipt_id.clone();
+    let dir = identity_dir.join("receipts");
+    fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{receipt_id}.json"));
+    write_mode_0600(&path, &bytes)?;
+    Ok(ExportResult {
+        receipt_id,
+        path: Some(path),
+        bytes: bytes.len(),
+        body: None,
+    })
+}
+
 fn write_mode_0600(path: &Path, bytes: &[u8]) -> Result<(), ReceiptError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
