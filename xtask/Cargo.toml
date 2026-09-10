@@ -13,13 +13,21 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+canvas-api.workspace = true
 canvas-lms-cli = { path = "../crates/canvas-cli" }
 clap.workspace = true
 clap_complete.workspace = true
 clap_mangen.workspace = true
-
-[dev-dependencies]
+jiff.workspace = true
+reqwest.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+sha2.workspace = true
 tempfile = "=3.23.0"
+tokio = { workspace = true, features = ["rt-multi-thread", "process", "io-util"] }
+url = "=2.5.8"
+wiremock.workspace = true
+
 
 [lints]
 workspace = true
