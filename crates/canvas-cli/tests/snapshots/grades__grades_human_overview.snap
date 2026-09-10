@@ -4,4 +4,5 @@ expression: stdout
 ---
   CODE        NAME                  PERIOD    GRADE        
   CS-101      Intro to Computing    all       B+           
-  MATH-201    Linear Algebra        all       unavailable
+  MATH-201    Linear Algebra        all       unavailable  
+  PHYS-301    Mechanics             all       D

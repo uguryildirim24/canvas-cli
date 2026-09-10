@@ -255,12 +255,18 @@ async fn totals_for(
         .call(move |conns| course_totals_for_mode(conns, course_id, &mode))
         .await
         .map_err(|e| local_error(globals, session, &e.to_string()))?;
-    // Canvas answers the default modes on the course list; enrollments only
-    // fill a course the list did not cover.
     if totals.covered {
-        Ok(totals)
-    } else {
+        return Ok(totals);
+    }
+    // Canvas answers the default modes on the course list; the unqualified
+    // enrollments only fill a course the list did not cover. Those values are
+    // whole-course ones, so they may stand in for `all` and never for
+    // `current`: a total from one mode is never labelled with another
+    // (SPEC §12.4).
+    if matches!(period, PeriodSelection::All) {
         Ok(by_course.get(&row.id).cloned().unwrap_or_default())
+    } else {
+        Ok(PeriodTotals::default())
     }
 }
 

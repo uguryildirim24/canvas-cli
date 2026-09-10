@@ -7,7 +7,7 @@ expression: v
   "freshness": [
     {
       "complete": true,
-      "count": 2,
+      "count": 3,
       "dataset": "courses",
       "fetched_at": "2026-09-09T16:00:00Z",
       "scope": "active",
@@ -25,7 +25,7 @@ expression: v
     },
     {
       "complete": true,
-      "count": 3,
+      "count": 5,
       "dataset": "enrollment_grades",
       "fetched_at": "2026-09-09T16:00:00Z",
       "scope": "period:none",

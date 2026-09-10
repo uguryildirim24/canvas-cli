@@ -11,7 +11,8 @@ fn bin() -> StdCommand {
     StdCommand::new(env!("CARGO_BIN_EXE_canvas"))
 }
 
-/// Two active courses: CS-101 has grading periods, MATH-201 does not.
+/// Three active courses: CS-101 has grading periods, MATH-201 does not, and
+/// PHYS-301 is absent from the course list's totals (no `course_totals` row).
 fn seed_courses(open: &OpenIdentity) {
     open.store
         .call_blocking(|conns| {
@@ -39,14 +40,24 @@ fn seed_courses(open: &OpenIdentity) {
                 [],
             )?;
             conns.cache.execute(
+                r#"INSERT INTO courses (id, name, course_code, html_url, term_id, data_json)
+                 VALUES (
+                    103, 'Mechanics', 'PHYS-301',
+                    'https://courses.example.test/courses/103', 7,
+                    '{"enrollment_state":"active","is_favorite":false,"restricted":false}'
+                 )"#,
+                [],
+            )?;
+            conns.cache.execute(
                 "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
                  VALUES ('courses', 'active', 'course', '101', 0),
-                        ('courses', 'active', 'course', '102', 1)",
+                        ('courses', 'active', 'course', '102', 1),
+                        ('courses', 'active', 'course', '103', 2)",
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('courses', 'active', '2026-09-09T16:00:00Z', 1, 2, 0, 0)",
+                 VALUES ('courses', 'active', '2026-09-09T16:00:00Z', 1, 3, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -98,8 +109,9 @@ fn seed_totals(open: &OpenIdentity) {
 
 /// `enrollment_grades` for the whole course and for period 5 only.
 ///
-/// Course 101 holds two enrollments (a section change); only one carries
-/// values, which is what the de-duplication rule must keep.
+/// Courses 101 and 103 each hold two enrollments (a section change); only one
+/// carries values, which is what the de-duplication rule must keep. Course 103
+/// has no `course_totals` row, so its overview total comes from that rule.
 fn seed_enrollments(open: &OpenIdentity) {
     open.store
         .call_blocking(|conns| {
@@ -111,13 +123,15 @@ fn seed_enrollments(open: &OpenIdentity) {
                    (900, 'none', 101, NULL, NULL, NULL, NULL, '{}'),
                    (901, 'none', 101, 88.0, 'B+', 85.0, 'B', '{}'),
                    (902, 'none', 102, NULL, NULL, NULL, NULL, '{}'),
+                   (903, 'none', 103, NULL, NULL, NULL, NULL, '{}'),
+                   (904, 'none', 103, 64.0, 'D', 60.0, 'D-', '{}'),
                    (900, '5', 101, 77.0, 'C+', 75.0, 'C', '{}'),
                    (901, '5', 101, 77.0, 'C+', 75.0, 'C', '{}')",
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('enrollment_grades', 'period:none', '2026-09-09T16:00:00Z', 1, 3, 0, 0),
+                 VALUES ('enrollment_grades', 'period:none', '2026-09-09T16:00:00Z', 1, 5, 0, 0),
                         ('enrollment_grades', 'period:5', '2026-09-09T16:00:00Z', 1, 2, 0, 0),
                         ('enrollment_grades', 'period:999', '2026-09-09T16:00:00Z', 1, 0, 0, 0)",
                 [],
@@ -147,7 +161,8 @@ fn seed_periods(open: &OpenIdentity) {
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
                  VALUES ('grading_periods', 'course:101', '2026-09-09T16:00:00Z', 1, 2, 0, 0),
-                        ('grading_periods', 'course:102', '2026-09-09T16:00:00Z', 1, 0, 0, 0)",
+                        ('grading_periods', 'course:102', '2026-09-09T16:00:00Z', 1, 0, 0, 0),
+                        ('grading_periods', 'course:103', '2026-09-09T16:00:00Z', 1, 0, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -193,7 +208,8 @@ fn seed_groups(open: &OpenIdentity) {
                    ('assignment_groups', 'course:101:period:none', '2026-09-09T16:00:00Z', 1, 2, 0, 0),
                    ('assignment_groups', 'course:101:period:5', '2026-09-09T16:00:00Z', 1, 0, 0, 0),
                    ('assignment_groups', 'course:102:period:none', '2026-09-09T16:00:00Z', 1, 0, 0, 0),
-                   ('assignment_groups', 'course:102:period:5', '2026-09-09T16:00:00Z', 1, 0, 0, 0)",
+                   ('assignment_groups', 'course:102:period:5', '2026-09-09T16:00:00Z', 1, 0, 0, 0),
+                   ('assignment_groups', 'course:103:period:none', '2026-09-09T16:00:00Z', 1, 0, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -497,7 +513,9 @@ fn null_totals_stay_null_and_print_unavailable() {
 #[test]
 fn duplicate_enrollments_collapse_to_one_row_per_course() {
     let (dir, key) = prepare();
-    // Course 101 has enrollments 900 (no values) and 901 (values) for `none`.
+    // Courses 101 and 103 each have two `none` enrollments; only the second
+    // carries values. Course 103 has no `course_totals` row, so its total is
+    // read straight from the de-duplicated enrollments.
     let (code, v) = run_json(
         &dir,
         &key,
@@ -513,12 +531,75 @@ fn duplicate_enrollments_collapse_to_one_row_per_course() {
     );
     assert_eq!(code, 0, "{v}");
     let courses = v["result"]["courses"].as_array().unwrap();
-    assert_eq!(courses.len(), 2, "one row per course: {v}");
+    assert_eq!(courses.len(), 3, "one row per course: {v}");
     let ids: Vec<&str> = courses
         .iter()
         .map(|c| c["course"]["id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, ["101", "102"], "sorted by code");
+    assert_eq!(ids, ["101", "102", "103"], "sorted by code");
+    // The enrollment that carried values wins over the empty one.
+    let phys = &courses[2]["grades"];
+    assert_eq!(phys["current_score"], 64.0, "{v}");
+    assert_eq!(phys["current_grade"], "D");
+    assert_eq!(phys["final_score"], 60.0);
+}
+
+/// SPEC §12.4: totals from one period mode are never labelled with another.
+/// The unqualified enrollments are whole-course values, so a course the course
+/// list did not cover reports `unavailable` under `--period current`.
+#[test]
+fn an_uncovered_course_never_borrows_whole_course_totals_for_current() {
+    let (dir, key) = prepare();
+    let (code, v) = run_json(
+        &dir,
+        &key,
+        &[
+            "grades",
+            "PHYS-301",
+            "--period",
+            "current",
+            "--offline",
+            "--json",
+            "--color",
+            "never",
+        ],
+    );
+    assert_eq!(code, 0, "{v}");
+    let course = &v["result"]["courses"][0];
+    assert_eq!(course["grades"]["period"]["mode"], "current");
+    for field in [
+        "current_score",
+        "current_grade",
+        "final_score",
+        "final_grade",
+    ] {
+        assert!(
+            course["grades"][field].is_null(),
+            "{field} must not carry the whole-course value: {course}"
+        );
+    }
+    assert_eq!(
+        course["unavailable_reason"],
+        "no current grading period total"
+    );
+
+    // The same course under `all` does read those whole-course values.
+    let (code, v) = run_json(
+        &dir,
+        &key,
+        &[
+            "grades",
+            "PHYS-301",
+            "--period",
+            "all",
+            "--offline",
+            "--json",
+            "--color",
+            "never",
+        ],
+    );
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["result"]["courses"][0]["grades"]["current_score"], 64.0);
 }
 
 // --- course view ---
@@ -588,7 +669,7 @@ fn the_overview_has_no_course_view() {
     );
     assert_eq!(code, 0, "{v}");
     assert!(v["result"]["course"].is_null());
-    assert_eq!(v["result"]["courses"].as_array().unwrap().len(), 2);
+    assert_eq!(v["result"]["courses"].as_array().unwrap().len(), 3);
 }
 
 // --- offline and freshness ---
