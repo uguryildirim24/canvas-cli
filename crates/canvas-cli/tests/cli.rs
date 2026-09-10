@@ -413,8 +413,8 @@ fn nested_help_lists_registered_commands() {
 #[test]
 fn every_v1_stub_is_callable() {
     // Implemented by M0-c (auth/identity/config/doctor), M1-b
-    // (courses/course/alias/sync/cache), and M1-c
-    // (todo/assignments/assignment/open) are covered elsewhere.
+    // (courses/course/alias/sync/cache), M1-c (todo/assignments/assignment/open),
+    // and M3-a (files/modules) are covered elsewhere.
     let own_stubs: &[&[&str]] = &[
         &["grades"],
         &["download", "chem"],
@@ -440,15 +440,13 @@ fn every_v1_stub_is_callable() {
         &["receipts", "show", "receipt-1"],
         &["receipts", "export", "receipt-1"],
         &["receipts", "acknowledge", "journal-1"],
-        &["files", "chem"],
-        &["modules", "chem"],
     ];
     for args in peer_stubs {
         assert_peer_stub(args);
     }
 }
 
-/// M1-b commands need an identity; without one they exit 3 with an error envelope.
+/// M1-b / M3-a commands need an identity; without one they exit 3 with an error envelope.
 #[test]
 fn m1b_commands_exit_auth_without_identity() {
     let empty = tempfile::TempDir::new().unwrap();
@@ -462,6 +460,8 @@ fn m1b_commands_exit_auth_without_identity() {
         vec!["cache", "stats"],
         vec!["cache", "clear"],
         vec!["cache", "path"],
+        vec!["files", "chem"],
+        vec!["modules", "chem"],
     ] {
         let assert = Command::cargo_bin("canvas")
             .unwrap()

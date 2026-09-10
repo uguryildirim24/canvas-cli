@@ -1,0 +1,79 @@
+---
+source: crates/canvas-cli/tests/files_modules.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "folders",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "course:101",
+      "source": "cache",
+      "stale": true
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "files",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "course:101",
+      "source": "cache",
+      "stale": true
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "modules",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "course:101",
+      "source": "cache",
+      "stale": true
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "lasell.instructure.com-12345-f1e3cb02",
+    "origin": "https://lasell.instructure.com",
+    "user_id": "12345"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course_id": "101",
+    "files": [
+      {
+        "folder_id": "2",
+        "folder_path": "Slides",
+        "hidden": false,
+        "id": "50",
+        "lock_explanation": null,
+        "locked": false,
+        "module_id": null,
+        "module_position": null,
+        "name": "lec.pdf",
+        "size": 10,
+        "source": "listing",
+        "updated_at": "2026-09-01T12:00:00Z"
+      }
+    ],
+    "listing": {
+      "available": true,
+      "http_status": null
+    }
+  },
+  "schema": "canvas-cli/files@1",
+  "warnings": [
+    "served stale folders cache",
+    "served stale files cache",
+    "served stale modules cache"
+  ]
+}

@@ -57,12 +57,15 @@ struct ProfileEntry {
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(clippy::struct_field_names)]
 struct CacheConfig {
     ttl_courses: Option<String>,
     ttl_grades: Option<String>,
     ttl_assignments: Option<String>,
     ttl_missing: Option<String>,
     ttl_planner: Option<String>,
+    ttl_files: Option<String>,
+    ttl_modules: Option<String>,
 }
 
 impl Session {
@@ -387,6 +390,30 @@ pub fn ttl_planner() -> jiff::Span {
             .as_deref(),
         10,
         false,
+    )
+}
+
+/// Default files/folders TTL (1h), optionally overridden by config.
+#[must_use]
+pub fn ttl_files() -> jiff::Span {
+    parse_ttl(
+        read_config().unwrap_or_default().cache.ttl_files.as_deref(),
+        1,
+        true,
+    )
+}
+
+/// Default modules TTL (1h), optionally overridden by config.
+#[must_use]
+pub fn ttl_modules() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_modules
+            .as_deref(),
+        1,
+        true,
     )
 }
 
