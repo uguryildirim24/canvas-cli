@@ -24,6 +24,9 @@ pub mod receipts;
 /// Submit, reconcile, and verify orchestration.
 pub mod submit;
 
+/// Operation plans and the approval that admits them.
+pub mod plan;
+
 /// Module-aware file download planning and install.
 pub mod download;
 
@@ -37,5 +40,8 @@ pub mod markdown;
 pub mod io;
 
 /// Unique, self-cleaning temporary directories for tests.
-#[cfg(test)]
-pub(crate) mod test_scratch;
+///
+/// Available to this crate's own tests and, through the `test-support`
+/// feature, to the integration tests of crates that depend on it.
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_scratch;

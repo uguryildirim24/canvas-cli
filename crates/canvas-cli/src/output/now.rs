@@ -11,15 +11,25 @@ thread_local! {
 /// Resolve "now" as a [`Timestamp`].
 ///
 /// Order: test override → `CANVAS_NOW` env → wall clock.
+///
+/// SPEC §16 makes the frozen clock a test-build affordance, and the other
+/// test-only environment variables (`CANVAS_TEST_ALLOW_HTTP`,
+/// `CANVAS_TEST_FORCE_FILE`, `CANVAS_TEST_CRASH_AFTER`) carry the same
+/// `debug_assertions` gate. A release build must not let the environment move
+/// the clock: due dates, TTL freshness and the §12.2 thirty-minute
+/// `--assume-not-submitted` window are all derived from it.
 #[must_use]
 pub fn now_timestamp() -> Timestamp {
     if let Some(raw) = current_override() {
         return parse_now(&raw);
     }
-    match std::env::var("CANVAS_NOW") {
-        Ok(raw) if !raw.is_empty() => parse_now(&raw),
-        _ => Timestamp::now(),
+    if cfg!(debug_assertions)
+        && let Ok(raw) = std::env::var("CANVAS_NOW")
+        && !raw.is_empty()
+    {
+        return parse_now(&raw);
     }
+    Timestamp::now()
 }
 
 /// RFC 3339 UTC string for envelope `generated_at`.

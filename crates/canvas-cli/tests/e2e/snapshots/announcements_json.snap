@@ -1,0 +1,62 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "active",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "announcements",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-08-26..2026-09-09:ctx:ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+      "source": "cache",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "announcements": [
+      {
+        "author": null,
+        "course_code": "CHEM301",
+        "course_id": "100",
+        "html_url": "<origin>/courses/100/discussion_topics/40",
+        "id": "40",
+        "posted_at": "2026-09-01T12:00:00Z",
+        "posted_at_local": "2026-09-01T08:00:00-04:00",
+        "read": false,
+        "title": "Welcome"
+      }
+    ],
+    "window": {
+      "end": "2026-09-09",
+      "start": "2026-08-26"
+    }
+  },
+  "schema": "canvas-cli/announcements@1",
+  "warnings": []
+}

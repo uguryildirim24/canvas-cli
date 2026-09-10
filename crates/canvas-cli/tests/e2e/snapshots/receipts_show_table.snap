@@ -1,0 +1,17 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  journal_id         00000000-0000-4000-8000-00000000000j  
+  state              submitted                             
+  owner              n/a                                   
+  course_id          100                                   
+  assignment_id      9                                     
+  kind               online_text_entry                     
+  superseded         false                                 
+  acknowledged_at    null                                  
+  error              null                                  
+receipt 00000000-0000-4000-8000-00000000000r  attempt 1  attribution=observed
+--- stderr ---

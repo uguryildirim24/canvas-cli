@@ -1,0 +1,27 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 3,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": null,
+  "outcome": "error",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "code": "auth",
+    "details": {},
+    "http_status": null,
+    "message": "no identity selected; set CANVAS_IDENTITY_KEY, --profile, or default_profile",
+    "server_errors": []
+  },
+  "schema": "canvas-cli/error@1",
+  "warnings": []
+}

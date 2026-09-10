@@ -137,6 +137,12 @@ pub struct JournalSummary {
     /// Error text when present.
     #[serde(default)]
     pub error: Option<String>,
+    /// The plan this journal was admitted from; `null` for legacy rows.
+    #[serde(default)]
+    pub plan_id: Option<String>,
+    /// The approval audit copied in at admission; `null` for legacy rows.
+    #[serde(default)]
+    pub approval: Option<crate::plan::Approval>,
 }
 
 /// Result of `receipts show`.
@@ -405,6 +411,12 @@ fn summarize(
         server_match,
         receipt_id,
         error: row.error_text.clone(),
+        plan_id: row.plan_id.clone(),
+        approval: row
+            .approval_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?,
     })
 }
 
@@ -499,6 +511,12 @@ fn rebuild_from_row(store: &Store, row: &JournalRow) -> Result<ReceiptDocument, 
         due_at: intent.due_at,
         cli_version: env!("CARGO_PKG_VERSION").to_string(),
         created_at: row.created_at.clone(),
+        plan_id: row.plan_id.clone(),
+        approval: row
+            .approval_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?,
     };
     doc.recompute_server_body_sha256();
     Ok(doc)

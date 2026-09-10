@@ -1,0 +1,189 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "datasets": [
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "announcements",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "window:2026-09-08..2026-09-21:ctx:ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "assignments",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "course:100",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 2,
+        "dataset": "course_totals",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "course:100",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "courses",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "active",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "enrollment_grades",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "period:none",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "grading_periods",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "course:100",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "missing",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "all",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "planner",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "window:2026-09-08..2026-09-21",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "terms",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "active",
+        "source": "cache",
+        "stale": false
+      }
+    ],
+    "path": "<scratch>/data/<identity>/cache.sqlite",
+    "size_bytes": 0,
+    "tables": [
+      {
+        "name": "courses",
+        "rows": 1
+      },
+      {
+        "name": "terms",
+        "rows": 1
+      },
+      {
+        "name": "assignment_groups",
+        "rows": 0
+      },
+      {
+        "name": "assignments",
+        "rows": 2
+      },
+      {
+        "name": "submissions",
+        "rows": 0
+      },
+      {
+        "name": "modules",
+        "rows": 0
+      },
+      {
+        "name": "module_items",
+        "rows": 0
+      },
+      {
+        "name": "folders",
+        "rows": 0
+      },
+      {
+        "name": "files",
+        "rows": 0
+      },
+      {
+        "name": "announcements",
+        "rows": 1
+      },
+      {
+        "name": "calendar_events",
+        "rows": 0
+      },
+      {
+        "name": "planner_items",
+        "rows": 1
+      },
+      {
+        "name": "enrollment_grades",
+        "rows": 1
+      },
+      {
+        "name": "course_totals",
+        "rows": 2
+      },
+      {
+        "name": "grading_periods",
+        "rows": 1
+      },
+      {
+        "name": "fake_entities",
+        "rows": 0
+      },
+      {
+        "name": "field_obs",
+        "rows": 72
+      },
+      {
+        "name": "membership",
+        "rows": 10
+      },
+      {
+        "name": "fetch_log",
+        "rows": 9
+      }
+    ]
+  },
+  "schema": "canvas-cli/cache@1",
+  "warnings": []
+}

@@ -1,0 +1,26 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//canvas-cli//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:canvas-event-50@<identity>
+DTSTAMP:20260909T170512Z
+DTSTART:20260915T150000Z
+DTEND:20260915T160000Z
+SUMMARY:[CHEM301] Office hours
+END:VEVENT
+BEGIN:VEVENT
+UID:canvas-assignment-9@<identity>
+DTSTAMP:20260909T170512Z
+DTSTART:20260920T035900Z
+SUMMARY:[CHEM301] Problem Set 1
+DESCRIPTION:unknown
+END:VEVENT
+END:VCALENDAR
+--- stderr ---

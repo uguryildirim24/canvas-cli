@@ -1,0 +1,64 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+{
+  "receipt_id": "00000000-0000-4000-8000-00000000000r",
+  "journal_id": "00000000-0000-4000-8000-00000000000j",
+  "identity": {
+    "origin": "<origin>",
+    "user_id": "1",
+    "key": "<identity>"
+  },
+  "course_id": "100",
+  "course_code": null,
+  "assignment_id": "9",
+  "assignment_name": "Problem Set 1",
+  "kind": "online_text_entry",
+  "baseline_attempt": 0,
+  "attribution": "observed",
+  "posted": {
+    "evidence": "post-response",
+    "submission_id": "77",
+    "attempt": 1,
+    "submitted_at": "2026-09-09T17:05:12Z",
+    "submitted_at_local": "2026-09-09T13:05:12-04:00",
+    "workflow_state": "submitted",
+    "late": false,
+    "missing": false,
+    "excused": null,
+    "submission_type": "online_text_entry",
+    "attachments": [],
+    "body_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683",
+    "url": null,
+    "response_sha256": "19fbb9f8c3139bdc9a93f7b9678be0d70f0ef67c7ec08dcefb5ddcbd8114213c"
+  },
+  "readback": {
+    "submitted_at": null,
+    "submitted_at_local": null,
+    "late": null,
+    "attachments": [],
+    "body_sha256": null
+  },
+  "files": [],
+  "text": {
+    "input_sha256": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "transform": "text-to-html",
+    "sent_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683",
+    "server_body_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683"
+  },
+  "url": null,
+  "due_at": "2026-09-20T03:59:00Z",
+  "cli_version": "<version>",
+  "created_at": "<clock>",
+  "plan_id": "<id>",
+  "approval": {
+    "channel": "yes-flag",
+    "at": "2026-09-09T17:05:12Z",
+    "consumer": null,
+    "plan_sha256": "<digest>"
+  }
+}
+--- stderr ---

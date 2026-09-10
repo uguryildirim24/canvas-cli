@@ -1,0 +1,39 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 6,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "error",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 4,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "code": "resolution",
+    "details": {
+      "candidates": [
+        {
+          "code": "CHEM301",
+          "id": "100",
+          "name": "Chemistry 301"
+        }
+      ]
+    },
+    "http_status": null,
+    "message": "not found",
+    "server_errors": []
+  },
+  "schema": "canvas-cli/error@1",
+  "warnings": []
+}

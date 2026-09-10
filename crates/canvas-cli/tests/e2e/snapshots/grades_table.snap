@@ -1,0 +1,9 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  CODE       NAME             PERIOD    GRADE  
+  CHEM301    Chemistry 301    all       A-     
+--- stderr ---

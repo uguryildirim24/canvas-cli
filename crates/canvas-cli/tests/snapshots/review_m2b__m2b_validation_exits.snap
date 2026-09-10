@@ -70,7 +70,7 @@ expression: snapshots
     "partial": [],
     "profile": null,
     "requests": {
-      "api": 1,
+      "api": 2,
       "cost": null,
       "storage": 0
     },

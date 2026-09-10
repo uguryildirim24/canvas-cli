@@ -1,0 +1,155 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "active",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "planner",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-09-08..2026-09-21",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "missing",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "all",
+      "source": "cache",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "counts": {
+      "due_today": 0,
+      "due_week": 1,
+      "hidden": 0,
+      "missing": 1
+    },
+    "items": [
+      {
+        "assignment_id": "11",
+        "availability": {
+          "external": false,
+          "lock_at": null,
+          "lock_at_local": null,
+          "lock_explanation": null,
+          "locked": null,
+          "submittable": null,
+          "unlock_at": null,
+          "unlock_at_local": null
+        },
+        "course_code": "CHEM301",
+        "course_id": "100",
+        "dismissed": false,
+        "due_at": "2026-09-12T03:59:00Z",
+        "due_at_local": "2026-09-11T23:59:00-04:00",
+        "html_url": null,
+        "id": "11",
+        "key": "assignment:11",
+        "kind": "assignment",
+        "marked_complete": false,
+        "parent_assignment_id": null,
+        "points_possible": 50.0,
+        "raw_type": "assignment",
+        "scheduled_at": null,
+        "scheduled_at_local": null,
+        "status": {
+          "attempt": null,
+          "excused": null,
+          "grade": null,
+          "graded": null,
+          "late": null,
+          "missing": true,
+          "pending": false,
+          "posted_at": null,
+          "score": null,
+          "submitted": null,
+          "submitted_at": null,
+          "submitted_at_local": null,
+          "workflow_state": null
+        },
+        "title": "Lab Report"
+      },
+      {
+        "assignment_id": "9",
+        "availability": {
+          "external": null,
+          "lock_at": null,
+          "lock_at_local": null,
+          "lock_explanation": null,
+          "locked": null,
+          "submittable": null,
+          "unlock_at": null,
+          "unlock_at_local": null
+        },
+        "course_code": "CHEM301",
+        "course_id": "100",
+        "dismissed": false,
+        "due_at": "2026-09-20T03:59:00Z",
+        "due_at_local": "2026-09-19T23:59:00-04:00",
+        "html_url": null,
+        "id": "9",
+        "key": "assignment:9",
+        "kind": "assignment",
+        "marked_complete": false,
+        "parent_assignment_id": null,
+        "points_possible": null,
+        "raw_type": "assignment",
+        "scheduled_at": "2026-09-20T03:59:00Z",
+        "scheduled_at_local": "2026-09-19T23:59:00-04:00",
+        "status": {
+          "attempt": null,
+          "excused": null,
+          "grade": null,
+          "graded": null,
+          "late": null,
+          "missing": false,
+          "pending": false,
+          "posted_at": null,
+          "score": null,
+          "submitted": null,
+          "submitted_at": null,
+          "submitted_at_local": null,
+          "workflow_state": null
+        },
+        "title": "Problem Set 1"
+      }
+    ],
+    "window": {
+      "days": 14,
+      "end": "2026-09-21",
+      "start": "2026-09-08"
+    }
+  },
+  "schema": "canvas-cli/todo@1",
+  "warnings": []
+}

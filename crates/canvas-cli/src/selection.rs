@@ -478,7 +478,8 @@ pub fn initialize_identity(
     origin: &str,
     user_id: i64,
 ) -> Result<(IdentityDocument, File), CliError> {
-    let candidate = IdentityDocument::new(origin, user_id, jiff::Timestamp::now().to_string());
+    let candidate =
+        IdentityDocument::new(origin, user_id, crate::output::now_timestamp().to_string());
     let core = CorePaths::for_identity(&paths.data_dir, &candidate.key);
     core.verify(&candidate.key)?;
     fs::create_dir_all(paths.data_dir.join("locks")).map_err(|e| CliError::local(e.to_string()))?;

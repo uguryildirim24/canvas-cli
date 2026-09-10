@@ -225,7 +225,7 @@ fn sqlite_thread(rx: &Receiver<Job>) {
 fn open_db(
     path: &Path,
     supported: i32,
-    migrate: fn(&Connection) -> Result<(), DbError>,
+    migrate: fn(&Connection, i32) -> Result<(), DbError>,
 ) -> Result<Connection, DbError> {
     // Create privately before SQLite opens the database or its journal sidecars.
     let mut options = std::fs::OpenOptions::new();
@@ -270,7 +270,7 @@ fn open_db(
             });
         }
         if locked_version < supported {
-            migrate(&tx)?;
+            migrate(&tx, locked_version)?;
             tx.pragma_update(None, "user_version", supported)?;
         }
         tx.commit()?;

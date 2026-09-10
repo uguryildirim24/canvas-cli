@@ -60,7 +60,7 @@ pub async fn handle(
     globals: &Globals,
     command: Option<OpenCommand>,
     target: Option<String>,
-    launch: Launch,
+    browser: Launch,
 ) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
@@ -178,13 +178,24 @@ pub async fn handle(
         }
     };
 
-    let result = launch_result(kind, &id, &url, || {
-        launch == Launch::Yes && open::that(&url).is_ok()
-    });
+    let result = launch_result(kind, &id, &url, || browser == Launch::Yes && launch(&url));
     let envelope = base_envelope(SCHEMA_OPEN, &session, result);
     Handled::new(envelope, move |envelope| {
         writeln!(io::stdout(), "{}", human_result(&envelope.result))
     })
+}
+
+/// Hand `url` to the desktop browser, unless a test build opted out.
+///
+/// `open` is otherwise the one v1 command an end-to-end run cannot exercise: it
+/// spawns a real browser window. The opt-out carries the same
+/// `debug_assertions` gate as `CANVAS_TEST_FORCE_FILE` and `CANVAS_NOW`, so a
+/// release build always launches.
+fn launch(url: &str) -> bool {
+    if cfg!(debug_assertions) && std::env::var_os("CANVAS_TEST_NO_LAUNCH").is_some() {
+        return false;
+    }
+    open::that(url).is_ok()
 }
 
 fn launch_result(
