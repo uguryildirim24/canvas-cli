@@ -349,6 +349,19 @@ pub fn invalidate(store: &Store, plan_id: &str, reason: &str) -> Result<PlanRow,
     require(store, plan_id)
 }
 
+/// A human declined this plan.
+///
+/// Declining and cancelling both invalidate the plan and spend every handle
+/// issued for it, so neither the plan nor a handle can be replayed.
+pub fn decline(store: &Store, plan_id: &str) -> Result<PlanRow, PlanError> {
+    invalidate(store, plan_id, "declined")
+}
+
+/// The requester withdrew this plan.
+pub fn cancel(store: &Store, plan_id: &str) -> Result<PlanRow, PlanError> {
+    invalidate(store, plan_id, "cancelled")
+}
+
 /// Mark a plan expired. Only a plan still waiting can expire.
 pub fn expire(store: &Store, plan_id: &str) -> Result<PlanRow, PlanError> {
     let plan_key = plan_id.to_owned();
