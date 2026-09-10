@@ -98,6 +98,22 @@ fn assert_stub(args: &[&str]) {
     }
 }
 
+fn assert_peer_stub(args: &[&str]) {
+    let result = Command::cargo_bin("canvas")
+        .unwrap()
+        .args(args)
+        .assert()
+        .code(2);
+    if args.contains(&"--json") {
+        let v: serde_json::Value = serde_json::from_slice(&result.get_output().stdout).unwrap();
+        assert_eq!(v["schema"], "canvas-cli/error@1");
+        assert_eq!(v["result"]["message"], "not implemented");
+        assert_eq!(v["exit"], 2);
+    } else {
+        result.stdout("").stderr("not implemented\n");
+    }
+}
+
 fn assert_usage_error(args: &[&str]) {
     let assert = Command::cargo_bin("canvas")
         .unwrap()
@@ -126,6 +142,10 @@ fn mixed_commands_accept_typed_and_positional_forms() {
             "journal-1",
             "--assume-not-submitted",
         ],
+    ] {
+        assert_peer_stub(&args);
+    }
+    for args in [
         vec!["open", "chem", "--offline"],
         vec!["open", "https://canvas.example.test/courses/1", "--offline"],
         vec!["open", "assignment", "chem", "123"],
@@ -198,15 +218,15 @@ fn submission_accepts_options_between_operands() {
         let mut args = vec!["submission", "chem"];
         args.extend(options);
         args.push("123");
-        assert_stub(&args);
+        assert_peer_stub(&args);
     }
     assert_usage_error(&["submission", "chem", "--fresh", "123", "--offline"]);
     assert_usage_error(&["--offline", "submission", "chem", "--fresh", "123"]);
     assert_usage_error(&["submission", "chem", "--fresh"]);
     assert_usage_error(&["submission", "chem", "--fresh", "123", "extra"]);
     // Escape a subcommand name when it follows an option.
-    assert_stub(&["submission", "chem", "--fresh", "--", "verify"]);
-    assert_stub(&["submission", "--", "verify", "123"]);
+    assert_peer_stub(&["submission", "chem", "--fresh", "--", "verify"]);
+    assert_peer_stub(&["submission", "--", "verify", "123"]);
 }
 
 #[test]
@@ -282,6 +302,10 @@ fn command_choices_accept_documented_forms() {
             "2",
             "3",
         ],
+    ] {
+        assert_stub(&args);
+    }
+    for args in [
         vec![
             "submit", "chem", "123", "--file", "a.txt", "--file", "b.txt",
         ],
@@ -295,7 +319,7 @@ fn command_choices_accept_documented_forms() {
             "a.txt",
         ],
     ] {
-        assert_stub(&args);
+        assert_peer_stub(&args);
     }
 }
 
@@ -322,9 +346,8 @@ fn raw_output_rejects_json_at_every_command_level() {
 
 #[test]
 fn nonraw_variants_continue_to_accept_json() {
+    assert_stub(&["calendar", "--ics", "calendar.ics", "--json"]);
     for args in [
-        vec!["auth", "token", "--json"],
-        vec!["calendar", "--ics", "calendar.ics", "--json"],
         vec!["receipts", "export", "receipt-1", "--json"],
         vec![
             "receipts",
@@ -335,7 +358,7 @@ fn nonraw_variants_continue_to_accept_json() {
             "--json",
         ],
     ] {
-        assert_stub(&args);
+        assert_peer_stub(&args);
     }
 }
 
@@ -371,13 +394,9 @@ fn nested_help_lists_registered_commands() {
 
 #[test]
 fn every_v1_stub_is_callable() {
-    let cases: &[&[&str]] = &[
-        &["auth", "login"],
-        &["auth", "status"],
-        &["auth", "logout"],
-        &["auth", "token", "--reveal"],
-        &["identity", "list"],
-        &["identity", "remove", "identity-1"],
+    // Implemented by M0-c (auth/identity/config/doctor) and M1-b
+    // (courses/course/alias/sync/cache) are covered elsewhere.
+    let own_stubs: &[&[&str]] = &[
         &["todo"],
         &["assignments", "chem"],
         &["assignment", "chem", "123"],
@@ -385,14 +404,6 @@ fn every_v1_stub_is_callable() {
             "assignment",
             "https://canvas.example.test/courses/1/assignments/2",
         ],
-        &["submit", "chem", "123", "--file", "a.txt"],
-        &["submission", "chem", "123", "--history"],
-        &["submission", "verify", "receipt-1"],
-        &["submission", "reconcile", "journal-1"],
-        &["receipts", "list"],
-        &["receipts", "show", "receipt-1"],
-        &["receipts", "export", "receipt-1"],
-        &["receipts", "acknowledge", "journal-1"],
         &["grades"],
         &["download", "chem"],
         &["announcements"],
@@ -407,14 +418,26 @@ fn every_v1_stub_is_callable() {
         &["open", "assignment", "chem", "123"],
         &["open", "file", "123"],
         &["open", "announcement", "chem", "123"],
-        &["config", "path"],
-        &["config", "edit"],
-        &["config", "get", "key"],
-        &["config", "set", "key", "value"],
-        &["doctor"],
     ];
-    for args in cases {
+    for args in own_stubs {
         assert_stub(args);
+    }
+
+    // Round-3 peer-lane stubs (exit 2).
+    let peer_stubs: &[&[&str]] = &[
+        &["submit", "chem", "123", "--file", "a.txt"],
+        &["submission", "chem", "123", "--history"],
+        &["submission", "verify", "receipt-1"],
+        &["submission", "reconcile", "journal-1"],
+        &["receipts", "list"],
+        &["receipts", "show", "receipt-1"],
+        &["receipts", "export", "receipt-1"],
+        &["receipts", "acknowledge", "journal-1"],
+        &["files", "chem"],
+        &["modules", "chem"],
+    ];
+    for args in peer_stubs {
+        assert_peer_stub(args);
     }
 }
 

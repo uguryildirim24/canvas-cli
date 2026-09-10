@@ -11,7 +11,7 @@ mod render;
 pub use color::{ColorMode, resolve_color, should_use_color, should_use_color_with_env};
 pub use envelope::{
     Envelope, ErrorResult, Freshness, FreshnessSource, IdentityRef, Outcome, PartialScope,
-    Requests, error_envelope,
+    Requests, error_envelope, print_human,
 };
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
