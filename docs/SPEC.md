@@ -143,7 +143,30 @@ canvas completions bash|zsh|fish|powershell|elvish
 canvas version
 ```
 
-Command names reserved for v2 (no contract in this document): `grades estimate|what-if|target`, `inbox …`, `discussions …`, `discussion …`, `dashboard`, `notify …`, `submit --resume`.
+### Commands added after v1
+
+```
+canvas pages <course> [--unpublished]
+canvas page <course> <url-slug|id|URL>
+canvas syllabus <course>
+
+canvas discussions <course> [--unread]
+canvas discussion <course> <id|URL> [--replies] [--page N]
+
+canvas inbox [--scope inbox|unread|sent|archived]
+canvas inbox show <id>
+canvas inbox unread-count
+
+canvas watch [--jsonl] [--since CURSOR] [--once]
+canvas notify [--since CURSOR] [--stdout]
+
+canvas schema <command> | canvas schema --list
+canvas mcp
+```
+
+`pages`, `page`, `syllabus`, `discussions`, `discussion`, and `inbox *` are §23. `watch` and `notify` are §22. `schema` and `mcp` are §21.
+
+Command names still reserved for a later round (no contract in this document): `grades estimate|what-if|target`, `dashboard`, `submit --resume`, `bridge …`, `here`, and the write halves of `inbox` and `discussion`.
 
 ### Behaviour notes
 
@@ -160,6 +183,9 @@ Command names reserved for v2 (no contract in this document): `grades estimate|w
 - **`calendar`** §12.5.
 - **`open`** takes a typed target or a URL. It needs an identity for the origin and never fetches: numeric IDs and URLs build the target directly; a name is resolved only over a complete cached dataset, otherwise the command exits 6 with `use a numeric ID or a URL`. A URL whose origin differs from the active identity's origin is refused (exit 6).
 - **`sync`** refreshes courses, assignments, submissions, missing, the default planner window, enrollment grades, and announcements for active courses. `--full` adds folders, files, modules, module items, and calendar events.
+- **`pages`**, **`page`**, **`syllabus`**, **`discussions`**, **`discussion`**, **`inbox`**, **`inbox show`**, **`inbox unread-count`** §23. Every one is a `GET` and marks nothing read.
+- **`watch`**, **`notify`** §22. `watch --json` is exit 2 and names `--jsonl`; `notify` is a raw-output command.
+- **`schema`**, **`mcp`** §21.
 - **`doctor`** selects an identity like any class-B command when one is selectable and otherwise runs only the identity-free checks. Local checks: config parse, profile and identity, active credential source and stray or pending-cleanup entries, DB integrity and schema versions, credential backend status, identity lock, journals with an absent owner (recovered per §12.2). Only with `--network`, network checks (`GET /users/self` id equals the profile's user id, `X-Rate-Limit-Remaining`, clock skew from the `Date` header). Without `--network`, or with `--offline`, network checks are reported as `skipped`.
 
 ### Command classes
@@ -168,10 +194,12 @@ Every command belongs to exactly one class. The class decides identity selection
 
 | Class | Commands |
 |---|---|
-| A. identity-free, local | `version`, `completions`, `config *`, `identity list` |
-| B. identity-bound, local | `alias *`, `receipts list\|show\|export\|acknowledge`, `cache *`, `identity remove` (operand selects the identity), `open` (browser launch only), `auth status`, `auth logout`, `auth token`, `doctor` (without `--network`; falls back to the identity-free subset when no identity can be selected) |
-| C. identity-bound, cache-backed read | `courses`, `course`, `todo`, `assignments`, `assignment`, `submission` (without `verify`/`reconcile`), `grades`, `files`, `modules`, `announcements`, `announcement`, `calendar` |
-| D. network-required | `auth login`, `submit`, `submission verify`, `submission reconcile`, `sync`, `download`, `doctor --network` |
+| A. identity-free, local | `version`, `completions`, `config *`, `identity list`, `schema` |
+| B. identity-bound, local | `alias *`, `receipts list\|show\|export\|acknowledge`, `cache *`, `identity remove` (operand selects the identity), `open` (browser launch only), `auth status`, `auth logout`, `auth token`, `doctor` (without `--network`; falls back to the identity-free subset when no identity can be selected), `notify` |
+| C. identity-bound, cache-backed read | `courses`, `course`, `todo`, `assignments`, `assignment`, `submission` (without `verify`/`reconcile`), `grades`, `files`, `modules`, `announcements`, `announcement`, `calendar`, `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox`, `inbox show`, `inbox unread-count` |
+| D. network-required | `auth login`, `submit`, `submission verify`, `submission reconcile`, `sync`, `download`, `doctor --network`, `watch` |
+
+`canvas mcp` has no class of its own. It binds one identity locally at startup and refuses to start without one (exit 3); the process itself opens no network connection, and each tool takes the class of the command behind it.
 
 `auth login` is the one class-D command that runs without an existing identity; it creates one. Class-B commands never open a network connection. The class-B commands that read or change the credential store locally are `auth status`, `auth token`, `auth logout`, `identity remove`, and `doctor`; every other command touches the store only when a network call needs the token (§13).
 
@@ -228,7 +256,8 @@ Rules:
 - `profile` and `identity` are `null` for class-A commands and for errors raised before identity selection.
 - `outcome` is `ok`, `partial`, `recovery`, `mismatch`, `refused`, or `error`; `exit` is the process exit code (§14). On `error`, `result` is `{ "code": "auth", "message": "…", "http_status": 401, "server_errors": [], "details": {} }` and the schema is `canvas-cli/error@1`. When an error aborts a command after a durable side effect, `details` carries `journal_id`, the journal `state`, and any known `posted` identity, or the per-file results already produced.
 - `requests` is `{ "api": n, "storage": n, "cost": x }`, where `cost` is the sum of `X-Request-Cost` values seen (`null` when none).
-- Raw-output commands reject `--json` with exit 2: `completions`, `auth token --reveal`, `config edit`, `calendar --ics -`, `receipts export --out -`. Clap usage errors and `--help` keep clap's text output.
+- Raw-output commands reject `--json` with exit 2: `completions`, `auth token --reveal`, `config edit`, `calendar --ics -`, `receipts export --out -`, `schema`, `notify`. Clap usage errors and `--help` keep clap's text output.
+- `canvas watch` also rejects `--json` with exit 2 and names `--jsonl`. Its stream is a separate contract (§22): one self-describing `event@1` document per line, closed by one `watch@1` envelope. This rule for `--json` is unchanged.
 - `--json` disables color and progress.
 
 ### Streams and confirmations
@@ -312,6 +341,8 @@ XDG layout on every Unix, including macOS. Windows uses AppData. Implemented wit
 | Data root | `~/.local/share/canvas-cli/` | `%LOCALAPPDATA%\canvas-cli\data\` |
 | Env binding file | `<data root>/env-bindings.toml` | same |
 | Identity locks (never deleted) | `<data root>/locks/<identity-key>.lock`, `<identity-key>.cred.lock` | same |
+| Coordinator locks (never deleted, §22) | `<identity dir>/locks/api-slot-<n>.lock`, `refresh-<dataset>-<scope>.lock`, `interest-assignment-<id>.lock` | same |
+| Broker endpoint (reserved for M7-a, §24) | `<data root>/bridge/<identity-key>.sock` in `<data root>/bridge/` (dir `0700`, socket `0600`) | named pipe `\\.\pipe\canvas-cli-<identity-key>` |
 | Env binding lock | `<data root>/env-bindings.lock` | same |
 | Identity dir | `<data root>/<identity-key>/` | same |
 | Cache DB (disposable) | `<identity dir>/cache.sqlite` | same |
@@ -347,6 +378,9 @@ ttl_modules       = "1h"
 ttl_files         = "1h"
 ttl_announcements = "15m"
 ttl_calendar      = "1h"
+ttl_pages         = "1h"
+ttl_discussions   = "15m"
+ttl_inbox         = "5m"
 
 [network]
 api_concurrency     = 4
@@ -358,6 +392,10 @@ color = "auto"
 
 Precedence: defaults → `config.toml` → `CANVAS_*` env → flags, via `figment`. `config set` validates keys.
 
+`cache.ttl_pages`, `cache.ttl_discussions`, and `cache.ttl_inbox` were added by M8-a (§23). No `bridge.*` key exists yet; the companion's own keys arrive with §24.
+
+The `governor`, `interest`, `observations`, `baselines`, `events`, `consumer_cursor`, `plans`, and `approval_handles` tables all live in the identity's `state.sqlite`, so `cache clear` cannot reach them (§20, §22).
+
 ## 10. Cache, state, and sync
 
 ### Databases and locking
@@ -366,7 +404,20 @@ Precedence: defaults → `config.toml` → `CANVAS_*` env → flags, via `figmen
 - **Identity lock.** Every process that opens an identity takes a **shared** lock on `<data root>/locks/<identity-key>.lock` for its lifetime, then verifies `identity.json` (origin, user id, key, generation) and keeps the generation in memory. The lock file is never deleted.
 - **Identity removal** (`identity remove`): take the identity lock **exclusively** (5 s timeout, else exit 13); re-read `identity.json`; delete credential entries (any failure → exit 13, nothing else removed); delete the identity directory; remove profiles that reference the key and clear `default_profile` if it was one of them; release. A process that was waiting on the lock re-reads `identity.json` after acquiring it; a missing directory or a different generation means the identity is gone or was recreated, and the process exits 13 with `identity changed`.
 - `cache clear` runs `DELETE` on every cache table in one transaction followed by `VACUUM`; it never unlinks an open database. Mutation epochs (below) live in `state.sqlite`, so a clear cannot erase them.
-- All SQLite access runs on one dedicated thread per process fed by a bounded channel.
+- All SQLite access runs on one dedicated thread per process fed by a bounded channel. The coordinator's governor connection is the one exception (§22, §19 item 22).
+
+### Migration list
+
+Each database keeps its own `PRAGMA user_version` and its own ordered batch list. A batch is applied inside one transaction, and a database already at its current version runs none.
+
+| Migration | Database | Package | Adds |
+|---|---|---|---|
+| `0001_initial` | both | M1-a | the v1 cache and state schema |
+| `0002_reads` | cache | M8-a | `pages`, `discussion_topics`, `discussion_entries`, `conversations`, `conversation_unread` (§23) |
+| `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link and its partial unique index (§20) |
+| `0003_events` | state | M6-c | `governor`, `interest`, `observations`, `baselines`, `events`, `consumer_cursor` (§22) |
+
+`CACHE_USER_VERSION` is 2 and `STATE_USER_VERSION` is 3. A database at a newer version is refused (exit 13).
 
 ### Entities, observations, membership, coverage
 
@@ -395,6 +446,13 @@ A list refresh downloads every page, then in one transaction upserts entities pe
 | `folders`, `files` | `course:<id>` | `GET /courses/:id/folders`, `GET /courses/:id/files` | `ttl_files` | all pages, or a recorded denial |
 | `announcements` | `window:<start>..<end>:ctx:<sha256 of sorted course ids>` | batches of ≤10 `context_codes[]` | `ttl_announcements` | all batches stored or isolated |
 | `calendar_events` | `window:<start>..<end>:ctx:<sha256 of sorted contexts>` | `GET /calendar_events?type=event&context_codes[]=…` batches of ≤10 | `ttl_calendar` | all batches |
+| `pages` | `course:<id>` | `GET /courses/:id/pages?sort=title` | `ttl_pages` | all pages, or a recorded denial |
+| `page` | `page:<course>:<operand>` | `GET /courses/:id/pages/:url_or_id` | `ttl_pages` | one object |
+| `discussions` | `course:<id>` | `GET /courses/:id/discussion_topics?only_announcements=false` | `ttl_discussions` | all pages, or a recorded denial |
+| `discussion` | `topic:<id>`, and `topic:<id>:replies` with `--replies` | `GET /courses/:id/discussion_topics/:tid`; for replies `GET …/entries` and `GET …/entries/:eid/replies` | `ttl_discussions` | one object; for the replies scope, every entry page and every needed reply page |
+| `inbox` | `scope:<inbox\|unread\|sent\|archived>` | `GET /conversations?scope=…&auto_mark_as_read=false` | `ttl_inbox` | all pages, or a recorded denial |
+| `conversation` | `conversation:<id>` | `GET /conversations/:id?auto_mark_as_read=false` | `ttl_inbox` | one object |
+| `inbox_unread` | `all` | `GET /conversations/unread_count` | `ttl_inbox` | one object |
 
 **Hit predicate.** A dataset (or window) request is served from cache when a `fetch_log` row of that dataset and scope (for windows: with the same context hash, `window_start ≤ requested start`, `window_end ≥ requested end`) has `complete = 1`, `stale = 0`, `epoch_seen ≥ state epoch for that scope` (below), and age within TTL. Otherwise: online, refresh; if the refresh fails and a row exists, serve it with `stale: true`; `--offline` serves any existing complete row with `stale: true`, and exits 7 when none exists.
 
@@ -652,6 +710,17 @@ Single-invocation rule: exactly one JSON envelope (§7). Aborts use the `error` 
 | 11 | Cancelled | user answered no, or Ctrl-C at a confirmation |
 | 12 | Partial | some files, courses, or batches failed, were unavailable, or were refused as `unsafe_path`/`unresolved_move`; `verify` `unavailable` |
 | 13 | Local persistence | DB open/migrate failure; newer schema; identity.json mismatch; lock timeout; journal insert failure; credential store `Denied`/`Locked`; logout partial failure |
+
+**Refusal reasons.** No post-v1 package adds an exit code. Exit 8 gained a machine-readable `details.reason` on the `error@1` envelope, so an agent can branch without reading a message:
+
+| `details.reason` | Raised by |
+|---|---|
+| `expired` | the plan's 15-minute admission window passed (§20) |
+| `invalidated` | the plan was declined, cancelled, or is gone, or a frozen observation changed (§20) |
+| `approval_required` | the plan has no recorded human approval, or its handle was rejected (§20, §21) |
+| `not_attached` | `canvas://…/context/<handle>` has no attachment (§21; the bridge is §24) |
+
+`in_progress` stays a message on an exit-8 refusal, not a reason. The M8-a refusals keep `code: refused` with the `initial_post_required:` message prefix (§23). Every reason above is decided before any upload and before the submission `POST`.
 
 **Precedence** when several apply in one invocation: an abort (2, 3, 13, 4, 5, 6, 7, in that order of detection) ends the command immediately, after the durable phase outcome (journal state, per-file results) has been committed and is carried in `details`. For a completed command: 9 > 10 > 8 > 12 > 11 > 0.
 
