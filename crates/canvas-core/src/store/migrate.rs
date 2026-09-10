@@ -1,4 +1,13 @@
-//! Schema migrations. Owner of the migration list for M1-a: `0001_initial`.
+//! Schema migrations.
+//!
+//! Each migration is a numbered batch. A database records how far it has come
+//! in `PRAGMA user_version`, and the opener passes that number in, so a batch
+//! runs once and only on a database that has not seen it.
+//!
+//! | # | Database | Package | Adds |
+//! |---|---|---|---|
+//! | `0001_initial` | both | M1-a | the v1 cache and state schema |
+//! | `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link |
 
 use rusqlite::Connection;
 
@@ -7,19 +16,24 @@ use super::db::DbError;
 /// Current cache.sqlite schema version.
 pub const CACHE_USER_VERSION: i32 = 1;
 /// Current state.sqlite schema version.
-pub const STATE_USER_VERSION: i32 = 1;
+pub const STATE_USER_VERSION: i32 = 2;
 
-/// Apply cache migrations up to [`CACHE_USER_VERSION`].
-pub fn migrate_cache(conn: &Connection) -> Result<(), DbError> {
-    // 0001_initial
-    conn.execute_batch(CACHE_0001)?;
+/// Apply cache migrations from `from` up to [`CACHE_USER_VERSION`].
+pub fn migrate_cache(conn: &Connection, from: i32) -> Result<(), DbError> {
+    if from < 1 {
+        conn.execute_batch(CACHE_0001)?;
+    }
     Ok(())
 }
 
-/// Apply state migrations up to [`STATE_USER_VERSION`].
-pub fn migrate_state(conn: &Connection) -> Result<(), DbError> {
-    // 0001_initial
-    conn.execute_batch(STATE_0001)?;
+/// Apply state migrations from `from` up to [`STATE_USER_VERSION`].
+pub fn migrate_state(conn: &Connection, from: i32) -> Result<(), DbError> {
+    if from < 1 {
+        conn.execute_batch(STATE_0001)?;
+    }
+    if from < 2 {
+        conn.execute_batch(STATE_0002)?;
+    }
     Ok(())
 }
 
@@ -360,4 +374,56 @@ CREATE TABLE destinations (
     root_fingerprint TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+";
+
+/// Operation plans and the approval record (M6-a; REPORT §3.5).
+///
+/// `plan_sha256` covers the canonical plan document, so an approval names
+/// exact bytes. The journal link is unique: one plan can admit at most one
+/// journal, whatever else races. Legacy journal rows keep `plan_id` and
+/// `approval_json` null, which Appendix D's nullable convention exposes as
+/// `null` rather than invented approval evidence.
+const STATE_0002: &str = r"
+CREATE TABLE plans (
+    plan_id TEXT PRIMARY KEY NOT NULL,
+    identity_key TEXT NOT NULL,
+    identity_generation TEXT NOT NULL,
+    consumer TEXT,
+    course_id INTEGER NOT NULL,
+    assignment_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    file_paths_json TEXT NOT NULL DEFAULT '[]',
+    input_sha256 TEXT,
+    sent_sha256 TEXT,
+    baseline_attempt INTEGER,
+    baseline_submission_id INTEGER,
+    observations_json TEXT NOT NULL,
+    plan_sha256 TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('prepared','approved','executed','expired','invalidated')),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    approval_json TEXT,
+    journal_id TEXT,
+    invalidated_reason TEXT
+);
+
+CREATE INDEX plans_assignment ON plans(assignment_id, state);
+
+CREATE TABLE approval_handles (
+    handle TEXT PRIMARY KEY NOT NULL,
+    plan_id TEXT NOT NULL REFERENCES plans(plan_id),
+    consumer TEXT,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+
+CREATE INDEX approval_handles_plan ON approval_handles(plan_id);
+
+ALTER TABLE submission_journal ADD COLUMN plan_id TEXT;
+ALTER TABLE submission_journal ADD COLUMN approval_json TEXT;
+
+CREATE UNIQUE INDEX submission_journal_plan
+ON submission_journal(plan_id)
+WHERE plan_id IS NOT NULL;
 ";
