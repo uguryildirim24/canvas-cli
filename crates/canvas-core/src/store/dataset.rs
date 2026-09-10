@@ -131,8 +131,10 @@ pub trait Dataset {
         opts: &IngestOpts<'_>,
         conns: &mut super::db::StoreConns,
     ) -> Result<(), IngestError> {
-        // Complete denials use complete=true, stale=false, error=Some("unavailable:NNN").
-        if !opts.complete || opts.stale {
+        // Only folders/files 403/404 denials are successful coverage with an error.
+        let recorded_denial = matches!(self.name(), "files" | "folders")
+            && matches!(opts.error, Some("unavailable:403" | "unavailable:404"));
+        if !opts.complete || opts.stale || (opts.error.is_some() && !recorded_denial) {
             return mark_refresh_failed(self, opts.error.unwrap_or("refresh incomplete"), conns);
         }
         let result = commit_refresh(self, pages, opts, conns);

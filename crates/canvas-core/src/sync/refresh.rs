@@ -270,6 +270,7 @@ pub fn listing_denial_status(error: &str) -> Option<u16> {
     error
         .strip_prefix("unavailable:")
         .and_then(|rest| rest.parse().ok())
+        .filter(|status| matches!(status, 403 | 404))
 }
 
 pub(super) struct FetchBundle {
