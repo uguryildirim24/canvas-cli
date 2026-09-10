@@ -233,7 +233,7 @@ pub fn page_to_entity(item: &WikiPage, course_id: i64) -> Result<EntityIngest, c
         fields.push(FieldWrite {
             name: "html_url",
             group: FieldGroup::Detail,
-            value: Some(url.to_string()),
+            value: Some(super::modules::without_capability(url)),
         });
     }
     Ok(EntityIngest {

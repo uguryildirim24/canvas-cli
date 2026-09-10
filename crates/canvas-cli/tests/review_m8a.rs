@@ -725,6 +725,60 @@ async fn a_body_over_the_bound_is_cut_and_never_called_complete() {
     );
 }
 
+/// A Canvas body and a Canvas `html_url` can both carry a capability. §15
+/// keeps one out of the cache and out of the JSON.
+#[tokio::test]
+async fn a_capability_bearing_url_never_reaches_the_cache_or_the_json() {
+    let server = MockServer::start().await;
+    let origin = server.uri();
+    mount(&server, "/api/v1/users/self", json!({"id": 123})).await;
+    let mut row = page_row(301, "course-overview", true, true);
+    row["html_url"] = json!(format!(
+        "{origin}/courses/5/pages/x?verifier=private-capability"
+    ));
+    row["body"] = json!(format!(
+        concat!(
+            "<p><a href=\"{origin}/courses/5/files/42/download?verifier=private-capability\">h</a></p>",
+            "<p><a href=\"https://elsewhere.test/n?sig=private-sig\">n</a></p>",
+            "<iframe src=\"https://player.test/embed/9?access_token=private-token\"></iframe>"
+        ),
+        origin = origin
+    ));
+    mount(&server, "/api/v1/courses/5/pages/course-overview", row).await;
+    let f = Fixture::new(&origin);
+
+    let out = f.run(&["page", "5", "course-overview"], 0).await;
+    let rendered = serde_json::to_string(&out).unwrap();
+    assert!(!rendered.contains("private-"), "{rendered}");
+    let page = &out["result"]["page"];
+    assert_eq!(page["files"][0]["file_id"], "42");
+    assert!(
+        page["files"][0]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/files/42/download"),
+        "{page}"
+    );
+    assert_eq!(page["external_links"][0]["url"], "https://elsewhere.test/n");
+    assert_eq!(
+        page["html_url"],
+        json!(format!("{origin}/courses/5/pages/x"))
+    );
+
+    let paths = Paths::for_identity(f.dir.path().join("data"), &f.doc.key);
+    let open = OpenIdentity::open(&paths, &f.doc).unwrap();
+    open.store
+        .call(|conns| {
+            let data: String = conns
+                .cache
+                .query_row("SELECT data_json FROM pages", [], |r| r.get(0))?;
+            assert!(!data.contains("private-"), "{data}");
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn a_url_operand_must_name_the_course_it_was_given() {
     let server = MockServer::start().await;

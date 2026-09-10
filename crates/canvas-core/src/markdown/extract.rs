@@ -3,7 +3,9 @@
 //! An agent that reads a body must be told what it did not get. Every
 //! `<iframe>`, LTI launch, `<video>`, and `<audio>` becomes an embedded row and
 //! a one-line placeholder in the Markdown; every link and image source is kept
-//! as written, so the reader can resolve it against its own identity origin.
+//! as written apart from its capability-bearing parts, so the reader can
+//! resolve it against its own identity origin without a signed URL ever
+//! reaching the cache or the JSON (§15).
 //!
 //! Conversion never keeps the source HTML: [`BodyRefs`] is the projection the
 //! cache may store, and [`BodyRefs::resolve`] turns it into same-origin file
@@ -25,11 +27,13 @@ pub const BODY_LIMIT: usize = 64 * 1024;
 pub struct RawEmbed {
     /// `iframe`, `lti`, `video`, `audio`, or `unknown`.
     pub kind: String,
-    /// The source as the document wrote it; may be relative.
+    /// The source as the document wrote it, without its capability parameters;
+    /// may be relative.
     pub src: Option<String>,
 }
 
-/// One link or image source, as written in the source.
+/// One link or image source, as written in the source, without its
+/// capability-bearing query parameters or userinfo.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawLink {
     pub href: String,
@@ -116,7 +120,9 @@ fn convert(html: &str) -> Result<RichText, MarkdownError> {
                         .find(|a| a.name.local.as_ref() == name)
                         .map(|a| a.value.to_string())
                 };
-                let src = get("src").or_else(|| get("data"));
+                let src = get("src")
+                    .or_else(|| get("data"))
+                    .map(|raw| sanitize_ref(&raw));
                 let kind = embed_kind(element.tag, src.as_deref().unwrap_or_default());
                 let row = RawEmbed {
                     kind: kind.to_owned(),
@@ -137,6 +143,9 @@ fn convert(html: &str) -> Result<RichText, MarkdownError> {
         .html_to_tree(html)
         .map_err(|_| MarkdownError::Convert)?;
     let mut links = Vec::new();
+    // The sweep rewrites each reference in the tree before the Markdown is
+    // rendered from it, so the capability is gone from the body as well as
+    // from the projection.
     collect_links(&tree, &mut links);
     let markdown = converter.tree_to_markdown(&tree).trim().to_owned();
     let (markdown, truncated) = bound(markdown);
@@ -215,19 +224,29 @@ fn bound(markdown: String) -> (String, bool) {
     (out, true)
 }
 
+/// Collect every reference, rewriting each one in the tree without its
+/// capability-bearing parts so the rendered Markdown carries none either.
 fn collect_links(node: &Handle, out: &mut Vec<RawLink>) {
     if let NodeData::Element { name, attrs, .. } = &node.data {
-        let attrs = attrs.borrow();
+        let wanted = match name.local.as_ref() {
+            "a" | "area" => Some("href"),
+            "img" | "source" => Some("src"),
+            _ => None,
+        };
+        let mut attrs = attrs.borrow_mut();
+        let mut href = None;
+        if let Some(wanted) = wanted
+            && let Some(attr) = attrs.iter_mut().find(|a| a.name.local.as_ref() == wanted)
+        {
+            let clean = sanitize_ref(&attr.value);
+            attr.value = clean.as_str().into();
+            href = Some(clean);
+        }
         let get = |wanted: &str| {
             attrs
                 .iter()
                 .find(|a| a.name.local.as_ref() == wanted)
                 .map(|a| a.value.to_string())
-        };
-        let href = match name.local.as_ref() {
-            "a" | "area" => get("href"),
-            "img" | "source" => get("src"),
-            _ => None,
         };
         if let Some(href) = href.filter(|h| usable(h)) {
             let label = get("title")
@@ -239,9 +258,56 @@ fn collect_links(node: &Handle, out: &mut Vec<RawLink>) {
                 out.push(row);
             }
         }
+        drop(attrs);
     }
     for child in node.children.borrow().iter() {
         collect_links(child, out);
+    }
+}
+
+/// Drop the capability-bearing parts of a reference before it is stored or shown.
+///
+/// A Canvas body can link to a signed or `verifier`-bearing URL. §15 keeps a
+/// capability out of the cache and out of the JSON, so the userinfo and every
+/// capability-bearing query parameter go; the rest of the reference is kept as
+/// written, because it is what tells the reader where the link points.
+fn sanitize_ref(raw: &str) -> String {
+    let Some((head, tail)) = raw.split_once('?') else {
+        return strip_userinfo(raw);
+    };
+    let (query, fragment) = match tail.split_once('#') {
+        Some((query, fragment)) => (query, Some(fragment)),
+        None => (tail, None),
+    };
+    let kept: Vec<&str> = query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .filter(|pair| {
+            let key = pair.split_once('=').map_or(*pair, |(key, _)| key);
+            !canvas_api::redact::is_capability_key(key)
+        })
+        .collect();
+    let mut out = strip_userinfo(head);
+    if !kept.is_empty() {
+        out.push('?');
+        out.push_str(&kept.join("&"));
+    }
+    if let Some(fragment) = fragment {
+        out.push('#');
+        out.push_str(fragment);
+    }
+    out
+}
+
+/// Remove `user:password@` from an absolute reference.
+fn strip_userinfo(raw: &str) -> String {
+    let Some((scheme, rest)) = raw.split_once("://") else {
+        return raw.to_owned();
+    };
+    let (authority, path) = rest.find('/').map_or((rest, ""), |i| rest.split_at(i));
+    match authority.rsplit_once('@') {
+        Some((_, host)) => format!("{scheme}://{host}{path}"),
+        None => raw.to_owned(),
     }
 }
 
@@ -382,6 +448,39 @@ mod tests {
         assert!(!stored.contains('<'));
         let back: BodyRefs = serde_json::from_str(&stored).unwrap();
         assert_eq!(back, refs);
+    }
+
+    /// A body can link to a signed URL; the capability never reaches the
+    /// projection the cache stores or the references the JSON reports.
+    #[tokio::test]
+    async fn a_capability_bearing_reference_loses_its_capability() {
+        let html = concat!(
+            r#"<a href="/courses/7/files/42/download?verifier=private-capability&wrap=1">h</a>"#,
+            r#"<a href="https://elsewhere.test/x?sig=private-sig&page=2#top">away</a>"#,
+            r#"<iframe src="https://player.test/v/1?access_token=private-token"></iframe>"#,
+            r#"<a href="https://user:private-password@elsewhere.test/y">who</a>"#,
+        );
+        let out = rich_text(html).await.unwrap();
+        let markdown = out.markdown.clone().unwrap();
+        assert!(!markdown.contains("private-"), "{markdown}");
+        let stored = serde_json::to_string(&out.refs).unwrap();
+        assert!(!stored.contains("private-"), "{stored}");
+        let refs = out.refs.resolve(ORIGIN);
+        assert_eq!(refs.files.len(), 1);
+        assert_eq!(refs.files[0].file_id, "42");
+        assert!(refs.files[0].url.ends_with("/download?wrap=1"));
+        let external: Vec<&str> = refs.external_links.iter().map(|l| l.url.as_str()).collect();
+        assert_eq!(
+            external,
+            [
+                "https://elsewhere.test/x?page=2#top",
+                "https://elsewhere.test/y"
+            ]
+        );
+        assert_eq!(
+            refs.embedded[0].src_origin.as_deref(),
+            Some("https://player.test")
+        );
     }
 
     #[tokio::test]
