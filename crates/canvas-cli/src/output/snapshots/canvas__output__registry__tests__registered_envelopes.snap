@@ -2391,5 +2391,68 @@ expression: rendered
     },
     "schema": "canvas-cli/identity@1",
     "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "cursor": "12",
+      "datasets": [
+        {
+          "complete": true,
+          "count": 1,
+          "dataset": "courses",
+          "error": null,
+          "fetched_at": "2026-09-09T17:05:12Z",
+          "requests": 1,
+          "scope": "active",
+          "source": "network",
+          "stale": false
+        }
+      ],
+      "events": 1,
+      "resync_required": false,
+      "since": "0",
+      "skipped": null,
+      "ticks": 1
+    },
+    "schema": "canvas-cli/watch@1",
+    "warnings": []
+  },
+  {
+    "after": {
+      "due_at": "2026-09-12T03:59:00Z"
+    },
+    "before": {
+      "due_at": "2026-09-10T03:59:00Z"
+    },
+    "cursor": "12",
+    "dataset": "assignments",
+    "entity_key": "9",
+    "generation": "01234567-89ab-4cde-8f01-23456789abcd",
+    "identity": {
+      "key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "origin": "https://canvas.example.edu",
+      "user_id": "1"
+    },
+    "kind": "due.changed",
+    "observed_at": "2026-09-09T17:05:12Z",
+    "observed_at_local": "2026-09-09T13:05:12-04:00",
+    "schema": "canvas-cli/event@1",
+    "scope": "course:100"
   }
 ]

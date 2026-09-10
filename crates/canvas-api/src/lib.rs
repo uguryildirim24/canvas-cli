@@ -23,7 +23,10 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 pub use error::Error;
-pub use governor::{Governor, GovernorConfig, Lane, Telemetry};
+pub use governor::{
+    Governor, GovernorConfig, GovernorSnapshot, GovernorState, Lane, LaneSlot, Permits, Seams,
+    Telemetry,
+};
 pub use models::{Page, WrappedCollection};
 pub use redact::RedactingLayer;
 pub use request::{ApiRequest, TransferKind, TransferRequest};
@@ -98,7 +101,18 @@ impl Client {
         origin: Url,
         token: Secret,
         user_agent: &str,
+        governor: GovernorConfig,
+    ) -> Result<Self, Error> {
+        Self::with_seams(origin, token, user_agent, governor, &Seams::default())
+    }
+
+    /// Build a client whose governor uses cross-process seams (`canvas-core`).
+    pub fn with_seams(
+        origin: Url,
+        token: Secret,
+        user_agent: &str,
         mut governor: GovernorConfig,
+        seams: &Seams,
     ) -> Result<Self, Error> {
         if !matches!(origin.scheme(), "http" | "https")
             || origin.host_str().is_none()
@@ -156,7 +170,7 @@ impl Client {
                 http,
                 transfer_http,
                 upload_http,
-                governor: Governor::new(governor),
+                governor: Governor::with_seams(governor, seams),
             }),
         })
     }
