@@ -1,6 +1,7 @@
 //! Canvas API error variants (SPEC §11).
 
 use std::fmt;
+
 use thiserror::Error;
 
 /// Errors returned by the Canvas API client.
@@ -11,7 +12,10 @@ pub enum Error {
     Unauthorized,
 
     /// Access forbidden; may be a rate-limit body.
-    #[error("forbidden (rate_limited={rate_limited})")]
+    #[error(
+        "forbidden (rate_limited={rate_limited}): {body}",
+        body = crate::redact::redact(.body)
+    )]
     Forbidden {
         /// True when the body indicates a rate limit.
         rate_limited: bool,
@@ -35,7 +39,10 @@ pub enum Error {
     RateLimited,
 
     /// Canvas returned a validation error body.
-    #[error("validation (status={status})")]
+    #[error(
+        "validation (status={status}): {errors}",
+        errors = crate::redact::redact_join(.errors)
+    )]
     Validation {
         /// HTTP status code.
         status: u16,
