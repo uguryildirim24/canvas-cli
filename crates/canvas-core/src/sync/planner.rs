@@ -210,13 +210,20 @@ pub fn planner_item_to_entity(item: &PlannerItem) -> Option<EntityIngest> {
         );
         push_opt_bool(&mut fields, "dismissed", FieldGroup::Status, o.dismissed);
     }
-    // Preserve submissions blob and override for merge.
-    if let Some(ref subs) = item.submissions {
-        fields.push(FieldWrite {
-            name: "submissions_json",
-            group: FieldGroup::Status,
-            value: Some(submission_flags(subs).to_string()),
-        });
+    if let Some(subs) = &item.submissions {
+        for name in ["submitted", "graded", "late", "missing", "excused"] {
+            if let Some(v) = subs.get(name).filter(|v| v.is_boolean() || v.is_null()) {
+                fields.push(FieldWrite {
+                    name,
+                    group: FieldGroup::Status,
+                    value: if v.is_null() {
+                        None
+                    } else {
+                        Some(v.to_string())
+                    },
+                });
+            }
+        }
     }
     if let Some(ref o) = item.planner_override {
         if let Ok(json) = serde_json::to_string(o) {
@@ -243,6 +250,11 @@ const EXTRA_FIELDS: &[&str] = &[
     "marked_complete",
     "dismissed",
     "submissions_json",
+    "submitted",
+    "graded",
+    "late",
+    "missing",
+    "excused",
     "planner_override_json",
 ];
 
@@ -252,7 +264,6 @@ fn upsert_planner_item(
     fetched_at: Timestamp,
 ) -> Result<(), IngestError> {
     validate_fields(&entity.fields)?;
-    upsert_planner_assignment(tx, entity, fetched_at)?;
     tx.execute(
         "INSERT INTO planner_items (id) VALUES (?1) ON CONFLICT(id) DO NOTHING",
         params![entity.entity_key],
@@ -266,6 +277,7 @@ fn upsert_planner_item(
     )?;
     apply_planner_columns(tx, &entity.entity_key, &entity.fields, &applied.fields)?;
     merge_planner_extra(tx, &entity.entity_key, &entity.fields, &applied.fields)?;
+    upsert_planner_assignment(tx, entity, fetched_at)?;
     touch_planner_observed(
         tx,
         &entity.entity_key,
@@ -342,7 +354,18 @@ fn merge_planner_extra(
             None => {
                 obj.insert(field.name.into(), Value::Null);
             }
-            Some(v) if matches!(field.name, "marked_complete" | "dismissed") => {
+            Some(v)
+                if matches!(
+                    field.name,
+                    "marked_complete"
+                        | "dismissed"
+                        | "submitted"
+                        | "graded"
+                        | "late"
+                        | "missing"
+                        | "excused"
+                ) =>
+            {
                 obj.insert(field.name.into(), Value::Bool(v == "true" || v == "1"));
             }
             Some(v) if field.name.ends_with("_json") => {
@@ -407,16 +430,6 @@ fn touch_planner_observed(
     Ok(())
 }
 
-fn submission_flags(raw: &Value) -> Value {
-    let mut obj = Map::new();
-    for name in ["submitted", "graded", "late", "missing", "excused"] {
-        if let Some(value) = raw.get(name).filter(|v| v.is_boolean() || v.is_null()) {
-            obj.insert(name.into(), value.clone());
-        }
-    }
-    Value::Object(obj)
-}
-
 fn upsert_planner_assignment(
     tx: &Transaction<'_>,
     entity: &EntityIngest,
@@ -429,9 +442,10 @@ fn upsert_planner_assignment(
             .find(|f| f.name == name)
             .and_then(|f| f.value.as_deref())
     };
+    let stored = load_planner_data_json(tx, &entity.entity_key)?;
     let id = match value("plannable_type") {
         Some("assignment") => value("plannable_id"),
-        Some("quiz" | "discussion_topic") => value("assignment_id"),
+        Some("quiz" | "discussion_topic") => stored.get("assignment_id").and_then(Value::as_str),
         _ => None,
     };
     let Some(id) = id else { return Ok(()) };
@@ -450,20 +464,9 @@ fn upsert_planner_assignment(
             });
         }
     }
-    if let Some(raw) = value("submissions_json").and_then(|v| serde_json::from_str::<Value>(v).ok())
-    {
-        for name in ["submitted", "graded", "late", "missing", "excused"] {
-            if let Some(v) = raw.get(name) {
-                fields.push(FieldWrite {
-                    name,
-                    group: FieldGroup::Status,
-                    value: if v.is_null() {
-                        None
-                    } else {
-                        Some(v.to_string())
-                    },
-                });
-            }
+    for name in ["submitted", "graded", "late", "missing", "excused"] {
+        if let Some(field) = entity.fields.iter().find(|f| f.name == name) {
+            fields.push(field.clone());
         }
     }
     super::assignments::upsert_assignment(
@@ -507,6 +510,30 @@ pub(super) fn observed_planner(raw: &Value) -> Result<Option<EntityIngest>, supe
             group: FieldGroup::Core,
             value: None,
         });
+    }
+    if raw.get("submissions").is_some_and(Value::is_null) {
+        for name in ["submitted", "graded", "late", "missing", "excused"] {
+            entity.fields.retain(|f| f.name != name);
+            entity.fields.push(FieldWrite {
+                name,
+                group: FieldGroup::Status,
+                value: None,
+            });
+        }
+    }
+    for name in ["marked_complete", "dismissed"] {
+        if raw.get("planner_override").is_some_and(Value::is_null)
+            || raw["planner_override"]
+                .get(name)
+                .is_some_and(Value::is_null)
+        {
+            entity.fields.retain(|f| f.name != name);
+            entity.fields.push(FieldWrite {
+                name,
+                group: FieldGroup::Status,
+                value: None,
+            });
+        }
     }
     Ok(Some(entity))
 }
