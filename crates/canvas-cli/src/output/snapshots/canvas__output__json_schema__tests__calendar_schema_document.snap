@@ -782,6 +782,11 @@ expression: document(entry)
     "title": "canvas-cli/error@1",
     "type": "object"
   },
+  "output": {
+    "$comment": "One JSON document per invocation (SPEC §7). A command that aborts prints the error branch (SPEC §14).",
+    "flag": "--json",
+    "form": "envelope"
+  },
   "result": {
     "properties": {
       "items": {
