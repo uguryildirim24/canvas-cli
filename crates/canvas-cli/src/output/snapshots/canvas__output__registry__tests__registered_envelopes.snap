@@ -932,7 +932,7 @@ expression: rendered
         "response_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "user_id": "77"
       },
-      "response_kind": "created",
+      "response_kind": null,
       "server_match": null,
       "state": "posted",
       "subject": null,
