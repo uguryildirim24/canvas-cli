@@ -23,6 +23,12 @@ pub enum EventKind {
     SubmissionState,
     /// Registered for M8-a; this package writes no producer for it.
     InboxUnreadCount,
+    /// A person approved a plan (REPORT §3.5). Ids only, never a payload.
+    PlanApproved,
+    /// A person declined a plan.
+    PlanDeclined,
+    /// A person cancelled a plan.
+    PlanCancelled,
     /// The recorded observation could not be applied; rebuild the baseline.
     ResyncRequired,
 }
@@ -42,6 +48,9 @@ impl EventKind {
             Self::MissingNew => "missing.new",
             Self::SubmissionState => "submission.state",
             Self::InboxUnreadCount => "inbox.unread_count",
+            Self::PlanApproved => "plan.approved",
+            Self::PlanDeclined => "plan.declined",
+            Self::PlanCancelled => "plan.cancelled",
             Self::ResyncRequired => "resync_required",
         }
     }
@@ -66,6 +75,9 @@ impl EventKind {
             Self::MissingNew,
             Self::SubmissionState,
             Self::InboxUnreadCount,
+            Self::PlanApproved,
+            Self::PlanDeclined,
+            Self::PlanCancelled,
             Self::ResyncRequired,
         ]
     }
@@ -83,6 +95,7 @@ impl EventKind {
             Self::MissingNew => "missing",
             Self::SubmissionState => "submission",
             Self::InboxUnreadCount => "inbox",
+            Self::PlanApproved | Self::PlanDeclined | Self::PlanCancelled => "plan",
             Self::ResyncRequired => "resync",
         }
     }

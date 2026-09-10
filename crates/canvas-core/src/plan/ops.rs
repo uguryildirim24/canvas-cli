@@ -8,6 +8,7 @@ use jiff::Timestamp;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use uuid::Uuid;
 
+use crate::events::EventKind;
 use crate::store::{DbError, Store};
 use crate::submit::InputKind;
 
@@ -318,6 +319,7 @@ pub fn approve(
         if moved != 1 {
             return Err(DbError::Message("plan moved".into()));
         }
+        record_plan_decision(&tx, EventKind::PlanApproved, &plan_key)?;
         tx.commit()?;
         Ok(())
     })?;
@@ -326,6 +328,23 @@ pub fn approve(
 
 /// Invalidate a plan and every handle issued for it.
 pub fn invalidate(store: &Store, plan_id: &str, reason: &str) -> Result<PlanRow, PlanError> {
+    invalidate_recording(store, plan_id, reason, None)
+}
+
+/// Invalidate a plan, optionally recording the person's decision as an event.
+///
+/// The event commits with the state change, so a decision the log names is a
+/// decision the plan row already carries. It records the plan id and nothing
+/// else: what was in the plan stays in the plan (REPORT §3.5).
+///
+/// `None` is the invalidation `execute` performs when a meaningful fact
+/// changed. That is not a decision, so it produces no decision event.
+fn invalidate_recording(
+    store: &Store,
+    plan_id: &str,
+    reason: &str,
+    event: Option<EventKind>,
+) -> Result<PlanRow, PlanError> {
     let plan_key = plan_id.to_owned();
     let reason = reason.to_owned();
     store.call_blocking(move |conns| {
@@ -333,7 +352,7 @@ pub fn invalidate(store: &Store, plan_id: &str, reason: &str) -> Result<PlanRow,
             .state
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         // An executed plan is history; it is never rewritten.
-        tx.execute(
+        let moved = tx.execute(
             "UPDATE plans SET state = 'invalidated', invalidated_reason = ?1
              WHERE plan_id = ?2 AND state IN ('prepared','approved','expired')",
             params![reason, plan_key],
@@ -343,6 +362,11 @@ pub fn invalidate(store: &Store, plan_id: &str, reason: &str) -> Result<PlanRow,
              WHERE plan_id = ?2",
             params![jiff::Timestamp::now().to_string(), plan_key],
         )?;
+        if let Some(kind) = event
+            && moved == 1
+        {
+            record_plan_decision(&tx, kind, &plan_key)?;
+        }
         tx.commit()?;
         Ok(())
     })?;
@@ -354,12 +378,89 @@ pub fn invalidate(store: &Store, plan_id: &str, reason: &str) -> Result<PlanRow,
 /// Declining and cancelling both invalidate the plan and spend every handle
 /// issued for it, so neither the plan nor a handle can be replayed.
 pub fn decline(store: &Store, plan_id: &str) -> Result<PlanRow, PlanError> {
-    invalidate(store, plan_id, "declined")
+    invalidate_recording(store, plan_id, "declined", Some(EventKind::PlanDeclined))
 }
 
 /// The requester withdrew this plan.
 pub fn cancel(store: &Store, plan_id: &str) -> Result<PlanRow, PlanError> {
-    invalidate(store, plan_id, "cancelled")
+    invalidate_recording(store, plan_id, "cancelled", Some(EventKind::PlanCancelled))
+}
+
+/// Append one `plan.approved|declined|cancelled` event inside a transaction.
+///
+/// The payload is the plan id and the decision, and nothing else: no target,
+/// no digest, no bytes. The panel shows the person what they decided; the log
+/// records only that a decision happened (REPORT §3.5).
+fn record_plan_decision(
+    tx: &rusqlite::Transaction<'_>,
+    kind: EventKind,
+    plan_id: &str,
+) -> Result<(), DbError> {
+    let who = crate::events::identity(tx)?;
+    let assignment: Option<i64> = tx
+        .query_row(
+            "SELECT assignment_id FROM plans WHERE plan_id = ?1",
+            [plan_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let scope = assignment.map_or_else(|| "plan".to_owned(), |id| format!("assignment:{id}"));
+    let decision = kind.as_str().trim_start_matches("plan.").to_owned();
+    crate::events::insert_decision(
+        tx,
+        &who,
+        &format!("plan:{plan_id}:{decision}"),
+        &jiff::Timestamp::now().to_string(),
+        "plans",
+        &scope,
+        kind,
+        plan_id,
+        &decision,
+    )
+}
+
+/// Every prepared plan that still has an unspent handle, oldest first.
+///
+/// This is what the companion's panel shows: a plan a person can still decide
+/// on, with the handle that was issued for it. A plan with no handle is not
+/// waiting on a person; nobody has asked yet.
+pub fn awaiting_decision(store: &Store, now: Timestamp) -> Result<Vec<Awaiting>, PlanError> {
+    let now_text = now.to_string();
+    let rows: Vec<(String, String, Option<String>)> = store.call_blocking(move |conns| {
+        let mut stmt = conns.state.prepare(
+            "SELECT h.handle, h.plan_id, h.consumer
+             FROM approval_handles h JOIN plans p ON p.plan_id = h.plan_id
+             WHERE h.used_at IS NULL AND p.state = 'prepared' AND h.expires_at > ?1
+             ORDER BY p.created_at ASC, h.handle ASC",
+        )?;
+        Ok(stmt
+            .query_map([&now_text], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<Vec<_>, _>>()?)
+    })?;
+    let mut out = Vec::new();
+    for (handle, plan_id, consumer) in rows {
+        if let Some(plan) = load(store, &plan_id)? {
+            out.push(Awaiting {
+                handle,
+                consumer,
+                plan,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// One plan waiting for a decision, with the handle issued for it.
+#[derive(Debug, Clone)]
+pub struct Awaiting {
+    /// The server-issued handle. A decision must carry it back.
+    pub handle: String,
+    /// The consumer the **handle** was issued to, which is what `approve`
+    /// checks. It is not always the consumer that prepared the plan: the
+    /// handle is issued when somebody asks for a decision.
+    pub consumer: Option<String>,
+    /// The frozen plan.
+    pub plan: PlanRow,
 }
 
 /// Mark a plan expired. Only a plan still waiting can expire.

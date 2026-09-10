@@ -774,3 +774,165 @@ async fn a_decline_during_the_revalidation_read_is_named_as_the_decline() {
     assert_eq!(journals, 0, "a refusal never creates a journal");
     assert!(!saw_a_write(&server).await);
 }
+
+/// M7-b: a decision the log names is a decision the plan row already carries,
+/// and the event says nothing about what was in the plan.
+#[tokio::test]
+async fn a_panel_decision_is_recorded_as_an_event_with_ids_and_nothing_else() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    let client = test_client(&server.uri());
+    mount_assignment(&server, assignment_json()).await;
+    let now = Timestamp::now();
+
+    let read_events = || {
+        open.store
+            .call_blocking(|c| crate::events::read_after(&c.state, 0, 100))
+            .unwrap()
+    };
+
+    let approved = prepare(
+        &client,
+        &open.store,
+        &request(&paths, &doc),
+        text_input(),
+        now,
+    )
+    .await
+    .unwrap();
+    let handle = issue_handle(&open.store, &approved.plan.plan_id, None).unwrap();
+    let before = read_events().len();
+    approve(
+        &open.store,
+        &approved.plan.plan_id,
+        &handle,
+        ApprovalChannel::Panel,
+        None,
+        now,
+    )
+    .unwrap();
+    let events = read_events();
+    assert_eq!(events.len(), before + 1, "one event per decision");
+    let event = events.last().unwrap();
+    assert_eq!(event.kind, "plan.approved");
+    assert_eq!(
+        event.entity_key.as_deref(),
+        Some(approved.plan.plan_id.as_str())
+    );
+    // Ids and the decision. No target, no digest, no bytes.
+    let encoded = serde_json::to_string(event).unwrap();
+    assert!(!encoded.contains("hello"), "{encoded}");
+    assert!(!encoded.contains(&approved.plan.plan_sha256), "{encoded}");
+    assert_eq!(event.after["state"], "approved");
+
+    let declined = prepare(
+        &client,
+        &open.store,
+        &request(&paths, &doc),
+        text_input(),
+        now,
+    )
+    .await
+    .unwrap();
+    issue_handle(&open.store, &declined.plan.plan_id, None).unwrap();
+    super::decline(&open.store, &declined.plan.plan_id).unwrap();
+    assert_eq!(read_events().last().unwrap().kind, "plan.declined");
+
+    let cancelled = prepare(
+        &client,
+        &open.store,
+        &request(&paths, &doc),
+        text_input(),
+        now,
+    )
+    .await
+    .unwrap();
+    super::cancel(&open.store, &cancelled.plan.plan_id).unwrap();
+    assert_eq!(read_events().last().unwrap().kind, "plan.cancelled");
+
+    // Invalidation because a fact changed is not a decision, so it records
+    // nothing: only a person's answer produces one of these three kinds.
+    let changed = prepare(
+        &client,
+        &open.store,
+        &request(&paths, &doc),
+        text_input(),
+        now,
+    )
+    .await
+    .unwrap();
+    let count = read_events().len();
+    invalidate(&open.store, &changed.plan.plan_id, "due_at").unwrap();
+    assert_eq!(read_events().len(), count, "no decision was made");
+}
+
+/// M7-b: the panel is shown the plans a person can still decide on, with the
+/// handle that was issued for each.
+#[tokio::test]
+async fn only_a_prepared_plan_with_a_live_handle_awaits_a_decision() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    let client = test_client(&server.uri());
+    mount_assignment(&server, assignment_json()).await;
+    let now = Timestamp::now();
+
+    // Prepared, but nobody has asked for a decision yet.
+    let quiet = prepare(
+        &client,
+        &open.store,
+        &request(&paths, &doc),
+        text_input(),
+        now,
+    )
+    .await
+    .unwrap();
+    assert!(
+        super::awaiting_decision(&open.store, now)
+            .unwrap()
+            .is_empty(),
+        "a plan with no handle is not waiting on a person"
+    );
+
+    let handle = issue_handle(&open.store, &quiet.plan.plan_id, Some("mcp:host")).unwrap();
+    let waiting = super::awaiting_decision(&open.store, now).unwrap();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting[0].handle, handle);
+    assert_eq!(waiting[0].plan.plan_id, quiet.plan.plan_id);
+    // The handle's consumer, which is what `approve` checks. The plan itself
+    // was prepared by the CLI, which names none.
+    assert_eq!(waiting[0].consumer.as_deref(), Some("mcp:host"));
+    assert_eq!(waiting[0].plan.consumer, None);
+
+    // A decision spends the handle, so the plan leaves the panel.
+    approve(
+        &open.store,
+        &quiet.plan.plan_id,
+        &handle,
+        ApprovalChannel::Panel,
+        Some("mcp:host"),
+        now,
+    )
+    .unwrap();
+    assert!(
+        super::awaiting_decision(&open.store, now)
+            .unwrap()
+            .is_empty()
+    );
+
+    // An expired handle is not a decision anybody can still make.
+    let stale = prepare(
+        &client,
+        &open.store,
+        &request(&paths, &doc),
+        text_input(),
+        now,
+    )
+    .await
+    .unwrap();
+    issue_handle(&open.store, &stale.plan.plan_id, None).unwrap();
+    assert!(
+        super::awaiting_decision(&open.store, now + super::EXPIRY)
+            .unwrap()
+            .is_empty()
+    );
+}
