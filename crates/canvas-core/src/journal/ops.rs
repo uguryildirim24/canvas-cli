@@ -210,81 +210,78 @@ pub fn transition(
     };
     let terminal = to.is_terminal();
 
-    store.call_blocking(move |conns| {
-        let tx = conns.state.unchecked_transaction()?;
-        let mut sql = format!(
-            "UPDATE submission_journal SET state = ?1, {ts_col} = ?2"
-        );
-        if terminal {
-            sql.push_str(", terminal_at = ?2");
-        }
-        if patch.set_posting_started_at {
-            sql.push_str(", posting_started_at = ?2");
-        }
-        if patch.error_text.is_some() {
-            sql.push_str(", error_text = ?3");
-        }
-        if patch.response_kind.is_some() {
-            sql.push_str(", response_kind = ?4");
-        }
-        if patch.not_submitted_evidence.is_some() {
-            sql.push_str(", not_submitted_evidence = ?5");
-        }
-        if patch.response_record_json.is_some() {
-            sql.push_str(", response_record_json = ?6");
-        }
-        if patch.receipt_record_json.is_some() {
-            sql.push_str(", receipt_record_json = ?7");
-        }
-        if patch.readback_record_json.is_some() {
-            sql.push_str(", readback_record_json = ?8");
-        }
-        if patch.server_match_json.is_some() {
-            sql.push_str(", server_match_json = ?9");
-        }
-        if patch.uploaded_file_ids_json.is_some() {
-            sql.push_str(", uploaded_file_ids_json = ?10");
-        }
-        if let Some(Some(_)) = patch.post_status {
-            sql.push_str(", post_status = ?11");
-        } else if let Some(None) = patch.post_status {
-            sql.push_str(", post_status = NULL");
-        }
-        sql.push_str(" WHERE journal_id = ?12 AND state = ?13");
+    store
+        .call_blocking(move |conns| {
+            let tx = conns.state.unchecked_transaction()?;
+            let mut sql = format!("UPDATE submission_journal SET state = ?1, {ts_col} = ?2");
+            if terminal {
+                sql.push_str(", terminal_at = ?2");
+            }
+            if patch.set_posting_started_at {
+                sql.push_str(", posting_started_at = ?2");
+            }
+            if patch.error_text.is_some() {
+                sql.push_str(", error_text = ?3");
+            }
+            if patch.response_kind.is_some() {
+                sql.push_str(", response_kind = ?4");
+            }
+            if patch.not_submitted_evidence.is_some() {
+                sql.push_str(", not_submitted_evidence = ?5");
+            }
+            if patch.response_record_json.is_some() {
+                sql.push_str(", response_record_json = ?6");
+            }
+            if patch.receipt_record_json.is_some() {
+                sql.push_str(", receipt_record_json = ?7");
+            }
+            if patch.readback_record_json.is_some() {
+                sql.push_str(", readback_record_json = ?8");
+            }
+            if patch.server_match_json.is_some() {
+                sql.push_str(", server_match_json = ?9");
+            }
+            if patch.uploaded_file_ids_json.is_some() {
+                sql.push_str(", uploaded_file_ids_json = ?10");
+            }
+            if let Some(Some(_)) = patch.post_status {
+                sql.push_str(", post_status = ?11");
+            } else if let Some(None) = patch.post_status {
+                sql.push_str(", post_status = NULL");
+            }
+            sql.push_str(" WHERE journal_id = ?12 AND state = ?13");
 
-        let changed = tx.execute(
-            &sql,
-            params![
-                to_s,
-                now,
-                patch.error_text,
-                patch.response_kind.map(|k| k.as_str().to_string()),
-                patch
-                    .not_submitted_evidence
-                    .map(|e| e.as_str().to_string()),
-                patch.response_record_json,
-                patch.receipt_record_json,
-                patch.readback_record_json,
-                patch.server_match_json,
-                patch.uploaded_file_ids_json,
-                patch.post_status.and_then(|p| p),
-                jid,
-                from_s,
-            ],
-        )?;
-        if changed == 0 {
-            return Err(DbError::Message("state conflict".into()));
-        }
-        tx.commit()?;
-        Ok(())
-    })
-    .map_err(|e| {
-        if e.to_string().contains("state conflict") {
-            JournalError::StateConflict
-        } else {
-            JournalError::Store(e)
-        }
-    })
+            let changed = tx.execute(
+                &sql,
+                params![
+                    to_s,
+                    now,
+                    patch.error_text,
+                    patch.response_kind.map(|k| k.as_str().to_string()),
+                    patch.not_submitted_evidence.map(|e| e.as_str().to_string()),
+                    patch.response_record_json,
+                    patch.receipt_record_json,
+                    patch.readback_record_json,
+                    patch.server_match_json,
+                    patch.uploaded_file_ids_json,
+                    patch.post_status.and_then(|p| p),
+                    jid,
+                    from_s,
+                ],
+            )?;
+            if changed == 0 {
+                return Err(DbError::Message("state conflict".into()));
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .map_err(|e| {
+            if e.to_string().contains("state conflict") {
+                JournalError::StateConflict
+            } else {
+                JournalError::Store(e)
+            }
+        })
 }
 
 /// Append a Canvas file id after a successful upload.
@@ -346,43 +343,44 @@ pub fn commit_success(
     let assignments_scope = format!("assignments:course:{course_id}");
     let totals_scope = format!("course_totals:course:{course_id}");
 
-    store.call_blocking(move |conns| {
-        let tx = conns.state.unchecked_transaction()?;
-        let changed = tx.execute(
-            "UPDATE submission_journal SET
+    store
+        .call_blocking(move |conns| {
+            let tx = conns.state.unchecked_transaction()?;
+            let changed = tx.execute(
+                "UPDATE submission_journal SET
                 state = 'submitted',
                 submitted_at = ?1,
                 terminal_at = ?1,
                 response_record_json = ?2,
                 receipt_record_json = ?3
              WHERE journal_id = ?4 AND state = 'posting'",
-            params![now, response_json, receipt_json, jid],
-        )?;
-        if changed == 0 {
-            return Err(DbError::Message("state conflict".into()));
-        }
-        bump_epochs(
-            &[
-                submission_scope.as_str(),
-                assignments_scope.as_str(),
-                ag.as_str(),
-                "missing:all",
-                "planner:*",
-                "enrollment_grades:*",
-                totals_scope.as_str(),
-            ],
-            &tx,
-        )?;
-        tx.commit()?;
-        Ok(())
-    })
-    .map_err(|e| {
-        if e.to_string().contains("state conflict") {
-            JournalError::StateConflict
-        } else {
-            JournalError::Store(e)
-        }
-    })
+                params![now, response_json, receipt_json, jid],
+            )?;
+            if changed == 0 {
+                return Err(DbError::Message("state conflict".into()));
+            }
+            bump_epochs(
+                &[
+                    submission_scope.as_str(),
+                    assignments_scope.as_str(),
+                    ag.as_str(),
+                    "missing:all",
+                    "planner:*",
+                    "enrollment_grades:*",
+                    totals_scope.as_str(),
+                ],
+                &tx,
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+        .map_err(|e| {
+            if e.to_string().contains("state conflict") {
+                JournalError::StateConflict
+            } else {
+                JournalError::Store(e)
+            }
+        })
 }
 
 /// Owner-absent recovery. `Ok(None)` if owner is live.
@@ -621,10 +619,7 @@ mod tests {
                 }
             }));
         }
-        let results: Vec<_> = handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect();
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
         let successes = results.iter().filter(|r| matches!(r, Ok(true))).count();
         let blocked = results
             .iter()
@@ -665,10 +660,22 @@ mod tests {
         let (_dir, paths, store, doc) = setup();
         let _adm = AdmissionLock::try_acquire(&paths.identity_dir, 3).unwrap();
         let (jid, _owner) = create(&store, &paths.identity_dir, &opts_for(&doc, 3)).unwrap();
-        transition(&store, &jid, State::Planned, State::Uploading, TransitionPatch::default())
-            .unwrap();
-        transition(&store, &jid, State::Uploading, State::Uploaded, TransitionPatch::default())
-            .unwrap();
+        transition(
+            &store,
+            &jid,
+            State::Planned,
+            State::Uploading,
+            TransitionPatch::default(),
+        )
+        .unwrap();
+        transition(
+            &store,
+            &jid,
+            State::Uploading,
+            State::Uploaded,
+            TransitionPatch::default(),
+        )
+        .unwrap();
         mark_posting(&store, &jid).unwrap();
         let posted = allowlist_from_json(
             Evidence::PostResponse,
@@ -693,7 +700,8 @@ mod tests {
     #[test]
     fn planned_kill_helper_subprocess() {
         if let Ok(root) = std::env::var("CANVAS_JOURNAL_KILL_ROOT") {
-            let key = IdentityDocument::new("https://canvas.example", 7, "2026-01-01T00:00:00Z").key;
+            let key =
+                IdentityDocument::new("https://canvas.example", 7, "2026-01-01T00:00:00Z").key;
             let paths = Paths::for_identity(root, &key);
             let jid = std::env::var("CANVAS_JOURNAL_KILL_ID").unwrap();
             let _owner = OwnerLock::acquire(&paths.identity_dir, &jid).unwrap();

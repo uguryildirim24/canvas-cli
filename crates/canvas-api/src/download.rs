@@ -25,15 +25,21 @@ pub async fn download(
 
     let mut attempt = 0_u32;
     loop {
-        match download_once(client, url.clone(), &mut sink, expected_size, &mut on_progress).await
+        match download_once(
+            client,
+            url.clone(),
+            &mut sink,
+            expected_size,
+            &mut on_progress,
+        )
+        .await
         {
             Err(Error::RateLimited) if attempt < 4 => {
                 let _delay = retry_delays(attempt, None, client.governor().jitter()).await;
                 attempt += 1;
             }
             Err(Error::Forbidden {
-                rate_limited: true,
-                ..
+                rate_limited: true, ..
             }) if attempt < 4 => {
                 let _delay = retry_delays(attempt, None, client.governor().jitter()).await;
                 attempt += 1;

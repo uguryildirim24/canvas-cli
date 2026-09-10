@@ -49,13 +49,9 @@ pub async fn upload_submission_file(
     meta: &UploadMeta,
     mut body: impl AsyncRead + Unpin + Send,
 ) -> Result<UploadResult, Error> {
-    let path = format!(
-        "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/self/files"
-    );
-    let url = client
-        .origin()
-        .join(&path)
-        .map_err(|_| Error::Network)?;
+    let path =
+        format!("/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/self/files");
+    let url = client.origin().join(&path).map_err(|_| Error::Network)?;
     // Canvas accepts JSON or form; JSON keeps the API phase simple.
     let req = ApiRequest::new(reqwest::Method::POST, url).json(&json!({
         "name": meta.name,
@@ -100,10 +96,7 @@ pub async fn upload_submission_file(
     Ok(UploadResult { file_id, sha256 })
 }
 
-async fn complete_upload(
-    client: &Client,
-    resp: &crate::TransferResponse,
-) -> Result<i64, Error> {
+async fn complete_upload(client: &Client, resp: &crate::TransferResponse) -> Result<i64, Error> {
     let status = resp.status.as_u16();
     if matches!(status, 301 | 302 | 303 | 307 | 308) {
         let location = location_from(&resp.headers, &resp.final_url)?;
@@ -147,9 +140,7 @@ fn json_id(value: &serde_json::Value) -> Option<i64> {
 fn location_from(headers: &reqwest::header::HeaderMap, base: &Url) -> Result<Url, Error> {
     let raw = headers
         .get(LOCATION)
-        .ok_or(Error::UploadIncomplete {
-            status: 0,
-        })?
+        .ok_or(Error::UploadIncomplete { status: 0 })?
         .to_str()
         .map_err(|_| Error::UploadIncomplete { status: 0 })?;
     base.join(raw)
@@ -189,8 +180,5 @@ fn build_multipart(
 }
 
 fn hex_short(bytes: &[u8; 32]) -> String {
-    bytes[..8]
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    bytes[..8].iter().map(|b| format!("{b:02x}")).collect()
 }
