@@ -95,6 +95,9 @@ struct CacheConfig {
     ttl_modules: Option<String>,
     ttl_announcements: Option<String>,
     ttl_calendar: Option<String>,
+    ttl_pages: Option<String>,
+    ttl_discussions: Option<String>,
+    ttl_inbox: Option<String>,
 }
 
 impl Session {
@@ -520,6 +523,40 @@ pub fn ttl_calendar() -> jiff::Span {
             .as_deref(),
         1,
         true,
+    )
+}
+
+/// Default pages TTL (1h), optionally overridden by config.
+#[must_use]
+pub fn ttl_pages() -> jiff::Span {
+    parse_ttl(
+        read_config().unwrap_or_default().cache.ttl_pages.as_deref(),
+        1,
+        true,
+    )
+}
+
+/// Default discussions TTL (15m), optionally overridden by config.
+#[must_use]
+pub fn ttl_discussions() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_discussions
+            .as_deref(),
+        15,
+        false,
+    )
+}
+
+/// Default inbox TTL (5m), optionally overridden by config.
+#[must_use]
+pub fn ttl_inbox() -> jiff::Span {
+    parse_ttl(
+        read_config().unwrap_or_default().cache.ttl_inbox.as_deref(),
+        5,
+        false,
     )
 }
 

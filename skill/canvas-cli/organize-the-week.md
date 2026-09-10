@@ -24,6 +24,24 @@ The user asks what is due, what is missing, or what this week looks like.
    reports and nothing more: a `period` of `current`, `all`, or a
    grading-period id, and a `course` for one course's assignment groups.
    Never compute a grade of your own.
+6. `inbox.unread_count` if the user asks whether anyone is waiting on them.
+   It is one number for the whole identity, and `null` means Canvas did not
+   say — never read `null` as zero. `inbox.list` then shows the
+   conversations, with `scope` of `inbox` (the default), `unread`, `sent`, or
+   `archived`, and `inbox.get` opens one with its messages and attachments.
+7. `discussions.list` if a course's work is happening in a thread.
+   `discussion.get` shows one topic, and `replies: true` reads the thread.
+
+## What reading does not do
+
+Nothing here marks anything read. Every inbox request says
+`auto_mark_as_read=false`, and no discussion, announcement, or conversation
+changes state because you looked at it. Say so if the user worries about it:
+their unread badges are exactly as they left them.
+
+`inbox.get` reports `messages_complete`. When it is `false` only the listing
+row was cached, so an empty `messages` array does not mean the conversation
+is empty — say the messages were not read rather than that there are none.
 
 ## Reporting
 
@@ -54,6 +72,11 @@ calendar.list { "days": 7 }
 announcements.list { "since": "7d" }
 announcement.get { "course": "CHEM", "id": "88" }
 grades.get { "period": "current" }
+inbox.unread_count {}
+inbox.list { "scope": "unread" }
+inbox.get { "id": "700" }
+discussions.list { "course": "CHEM", "unread": true }
+discussion.get { "course": "CHEM", "discussion": "55" }
 open.url { "target": "CHEM" }
 ```
 

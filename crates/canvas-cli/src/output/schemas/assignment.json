@@ -29,9 +29,25 @@
     "points_possible": 10.0,
     "rubric": [
       {
+        "criterion_use_range": false,
         "description": "Reasoning",
         "id": "c1",
-        "points": 10.0
+        "long_description": "Shows the steps that lead to the answer.",
+        "points": 10.0,
+        "ratings": [
+          {
+            "description": "Full marks",
+            "id": "_1001",
+            "long_description": null,
+            "points": 10.0
+          },
+          {
+            "description": "No marks",
+            "id": "_1002",
+            "long_description": null,
+            "points": 0.0
+          }
+        ]
       }
     ],
     "rubric_assessed": false,

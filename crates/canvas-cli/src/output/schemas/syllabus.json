@@ -1,0 +1,15 @@
+{
+  "course_id": "1",
+  "embedded": [],
+  "external_links": [],
+  "files": [
+    {
+      "file_id": "42",
+      "name": "Syllabus.pdf",
+      "url": "https://canvas.test/courses/1/files/42"
+    }
+  ],
+  "syllabus_markdown": "Bring a calculator.",
+  "truncated": false,
+  "updated_at": null
+}

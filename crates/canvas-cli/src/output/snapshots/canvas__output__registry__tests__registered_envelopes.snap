@@ -347,9 +347,25 @@ expression: rendered
         "points_possible": 10.0,
         "rubric": [
           {
+            "criterion_use_range": false,
             "description": "Reasoning",
             "id": "c1",
-            "points": 10.0
+            "long_description": "Shows the steps that lead to the answer.",
+            "points": 10.0,
+            "ratings": [
+              {
+                "description": "Full marks",
+                "id": "_1001",
+                "long_description": null,
+                "points": 10.0
+              },
+              {
+                "description": "No marks",
+                "id": "_1002",
+                "long_description": null,
+                "points": 0.0
+              }
+            ]
           }
         ],
         "rubric_assessed": false,
@@ -580,7 +596,8 @@ expression: rendered
           {
             "comments": "Clear reasoning.",
             "criterion_id": "c1",
-            "points": 8.5
+            "points": 8.5,
+            "rating_id": "_5721"
           }
         ],
         "score": 8.5,
@@ -1653,6 +1670,372 @@ expression: rendered
       "recovered_journals": []
     },
     "schema": "canvas-cli/doctor@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course_id": "1",
+      "listing": {
+        "available": true,
+        "http_status": null
+      },
+      "pages": [
+        {
+          "front_page": true,
+          "id": "301",
+          "published": true,
+          "title": "Course Overview",
+          "updated_at": "2026-09-01T14:00:00Z",
+          "url": "course-overview"
+        }
+      ]
+    },
+    "schema": "canvas-cli/pages@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "page": {
+        "body_markdown": "Read the syllabus.\n\n[embedded iframe: unavailable to this tool]",
+        "course_id": "1",
+        "embedded": [
+          {
+            "kind": "iframe",
+            "reported": "unavailable",
+            "src_origin": "https://player.test"
+          }
+        ],
+        "external_links": [
+          {
+            "url": "https://elsewhere.test/notes"
+          }
+        ],
+        "files": [
+          {
+            "file_id": "42",
+            "name": "Syllabus.pdf",
+            "url": "https://canvas.test/courses/1/files/42"
+          }
+        ],
+        "front_page": true,
+        "html_url": "https://canvas.test/courses/1/pages/course-overview",
+        "id": "301",
+        "locked_for_user": false,
+        "published": true,
+        "title": "Course Overview",
+        "truncated": false,
+        "updated_at": "2026-09-01T14:00:00Z",
+        "url": "course-overview"
+      }
+    },
+    "schema": "canvas-cli/page@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course_id": "1",
+      "embedded": [],
+      "external_links": [],
+      "files": [
+        {
+          "file_id": "42",
+          "name": "Syllabus.pdf",
+          "url": "https://canvas.test/courses/1/files/42"
+        }
+      ],
+      "syllabus_markdown": "Bring a calculator.",
+      "truncated": false,
+      "updated_at": null
+    },
+    "schema": "canvas-cli/syllabus@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course_id": "1",
+      "discussions": [
+        {
+          "assignment_id": "2",
+          "author": "Dr. Reed",
+          "course_id": "1",
+          "group_category_id": "9",
+          "html_url": "https://canvas.test/courses/1/discussion_topics/55",
+          "id": "55",
+          "is_announcement": false,
+          "last_reply_at": "2026-09-08T10:00:00Z",
+          "locked": false,
+          "pinned": false,
+          "points_possible": 5.0,
+          "posted_at": "2026-09-01T14:00:00Z",
+          "read_state": "unread",
+          "reply_count": 4,
+          "require_initial_post": true,
+          "title": "Week 1 reflection",
+          "unread_count": 2
+        }
+      ],
+      "listing": {
+        "available": true,
+        "http_status": null
+      }
+    },
+    "schema": "canvas-cli/discussions@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "discussion": {
+        "assignment_id": "2",
+        "author": "Dr. Reed",
+        "course_id": "1",
+        "discussion_type": "threaded",
+        "embedded": [],
+        "external_links": [],
+        "files": [],
+        "group_category_id": "9",
+        "group_topic_children": [
+          {
+            "group_id": "77",
+            "id": "56"
+          }
+        ],
+        "html_url": "https://canvas.test/courses/1/discussion_topics/55",
+        "id": "55",
+        "is_announcement": false,
+        "last_reply_at": "2026-09-08T10:00:00Z",
+        "locked": false,
+        "message_markdown": "What surprised you this week?",
+        "pinned": false,
+        "points_possible": 5.0,
+        "posted_at": "2026-09-01T14:00:00Z",
+        "read_state": "unread",
+        "replies": [
+          {
+            "created_at": "2026-09-02T09:00:00Z",
+            "id": "900",
+            "message_markdown": "The lab took longer than I expected.",
+            "parent_id": null,
+            "read_state": "unread",
+            "replies_count": 1,
+            "truncated": false,
+            "user_id": "31",
+            "user_name": "Alex Kim"
+          }
+        ],
+        "replies_coverage": {
+          "blocked": null,
+          "complete": true,
+          "pages_fetched": 2
+        },
+        "replies_page": 1,
+        "replies_total": 1,
+        "reply_count": 4,
+        "require_initial_post": true,
+        "title": "Week 1 reflection",
+        "truncated": false,
+        "unread_count": 2
+      }
+    },
+    "schema": "canvas-cli/discussion@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "conversations": [
+        {
+          "context_name": "CHEM-101",
+          "id": "700",
+          "last_message_at": "2026-09-09T12:00:00Z",
+          "message_count": 3,
+          "participants": [
+            {
+              "id": "31",
+              "name": "Alex Kim"
+            }
+          ],
+          "starred": false,
+          "subject": "Lab partner",
+          "workflow_state": "unread"
+        }
+      ],
+      "listing": {
+        "available": true,
+        "http_status": null
+      },
+      "scope": "inbox"
+    },
+    "schema": "canvas-cli/inbox@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "conversation": {
+        "context_name": "CHEM-101",
+        "id": "700",
+        "last_message_at": "2026-09-09T12:00:00Z",
+        "messages": [
+          {
+            "attachments": [
+              {
+                "file_id": "42",
+                "name": "notes.pdf",
+                "size": 20480
+              }
+            ],
+            "author_id": "31",
+            "body": "Can we meet before the lab?",
+            "created_at": "2026-09-09T12:00:00Z",
+            "id": "9001",
+            "truncated": false
+          }
+        ],
+        "messages_complete": true,
+        "participants": [
+          {
+            "id": "31",
+            "name": "Alex Kim"
+          }
+        ],
+        "subject": "Lab partner",
+        "workflow_state": "unread"
+      }
+    },
+    "schema": "canvas-cli/conversation@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "unread_count": 2
+    },
+    "schema": "canvas-cli/inbox_unread@1",
     "warnings": []
   },
   {

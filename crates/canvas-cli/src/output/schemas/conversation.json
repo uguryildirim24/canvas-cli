@@ -1,0 +1,32 @@
+{
+  "conversation": {
+    "context_name": "CHEM-101",
+    "id": "700",
+    "last_message_at": "2026-09-09T12:00:00Z",
+    "messages": [
+      {
+        "attachments": [
+          {
+            "file_id": "42",
+            "name": "notes.pdf",
+            "size": 20480
+          }
+        ],
+        "author_id": "31",
+        "body": "Can we meet before the lab?",
+        "created_at": "2026-09-09T12:00:00Z",
+        "id": "9001",
+        "truncated": false
+      }
+    ],
+    "messages_complete": true,
+    "participants": [
+      {
+        "id": "31",
+        "name": "Alex Kim"
+      }
+    ],
+    "subject": "Lab partner",
+    "workflow_state": "unread"
+  }
+}
