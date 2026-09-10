@@ -725,6 +725,44 @@ async fn a_body_over_the_bound_is_cut_and_never_called_complete() {
     );
 }
 
+/// A reply is a document too: cutting one is a partial answer, never a
+/// complete thread.
+#[tokio::test]
+async fn a_cut_reply_body_is_a_partial_answer() {
+    let server = MockServer::start().await;
+    let limit = canvas_core::markdown::BODY_LIMIT;
+    mount(&server, "/api/v1/users/self", json!({"id": 123})).await;
+    mount(&server, "/api/v1/courses/5/discussion_topics/55", topic(55)).await;
+    let mut long = entry(9001, 1);
+    long["message"] = json!(format!("<p>{}</p>", "y".repeat(limit + 4096)));
+    mount(
+        &server,
+        "/api/v1/courses/5/discussion_topics/55/entries",
+        json!([long, entry(9002, 2)]),
+    )
+    .await;
+    let f = Fixture::new(&server.uri());
+
+    let out = f.run(&["discussion", "5", "55", "--replies"], 12).await;
+    let replies = out["result"]["discussion"]["replies"].as_array().unwrap();
+    assert_eq!(replies[0]["truncated"], true);
+    assert!(replies[0]["message_markdown"].as_str().unwrap().len() <= limit);
+    assert_eq!(replies[1]["truncated"], false);
+    // The reply set itself is covered; only the one body was cut.
+    assert_eq!(
+        out["result"]["discussion"]["replies_coverage"]["complete"],
+        true
+    );
+    assert_eq!(out["outcome"], "partial");
+    assert_eq!(out["partial"][0]["scope"], "discussion_entries:topic:55");
+    assert!(
+        out["partial"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not complete")
+    );
+}
+
 /// A Canvas body and a Canvas `html_url` can both carry a capability. §15
 /// keeps one out of the cache and out of the JSON.
 #[tokio::test]

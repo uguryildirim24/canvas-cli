@@ -284,6 +284,29 @@ pub async fn run_show(
         rich.refs.truncated,
         &format!("discussion:{topic_id}"),
     );
+    // A reply body is bounded like every other body, so a cut one is a partial
+    // answer too; the topic message is not the only text this command returns.
+    let cut = envelope
+        .result
+        .discussion
+        .replies
+        .iter()
+        .filter(|reply| reply.truncated)
+        .count();
+    if cut > 0 {
+        let message = format!(
+            "{cut} reply bodies truncated at {} bytes; the text is not complete",
+            canvas_core::markdown::BODY_LIMIT
+        );
+        envelope.partial.push(PartialScope {
+            scope: format!("discussion_entries:topic:{topic_id}"),
+            http_status: None,
+            message: message.clone(),
+        });
+        envelope.warnings.push(message);
+        envelope.outcome = Outcome::Partial;
+        envelope.exit = 12;
+    }
 
     // The gate is a refusal, not a partial answer: the thread is not readable
     // until this user posts, so `--replies` cannot be served at all.
