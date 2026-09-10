@@ -322,7 +322,10 @@ never resends, and never claims more than it observed.
    the same sentence, and a person can write the same sentence twice. The
    state that carries a digest match is `matched`, and the wording says the
    thread holds a message with the same digest and nothing links it to this
-   request.
+   request. The candidate must also be this identity's own writing: an object
+   Canvas attributes to somebody else resolves nothing. An object with no
+   author at all leaves the question open, because a digest match is
+   `unproven` either way.
 8. **A readback that did not cover the whole thread cannot prove absence.**
    When `complete` is false, a `not_found` verdict carries a warning saying
    so, and `--assume-not-posted` is refused however old the journal is. The

@@ -142,8 +142,9 @@ async fn run(
     ops::recover_owned(store, &owner, journal_id)?;
     let row = ops::require(store, journal_id)?;
 
-    let readback = read_thread(client, &row).await?;
-    let found = match_of(&row, &readback);
+    let me = ops::identity_user_id(store)?;
+    let readback = read_thread(client, &row, me.as_deref()).await?;
+    let found = match_of(&row, &readback, me.as_deref());
 
     // Enrichment is the same for both commands: the journal records what was
     // seen, and an acceptance whose object is now visible becomes `observed`.
@@ -243,14 +244,17 @@ fn persist_identity(store: &Store, journal_id: &str) -> Result<(), OperationErro
 /// is nothing to read.
 pub async fn readback(
     client: &Client,
+    store: &Store,
     row: &OperationRow,
 ) -> Result<OperationReadback, OperationError> {
-    read_thread(client, row).await
+    let me = ops::identity_user_id(store)?;
+    read_thread(client, row, me.as_deref()).await
 }
 
 async fn read_thread(
     client: &Client,
     row: &OperationRow,
+    me: Option<&str>,
 ) -> Result<OperationReadback, OperationError> {
     let read_at = Timestamp::now().to_string();
     let empty = |complete: bool| OperationReadback {
@@ -299,17 +303,19 @@ async fn read_thread(
     };
 
     // Prefer the object the acceptance named. Fall back to a message that
-    // carries the digest this operation sent, which is the weaker evidence.
+    // carries the digest this operation sent *and* was written by this
+    // identity, which is the weaker evidence: a classmate who typed the same
+    // sentence is not this journal's post, and an object whose author Canvas
+    // names as somebody else must never resolve it.
     let wanted_id = row.response.as_ref().and_then(|r| r.id.clone());
     let digest = sent_digest(row);
     let found = objects
         .iter()
         .find(|object| wanted_id.is_some() && json_id(object.get("id")) == wanted_id)
         .or_else(|| {
-            objects
-                .iter()
-                .rev()
-                .find(|object| body_digest(object).as_deref() == Some(digest.as_str()))
+            objects.iter().rev().find(|object| {
+                body_digest(object).as_deref() == Some(digest.as_str()) && written_by(object, me)
+            })
         });
     if let Some(object) = found {
         readback.id = json_id(object.get("id"));
@@ -331,6 +337,22 @@ async fn read_thread(
     Ok(readback)
 }
 
+/// Whether this identity wrote the object, as far as Canvas says.
+///
+/// An object whose author Canvas names as someone else is never this journal's
+/// post. An object with no author at all, or a store with no user id, leaves
+/// the question open — a digest match is `unproven` either way, and refusing
+/// it there would only lose evidence.
+fn written_by(object: &Value, me: Option<&str>) -> bool {
+    let Some(me) = me else {
+        return true;
+    };
+    match json_id(object.get("user_id").or_else(|| object.get("author_id"))) {
+        Some(author) => author == me,
+        None => true,
+    }
+}
+
 /// The digest of what this operation sent, as Canvas would echo it.
 fn sent_digest(row: &OperationRow) -> String {
     hex_sha256(row.intended.body.outbound_bytes.as_bytes())
@@ -345,10 +367,20 @@ fn body_digest(object: &Value) -> Option<String> {
 }
 
 /// A digest-only candidate, when the readback found one and no id links it.
-fn match_of(row: &OperationRow, readback: &OperationReadback) -> Option<ServerMatch> {
+fn match_of(
+    row: &OperationRow,
+    readback: &OperationReadback,
+    me: Option<&str>,
+) -> Option<ServerMatch> {
     let id = readback.id.clone()?;
     let digest = readback.body_sha256.clone()?;
     if digest != sent_digest(row) {
+        return None;
+    }
+    // The candidate must be this identity's own writing (see `written_by`).
+    if let (Some(me), Some(author)) = (me, readback.user_id.as_deref())
+        && author != me
+    {
         return None;
     }
     Some(ServerMatch {
