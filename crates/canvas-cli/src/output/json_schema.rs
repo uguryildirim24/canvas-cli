@@ -14,12 +14,13 @@ use crate::output::registry::{
     self, AliasResult, AnnouncementResult, AnnouncementsResult, CacheStatsResult, CalendarResult,
     ConversationResult, CourseResult, CoursesResult, DiscussionResult, DiscussionsResult,
     DownloadResult, FilesResult, GradesResult, InboxResult, InboxUnreadResult, ModulesResult,
-    PageResult, PagesResult, PlanResult, SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS,
-    SCHEMA_CACHE, SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES,
-    SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_ERROR, SCHEMA_FILES,
-    SCHEMA_GRADES, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_PAGE, SCHEMA_PAGES,
-    SCHEMA_PLAN, SCHEMA_SUBMIT, SCHEMA_SYLLABUS, SCHEMA_SYNC, SchemaEntry, SubmitResult,
-    SyllabusResult, SyncResult,
+    OperationReconcileResult, OperationResult, PageResult, PagesResult, PlanResult, SCHEMA_ALIAS,
+    SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_CACHE, SCHEMA_CALENDAR, SCHEMA_CONVERSATION,
+    SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD,
+    SCHEMA_ERROR, SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD, SCHEMA_MODULES,
+    SCHEMA_OPERATION, SCHEMA_OPERATION_RECONCILE, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_PLAN,
+    SCHEMA_SUBMIT, SCHEMA_SYLLABUS, SCHEMA_SYNC, SchemaEntry, SubmitResult, SyllabusResult,
+    SyncResult,
 };
 
 /// The contract version of the document `canvas schema` prints.
@@ -93,6 +94,8 @@ fn result_schema(entry: &SchemaEntry) -> (Value, &'static str) {
         (SCHEMA_CACHE, Some("stats")) => Some(schema_of::<CacheStatsResult>()),
         (SCHEMA_SUBMIT, _) => Some(schema_of::<SubmitResult>()),
         (SCHEMA_PLAN, _) => Some(schema_of::<PlanResult>()),
+        (SCHEMA_OPERATION, _) => Some(schema_of::<OperationResult>()),
+        (SCHEMA_OPERATION_RECONCILE, _) => Some(schema_of::<OperationReconcileResult>()),
         (SCHEMA_FILES, _) => Some(schema_of::<FilesResult>()),
         (SCHEMA_MODULES, _) => Some(schema_of::<ModulesResult>()),
         (SCHEMA_GRADES, _) => Some(schema_of::<GradesResult>()),

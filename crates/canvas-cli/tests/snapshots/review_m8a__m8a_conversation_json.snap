@@ -63,7 +63,9 @@ expression: "normalized(one, &server.uri())"
       ],
       "subject": "Conversation 700",
       "workflow_state": "unread"
-    }
+    },
+    "pending": false,
+    "pending_journals": []
   },
   "schema": "canvas-cli/conversation@1",
   "warnings": []

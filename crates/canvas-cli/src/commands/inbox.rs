@@ -78,6 +78,9 @@ pub async fn handle_list(globals: &Globals, scope: Option<String>) -> Handled {
     };
 
     let denial = outcome.error.as_deref().and_then(listing_denial_status);
+    // §10: a conversation this CLI started and did not resolve makes every
+    // inbox read uncertain, whatever the cache says.
+    let pending = pending_operations(&session, canvas_core::store::PendingTarget::Inbox).await;
     let result = InboxResult {
         scope: scope.as_str().to_owned(),
         listing: FilesListingJson {
@@ -85,6 +88,8 @@ pub async fn handle_list(globals: &Globals, scope: Option<String>) -> Handled {
             http_status: denial,
         },
         conversations: rows.iter().map(ConversationRow::summary).collect(),
+        pending: !pending.is_empty(),
+        pending_journals: pending,
     };
     let mut envelope = base_envelope(SCHEMA_INBOX, &session, result);
     envelope.freshness = freshness;
@@ -157,6 +162,11 @@ pub async fn handle_show(globals: &Globals, id: String) -> Handled {
 
     let messages = row.messages();
     let complete = row.data.get("messages").is_some();
+    let pending = pending_operations(
+        &session,
+        canvas_core::store::PendingTarget::Conversation(id),
+    )
+    .await;
     let mut envelope = base_envelope(
         SCHEMA_CONVERSATION,
         &session,
@@ -171,6 +181,8 @@ pub async fn handle_show(globals: &Globals, id: String) -> Handled {
                 messages: messages.clone(),
                 messages_complete: complete,
             },
+            pending: !pending.is_empty(),
+            pending_journals: pending,
         },
     );
     envelope.freshness = freshness;
@@ -227,12 +239,15 @@ pub async fn handle_unread_count(globals: &Globals) -> Handled {
         Ok(count) => count,
         Err(e) => return local_error(&session, &e),
     };
+    let pending = pending_operations(&session, canvas_core::store::PendingTarget::Inbox).await;
 
     let mut envelope = base_envelope(
         SCHEMA_INBOX_UNREAD,
         &session,
         InboxUnreadResult {
             unread_count: count,
+            pending: !pending.is_empty(),
+            pending_journals: pending,
         },
     );
     envelope.freshness = freshness;
@@ -565,4 +580,21 @@ fn print_conversation(conversation: &ConversationDetailJson) -> io::Result<()> {
         writeln!(out, "\n[messages not fetched for this conversation]")?;
     }
     Ok(())
+}
+
+/// The unresolved operation journals for one target (§10 pending hook).
+///
+/// A read never changes a journal, and a store that cannot be read is not
+/// evidence of anything: the hook then reports nothing pending rather than
+/// blocking the read.
+pub(super) async fn pending_operations(
+    session: &Session,
+    target: canvas_core::store::PendingTarget,
+) -> Vec<String> {
+    session
+        .open
+        .store
+        .call(move |conns| canvas_core::store::pending_operations(&conns.state, target))
+        .await
+        .unwrap_or_default()
 }

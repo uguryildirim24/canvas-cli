@@ -35,6 +35,8 @@ pub const SCHEMA_IDENTITY: &str = "canvas-cli/identity@1";
 pub const SCHEMA_CONFIG: &str = "canvas-cli/config@1";
 pub const SCHEMA_DOCTOR: &str = "canvas-cli/doctor@1";
 pub const SCHEMA_PLAN: &str = "canvas-cli/plan@1";
+pub const SCHEMA_OPERATION: &str = "canvas-cli/operation@1";
+pub const SCHEMA_OPERATION_RECONCILE: &str = "canvas-cli/operation_reconcile@1";
 pub const SCHEMA_PAGES: &str = "canvas-cli/pages@1";
 pub const SCHEMA_PAGE: &str = "canvas-cli/page@1";
 pub const SCHEMA_SYLLABUS: &str = "canvas-cli/syllabus@1";
@@ -147,6 +149,22 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
             command: Some("submission reconcile"),
             variant: None,
             fixture: include_str!("schemas/reconcile.json"),
+        },
+        SchemaEntry {
+            // One schema for four commands: the three writes and
+            // `operation status` all print the operation journal as it
+            // stands. `command` names the one a person is most likely to
+            // look up, and `canvas schema` resolves the others through it.
+            id: SCHEMA_OPERATION,
+            command: Some("operation status"),
+            variant: None,
+            fixture: include_str!("schemas/operation.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_OPERATION_RECONCILE,
+            command: Some("operation reconcile"),
+            variant: None,
+            fixture: include_str!("schemas/operation_reconcile.json"),
         },
         SchemaEntry {
             id: SCHEMA_GRADES,
@@ -917,9 +935,13 @@ pub struct PlanJson {
     pub plan_id: String,
     pub state: String,
     pub consumer: Option<String>,
-    pub course_id: String,
+    /// Course id, or `null` for a plan that names no course.
+    ///
+    /// An inbox operation has no course at all, so both submission operands
+    /// are nullable here rather than carrying a `0` that reads like an id.
+    pub course_id: Option<String>,
     pub course_code: Option<String>,
-    pub assignment_id: String,
+    pub assignment_id: Option<String>,
     pub assignment_name: Option<String>,
     pub kind: String,
     pub baseline_attempt: i64,
@@ -935,6 +957,11 @@ pub struct PlanJson {
     pub approval: Option<PlanApprovalJson>,
     pub journal_id: Option<String>,
     pub invalidated_reason: Option<String>,
+    /// The frozen write, for one of the three M8-b operation kinds.
+    ///
+    /// `null` for a submission plan; a submission's own fields are `null` for
+    /// an operation plan. The kind says which half to read.
+    pub operation: Option<PlanOperationJson>,
 }
 
 /// `plan@1` result.
@@ -954,9 +981,17 @@ impl PlanJson {
             plan_id: row.plan_id.clone(),
             state: row.state.as_str().to_owned(),
             consumer: row.consumer.clone(),
-            course_id: row.course_id.to_string(),
-            course_code: row.payload.course_code.clone(),
-            assignment_id: row.assignment_id.to_string(),
+            course_id: operation_course(row).map(|id| id.to_string()),
+            course_code: row
+                .payload
+                .course_code
+                .clone()
+                .or_else(|| operation_labels(row).and_then(|l| l.course_code.clone())),
+            assignment_id: if row.kind.is_operation() {
+                None
+            } else {
+                Some(row.assignment_id.to_string())
+            },
             assignment_name: row.payload.assignment_name.clone(),
             kind: row.kind.as_str().to_owned(),
             baseline_attempt: row.baseline_attempt,
@@ -994,8 +1029,24 @@ impl PlanJson {
             }),
             journal_id: row.journal_id.clone(),
             invalidated_reason: row.invalidated_reason.clone(),
+            operation: row.operation.as_ref().map(PlanOperationJson::of),
         }
     }
+}
+
+/// The course a plan names, if it names one.
+fn operation_course(row: &canvas_core::plan::PlanRow) -> Option<i64> {
+    if row.kind.is_operation() {
+        row.operation.as_ref().and_then(|op| op.target.course_id())
+    } else {
+        Some(row.course_id)
+    }
+}
+
+fn operation_labels(
+    row: &canvas_core::plan::PlanRow,
+) -> Option<&canvas_core::operations::OperationLabels> {
+    row.operation.as_ref().map(|op| &op.labels)
 }
 
 // --- M4-b typed result payloads (Appendix D) ---
@@ -1064,6 +1115,296 @@ pub struct CalendarItemJson {
 pub struct CalendarResult {
     pub window: WindowJson,
     pub items: Vec<CalendarItemJson>,
+}
+
+// --- M8-b operation result payloads (Appendix D) ---
+
+/// The thread or the recipients one operation writes to.
+///
+/// One shape covers all three kinds; the fields another kind does not have are
+/// `null` or empty, as §7 requires.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OperationTargetJson {
+    pub kind: String,
+    pub course_id: Option<String>,
+    pub course_code: Option<String>,
+    pub topic_id: Option<String>,
+    pub topic_title: Option<String>,
+    pub parent_entry_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub conversation_subject: Option<String>,
+    pub recipients: Vec<String>,
+    pub recipient_names: Vec<String>,
+}
+
+/// One frozen attachment. The local path never travels.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OperationAttachmentJson {
+    pub name: String,
+    pub size: u64,
+    pub sha256: String,
+    pub canvas_file_id: Option<String>,
+}
+
+/// The allowlisted record of what Canvas answered. Never the body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OperationResponseJson {
+    pub id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub created_at: Option<String>,
+    pub created_at_local: Option<String>,
+    pub user_id: Option<String>,
+    pub body_sha256: Option<String>,
+    pub attachment_ids: Vec<String>,
+    pub response_sha256: Option<String>,
+}
+
+/// What a readback of the thread showed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OperationReadbackJson {
+    pub read_at: String,
+    pub id: Option<String>,
+    pub created_at: Option<String>,
+    pub created_at_local: Option<String>,
+    pub user_id: Option<String>,
+    pub body_sha256: Option<String>,
+    pub attachment_ids: Vec<String>,
+    pub scanned: u32,
+    pub complete: bool,
+}
+
+/// A candidate a readback matched by digest, with no id link.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OperationMatchJson {
+    pub id: String,
+    pub created_at: Option<String>,
+    pub created_at_local: Option<String>,
+    pub user_id: Option<String>,
+    pub body_sha256: String,
+}
+
+/// The frozen operation inside a `plan@1` document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PlanOperationJson {
+    pub kind: String,
+    pub target: OperationTargetJson,
+    pub subject: Option<String>,
+    pub text: PlanTextJson,
+    pub attachments: Vec<OperationAttachmentJson>,
+}
+
+impl OperationTargetJson {
+    /// Render a frozen target with the labels preparing observed.
+    #[must_use]
+    pub fn of(
+        target: &canvas_core::operations::OperationTarget,
+        labels: &canvas_core::operations::OperationLabels,
+        conversation_id: Option<&str>,
+    ) -> Self {
+        use canvas_core::operations::OperationTarget as T;
+        let mut json = Self {
+            kind: target.kind().as_str().to_owned(),
+            course_id: target.course_id().map(|id| id.to_string()),
+            course_code: labels.course_code.clone(),
+            topic_id: None,
+            topic_title: labels.topic_title.clone(),
+            parent_entry_id: None,
+            conversation_id: conversation_id.map(str::to_owned),
+            conversation_subject: labels.conversation_subject.clone(),
+            recipients: Vec::new(),
+            recipient_names: labels.recipients.clone(),
+        };
+        match target {
+            T::DiscussionReply {
+                topic_id,
+                parent_entry_id,
+                ..
+            } => {
+                json.topic_id = Some(topic_id.to_string());
+                json.parent_entry_id = parent_entry_id.map(|id| id.to_string());
+            }
+            T::InboxSend { recipients } => json.recipients.clone_from(recipients),
+            T::InboxReply { conversation_id } => {
+                json.conversation_id = Some(conversation_id.to_string());
+            }
+        }
+        json
+    }
+}
+
+impl OperationAttachmentJson {
+    #[must_use]
+    pub fn of(attachment: &canvas_core::operations::OperationAttachment) -> Self {
+        Self {
+            name: attachment.name.clone(),
+            size: attachment.size,
+            sha256: attachment.sha256.clone(),
+            canvas_file_id: attachment.canvas_file_id.clone(),
+        }
+    }
+}
+
+impl OperationResponseJson {
+    #[must_use]
+    pub fn of(record: &canvas_core::operations::ResponseRecord) -> Self {
+        Self {
+            id: record.id.clone(),
+            conversation_id: record.conversation_id.clone(),
+            created_at: record.created_at.clone(),
+            created_at_local: record.created_at_local.clone(),
+            user_id: record.user_id.clone(),
+            body_sha256: record.body_sha256.clone(),
+            attachment_ids: record.attachment_ids.clone(),
+            response_sha256: record.response_sha256.clone(),
+        }
+    }
+}
+
+impl OperationReadbackJson {
+    #[must_use]
+    pub fn of(readback: &canvas_core::operations::OperationReadback) -> Self {
+        Self {
+            read_at: readback.read_at.clone(),
+            id: readback.id.clone(),
+            created_at: readback.created_at.clone(),
+            created_at_local: readback.created_at_local.clone(),
+            user_id: readback.user_id.clone(),
+            body_sha256: readback.body_sha256.clone(),
+            attachment_ids: readback.attachment_ids.clone(),
+            scanned: readback.scanned,
+            complete: readback.complete,
+        }
+    }
+}
+
+impl OperationMatchJson {
+    #[must_use]
+    pub fn of(found: &canvas_core::operations::ServerMatch) -> Self {
+        Self {
+            id: found.id.clone(),
+            created_at: found.created_at.clone(),
+            created_at_local: found.created_at_local.clone(),
+            user_id: found.user_id.clone(),
+            body_sha256: found.body_sha256.clone(),
+        }
+    }
+}
+
+impl PlanOperationJson {
+    #[must_use]
+    pub fn of(plan: &canvas_core::operations::OperationPlan) -> Self {
+        Self {
+            kind: plan.kind().as_str().to_owned(),
+            target: OperationTargetJson::of(&plan.target, &plan.labels, None),
+            subject: plan.subject.clone(),
+            text: PlanTextJson {
+                input_sha256: plan.body.input_sha256.clone(),
+                transform: plan.body.transform.clone(),
+                sent_sha256: plan.body.sent_sha256.clone(),
+            },
+            attachments: plan
+                .attachments
+                .iter()
+                .map(OperationAttachmentJson::of)
+                .collect(),
+        }
+    }
+}
+
+/// `operation@1`: one operation journal as it stands.
+///
+/// The three write commands and `operation status` all print this document.
+/// `delivery` is `not_observable` for both inbox kinds: Canvas accepts a
+/// conversation, and no read of Canvas can say that a person received it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OperationResult {
+    pub outcome: String,
+    pub kind: String,
+    pub state: String,
+    pub journal_id: String,
+    pub plan_id: String,
+    pub replayed: bool,
+    pub receipt_id: Option<String>,
+    pub attribution: String,
+    pub delivery: String,
+    pub post_status: Option<i64>,
+    pub response_kind: Option<String>,
+    pub not_posted_evidence: Option<String>,
+    pub target: OperationTargetJson,
+    pub subject: Option<String>,
+    pub text: PlanTextJson,
+    pub attachments: Vec<OperationAttachmentJson>,
+    pub response: Option<OperationResponseJson>,
+    pub readback: Option<OperationReadbackJson>,
+    pub server_match: Option<OperationMatchJson>,
+    pub acknowledged_at: Option<String>,
+    pub error: Option<String>,
+}
+
+impl OperationResult {
+    /// Render one journal row. Nothing here carries the body.
+    #[must_use]
+    pub fn of(row: &canvas_core::operations::OperationRow) -> Self {
+        let conversation_id = row
+            .response
+            .as_ref()
+            .and_then(|r| r.conversation_id.clone());
+        Self {
+            outcome: String::new(),
+            kind: row.kind.as_str().to_owned(),
+            state: row.state.as_str().to_owned(),
+            journal_id: row.journal_id.clone(),
+            plan_id: row.plan_id.clone(),
+            replayed: false,
+            receipt_id: row.receipt_id(),
+            attribution: row.attribution.as_str().to_owned(),
+            delivery: row.delivery().to_owned(),
+            post_status: row.post_status,
+            response_kind: row.response_kind.clone(),
+            not_posted_evidence: row.not_posted_evidence.map(|e| e.as_str().to_owned()),
+            target: OperationTargetJson::of(
+                &row.intended.target,
+                &row.intended.labels,
+                conversation_id.as_deref(),
+            ),
+            subject: row.intended.subject.clone(),
+            text: PlanTextJson {
+                input_sha256: row.intended.body.input_sha256.clone(),
+                transform: row.intended.body.transform.clone(),
+                sent_sha256: row.intended.body.sent_sha256.clone(),
+            },
+            attachments: row
+                .intended
+                .attachments
+                .iter()
+                .map(OperationAttachmentJson::of)
+                .collect(),
+            response: row.response.as_ref().map(OperationResponseJson::of),
+            readback: row.readback.as_ref().map(OperationReadbackJson::of),
+            server_match: row.server_match.as_ref().map(OperationMatchJson::of),
+            acknowledged_at: row.acknowledged_at.clone(),
+            error: row.error_text.clone(),
+        }
+    }
+}
+
+/// `operation_reconcile@1`: what a readback of one operation concluded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OperationReconcileResult {
+    pub outcome: String,
+    pub journal_id: String,
+    pub kind: String,
+    pub state: String,
+    pub verdict: String,
+    pub owner: String,
+    pub attribution: String,
+    pub delivery: String,
+    pub receipt_id: Option<String>,
+    pub readback: Option<OperationReadbackJson>,
+    pub server_match: Option<OperationMatchJson>,
+    /// Whether `--assume-not-posted` is available now (§12.2's grace window).
+    pub assume_not_posted_available: bool,
+    pub message: String,
 }
 
 #[cfg(test)]
@@ -1683,6 +2024,16 @@ pub struct DiscussionDetailJson {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DiscussionResult {
     pub discussion: DiscussionDetailJson,
+    /// True while an operation journal for this target is unresolved (§10).
+    ///
+    /// The pending hook is the same one `submission@1` carries: while a write
+    /// this CLI started is not resolved, a read of the same thread cannot say
+    /// what is there, whatever the cache says.
+    #[serde(default)]
+    pub pending: bool,
+    /// The unresolved operation journals, oldest first.
+    #[serde(default)]
+    pub pending_journals: Vec<String>,
 }
 
 /// One conversation participant.
@@ -1718,6 +2069,16 @@ pub struct InboxResult {
     pub scope: String,
     pub listing: FilesListingJson,
     pub conversations: Vec<ConversationSummaryJson>,
+    /// True while an operation journal for this target is unresolved (§10).
+    ///
+    /// The pending hook is the same one `submission@1` carries: while a write
+    /// this CLI started is not resolved, a read of the same thread cannot say
+    /// what is there, whatever the cache says.
+    #[serde(default)]
+    pub pending: bool,
+    /// The unresolved operation journals, oldest first.
+    #[serde(default)]
+    pub pending_journals: Vec<String>,
 }
 
 /// One message inside a conversation.
@@ -1748,10 +2109,30 @@ pub struct ConversationDetailJson {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConversationResult {
     pub conversation: ConversationDetailJson,
+    /// True while an operation journal for this target is unresolved (§10).
+    ///
+    /// The pending hook is the same one `submission@1` carries: while a write
+    /// this CLI started is not resolved, a read of the same thread cannot say
+    /// what is there, whatever the cache says.
+    #[serde(default)]
+    pub pending: bool,
+    /// The unresolved operation journals, oldest first.
+    #[serde(default)]
+    pub pending_journals: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct InboxUnreadResult {
     /// `null` when Canvas did not report a count.
     pub unread_count: Option<u64>,
+    /// True while an operation journal for this target is unresolved (§10).
+    ///
+    /// The pending hook is the same one `submission@1` carries: while a write
+    /// this CLI started is not resolved, a read of the same thread cannot say
+    /// what is there, whatever the cache says.
+    #[serde(default)]
+    pub pending: bool,
+    /// The unresolved operation journals, oldest first.
+    #[serde(default)]
+    pub pending_journals: Vec<String>,
 }

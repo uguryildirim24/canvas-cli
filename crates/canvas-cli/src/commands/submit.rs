@@ -61,7 +61,7 @@ pub async fn handle(globals: &Globals, args: SubmitArgs) -> Handled {
         // `--yes` is recorded as itself; it never claims an interactive decision.
         ApprovalChannel::YesFlag
     } else {
-        match confirm_tty().await {
+        match confirm_tty("Submit?").await {
             Ok(true) => ApprovalChannel::Tty,
             Ok(false) => {
                 cancel_plan(&session, &plan_id);
@@ -248,7 +248,7 @@ async fn freeze_plan(
 /// `canvas submit` holds the decision in this process, so the handle never
 /// travels. An agent surface issues the handle separately, because there the
 /// handle *is* the round trip.
-fn record_approval(
+pub(super) fn record_approval(
     session: &Session,
     plan_id: &str,
     channel: ApprovalChannel,
@@ -445,10 +445,10 @@ fn print_plan(plan: &Plan) {
     }
 }
 
-async fn confirm_tty() -> Result<bool, String> {
+pub(super) async fn confirm_tty(question: &'static str) -> Result<bool, String> {
     let (send, receive) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
-        let _ = send.send(read_confirmation());
+        let _ = send.send(read_confirmation(question));
     });
     tokio::select! {
         result = receive => result.map_err(|_| "confirmation worker stopped".to_owned())?,
@@ -456,7 +456,7 @@ async fn confirm_tty() -> Result<bool, String> {
     }
 }
 
-fn read_confirmation() -> Result<bool, String> {
+fn read_confirmation(question: &str) -> Result<bool, String> {
     #[cfg(windows)]
     let terminal = "CONIN$";
     #[cfg(not(windows))]
@@ -468,7 +468,7 @@ fn read_confirmation() -> Result<bool, String> {
         .map_err(|_| {
             "confirmation required but no controlling terminal; re-run with --yes".to_string()
         })?;
-    let _ = write!(io::stderr(), "Submit? [y/N] ");
+    let _ = write!(io::stderr(), "{question} [y/N] ");
     let _ = io::stderr().flush();
     let mut reader = io::BufReader::new(tty);
     let mut line = String::new();
@@ -630,7 +630,11 @@ pub fn plan_refusal(session: &Session, reason: &str, message: &str) -> Handled {
 ///
 /// Exit 8 is a refusal, so the envelope says `refused`: §7 keeps `outcome`
 /// and `exit` consistent, and a host reads `outcome` first.
-fn plan_refusal_with(session: &Session, message: &str, details: serde_json::Value) -> Handled {
+pub(super) fn plan_refusal_with(
+    session: &Session,
+    message: &str,
+    details: serde_json::Value,
+) -> Handled {
     let mut env = crate::output::error_envelope("refused", message, None, details, 8);
     env.outcome = Outcome::Refused;
     env.profile.clone_from(&session.profile);
@@ -763,6 +767,12 @@ pub async fn agent_approve(
         Ok(s) => s,
         Err(e) => return session_error(e, globals.profile.clone()),
     };
+    // An approval is recorded the same way for both kinds of plan; only the
+    // dispatch that follows differs, so an operation plan goes to its own
+    // module here rather than through the submission execute path.
+    if is_operation_plan(&session, plan_id) {
+        return super::operation::agent_approve(globals, plan_id, handle, consumer).await;
+    }
     if let Err(e) = canvas_core::plan::approve(
         &session.open.store,
         plan_id,
@@ -789,6 +799,9 @@ pub fn agent_refuse(globals: &Globals, plan_id: &str, refusal: Refusal) -> Handl
         Ok(s) => s,
         Err(e) => return session_error(e, globals.profile.clone()),
     };
+    if is_operation_plan(&session, plan_id) {
+        return super::operation::agent_refuse(globals, plan_id, refusal);
+    }
     let invalidated = match refusal {
         Refusal::Declined => canvas_core::plan::decline(&session.open.store, plan_id),
         Refusal::Cancelled => canvas_core::plan::cancel(&session.open.store, plan_id),
@@ -809,6 +822,9 @@ pub fn agent_refuse(globals: &Globals, plan_id: &str, refusal: Refusal) -> Handl
 /// so the approval can still be recorded through another channel, and nothing
 /// is dispatched.
 pub fn agent_approval_required(globals: &Globals, pending: &Pending) -> Handled {
+    if pending.plan.operation.is_some() {
+        return super::operation::agent_approval_required(globals, pending);
+    }
     let session = match globals.open_session() {
         Ok(s) => s,
         Err(e) => return session_error(e, globals.profile.clone()),
@@ -824,8 +840,20 @@ pub fn agent_approval_required(globals: &Globals, pending: &Pending) -> Handled 
     )
 }
 
+/// Whether a stored plan is one of the three M8-b operations.
+///
+/// A plan that cannot be read is treated as a submission, so the caller sees
+/// the plan layer's own error instead of a misrouted one.
+fn is_operation_plan(session: &Session, plan_id: &str) -> bool {
+    canvas_core::plan::require(&session.open.store, plan_id)
+        .is_ok_and(|plan| plan.kind.is_operation())
+}
+
 /// One line naming what a plan is about to send.
 fn plan_summary(plan: &canvas_core::plan::PlanRow) -> String {
+    if plan.kind.is_operation() {
+        return super::operation::plan_summary(plan);
+    }
     let name = plan
         .payload
         .assignment_name
@@ -855,14 +883,40 @@ fn plan_summary(plan: &canvas_core::plan::PlanRow) -> String {
 }
 
 /// Human form of `plan@1`.
-fn render_plan(mut out: impl Write, result: &PlanResult) -> io::Result<()> {
+///
+/// One document covers a submission plan and an operation plan, so the halves
+/// that do not apply are simply not printed. A `null` course or assignment is
+/// what an inbox operation has, not an unknown value.
+pub(super) fn render_plan(mut out: impl Write, result: &PlanResult) -> io::Result<()> {
     let plan = &result.plan;
     writeln!(out, "plan {}  {}", plan.plan_id, plan.state)?;
     writeln!(
         out,
         "course {}  assignment {}  kind {}",
-        plan.course_id, plan.assignment_id, plan.kind
+        plan.course_id.as_deref().unwrap_or("-"),
+        plan.assignment_id.as_deref().unwrap_or("-"),
+        plan.kind
     )?;
+    if let Some(operation) = &plan.operation {
+        crate::commands::operation::render_target(&mut out, &operation.target)?;
+        if let Some(subject) = &operation.subject {
+            writeln!(out, "subject {subject}")?;
+        }
+        for attachment in &operation.attachments {
+            writeln!(
+                out,
+                "attach {} ({} bytes, sha256 {})",
+                attachment.name, attachment.size, attachment.sha256
+            )?;
+        }
+        writeln!(
+            out,
+            "text transform={}  input_sha256={}  sent_sha256={}",
+            operation.text.transform, operation.text.input_sha256, operation.text.sent_sha256
+        )?;
+        writeln!(out, "expires {}", plan.expires_at)?;
+        return Ok(());
+    }
     writeln!(
         out,
         "attempt {}  expires {}",
@@ -1070,7 +1124,7 @@ fn map_submit_error(session: &Session, err: SubmitError) -> Handled {
     selected_error(session, code, &message, exit)
 }
 
-fn selected_error(session: &Session, code: &str, message: &str, exit: u8) -> Handled {
+pub(super) fn selected_error(session: &Session, code: &str, message: &str, exit: u8) -> Handled {
     let mut env = crate::output::error_envelope(code, message, None, serde_json::json!({}), exit);
     env.profile.clone_from(&session.profile);
     env.identity = Some(session.identity_ref());
