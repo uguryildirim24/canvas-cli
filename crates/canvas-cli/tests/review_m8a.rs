@@ -161,6 +161,13 @@ fn gated_topic(id: i64) -> Value {
     row
 }
 
+fn announcement_topic(id: i64) -> Value {
+    let mut row = topic(id);
+    row["title"] = json!("Welcome");
+    row["is_announcement"] = json!(true);
+    row
+}
+
 fn graded_group_topic(id: i64) -> Value {
     let mut row = topic(id);
     row["title"] = json!("Group lab report");
@@ -239,10 +246,20 @@ async fn mount_all(server: &MockServer) {
     mount(
         server,
         "/api/v1/courses/5/discussion_topics",
-        json!([topic(55), gated_topic(56), graded_group_topic(57)]),
+        json!([
+            topic(55),
+            gated_topic(56),
+            graded_group_topic(57),
+            announcement_topic(60),
+        ]),
     )
     .await;
-    for row in [topic(55), gated_topic(56), graded_group_topic(57)] {
+    for row in [
+        topic(55),
+        gated_topic(56),
+        graded_group_topic(57),
+        announcement_topic(60),
+    ] {
         let id = row["id"].as_i64().unwrap();
         mount(
             server,
@@ -508,21 +525,27 @@ async fn a_graded_group_discussion_keeps_its_metadata() {
     assert_eq!(children[0]["id"], "58");
     assert_eq!(children[0]["group_id"], "77");
 
+    // The listing endpoint is fixed; the flags filter what is shown.
     let listing = f.run(&["discussions", "5"], 0).await;
     assert_eq!(
         listing["result"]["discussions"].as_array().unwrap().len(),
-        3
+        4
     );
     let no_announcements = f
         .run(&["discussions", "5", "--announcements", "no"], 0)
         .await;
-    assert_eq!(
-        no_announcements["result"]["discussions"]
-            .as_array()
-            .unwrap()
-            .len(),
-        3
-    );
+    let shown = no_announcements["result"]["discussions"]
+        .as_array()
+        .unwrap();
+    assert_eq!(shown.len(), 3);
+    assert!(shown.iter().all(|row| row["is_announcement"] == false));
+    let bad = f
+        .run(&["discussions", "5", "--announcements", "maybe"], 2)
+        .await;
+    assert_eq!(bad["result"]["code"], "usage");
+    // `--unread` filters on the stored state and marks nothing.
+    let unread = f.run(&["discussions", "5", "--unread"], 0).await;
+    assert_eq!(unread["result"]["discussions"].as_array().unwrap().len(), 4);
     insta::assert_json_snapshot!("m8a_discussions_json", normalized(listing, &server.uri()));
     insta::assert_snapshot!(
         "m8a_discussions_table",
