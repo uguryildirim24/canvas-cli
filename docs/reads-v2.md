@@ -225,7 +225,10 @@ implementation per command.
 Every one is a read, so every one carries `readOnlyHint: true`,
 `destructiveHint: false`, and `idempotentHint: true`. They are in the catalog
 allowlist test, in the tool-versus-command comparison test, and in the
-skill's command list.
+skill's command list. The comparison runs twice: once against an unprimed
+cache, where both sides refuse alike, and once against a cache warmed with
+the whole read surface, where the comparison covers every argument a tool
+takes — `unpublished`, `unread`, `replies`, `page`, and `scope`.
 
 Two things follow from the decisions above and are stated on the surface
 itself: `discussions.list` has no announcements argument, because the pinned
