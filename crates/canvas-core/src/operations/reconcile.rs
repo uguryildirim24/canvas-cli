@@ -188,7 +188,21 @@ async fn run(
             // invites a resend that would be a second message.
             if readback.complete {
                 match ops::assume_not_posted(store, &owner, journal_id, false, now) {
-                    Ok(()) => verdict = Verdict::AssumedNotPosted,
+                    Ok(()) => {
+                        verdict = Verdict::AssumedNotPosted;
+                        // SPEC §12.2 requires the residual risk to be stated:
+                        // the assertion is a decision, not an observation, and
+                        // Canvas can still land the original request. Canvas
+                        // also sanitizes what it stores, so a digest that did
+                        // not match is not proof the write is absent.
+                        warning = Some(
+                            "this is your decision, not an observation: the original request \
+                             can still land, and Canvas can store a body whose digest no \
+                             longer matches what was sent, so writing again may leave two \
+                             messages"
+                                .to_owned(),
+                        );
+                    }
                     Err(OperationError::StateConflict) => {
                         warning = Some(
                             "nothing can be assumed yet: an operation must be thirty minutes \

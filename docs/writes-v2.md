@@ -173,9 +173,13 @@ during `posting`, or a **5xx answer** (see decision 1). Only
 `operation reconcile` moves it out, and only on evidence.
 
 `--assume-not-posted` records that nothing was posted. It is refused while a
-matching message is visible in the thread, and while the journal is younger
-than 30 minutes (`ASSUME_AFTER`). The refusal is a warning on an exit-9
-envelope, not a silent success.
+matching message is visible in the thread, while the journal is younger than
+30 minutes (`ASSUME_AFTER`), and while the readback did not cover the thread
+(choice 8). The refusal is a warning on an exit-9 envelope, not a silent
+success. When it is recorded, the answer states the residual risk SPEC §12.2
+requires: the original request can still land, and Canvas can store a body
+whose digest no longer matches what was sent, so writing again may leave two
+messages.
 
 ## Attribution
 

@@ -1186,6 +1186,14 @@ async fn assume_not_posted_is_refused_early_and_recorded_late() {
         late.row.not_posted_evidence,
         Some(NotPostedEvidence::Assumed)
     );
+    // SPEC §12.2: the residual risk is stated, never left to be inferred.
+    assert!(
+        late.warning
+            .as_deref()
+            .is_some_and(|w| w.contains("two messages")),
+        "{:?}",
+        late.warning
+    );
 }
 
 /// `operation status` recovers nothing (M8-b review).
