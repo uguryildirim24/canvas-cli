@@ -143,18 +143,8 @@ pub fn file_to_entity(file: &File, course_id: i64) -> EntityIngest {
         FieldGroup::Detail,
         file.updated_at,
     );
-    push_opt_str(
-        &mut fields,
-        "url",
-        FieldGroup::Detail,
-        file.url.as_ref().map(reqwest::Url::as_str),
-    );
-    push_opt_str(
-        &mut fields,
-        "thumbnail_url",
-        FieldGroup::Detail,
-        file.thumbnail_url.as_ref().map(reqwest::Url::as_str),
-    );
+    // Download URLs are short-lived capabilities. Discovery needs metadata only;
+    // the downloader obtains a fresh URL from GET /files/:id before transfer.
     push_api_to_string(
         &mut fields,
         "unlock_at",
@@ -244,8 +234,8 @@ fn split_file_fields(
                 }
                 column_fields.push(field.clone());
             }
-            "hidden" | "locked" | "locked_for_user" | "lock_explanation" | "updated_at" | "url"
-            | "thumbnail_url" | "unlock_at" | "lock_at" => {
+            "hidden" | "locked" | "locked_for_user" | "lock_explanation" | "updated_at"
+            | "unlock_at" | "lock_at" => {
                 extra.insert(
                     field.name.to_owned(),
                     match &field.value {
