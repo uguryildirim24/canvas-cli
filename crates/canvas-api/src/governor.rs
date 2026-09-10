@@ -246,6 +246,14 @@ struct State {
     in_flight: u64,
     in_cooldown: bool,
     last_header_at: Option<Instant>,
+    /// When a shared row was last read, when there is one.
+    ///
+    /// With a shared row the header-silence window belongs to the row, not to
+    /// this process: another process may be making every request and seeing
+    /// every header. Without this, a `watch` that had been quiet for a minute
+    /// would reset its own estimate to full on its next admission and drop a
+    /// cooldown a live process had just published.
+    shared_seen_at: Option<Instant>,
     started_at: Instant,
     route_costs: HashMap<String, f64>,
     cost_sum: f64,
@@ -302,6 +310,7 @@ impl Governor {
                     in_flight: 0,
                     in_cooldown: false,
                     last_header_at: None,
+                    shared_seen_at: None,
                     started_at: now,
                     route_costs: HashMap::new(),
                     cost_sum: 0.0,
@@ -556,6 +565,7 @@ impl Inner {
         row: GovernorSnapshot,
         now_ms: i64,
     ) {
+        state.shared_seen_at = Some(Instant::now());
         let silent_for = now_ms.saturating_sub(row.updated_at);
         if silent_for >= i64::try_from(SILENCE_SECS).unwrap_or(60) * 1_000 {
             if state.in_flight == 0 {
@@ -586,11 +596,23 @@ impl Inner {
         state.refill = 0.0;
         state.last_applied = None;
         state.last_header_at = None;
+        state.shared_seen_at = None;
         state.started_at = Instant::now();
     }
 
     fn reset_silence_locked(config: &GovernorConfig, state: &mut State) {
         if state.in_flight != 0 {
+            return;
+        }
+        // A shared row that was written inside the silence window means some
+        // process is live: `merge_shared_locked` owns the reset for it, and it
+        // has already run for this admission. Resetting here as well would
+        // hand this process an invented full bucket and drop a shared cooldown
+        // (SPEC §11, REPORT §3.6).
+        if state
+            .shared_seen_at
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(SILENCE_SECS))
+        {
             return;
         }
         let silent = match state.last_header_at {
