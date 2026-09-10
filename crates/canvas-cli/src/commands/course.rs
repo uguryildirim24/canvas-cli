@@ -99,7 +99,8 @@ pub async fn run(globals: &Globals, course: String) -> ExitCode {
     })
 }
 
-pub(super) async fn resolve_with_refresh(
+/// Resolve a course for class-C commands, refreshing courses once on incomplete cache.
+pub(crate) async fn resolve_with_refresh(
     globals: &Globals,
     session: &Session,
     course: &str,
@@ -253,7 +254,7 @@ fn detail_from_row(row: CourseRow) -> CourseDetailJson {
     }
 }
 
-fn refresh_fail(globals: &Globals, session: &Session, err: RefreshFail) -> ExitCode {
+pub(crate) fn refresh_fail(globals: &Globals, session: &Session, err: RefreshFail) -> ExitCode {
     match err {
         RefreshFail::OfflineMiss | RefreshFail::Sync(SyncError::OfflineMiss) => emit_error(
             globals.json,

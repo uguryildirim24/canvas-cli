@@ -1,0 +1,62 @@
+---
+source: crates/canvas-cli/tests/files_modules.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "modules",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "course:101",
+      "source": "cache",
+      "stale": true
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "courses.example.test-12345-f1e3cb02",
+    "origin": "https://courses.example.test",
+    "user_id": "12345"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course_id": "101",
+    "modules": [
+      {
+        "id": "8",
+        "items": [
+          {
+            "completed": null,
+            "content_id": "50",
+            "html_url": null,
+            "id": "80",
+            "lock_explanation": null,
+            "locked": false,
+            "position": 1,
+            "title": "slides",
+            "type": "File"
+          }
+        ],
+        "items_complete": true,
+        "items_count": 1,
+        "name": "Week 1",
+        "position": 1,
+        "state": "unlocked"
+      }
+    ]
+  },
+  "schema": "canvas-cli/modules@1",
+  "warnings": [
+    "served stale modules cache"
+  ]
+}
