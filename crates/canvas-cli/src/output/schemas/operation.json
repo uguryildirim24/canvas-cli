@@ -9,7 +9,7 @@
   "attribution": "accepted",
   "delivery": "observable",
   "post_status": 200,
-  "response_kind": "created",
+  "response_kind": null,
   "not_posted_evidence": null,
   "target": {
     "kind": "discussion_reply",
