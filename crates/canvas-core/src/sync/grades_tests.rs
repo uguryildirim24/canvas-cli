@@ -644,6 +644,51 @@ async fn a_group_refresh_sends_the_period_and_stores_the_inline_assignments() {
     assert!(stored.get("submissions_download_url").is_none(), "{stored}");
 }
 
+/// SPEC §10: an absent field is never written. An assignment Canvas answered
+/// without a `submission` object must not be projected as "not submitted".
+#[tokio::test]
+async fn an_assignment_without_a_submission_carries_no_status_keys() {
+    let server = MockServer::start().await;
+    let (_dir, open) = setup();
+    Mock::given(method("GET"))
+        .and(path("/api/v1/courses/7/assignment_groups"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {
+                "id": "20", "name": "Homework", "position": 1, "rules": {},
+                "assignments": [
+                    {"id": "31", "name": "PS1", "points_possible": 25.0},
+                    {"id": "32", "name": "PS2", "points_possible": 25.0,
+                     "submission": {"workflow_state": "unsubmitted", "submitted_at": null}}
+                ]
+            }
+        ])))
+        .mount(&server)
+        .await;
+    refresh_assignment_groups(
+        &client(&server),
+        &open.store,
+        7,
+        PeriodKey::None,
+        Span::new().minutes(10),
+        ts(100),
+        false,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let stored = data_json(&open, 20);
+    let quiet = &stored["assignments_by_period"]["none"]["assignments"][0];
+    assert_eq!(quiet["id"], "31");
+    for key in ["submitted_at", "workflow_state", "score", "missing"] {
+        assert!(quiet.get(key).is_none(), "{key} must stay absent: {quiet}");
+    }
+    // A supplied submission still records its explicit nulls.
+    let answered = &stored["assignments_by_period"]["none"]["assignments"][1];
+    assert!(answered["submitted_at"].is_null(), "{answered}");
+    assert_eq!(answered["workflow_state"], "unsubmitted");
+}
+
 #[tokio::test]
 async fn an_explicit_null_group_field_clears_the_stored_value() {
     let server = MockServer::start().await;

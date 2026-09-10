@@ -172,24 +172,47 @@ fn rules_json(rules: &canvas_api::models::AssignmentGroupRules) -> Value {
 }
 
 /// Allowlisted per-assignment projection for the course view (SPEC §12.4).
+///
+/// An assignment Canvas answered without a `submission` object carries no
+/// status keys at all, so the read reports the status as unknown instead of
+/// asserting "not submitted" from a value Canvas never supplied (SPEC §10).
 fn assignment_projection(assignment: &Assignment) -> Value {
-    let submission = assignment.submission.as_ref();
-    json!({
-        "id": assignment.id.to_string(),
-        "name": assignment.name.as_value(),
-        "due_at": assignment.due_at.as_value().map(ToString::to_string),
-        "points_possible": assignment.points_possible.as_value(),
-        "omit_from_final_grade": assignment.omit_from_final_grade.unwrap_or(false),
-        "score": submission.and_then(|s| s.score.as_value().copied()),
-        "grade": submission.and_then(|s| s.grade.as_value().cloned()),
-        "excused": submission.and_then(|s| s.excused.as_value().copied()),
-        "late": submission.and_then(|s| s.late.as_value().copied()),
-        "missing": submission.and_then(|s| s.missing.as_value().copied()),
-        "posted_at": submission.and_then(|s| s.posted_at.map(|t| t.to_string())),
-        "workflow_state": submission.and_then(|s| s.workflow_state.as_value().cloned()),
-        "submitted_at": submission.and_then(|s| s.submitted_at.as_value().map(ToString::to_string)),
-        "attempt": submission.and_then(|s| s.attempt.as_value().copied()),
-    })
+    let mut out = Map::new();
+    out.insert("id".into(), json!(assignment.id.to_string()));
+    out.insert("name".into(), json!(assignment.name.as_value()));
+    out.insert(
+        "due_at".into(),
+        json!(assignment.due_at.as_value().map(ToString::to_string)),
+    );
+    out.insert(
+        "points_possible".into(),
+        json!(assignment.points_possible.as_value()),
+    );
+    out.insert(
+        "omit_from_final_grade".into(),
+        json!(assignment.omit_from_final_grade.unwrap_or(false)),
+    );
+    if let Some(s) = assignment.submission.as_ref() {
+        out.insert("score".into(), json!(s.score.as_value().copied()));
+        out.insert("grade".into(), json!(s.grade.as_value().cloned()));
+        out.insert("excused".into(), json!(s.excused.as_value().copied()));
+        out.insert("late".into(), json!(s.late.as_value().copied()));
+        out.insert("missing".into(), json!(s.missing.as_value().copied()));
+        out.insert(
+            "posted_at".into(),
+            json!(s.posted_at.map(|t| t.to_string())),
+        );
+        out.insert(
+            "workflow_state".into(),
+            json!(s.workflow_state.as_value().cloned()),
+        );
+        out.insert(
+            "submitted_at".into(),
+            json!(s.submitted_at.as_value().map(ToString::to_string)),
+        );
+        out.insert("attempt".into(), json!(s.attempt.as_value().copied()));
+    }
+    Value::Object(out)
 }
 
 fn upsert_assignment_group(
