@@ -78,6 +78,13 @@ struct Host {
     ///
     /// The panel shows what the host reads; the extension opens no database.
     session: Arc<Session>,
+    /// Where the panel's feed of the event log stands.
+    ///
+    /// The panel is one more consumer of the M6-c log and follows its cursor
+    /// rules: the position it was last shown is kept here, and a position the
+    /// log can no longer replay comes back as `resync_required` rather than
+    /// being quietly restarted.
+    panel_cursor: Arc<Mutex<i64>>,
     /// Set when the host must stop: released, disconnected, or replaced.
     stop: Arc<tokio::sync::Notify>,
     stopping: Arc<std::sync::atomic::AtomicBool>,
@@ -184,6 +191,7 @@ async fn serve(globals: &Globals, caller_origin: Option<&str>) -> Result<(), Hos
         waiters: TextWaiters::default(),
         navigations: NavigateWaiters::default(),
         session: Arc::new(session),
+        panel_cursor: Arc::new(Mutex::new(0)),
         stop: Arc::new(tokio::sync::Notify::new()),
         stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
@@ -249,6 +257,13 @@ async fn run_loop(
                 if !still_bound(identity_json, generation) {
                     // §10: the identity is gone or was recreated.
                     return Ok(());
+                }
+                // The panel's status feed. A submission that finished in
+                // another process moves the log, and the panel is shown the
+                // new journals. Nothing polls Canvas: this reads the local
+                // log the same way `canvas watch` does.
+                if log_moved(host).await {
+                    push_panel(host).await;
                 }
             }
         }
@@ -350,7 +365,7 @@ async fn handle_extension(host: &Arc<Host>, message: ExtensionMessage) {
                     reason: "cross_origin".to_owned(),
                 });
             }
-            push_panel(host, 0).await;
+            push_panel(host).await;
         }
         ExtensionMessage::NavigateAck {
             request_id,
@@ -388,7 +403,7 @@ async fn handle_extension(host: &Arc<Host>, message: ExtensionMessage) {
             };
             let at = crate::output::generated_at_now();
             host.broker.lock().await.navigated(&request_id, load, &at);
-            push_panel(host, 0).await;
+            push_panel(host).await;
         }
         ExtensionMessage::Decision {
             plan_id,
@@ -405,7 +420,10 @@ async fn handle_extension(host: &Arc<Host>, message: ExtensionMessage) {
                 });
                 return;
             }
-            push_panel(host, 0).await;
+            // A panel that just opened has seen nothing, so its feed starts
+            // at the beginning of what the log still holds.
+            set_cursor(host, 0);
+            push_panel(host).await;
         }
     }
 }
@@ -433,7 +451,7 @@ async fn decide(host: &Arc<Host>, plan_id: &str, handle: &str, digest: &str, dec
             "refusing a panel decision: {}",
             panel::DecisionRefusal::UnknownDecision.as_str()
         );
-        push_panel(host, 0).await;
+        push_panel(host).await;
         return;
     };
     let session = Arc::clone(&host.session);
@@ -462,7 +480,7 @@ async fn decide(host: &Arc<Host>, plan_id: &str, handle: &str, digest: &str, dec
             let _ = writeln!(io::stderr(), "the panel decision could not be applied");
         }
     }
-    push_panel(host, 0).await;
+    push_panel(host).await;
 }
 
 /// Compute the panel's whole view and send it.
@@ -470,15 +488,40 @@ async fn decide(host: &Arc<Host>, plan_id: &str, handle: &str, digest: &str, dec
 /// The bundle the panel sees is the CLI's own: the host reads it with neither
 /// an attachment id nor a consumer, which is the reading REPORT §3.2 permits
 /// the local side. It never asks the browser for text.
-async fn push_panel(host: &Arc<Host>, since: i64) {
+async fn push_panel(host: &Arc<Host>) {
     let context = host.broker.lock().await.context(None, None, false).ok();
     let session = Arc::clone(&host.session);
+    let since = read_cursor(host);
     let state = tokio::task::spawn_blocking(move || {
         Box::new(panel::state(&session, context.as_ref(), since))
     })
     .await;
     let state = state.unwrap_or_else(|_| Box::new(PanelState::default()));
+    set_cursor(host, state.cursor);
     host.send(&HostMessage::Panel { state });
+}
+
+/// The position the panel was last shown.
+fn read_cursor(host: &Arc<Host>) -> i64 {
+    match host.panel_cursor.lock() {
+        Ok(cursor) => *cursor,
+        Err(poisoned) => *poisoned.into_inner(),
+    }
+}
+
+fn set_cursor(host: &Arc<Host>, mark: i64) {
+    match host.panel_cursor.lock() {
+        Ok(mut cursor) => *cursor = mark,
+        Err(poisoned) => *poisoned.into_inner() = mark,
+    }
+}
+
+/// Whether the event log has moved past what the panel was last shown.
+async fn log_moved(host: &Arc<Host>) -> bool {
+    let session = Arc::clone(&host.session);
+    let since = read_cursor(host);
+    let mark = tokio::task::spawn_blocking(move || panel::cursor(&session, since).0).await;
+    mark.is_ok_and(|mark| mark > since)
 }
 
 /// Apply one observation and finish validation when the account matched.
@@ -628,7 +671,7 @@ async fn answer(host: &Arc<Host>, request: ipc::Request) -> Body {
                     host.send(&HostMessage::Note {
                         note: Box::new(note.clone()),
                     });
-                    push_panel(host, 0).await;
+                    push_panel(host).await;
                     Body::Noted {
                         note: Box::new(note),
                         attachment_id,
@@ -715,7 +758,7 @@ async fn follow(
         .attachment_id()
         .unwrap_or_default()
         .to_owned();
-    push_panel(host, 0).await;
+    push_panel(host).await;
     Body::Followed {
         follow: Box::new(follow),
         attachment_id,
