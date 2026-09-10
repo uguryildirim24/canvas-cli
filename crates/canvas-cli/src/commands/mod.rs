@@ -28,6 +28,7 @@ pub mod here;
 pub mod identity;
 pub mod inbox;
 pub mod modules;
+pub mod note;
 pub mod notify;
 pub mod open;
 pub mod pages;

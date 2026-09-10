@@ -46,6 +46,8 @@ const CATALOG: &[&str] = &[
     "context.attach",
     "context.here",
     "context.detach",
+    "context.note",
+    "context.follow",
 ];
 
 /// The two tools that can send anything to Canvas.

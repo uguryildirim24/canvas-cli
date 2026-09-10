@@ -90,6 +90,8 @@ const SHAPES: &[Shape] = shapes![
     ("canvas-cli/watch@1", "watch.json"),
     ("canvas-cli/event@1", "event.json"),
     ("canvas-cli/here@1", "here.json"),
+    ("canvas-cli/note@1", "note.json"),
+    ("canvas-cli/follow@1", "follow.json"),
     ("canvas-cli/bridge@1", "bridge_status.json"),
     ("canvas-cli/bridge@1", "bridge_install.json"),
     ("canvas-cli/bridge@1", "bridge_detach.json"),

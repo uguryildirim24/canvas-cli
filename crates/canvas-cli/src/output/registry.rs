@@ -44,6 +44,8 @@ pub const SCHEMA_INBOX: &str = "canvas-cli/inbox@1";
 pub const SCHEMA_CONVERSATION: &str = "canvas-cli/conversation@1";
 pub const SCHEMA_INBOX_UNREAD: &str = "canvas-cli/inbox_unread@1";
 pub const SCHEMA_HERE: &str = "canvas-cli/here@1";
+pub const SCHEMA_NOTE: &str = "canvas-cli/note@1";
+pub const SCHEMA_FOLLOW: &str = "canvas-cli/follow@1";
 pub const SCHEMA_BRIDGE: &str = "canvas-cli/bridge@1";
 pub const SCHEMA_VERSION: &str = "canvas-cli/version@1";
 pub const SCHEMA_ERROR: &str = "canvas-cli/error@1";
@@ -315,6 +317,16 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
             id: SCHEMA_HERE,
             variant: None,
             fixture: include_str!("schemas/here.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_NOTE,
+            variant: None,
+            fixture: include_str!("schemas/note.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_FOLLOW,
+            variant: None,
+            fixture: include_str!("schemas/follow.json"),
         },
         SchemaEntry {
             id: SCHEMA_BRIDGE,
@@ -1767,6 +1779,77 @@ pub struct HereBrowserJson {
     /// Why `selection` and `text` are absent, when they are: `zone_opaque`,
     /// `validating`, or `account_mismatch`.
     pub content_reason: Option<String>,
+    /// The last `context.follow` this consumer asked for, with the load
+    /// outcome as it stands now. `null` when none was asked for.
+    ///
+    /// It lives in `browser` because it is an observation of the browser, and
+    /// it is where the **load outcome** of a navigation is reported: the
+    /// `follow@1` answer carries the dispatch acknowledgement alone
+    /// (REPORT §3.2).
+    pub follow: Option<FollowJson>,
+    /// The notes the panel is holding for this attachment, oldest first.
+    pub notes: Vec<NoteJson>,
+}
+
+/// One `context.follow`, from dispatch to load.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FollowJson {
+    pub request_id: String,
+    pub url: String,
+    /// The companion accepted the navigation. This is not a load.
+    pub dispatched: bool,
+    pub dispatched_at: String,
+    /// How long the acknowledgement took, in milliseconds.
+    pub dispatch_ms: u64,
+    /// The navigation generation the request was bound to.
+    pub generation: u64,
+    /// `loaded`, `failed`, or `unknown`.
+    pub load: String,
+    /// When the load outcome was reported, when it was.
+    pub load_at: Option<String>,
+}
+
+/// One inert note the panel is holding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NoteJson {
+    pub note_id: String,
+    /// Which consumer wrote it.
+    pub consumer: String,
+    /// Markdown source. The panel renders a sanitized subset of it; nothing
+    /// downstream should treat it as HTML.
+    pub text: String,
+    pub source_refs: Vec<String>,
+    pub at: String,
+    /// The navigation generation the note was written against.
+    pub generation: u64,
+}
+
+impl From<&canvas_core::bridge::ipc::FollowStatus> for FollowJson {
+    fn from(follow: &canvas_core::bridge::ipc::FollowStatus) -> Self {
+        Self {
+            request_id: follow.request_id.clone(),
+            url: follow.url.clone(),
+            dispatched: follow.dispatched,
+            dispatched_at: follow.dispatched_at.clone(),
+            dispatch_ms: follow.dispatch_ms,
+            generation: follow.generation,
+            load: follow.load.as_str().to_owned(),
+            load_at: follow.load_at.clone(),
+        }
+    }
+}
+
+impl From<&canvas_core::bridge::note::Note> for NoteJson {
+    fn from(note: &canvas_core::bridge::note::Note) -> Self {
+        Self {
+            note_id: note.note_id.clone(),
+            consumer: note.consumer.clone(),
+            text: note.text.clone(),
+            source_refs: note.source_refs.clone(),
+            at: note.at.clone(),
+            generation: note.generation,
+        }
+    }
 }
 
 /// The account the companion probed, verified against this identity.
@@ -1774,6 +1857,51 @@ pub struct HereBrowserJson {
 pub struct HereAccountJson {
     pub user_id: String,
     pub observed_at: String,
+}
+
+/// `note@1` result: the note the panel is now holding.
+///
+/// The note is inert. It is displayed to the person and decides nothing: no
+/// note can approve, decline, or cancel a plan (REPORT §3.5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NoteResult {
+    /// The attachment the note belongs to; `null` when none was held.
+    pub attachment: Option<String>,
+    /// The consumer that wrote it; `null` for `canvas note`.
+    pub consumer: Option<String>,
+    /// The note, when one was held.
+    pub note: Option<NoteJson>,
+    /// How many notes the panel now holds for this attachment.
+    pub held: u64,
+    /// Why no note was held, when none was.
+    pub reason: Option<String>,
+}
+
+/// `follow@1` result: one navigation, dispatch and load kept apart.
+///
+/// `dispatch` is what this answer knows: the companion accepted the
+/// navigation. `load` is `unknown` here by design, and the settled outcome
+/// arrives later on the `here@1` bundle (REPORT §3.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FollowResult {
+    /// The attachment whose tab was asked to move; `null` when none was.
+    pub attachment: Option<String>,
+    /// The consumer that asked; `null` for the CLI.
+    pub consumer: Option<String>,
+    /// What the target resolved to: `course`, `assignment`, `file`,
+    /// `announcement`, or `url`.
+    pub target_kind: String,
+    /// The resolved id, when the target named one.
+    pub id: String,
+    /// The canonical Canvas URL the target resolved to.
+    pub url: String,
+    /// The dispatch acknowledgement, when the companion gave one.
+    pub follow: Option<FollowJson>,
+    /// Navigation is not a preview. Canvas' own page controllers run, and
+    /// some of them write: opening a discussion marks it read (S13).
+    pub side_effects: Vec<String>,
+    /// Why the tab did not move, when it did not.
+    pub reason: Option<String>,
 }
 
 /// `here@1` = `ContextBundle@1` (REPORT §3.3).
@@ -1825,6 +1953,8 @@ impl From<&canvas_core::bridge::ipc::Context> for HereBrowserJson {
             text_bytes: context.text_bytes,
             truncated: context.truncated,
             content_reason: context.content_reason.map(|r| r.as_str().to_owned()),
+            follow: context.follow.as_ref().map(FollowJson::from),
+            notes: context.notes.iter().map(NoteJson::from).collect(),
         }
     }
 }

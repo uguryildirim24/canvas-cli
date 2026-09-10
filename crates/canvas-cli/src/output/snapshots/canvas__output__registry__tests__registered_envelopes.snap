@@ -2488,8 +2488,30 @@ expression: rendered
         "content_reason": null,
         "course_id": "45679",
         "document_id": "6C1F7A2E9B3D4A58",
+        "follow": {
+          "dispatch_ms": 41,
+          "dispatched": true,
+          "dispatched_at": "2026-09-10T16:04:39Z",
+          "generation": 3,
+          "load": "loaded",
+          "load_at": "2026-09-10T16:04:40Z",
+          "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
+          "url": "https://lasell.instructure.com/courses/45679/assignments/98765"
+        },
         "frame_id": 0,
         "navigation_generation": 3,
+        "notes": [
+          {
+            "at": "2026-09-10T16:04:38Z",
+            "consumer": "mcp:claude-code",
+            "generation": 3,
+            "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
+            "source_refs": [
+              "https://lasell.instructure.com/courses/45679/assignments/98765"
+            ],
+            "text": "The rubric asks for two sources. See the assignment page."
+          }
+        ],
         "observed_at": "2026-09-10T16:04:40Z",
         "origin": "https://lasell.instructure.com",
         "page_kind": "assignment",
@@ -2515,6 +2537,83 @@ expression: rendered
       "state": "attached"
     },
     "schema": "canvas-cli/here@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "attachment": "0f3c9a1b2d4e5f60718293a4b5c6d7e8",
+      "consumer": "mcp:claude-code",
+      "held": 1,
+      "note": {
+        "at": "2026-09-10T16:04:38Z",
+        "consumer": "mcp:claude-code",
+        "generation": 3,
+        "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
+        "source_refs": [
+          "https://lasell.instructure.com/courses/45679/assignments/98765"
+        ],
+        "text": "The rubric asks for two sources. See the assignment page."
+      },
+      "reason": null
+    },
+    "schema": "canvas-cli/note@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "attachment": "0f3c9a1b2d4e5f60718293a4b5c6d7e8",
+      "consumer": "mcp:claude-code",
+      "follow": {
+        "dispatch_ms": 41,
+        "dispatched": true,
+        "dispatched_at": "2026-09-10T16:04:39Z",
+        "generation": 3,
+        "load": "unknown",
+        "load_at": null,
+        "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
+        "url": "https://lasell.instructure.com/courses/45679/assignments/98765"
+      },
+      "id": "98765",
+      "reason": null,
+      "side_effects": [
+        "the browser loads the page, and Canvas' own page controllers run: a discussion page marks itself read"
+      ],
+      "target_kind": "assignment",
+      "url": "https://lasell.instructure.com/courses/45679/assignments/98765"
+    },
+    "schema": "canvas-cli/follow@1",
     "warnings": []
   },
   {

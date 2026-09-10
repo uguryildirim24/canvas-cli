@@ -245,7 +245,7 @@ fn refusal(
 }
 
 /// What a person reads when a bundle is unavailable.
-fn message_for(reason: Reason) -> String {
+pub fn message_for(reason: Reason) -> String {
     match reason {
         Reason::NotAttached => "no Canvas tab is attached; open one and click the companion".into(),
         Reason::Paused => "sharing is paused; return to the tab to resume it".into(),
@@ -259,6 +259,18 @@ fn message_for(reason: Reason) -> String {
         Reason::StaleGeneration => "the page moved on; ask again".into(),
         Reason::ZoneOpaque => "this page is opaque to the companion".into(),
         Reason::Protocol => "the broker answered something this build does not understand".into(),
+        Reason::NoteTooLarge => format!(
+            "a note may carry at most {} bytes of text",
+            canvas_core::bridge::note::MAX_NOTE_BYTES
+        ),
+        Reason::SourceRefRejected => {
+            "a source ref must be a page of the attached Canvas, or a canvas:// reference".into()
+        }
+        Reason::NoteRejected => "a note needs text, and at most a handful of source refs".into(),
+        Reason::OriginMismatch => {
+            "that target is outside the Canvas the companion was granted".into()
+        }
+        Reason::NavigationTimeout => "the companion did not take the navigation; try again".into(),
     }
 }
 
@@ -333,6 +345,11 @@ mod tests {
             Reason::StaleGeneration,
             Reason::ZoneOpaque,
             Reason::Protocol,
+            Reason::NoteTooLarge,
+            Reason::SourceRefRejected,
+            Reason::NoteRejected,
+            Reason::OriginMismatch,
+            Reason::NavigationTimeout,
         ] {
             let message = message_for(reason);
             assert!(!message.is_empty(), "{reason}");

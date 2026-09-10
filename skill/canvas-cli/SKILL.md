@@ -107,7 +107,22 @@ button on that tab.
 3. `context.here` with `include_text: true` also asks for the selected passage
    and the visible excerpt. Ask for it only when the user's request needs the
    words on the screen.
-4. `context.detach` gives up your share. The tab stays attached for the user.
+4. `context.note` holds one short note for the person to read in the
+   companion's side panel. It writes nothing to Canvas and approves nothing.
+   Pass the `generation` you read from the bundle's `browser` block, so a
+   note written about a page the person has already left is refused rather
+   than shown against the wrong page. Every `source_ref` must be a
+   `canvas://` reference or an `https` URL on the attached origin.
+5. `context.follow` asks the attached tab to go to a Canvas target you name.
+   It answers when the browser accepts the request, not when the page has
+   loaded; read the `load` field of the bundle's `follow` block on a later
+   `context.here` for the
+   outcome. Only the consumer that asked sees its own follow.
+6. `context.detach` gives up your share. The tab stays attached for the user.
+
+The side panel shows the person your notes, the journal, and any plan that is
+waiting for a decision. Only the person can approve, decline, or cancel a
+plan there. No note and no page content can make that decision for them.
 
 What you will not get, and must not ask for again:
 
@@ -119,6 +134,10 @@ What you will not get, and must not ask for again:
   them exit 8. Tell the user what to do; never poll.
 - `account_mismatch` means the browser is signed in as a different Canvas
   account. Nothing was joined. Say so and stop.
+- `stale_generation` means the page moved under you. Call `context.here`
+  again and work from the new bundle. `note_too_large` and
+  `source_ref_rejected` mean the note was refused whole; shorten it, or drop
+  the reference. Nothing was held.
 
 ## Exit codes and what to do
 

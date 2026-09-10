@@ -21,10 +21,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use canvas_core::bridge::framing;
-use canvas_core::bridge::ipc::{self, Body, Op, Reason, Response};
+use canvas_core::bridge::ipc::{self, Body, FollowStatus, LoadOutcome, Op, Reason, Response};
 use canvas_core::bridge::state::{Accepted, Broker, OwnedIdentity};
 use canvas_core::bridge::wire::{
-    ExtensionMessage, HostMessage, NATIVE_PROTOCOL, Observation, PauseCause,
+    ExtensionMessage, HostMessage, NATIVE_PROTOCOL, Observation, PanelState, PauseCause,
 };
 use canvas_core::bridge::{Endpoint, state};
 use canvas_core::identity::{IdentityDocument, IdentityLock};
@@ -33,7 +33,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::bridge::manifest;
 use crate::bridge::owner::{OwnerError, OwnerRecord, Ownership};
+use crate::bridge::panel::{self, Decision};
 use crate::commands::Globals;
+use crate::session::Session;
 
 /// How often the host re-reads `identity.json` (§10).
 const IDENTITY_POLL: Duration = Duration::from_secs(2);
@@ -44,6 +46,14 @@ const IDENTITY_POLL: Duration = Duration::from_secs(2);
 /// hears this host's own answer rather than giving up first.
 pub(crate) const TEXT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long a `follow` waits for the companion's dispatch acknowledgement.
+///
+/// REPORT §3.2 proposes a p95 under 300 ms for the acknowledgement, so a wait
+/// several times that is generous and still well inside the client's own
+/// timeout. Exceeding it is `navigation_timeout`, not a claim that the page
+/// did or did not load.
+pub(crate) const NAVIGATE_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// Exit codes this process uses. It has no §7 envelope, so these are the
 /// §14 codes it can still express honestly.
 const EXIT_REFUSED: u8 = 8;
@@ -53,12 +63,21 @@ const EXIT_LOCAL: u8 = 13;
 type TextWaiters =
     Arc<Mutex<std::collections::HashMap<String, oneshot::Sender<Result<(), Reason>>>>>;
 
+/// A pending navigation, waiting for the companion to acknowledge it.
+type NavigateWaiters =
+    Arc<Mutex<std::collections::HashMap<String, oneshot::Sender<Result<(), Reason>>>>>;
+
 /// The shared parts of one running host.
 struct Host {
     broker: Arc<tokio::sync::Mutex<Broker>>,
     /// The native-messaging channel to Chrome, shared by every task.
     stdout: Arc<Mutex<io::Stdout>>,
     waiters: TextWaiters,
+    navigations: NavigateWaiters,
+    /// The identity this host owns, for the panel's journals and plans.
+    ///
+    /// The panel shows what the host reads; the extension opens no database.
+    session: Arc<Session>,
     /// Set when the host must stop: released, disconnected, or replaced.
     stop: Arc<tokio::sync::Notify>,
     stopping: Arc<std::sync::atomic::AtomicBool>,
@@ -157,10 +176,14 @@ async fn serve(globals: &Globals, caller_origin: Option<&str>) -> Result<(), Hos
         generation: session.identity.generation.to_string(),
     };
     let broker = Broker::new(identity, Some(extension_id.to_owned()));
+    let identity_json = session.paths.identity_json();
+    let generation = session.identity.generation.to_string();
     let host = Host {
         broker: Arc::new(tokio::sync::Mutex::new(broker)),
         stdout: Arc::new(Mutex::new(io::stdout())),
         waiters: TextWaiters::default(),
+        navigations: NavigateWaiters::default(),
+        session: Arc::new(session),
         stop: Arc::new(tokio::sync::Notify::new()),
         stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
@@ -175,14 +198,12 @@ async fn serve(globals: &Globals, caller_origin: Option<&str>) -> Result<(), Hos
     let pause_after = pause_hidden_after_ms();
     host.send(&HostMessage::Ready {
         protocol: NATIVE_PROTOCOL.to_owned(),
-        identity_key: session.identity.key.to_string(),
-        origin: session.identity.origin.clone(),
+        identity_key: host.session.identity.key.to_string(),
+        origin: host.session.identity.origin.clone(),
         pause_hidden_after_ms: pause_after,
     });
 
     let messages = read_stdin();
-    let identity_json = session.paths.identity_json();
-    let generation = session.identity.generation.to_string();
     let outcome = run_loop(&host, listener, messages, &identity_json, &generation).await;
 
     // Erase everything before the process ends.
@@ -329,8 +350,135 @@ async fn handle_extension(host: &Arc<Host>, message: ExtensionMessage) {
                     reason: "cross_origin".to_owned(),
                 });
             }
+            push_panel(host, 0).await;
+        }
+        ExtensionMessage::NavigateAck {
+            request_id,
+            accepted,
+            reason,
+        } => {
+            let waiter = host
+                .navigations
+                .lock()
+                .ok()
+                .and_then(|mut waiters| waiters.remove(&request_id));
+            if let Some(waiter) = waiter {
+                let outcome = if accepted {
+                    Ok(())
+                } else {
+                    // The companion named a refusal; anything it does not
+                    // name is a stale generation, because the extension is
+                    // the side that can see whether the tab moved on.
+                    Err(reason
+                        .as_deref()
+                        .and_then(parse_reason)
+                        .unwrap_or(Reason::StaleGeneration))
+                };
+                let _ = waiter.send(outcome);
+            }
+        }
+        ExtensionMessage::NavigateOutcome {
+            request_id,
+            outcome,
+        } => {
+            let load = match outcome.as_str() {
+                "loaded" => LoadOutcome::Loaded,
+                "failed" => LoadOutcome::Failed,
+                _ => LoadOutcome::Unknown,
+            };
+            let at = crate::output::generated_at_now();
+            host.broker.lock().await.navigated(&request_id, load, &at);
+            push_panel(host, 0).await;
+        }
+        ExtensionMessage::Decision {
+            plan_id,
+            handle,
+            plan_sha256,
+            decision,
+        } => {
+            decide(host, &plan_id, &handle, &plan_sha256, &decision).await;
+        }
+        ExtensionMessage::PanelHello { protocol } => {
+            if protocol != NATIVE_PROTOCOL {
+                host.send(&HostMessage::Refused {
+                    reason: Reason::Protocol.as_str().to_owned(),
+                });
+                return;
+            }
+            push_panel(host, 0).await;
         }
     }
+}
+
+/// Parse a refusal the companion named on a navigation acknowledgement.
+fn parse_reason(raw: &str) -> Option<Reason> {
+    match raw {
+        "not_attached" => Some(Reason::NotAttached),
+        "paused" => Some(Reason::Paused),
+        "origin_mismatch" => Some(Reason::OriginMismatch),
+        "stale_generation" => Some(Reason::StaleGeneration),
+        _ => None,
+    }
+}
+
+/// Apply one panel decision, then show the panel what it did.
+///
+/// Every check runs before anything moves, and a failed check changes
+/// nothing. The person is told on stderr which check failed; the panel is
+/// told by the state it gets back, which still lists the plan.
+async fn decide(host: &Arc<Host>, plan_id: &str, handle: &str, digest: &str, decision: &str) {
+    let Some(decision) = Decision::parse(decision) else {
+        let _ = writeln!(
+            io::stderr(),
+            "refusing a panel decision: {}",
+            panel::DecisionRefusal::UnknownDecision.as_str()
+        );
+        push_panel(host, 0).await;
+        return;
+    };
+    let session = Arc::clone(&host.session);
+    let plan = plan_id.to_owned();
+    let plan_id = plan_id.to_owned();
+    let handle = handle.to_owned();
+    let digest = digest.to_owned();
+    let applied = tokio::task::spawn_blocking(move || {
+        panel::apply_decision(&session, &plan_id, &handle, &digest, decision)
+    })
+    .await;
+    match applied {
+        Ok(Ok(())) => {
+            // The person's own record of what they just did. The plan id is
+            // an id; nothing about the work itself is written here.
+            let _ = writeln!(io::stderr(), "panel {}: plan {plan}", decision.as_str());
+        }
+        Ok(Err(refusal)) => {
+            let _ = writeln!(
+                io::stderr(),
+                "refusing a panel decision: {}",
+                refusal.as_str()
+            );
+        }
+        Err(_) => {
+            let _ = writeln!(io::stderr(), "the panel decision could not be applied");
+        }
+    }
+    push_panel(host, 0).await;
+}
+
+/// Compute the panel's whole view and send it.
+///
+/// The bundle the panel sees is the CLI's own: the host reads it with neither
+/// an attachment id nor a consumer, which is the reading REPORT §3.2 permits
+/// the local side. It never asks the browser for text.
+async fn push_panel(host: &Arc<Host>, since: i64) {
+    let context = host.broker.lock().await.context(None, None, false).ok();
+    let session = Arc::clone(&host.session);
+    let state = tokio::task::spawn_blocking(move || {
+        Box::new(panel::state(&session, context.as_ref(), since))
+    })
+    .await;
+    let state = state.unwrap_or_else(|_| Box::new(PanelState::default()));
+    host.send(&HostMessage::Panel { state });
 }
 
 /// Apply one observation and finish validation when the account matched.
@@ -448,6 +596,129 @@ async fn answer(host: &Arc<Host>, request: ipc::Request) -> Body {
             consumer,
             include_text,
         } => here(host, attachment_id, consumer, include_text).await,
+        Op::Note {
+            attachment_id,
+            consumer,
+            generation,
+            text,
+            source_refs,
+        } => {
+            let at = crate::output::generated_at_now();
+            let stored = host.broker.lock().await.note(
+                attachment_id.as_deref(),
+                consumer.as_deref(),
+                generation,
+                &text,
+                &source_refs,
+                &at,
+            );
+            match stored {
+                Ok(note) => {
+                    let (attachment_id, held) = {
+                        let broker = host.broker.lock().await;
+                        (
+                            broker.attachment_id().unwrap_or_default().to_owned(),
+                            broker.notes().len() as u64,
+                        )
+                    };
+                    // The panel is told twice on purpose: the note arrives on
+                    // its own so a live panel can append one row, and the
+                    // whole state follows so a panel that just opened is
+                    // consistent.
+                    host.send(&HostMessage::Note {
+                        note: Box::new(note.clone()),
+                    });
+                    push_panel(host, 0).await;
+                    Body::Noted {
+                        note: Box::new(note),
+                        attachment_id,
+                        held,
+                    }
+                }
+                Err(reason) => Body::Refused { reason },
+            }
+        }
+        Op::Follow {
+            attachment_id,
+            consumer,
+            generation,
+            url,
+        } => follow(host, attachment_id, consumer, generation, url).await,
+    }
+}
+
+/// The `follow` operation: dispatch a navigation and answer the
+/// acknowledgement alone.
+///
+/// The capability, the generation, and the granted origin are settled before
+/// the browser hears anything, so an unentitled caller and a cross-origin
+/// target never move the person's tab. What comes back is the dispatch
+/// acknowledgement; whether the page loaded arrives later, as a state on the
+/// bundle (REPORT §3.2).
+async fn follow(
+    host: &Arc<Host>,
+    attachment_id: Option<String>,
+    consumer: Option<String>,
+    generation: u64,
+    url: String,
+) -> Body {
+    if let Err(reason) = host.broker.lock().await.may_follow(
+        attachment_id.as_deref(),
+        consumer.as_deref(),
+        generation,
+        &url,
+    ) {
+        return Body::Refused { reason };
+    }
+    let request_id = state::new_attachment_id();
+    let (tx, rx) = oneshot::channel();
+    if let Ok(mut waiters) = host.navigations.lock() {
+        waiters.insert(request_id.clone(), tx);
+    }
+    let started = std::time::Instant::now();
+    host.send(&HostMessage::Navigate {
+        request_id: request_id.clone(),
+        url: url.clone(),
+    });
+    let acknowledged = match tokio::time::timeout(NAVIGATE_TIMEOUT, rx).await {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(_)) => Err(Reason::NotAttached),
+        Err(_) => {
+            if let Ok(mut waiters) = host.navigations.lock() {
+                waiters.remove(&request_id);
+            }
+            Err(Reason::NavigationTimeout)
+        }
+    };
+    if let Err(reason) = acknowledged {
+        return Body::Refused { reason };
+    }
+    let follow = FollowStatus {
+        request_id,
+        url,
+        dispatched: true,
+        dispatched_at: crate::output::generated_at_now(),
+        dispatch_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        generation,
+        // The tab is on its way. Saying anything else here would be a guess.
+        load: LoadOutcome::Unknown,
+        load_at: None,
+    };
+    host.broker
+        .lock()
+        .await
+        .dispatched(consumer.as_deref(), follow.clone());
+    let attachment_id = host
+        .broker
+        .lock()
+        .await
+        .attachment_id()
+        .unwrap_or_default()
+        .to_owned();
+    push_panel(host, 0).await;
+    Body::Followed {
+        follow: Box::new(follow),
+        attachment_id,
     }
 }
 

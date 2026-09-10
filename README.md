@@ -113,7 +113,7 @@ Every command below runs in this build.
 | `canvas inbox show` | Show one conversation and its messages. |
 | `canvas inbox unread-count` | Show the unread conversation count. |
 | `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. |
-| `canvas open` | Open a course, or any Canvas URL, in the browser. |
+| `canvas open` | Open a course, or any Canvas URL, in the browser. `--follow` navigates the attached tab instead; `--attachment`. |
 | `canvas open assignment` | Open an assignment page in the browser. |
 | `canvas open file` | Open a file by id in the browser. |
 | `canvas open announcement` | Open an announcement page in the browser. |
@@ -122,6 +122,7 @@ Every command below runs in this build.
 | `canvas bridge status` | Report the host manifest, the broker owner, and the attachment. |
 | `canvas bridge detach` | Ask the live broker to drop the attachment. `--attachment`. |
 | `canvas here` | Show the attached Canvas page as a context bundle. `--attachment`, `--text`. |
+| `canvas note` | Show one inert note in the companion's side panel. `--text`, `--source-ref`, `--attachment`, `--generation`. |
 | `canvas sync` | Refresh the cached datasets. `--full` adds files, modules, and the calendar. |
 | `canvas watch` | Stream local events. `--jsonl` for one document per line, `--since CURSOR`, `--once`. |
 | `canvas notify` | Post desktop alerts for observed events. `--since CURSOR`, `--stdout`. |

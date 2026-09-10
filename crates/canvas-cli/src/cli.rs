@@ -14,7 +14,7 @@ Commands (v1):
   grades, files, download, modules
   announcements, announcement, calendar
   open, open assignment|file|announcement
-  bridge install|host|status|detach, here
+  bridge install|host|status|detach, here, note
   sync, watch, notify, cache stats|clear|path
   config path|edit|get|set
   alias set|list|remove
@@ -360,6 +360,15 @@ pub enum Commands {
         /// Course id, code, alias, or a Canvas URL.
         #[arg(required = true)]
         target: Option<String>,
+        /// Navigate the attached Canvas tab instead of opening a new window.
+        ///
+        /// This is not a preview: Canvas' own page controllers run, and a
+        /// discussion page marks itself read when it loads.
+        #[arg(long)]
+        follow: bool,
+        /// The attachment to navigate. The sole one is used when omitted.
+        #[arg(long, value_name = "ID", requires = "follow")]
+        attachment: Option<String>,
     },
     /// Set up and inspect the browser companion broker.
     Bridge {
@@ -374,6 +383,22 @@ pub enum Commands {
         /// Also ask for the selected passage and the visible excerpt.
         #[arg(long)]
         text: bool,
+    },
+    /// Show one inert note in the companion's side panel.
+    Note {
+        /// The attachment to show it on. The sole one is used when omitted.
+        #[arg(long, value_name = "ID")]
+        attachment: Option<String>,
+        /// The note, as Markdown source. A sanitized subset of it is rendered.
+        #[arg(long, required = true)]
+        text: String,
+        /// A page of the attached Canvas, or a `canvas://` reference.
+        #[arg(long = "source-ref", value_name = "REF")]
+        source_refs: Vec<String>,
+        /// Refuse the note unless the tab is still on this navigation
+        /// generation. `canvas here` reports the current one.
+        #[arg(long, value_name = "N")]
+        generation: Option<u64>,
     },
     /// Refresh cached datasets.
     Sync {
@@ -645,6 +670,7 @@ impl Cli {
                 Commands::Open {
                     command: Some(_),
                     target: Some(_),
+                    ..
                 } => Some("an open target cannot be used with an open subcommand"),
                 _ => None,
             }

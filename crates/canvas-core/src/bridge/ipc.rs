@@ -282,13 +282,23 @@ pub enum Body {
     /// `detach`.
     Detached { detached: bool },
     /// `note`: the note is held and the panel was told about it.
-    Noted { note: Box<Note> },
-    /// `follow`: the companion accepted the navigation.
+    Noted {
+        note: Box<Note>,
+        /// The attachment it belongs to.
+        attachment_id: String,
+        /// How many notes the panel now holds for that attachment.
+        held: u64,
+    },
+    /// `follow`: the companion accepted the navigation, and the attachment
+    /// whose tab moved.
     ///
     /// This is the **dispatch acknowledgement** and nothing more. Whether the
     /// page loaded is a later state, which arrives on the bundle's
     /// `follow` section (REPORT §3.2, "report loaded/failed separately").
-    Followed { follow: Box<FollowStatus> },
+    Followed {
+        follow: Box<FollowStatus>,
+        attachment_id: String,
+    },
     /// `release`.
     Released { released: bool },
     /// Any operation that could not be served.
