@@ -1,0 +1,21 @@
+{
+  "since": "0",
+  "cursor": "12",
+  "events": 1,
+  "ticks": 1,
+  "resync_required": false,
+  "skipped": null,
+  "datasets": [
+    {
+      "dataset": "courses",
+      "scope": "active",
+      "source": "network",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "complete": true,
+      "count": 1,
+      "stale": false,
+      "requests": 1,
+      "error": null
+    }
+  ]
+}

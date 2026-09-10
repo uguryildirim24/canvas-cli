@@ -26,13 +26,13 @@ use rmcp::model::{
     ReadResourceRequestParams, ReadResourceResponse, ServerCapabilities, ServerInfo,
     SubscriptionFilter,
 };
-use rmcp::service::{RequestContext, RoleServer};
+use rmcp::service::{RequestContext, RoleServer, SubscriptionContext};
 
 use crate::commands::submit::{Pending, Refusal};
 use crate::commands::{Globals, submit};
 use crate::mcp::catalog::Dispatched;
 use crate::mcp::resources::Binding;
-use crate::mcp::{catalog, resources, result};
+use crate::mcp::{catalog, resources, result, subscribe};
 use crate::output::now_timestamp;
 
 /// The revisions this server implements, newest first.
@@ -88,10 +88,12 @@ impl CanvasServer {
         ServerCapabilities::builder()
             .enable_tools()
             .enable_resources()
-            // The resource list is fixed for the lifetime of an instance in
-            // this release, so `subscriptions/listen` is answered and no
-            // notification is ever sent.
+            // The resource list is fixed for the lifetime of an instance: one
+            // instance serves one identity generation. Per-resource updates
+            // are not fixed, and `subscriptions/listen` sends them from the
+            // event log (REPORT §3.6).
             .enable_resources_list_changed()
+            .enable_resources_subscribe()
             .build()
     }
 
@@ -422,21 +424,34 @@ impl ServerHandler for CanvasServer {
             .map(ReadResourceResponse::Complete)
     }
 
-    /// Declare `subscriptions/listen` without promising notifications.
+    /// Accept the resource-list category, plus every subscribed URI this
+    /// instance can actually invalidate.
     ///
-    /// Returning `None` here would leave the method unimplemented. This
-    /// server accepts the resource-list category only, and nothing in this
-    /// release changes that list, so a host's subscription is answered and
-    /// stays quiet. Per-resource change events are a later package.
+    /// A foreign identity key, another generation, and an unknown path all
+    /// address nothing here, so they are dropped from the accepted filter:
+    /// the host is told exactly which of its names this server can update.
     fn accepted_subscription_filter(
         &self,
-        _requested: &SubscriptionFilter,
+        requested: &SubscriptionFilter,
     ) -> Option<SubscriptionFilter> {
-        Some(
-            SubscriptionFilter::builder()
-                .resources_list_changed()
-                .build(),
-        )
+        let mut filter = SubscriptionFilter::builder().resources_list_changed();
+        if let Some(uris) = requested.resource_subscriptions.as_deref() {
+            let served = subscribe::served(&self.binding, uris);
+            if !served.is_empty() {
+                filter = filter.resource_subscriptions(served);
+            }
+        }
+        Some(filter.build())
+    }
+
+    /// Serve one subscription from the event log until the host cancels it.
+    ///
+    /// An event on a dataset scope invalidates the resources that read that
+    /// scope, and the cursor follows the same replay rules `watch --since`
+    /// follows (REPORT §3.6).
+    async fn listen(&self, context: SubscriptionContext) -> Result<(), ErrorData> {
+        let consumer = consumer_of(context.request_context());
+        subscribe::listen(&self.globals, &self.binding, &consumer, context).await
     }
 }
 
@@ -487,8 +502,9 @@ mod tests {
         assert!(server.get_tool("auth.token").is_none());
     }
 
+    /// A host that asks for the list category alone gets nothing more.
     #[test]
-    fn the_declared_subscription_filter_promises_no_resource_events() {
+    fn a_list_only_subscription_promises_no_resource_events() {
         let accepted = server()
             .accepted_subscription_filter(
                 &SubscriptionFilter::builder()
@@ -498,5 +514,33 @@ mod tests {
             .expect("subscriptions/listen is declared");
         assert_eq!(accepted.resources_list_changed, Some(true));
         assert_eq!(accepted.resource_subscriptions, None);
+    }
+
+    /// Only names this instance serves survive into the accepted filter.
+    #[test]
+    fn a_subscription_keeps_only_the_uris_this_instance_serves() {
+        let server = server();
+        let binding = &server.binding;
+        let foreign = Binding::new("other.test-9-99999999", &binding.generation);
+        let accepted = server
+            .accepted_subscription_filter(
+                &SubscriptionFilter::builder()
+                    .resource_subscriptions([
+                        binding.uri("todo"),
+                        foreign.uri("todo"),
+                        binding.uri("auth/token"),
+                    ])
+                    .build(),
+            )
+            .expect("subscriptions/listen is declared");
+        assert_eq!(
+            accepted.resource_subscriptions,
+            Some(vec![binding.uri("todo")])
+        );
+        // The resource capability must advertise subscriptions, or the SDK
+        // strips them from the accepted filter before the acknowledgment.
+        let capabilities = CanvasServer::capabilities();
+        let resources = capabilities.resources.expect("resources are enabled");
+        assert_eq!(resources.subscribe, Some(true));
     }
 }

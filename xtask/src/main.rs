@@ -40,6 +40,9 @@ enum Command {
         /// Report a missed target without failing.
         #[arg(long)]
         no_fail: bool,
+        /// Also measure one `watch` tick, and the targets with `watch` running.
+        #[arg(long)]
+        watch: bool,
         /// Write the report here instead of `docs/bench.md`.
         #[arg(long, value_name = "PATH")]
         doc: Option<PathBuf>,
@@ -155,6 +158,7 @@ fn main() -> ExitCode {
             mcp,
             bridge,
             no_fail,
+            watch,
             doc,
         } => {
             let options = bench::Options {
@@ -163,6 +167,7 @@ fn main() -> ExitCode {
                 no_fail,
                 mcp,
                 bridge,
+                watch,
                 doc,
             };
             match bench::run(&options) {

@@ -15,7 +15,7 @@ Commands (v1):
   announcements, announcement, calendar
   open, open assignment|file|announcement
   bridge install|host|status|detach, here
-  sync, cache stats|clear|path
+  sync, watch, notify, cache stats|clear|path
   config path|edit|get|set
   alias set|list|remove
   doctor, completions, version
@@ -381,6 +381,27 @@ pub enum Commands {
         #[arg(long)]
         full: bool,
     },
+    /// Stream local events as they are observed.
+    Watch {
+        /// One complete JSON document per line.
+        #[arg(long)]
+        jsonl: bool,
+        /// Replay events after this cursor first.
+        #[arg(long, value_name = "CURSOR")]
+        since: Option<String>,
+        /// Run one tick and exit.
+        #[arg(long)]
+        once: bool,
+    },
+    /// Post desktop notifications for observed events.
+    Notify {
+        /// Consume events after this cursor.
+        #[arg(long, value_name = "CURSOR")]
+        since: Option<String>,
+        /// Write the notifications to stdout instead of the desktop.
+        #[arg(long)]
+        stdout: bool,
+    },
     /// Inspect or clear the local cache.
     Cache {
         #[command(subcommand)]
@@ -607,6 +628,11 @@ impl Cli {
             Some("--fresh cannot be used with --offline")
         } else if self.json && self.command.has_raw_output() {
             Some("--json cannot be used with this raw-output command")
+        } else if self.json && matches!(self.command, Commands::Watch { .. }) {
+            // REPORT §3.6: the stream is its own contract, and §7's one
+            // document per invocation rule is unchanged. `--jsonl` is the
+            // machine-readable form of `watch`.
+            Some("--json cannot be used with watch; use --jsonl")
         } else {
             match &self.command {
                 Commands::Submission {
@@ -648,6 +674,9 @@ impl Commands {
                 command: BridgeCommand::Host { .. },
             }
             | Self::Completions { .. }
+            // Notify posts derived alerts, not a query result, so it has no
+            // §7 payload and no Appendix D row (REPORT §3.6).
+            | Self::Notify { .. }
             | Self::Schema { .. }
             | Self::Auth {
                 command: AuthCommand::Token { reveal: true },

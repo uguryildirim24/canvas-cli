@@ -47,6 +47,10 @@ const TOKEN: &str = "bench-fixture-token";
 const USER_ID: i64 = 1001;
 
 /// Options of the bench task.
+///
+/// Each flag is one independent switch of the command line, so they stay
+/// separate booleans rather than a state machine.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Options {
     pub fixture: String,
     pub runs: u32,
@@ -55,6 +59,8 @@ pub struct Options {
     pub mcp: bool,
     /// Also measure the browser companion's broker (`canvas bridge host`).
     pub bridge: bool,
+    /// Measure one `watch` tick, and the §13 targets with `watch` running.
+    pub watch: bool,
     /// Where the report goes. `None` means `docs/bench.md`.
     pub doc: Option<PathBuf>,
 }
@@ -119,11 +125,48 @@ impl SetShape {
 /// One measured metric under one load condition.
 struct Measured {
     label: &'static str,
-    concurrent: bool,
+    load: Load,
     p50: f64,
     p95: f64,
     target_p50: Option<f64>,
     target_p95: f64,
+}
+
+/// What else was running while a metric was measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Load {
+    /// Nothing.
+    Idle,
+    /// One `canvas download` stream against the same server.
+    Download,
+    /// One resident `canvas watch` on the same identity (REPORT §3.6).
+    Watch,
+}
+
+impl Load {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Download => "download",
+            Self::Watch => "watch",
+        }
+    }
+}
+
+/// One `canvas watch --jsonl --once` tick.
+struct Tick {
+    p50: f64,
+    p95: f64,
+    /// Events the last measured tick streamed.
+    events: u64,
+    /// API requests the last measured tick made.
+    requests: u64,
+}
+
+/// Everything one bench run measured, apart from the agent surface.
+struct Measurements {
+    targets: Vec<Measured>,
+    tick: Option<Tick>,
 }
 
 impl Measured {
@@ -184,10 +227,11 @@ pub fn run(options: &Options) -> Result<bool> {
         let runs = options.runs;
         let mcp = options.mcp;
         let bridge = options.bridge;
+        let watch = options.watch;
         let outcome = tokio::task::spawn_blocking(move || {
             let harness = Harness::new(release, debug, uri)?;
             harness.prime()?;
-            let measured = harness.measure_all(runs)?;
+            let measured = harness.measure_all(runs, watch)?;
             let agent = if mcp {
                 Some(harness.measure_mcp(runs)?)
             } else {
@@ -386,6 +430,18 @@ impl Harness {
     fn new(release: PathBuf, debug: PathBuf, origin: String) -> Result<Self> {
         let home = tempfile::tempdir()?;
         let data_root = home.path().join("data");
+        // A `watch` run gets its own config directory with every TTL at zero,
+        // so a measured tick does the whole §10 refresh pass instead of finding
+        // the cache fresh. The measured `todo --offline` runs keep the default
+        // config, which they read the cache under.
+        let watch_config = home.path().join("watch-config");
+        std::fs::create_dir_all(&watch_config)?;
+        std::fs::write(
+            watch_config.join("config.toml"),
+            "[cache]\nttl_courses = \"0m\"\nttl_grades = \"0m\"\n\
+             ttl_assignments = \"0m\"\nttl_missing = \"0m\"\n\
+             ttl_planner = \"0m\"\nttl_announcements = \"0m\"\n",
+        )?;
         let document = IdentityDocument::new(&origin, USER_ID, "2026-01-01T00:00:00Z");
         let paths = Paths::for_identity(&data_root, &document.key);
         document.write(&paths.identity_json())?;
@@ -513,6 +569,60 @@ impl Harness {
         Ok((first_output, total))
     }
 
+    /// The config directory a `watch` run reads.
+    fn watch_config(&self) -> PathBuf {
+        self.home.path().join("watch-config")
+    }
+
+    /// A `canvas watch` command: its own config, and plain `http` allowed.
+    fn watch_command(&self, binary: &Path) -> Command {
+        let mut command = self.command(binary, &self.data_root());
+        command
+            .env("CANVAS_CONFIG_DIR", self.watch_config())
+            .env("CANVAS_TEST_ALLOW_HTTP", "1");
+        command
+    }
+
+    /// One `canvas watch --jsonl --once` tick: refresh, observe, and stream.
+    fn watch_tick_once(&self) -> Result<(f64, u64, u64)> {
+        let started = Instant::now();
+        let output = self
+            .watch_command(&self.release)
+            .args(["watch", "--jsonl", "--once", "--color", "never"])
+            .stderr(Stdio::null())
+            .output()?;
+        let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+        if !output.status.success() {
+            bail!("watch --once exited {:?}", output.status.code());
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let summary: Value = text
+            .lines()
+            .rfind(|line| !line.trim().is_empty())
+            .and_then(|line| serde_json::from_str(line).ok())
+            .context("watch --once printed no summary document")?;
+        Ok((
+            elapsed,
+            summary["result"]["events"].as_u64().unwrap_or_default(),
+            summary["requests"]["api"].as_u64().unwrap_or_default(),
+        ))
+    }
+
+    /// Start a resident `canvas watch`, ticking fast enough to be a load.
+    ///
+    /// The tick interval is a debug-only test override, exactly like the
+    /// download load's plain-`http` opt-in, so the load uses the debug binary
+    /// while the measured runs stay on the release one.
+    fn start_watch(&self) -> Result<Child> {
+        Ok(self
+            .watch_command(&self.debug)
+            .args(["watch", "--jsonl", "--color", "never"])
+            .env("CANVAS_TEST_WATCH_TICK_MS", "200")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?)
+    }
+
     /// The quiesced copy every cold run is made from.
     ///
     /// Copying the live data root while a download writes to it can race a
@@ -617,14 +727,19 @@ impl Harness {
         bench_bridge::measure(&self.release, runs)
     }
 
-    fn measure_all(&self, runs: u32) -> Result<Vec<Measured>> {
+    fn measure_all(&self, runs: u32, watch: bool) -> Result<Measurements> {
         copy_dir(&self.data_root(), &self.snapshot())?;
         let mut out = Vec::new();
-        for concurrent in [false, true] {
-            let mut load = if concurrent {
-                Some(self.start_download()?.0)
-            } else {
-                None
+        let groups: &[Load] = if watch {
+            &[Load::Idle, Load::Download, Load::Watch]
+        } else {
+            &[Load::Idle, Load::Download]
+        };
+        for group in groups.iter().copied() {
+            let mut load = match group {
+                Load::Idle => None,
+                Load::Download => Some(self.start_download()?.0),
+                Load::Watch => Some(self.start_watch()?),
             };
             for _ in 0..Self::WARMUP {
                 self.todo_once(&self.data_root())?;
@@ -637,9 +752,12 @@ impl Harness {
                 if let Some(child) = load.as_mut()
                     && child.try_wait()?.is_some()
                 {
-                    // The stream finished early; start another so every run in
-                    // this group carries the same load.
-                    *child = self.start_download()?.0;
+                    // The load ended early; start another so every run in this
+                    // group carries the same load.
+                    *child = match group {
+                        Load::Watch => self.start_watch()?,
+                        _ => self.start_download()?.0,
+                    };
                 }
                 let (f, t) = self.todo_once(&self.data_root())?;
                 first.push(f);
@@ -658,7 +776,7 @@ impl Harness {
                 };
                 out.push(Measured {
                     label: target.label,
-                    concurrent,
+                    load: group,
                     p50: percentile(samples, 0.50),
                     p95: percentile(samples, 0.95),
                     target_p50: target.p50_ms,
@@ -666,7 +784,28 @@ impl Harness {
                 });
             }
         }
-        Ok(out)
+        let tick = if watch {
+            // The first tick of a scope only sets its baseline, so it is a
+            // warm-up here as well as in the report's own terms.
+            self.watch_tick_once()?;
+            let mut samples = Vec::new();
+            let (mut events, mut requests) = (0, 0);
+            for _ in 0..runs {
+                let (elapsed, streamed, api) = self.watch_tick_once()?;
+                samples.push(elapsed);
+                events = streamed;
+                requests = api;
+            }
+            Some(Tick {
+                p50: percentile(&samples, 0.50),
+                p95: percentile(&samples, 0.95),
+                events,
+                requests,
+            })
+        } else {
+            None
+        };
+        Ok(Measurements { targets: out, tick })
     }
 }
 
@@ -722,7 +861,7 @@ fn report(
     root: &Path,
     options: &Options,
     shape: &SetShape,
-    measurements: &[Measured],
+    measurements: &Measurements,
     agent: Option<&bench_mcp::Report>,
     companion: Option<&bench_bridge::Report>,
 ) -> Result<bool> {
@@ -731,18 +870,24 @@ fn report(
         "{:<28} {:<10} {:>9} {:>9} {:>12} {:>7}",
         "metric", "load", "p50 ms", "p95 ms", "target p95", "verdict"
     );
-    for m in measurements {
+    for m in &measurements.targets {
         if m.missed() {
             passed = false;
         }
         println!(
             "{:<28} {:<10} {:>9.1} {:>9.1} {:>12.0} {:>7}",
             m.label,
-            if m.concurrent { "download" } else { "idle" },
+            m.load.label(),
             m.p50,
             m.p95,
             m.target_p95,
             if m.missed() { "MISS" } else { "ok" }
+        );
+    }
+    if let Some(tick) = &measurements.tick {
+        println!(
+            "{:<28} {:<10} {:>9.1} {:>9.1} {:>12} {:>7}",
+            "watch tick", "idle", tick.p50, tick.p95, "none", "—"
         );
     }
     if let Some(agent) = agent {
@@ -846,7 +991,7 @@ fn machine() -> String {
 fn document(
     options: &Options,
     shape: &SetShape,
-    measurements: &[Measured],
+    measurements: &Measurements,
     agent: Option<&bench_mcp::Report>,
     companion: Option<&bench_bridge::Report>,
     passed: bool,
@@ -856,9 +1001,10 @@ fn document(
     writeln!(out, "# Benchmarks\n")?;
     writeln!(
         out,
-        "Generated by `cargo xtask bench{}{} --runs {}`. Do not edit by hand.\n",
+        "Generated by `cargo xtask bench{}{}{} --runs {}`. Do not edit by hand.\n",
         if options.mcp { " --mcp" } else { "" },
         if options.bridge { " --bridge" } else { "" },
+        if options.watch { " --watch" } else { "" },
         options.runs
     )?;
     writeln!(out, "| | |")?;
@@ -884,26 +1030,73 @@ fn document(
         out,
         "Targets are SPEC §13: cached `todo` first output p50 < 50 ms and \
          p95 < 150 ms; full cached `todo` p95 < 250 ms; cold start p95 < 400 ms. \
-         Every metric is measured twice, once idle and once while one `download` \
-         stream runs against the same mock server.\n"
+         Every metric is measured idle and while one `download` stream runs \
+         against the same mock server{}.\n",
+        if options.watch {
+            ", and once more with a resident `canvas watch` on the same identity"
+        } else {
+            ""
+        }
     )?;
     writeln!(
         out,
         "| Metric | Load | p50 ms | p95 ms | Target p50 | Target p95 | Verdict |"
     )?;
     writeln!(out, "|---|---|---:|---:|---:|---:|---|")?;
-    for m in measurements {
+    for m in &measurements.targets {
         writeln!(
             out,
             "| {} | {} | {:.1} | {:.1} | {} | {:.0} | {} |",
             m.label,
-            if m.concurrent { "download" } else { "idle" },
+            m.load.label(),
             m.p50,
             m.p95,
             m.target_p50
                 .map_or_else(|| "—".to_owned(), |t| format!("{t:.0}")),
             m.target_p95,
             if m.missed() { "**miss**" } else { "ok" }
+        )?;
+    }
+
+    if let Some(tick) = &measurements.tick {
+        writeln!(out, "\n## Watch\n")?;
+        writeln!(
+            out,
+            "One `canvas watch --jsonl --once` tick against the same fixture \
+             set: retention, any pending observation, the §10 refresh pass, the \
+             baseline comparison, and the stream write. Every TTL is set to zero \
+             for these runs, so each tick refreshes the whole set; a steady-state \
+             watch refreshes only what its TTL has expired, so this is an upper \
+             bound on tick cost, not a typical one.\n"
+        )?;
+        writeln!(out, "| Metric | p50 ms | p95 ms | Target |")?;
+        writeln!(out, "|---|---:|---:|---|")?;
+        writeln!(
+            out,
+            "| watch tick, full refresh | {:.1} | {:.1} | none (REPORT §3.6: \
+             dataset TTL plus backoff, no 60 s freshness guarantee) |",
+            tick.p50, tick.p95
+        )?;
+        writeln!(
+            out,
+            "\nThe last measured tick made {} API request(s) and streamed {} \
+             event(s). REPORT §3.6 sets no latency target for `watch`; the \
+             number is recorded so a later change can be compared with it.",
+            tick.requests, tick.events
+        )?;
+        writeln!(
+            out,
+            "\nThe `watch` rows of the table above are the §13 `todo` targets \
+             measured while that resident `watch` was running, which is the \
+             REPORT §4 acceptance condition for M6-c."
+        )?;
+    } else {
+        writeln!(out, "\n## Watch\n")?;
+        writeln!(
+            out,
+            "Not measured in this run. `cargo xtask bench --watch` adds one \
+             `canvas watch --jsonl --once` tick and repeats the §13 targets \
+             with a resident `watch` on the same identity."
         )?;
     }
 
@@ -1157,13 +1350,18 @@ mod tests {
             mcp: false,
             bridge: false,
             no_fail: false,
+            watch: false,
             doc: None,
         };
         let shape = SetShape {
             courses: 3,
             extra_pages: 2,
         };
-        let doc = document(&options, &shape, &[], None, None, true).unwrap();
+        let empty = Measurements {
+            targets: Vec::new(),
+            tick: None,
+        };
+        let doc = document(&options, &shape, &empty, None, None, true).unwrap();
         assert!(doc.contains("Courses in set | 3"), "{doc}");
         assert!(doc.contains("fixture set: 3 courses"), "{doc}");
         assert!(doc.contains("not comparable with a 5-course run"), "{doc}");
@@ -1231,7 +1429,7 @@ mod tests {
     fn a_missed_target_is_reported_for_either_percentile() {
         let make = |p50: f64, p95: f64| Measured {
             label: "cached todo, first output",
-            concurrent: false,
+            load: Load::Idle,
             p50,
             p95,
             target_p50: Some(50.0),
@@ -1250,16 +1448,20 @@ mod tests {
             mcp: false,
             bridge: false,
             no_fail: false,
+            watch: false,
             doc: None,
         };
-        let measurements = vec![Measured {
-            label: "cached todo, full run",
-            concurrent: true,
-            p50: 12.0,
-            p95: 18.0,
-            target_p50: None,
-            target_p95: 250.0,
-        }];
+        let measurements = Measurements {
+            targets: vec![Measured {
+                label: "cached todo, full run",
+                load: Load::Download,
+                p50: 12.0,
+                p95: 18.0,
+                target_p50: None,
+                target_p95: 250.0,
+            }],
+            tick: None,
+        };
         let shape = SetShape {
             courses: 5,
             extra_pages: 0,
@@ -1274,5 +1476,61 @@ mod tests {
         assert!(doc.contains("Cold start is a lower bound"));
         assert!(doc.contains("debug build"));
         assert!(doc.contains("cached todo, full run | download | 12.0 | 18.0"));
+    }
+
+    #[test]
+    fn the_watch_section_appears_only_when_watch_was_measured() {
+        let options = Options {
+            fixture: DEFAULT_SET.to_owned(),
+            runs: 3,
+            mcp: false,
+            bridge: false,
+            no_fail: false,
+            watch: true,
+            doc: None,
+        };
+        let measurements = Measurements {
+            targets: vec![Measured {
+                label: "cached todo, full run",
+                load: Load::Watch,
+                p50: 14.0,
+                p95: 22.0,
+                target_p50: None,
+                target_p95: 250.0,
+            }],
+            tick: Some(Tick {
+                p50: 90.0,
+                p95: 130.0,
+                events: 2,
+                requests: 6,
+            }),
+        };
+        let shape = SetShape {
+            courses: 5,
+            extra_pages: 0,
+        };
+        let doc = document(&options, &shape, &measurements, None, None, true).unwrap();
+        assert!(doc.contains("## Watch"), "{doc}");
+        assert!(
+            doc.contains("watch tick, full refresh | 90.0 | 130.0"),
+            "{doc}"
+        );
+        assert!(doc.contains("6 API request(s) and streamed 2"), "{doc}");
+        assert!(
+            doc.contains("cached todo, full run | watch | 14.0 | 22.0"),
+            "{doc}"
+        );
+
+        let quiet = Options {
+            watch: false,
+            ..options
+        };
+        let without = Measurements {
+            targets: Vec::new(),
+            tick: None,
+        };
+        let doc = document(&quiet, &shape, &without, None, None, true).unwrap();
+        assert!(doc.contains("Not measured in this run."), "{doc}");
+        assert!(!doc.contains("watch tick, full refresh"), "{doc}");
     }
 }
