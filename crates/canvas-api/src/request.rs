@@ -227,7 +227,7 @@ pub(crate) async fn execute_transfer(
     client: &Client,
     request: TransferRequest,
 ) -> Result<TransferResponse, Error> {
-    if request.url.scheme() != "https" {
+    if !matches!(request.url.scheme(), "http" | "https") {
         return Err(Error::Network);
     }
 
@@ -257,15 +257,13 @@ async fn execute_transfer_once(
 
     match request.kind {
         TransferKind::Upload => {
+            // Multipart upload POST: never attach token; never auto-follow.
+            // 3xx responses are returned to the caller for completion handoff.
             let mut builder = client
-                .http()
+                .transfer_http()
                 .request(request.method.clone(), request.url.clone());
             for (name, value) in &request.headers {
                 builder = builder.header(name, value);
-            }
-            // Token only on same-origin.
-            if let Some(auth) = client.auth_header_for(&request.url) {
-                builder = builder.header(reqwest::header::AUTHORIZATION, auth);
             }
             if let Some(ref bytes) = request.body {
                 builder = builder.body(bytes.clone());
@@ -274,17 +272,19 @@ async fn execute_transfer_once(
             let status = response.status();
             let headers = response.headers().clone();
             observe_headers(client, issue, &headers);
-            if is_redirect(status) {
-                // Upload POST is never auto-followed.
-                return Err(Error::UploadIncomplete {
-                    status: status.as_u16(),
-                });
-            }
-            let body = response.bytes().await.map_err(|e| map_reqwest_error(&e))?;
+            let body = if is_redirect(status) {
+                Vec::new()
+            } else {
+                response
+                    .bytes()
+                    .await
+                    .map_err(|e| map_reqwest_error(&e))?
+                    .to_vec()
+            };
             Ok(TransferResponse {
                 status,
                 headers,
-                body: body.to_vec(),
+                body,
                 final_url: request.url.clone(),
             })
         }
@@ -294,14 +294,13 @@ async fn execute_transfer_once(
                 if hop > 5 {
                     return Err(Error::UnexpectedRedirect);
                 }
-                if url.scheme() != "https" {
+                if !matches!(url.scheme(), "http" | "https") {
                     return Err(Error::Network);
                 }
-                let mut builder = client.http().request(Method::GET, url.clone());
+                let mut builder = client.transfer_http().request(Method::GET, url.clone());
                 for (name, value) in &request.headers {
                     builder = builder.header(name, value);
                 }
-                // Accept-Encoding: identity for byte-count comparison (download path).
                 builder = builder.header(
                     reqwest::header::ACCEPT_ENCODING,
                     HeaderValue::from_static("identity"),
@@ -319,7 +318,7 @@ async fn execute_transfer_once(
                         return Err(Error::UnexpectedRedirect);
                     }
                     let location = location_url(&url, &headers)?;
-                    if location.scheme() != "https" {
+                    if !matches!(location.scheme(), "http" | "https") {
                         return Err(Error::Network);
                     }
                     url = location;
