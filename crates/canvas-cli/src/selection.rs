@@ -38,6 +38,11 @@ pub struct Selected {
     pub core_paths: CorePaths,
     /// True when selected through the ephemeral `env` profile.
     pub from_env: bool,
+    pub validation: Option<(
+        canvas_api::models::User,
+        reqwest::header::HeaderMap,
+        canvas_api::Telemetry,
+    )>,
 }
 
 /// Inputs that drive the selection matrix.
@@ -134,6 +139,7 @@ fn selected_from_profile(
         identity,
         core_paths,
         from_env: false,
+        validation: None,
     })
 }
 
@@ -161,6 +167,7 @@ fn select_env_pair(
                     identity,
                     core_paths,
                     from_env: true,
+                    validation: None,
                 });
             }
             _ => {
@@ -201,6 +208,7 @@ pub fn bind_env_identity(
         identity,
         core_paths,
         from_env: true,
+        validation: None,
     })
 }
 
@@ -225,11 +233,18 @@ pub fn write_env_binding(
 
 fn read_binding(paths: &CliPaths, hash: &str) -> Result<Option<IdentityKey>, CliError> {
     let file = load_bindings(paths)?;
-    Ok(file
+    match file
         .bindings
         .get(hash)
-        .map(|e| IdentityKey::parse(&e.key))
-        .transpose()?)
+        .map(|entry| IdentityKey::parse(&entry.key))
+    {
+        Some(Ok(key)) => Ok(Some(key)),
+        Some(Err(_)) => {
+            remove_binding(paths, hash)?;
+            Ok(None)
+        }
+        None => Ok(None),
+    }
 }
 
 fn remove_binding(paths: &CliPaths, hash: &str) -> Result<(), CliError> {
@@ -357,7 +372,14 @@ pub fn list_identities(paths: &CliPaths) -> Result<Vec<IdentityDocument>, CliErr
             continue;
         }
         match IdentityDocument::read(&json) {
-            Ok(doc) => out.push(doc),
+            Ok(doc) => {
+                let core = CorePaths::for_identity(&paths.data_dir, &doc.key);
+                if core.identity_dir != entry.path() {
+                    return Err(CliError::local("identity directory does not match key"));
+                }
+                let _lock = IdentityLock::acquire_shared(&core, &doc)?;
+                out.push(doc);
+            }
             Err(e) => eprintln!("warning: skipping {}: {e}", entry.path().display()),
         }
     }
@@ -411,13 +433,28 @@ pub async fn select_online(
         if let (Ok(host), Ok(token)) = (std::env::var("CANVAS_HOST"), std::env::var("CANVAS_TOKEN"))
         {
             if !host.is_empty() && !token.is_empty() {
+                let previous = match select(class, paths, config, input) {
+                    Ok(selected) => Some(selected),
+                    Err(error) if error.kind == crate::exit::ExitKind::Auth => None,
+                    Err(error) => return Err(error),
+                };
                 if class == CommandClass::C {
-                    if let Ok(selected) = select(class, paths, config, input) {
+                    if let Some(selected) = previous {
                         return Ok(selected);
                     }
                 }
                 let origin = canonicalize_origin(&host)?;
-                let user = crate::token::validate_users_self(&origin, &token).await?;
+                let validation =
+                    crate::token::validate_users_self_details(&origin, &token, &config.network)
+                        .await?;
+                let user = &validation.0;
+                if let Some(selected) = &previous {
+                    if selected.identity.user_id != user.id {
+                        return Err(CliError::auth("identity mismatch")
+                            .for_selected(selected)
+                            .with_requests(validation.2));
+                    }
+                }
                 let (identity, _lock) = initialize_identity(paths, &origin, user.id)?;
                 write_env_binding(paths, &origin, &token, &identity.key)?;
                 let core_paths = CorePaths::for_identity(&paths.data_dir, &identity.key);
@@ -426,6 +463,7 @@ pub async fn select_online(
                     identity,
                     core_paths,
                     from_env: true,
+                    validation: Some(validation),
                 });
             }
         }

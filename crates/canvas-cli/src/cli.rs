@@ -54,8 +54,8 @@ pub struct Cli {
     pub json: bool,
 
     /// Color output: auto, always, or never.
-    #[arg(long, global = true, value_enum, default_value_t = ColorChoice::Auto)]
-    pub color: ColorChoice,
+    #[arg(long, global = true, value_enum)]
+    pub color: Option<ColorChoice>,
 
     /// Named profile selection.
     #[arg(long, global = true)]
@@ -513,6 +513,7 @@ impl Commands {
 #[allow(dead_code)]
 pub struct Globals {
     pub json: bool,
+    pub color: Option<ColorChoice>,
     pub profile: Option<String>,
     pub fresh: bool,
     pub offline: bool,
@@ -524,6 +525,7 @@ impl From<&Cli> for Globals {
     fn from(cli: &Cli) -> Self {
         Self {
             json: cli.json,
+            color: cli.color.clone(),
             profile: cli.profile.clone(),
             fresh: cli.fresh,
             offline: cli.offline,

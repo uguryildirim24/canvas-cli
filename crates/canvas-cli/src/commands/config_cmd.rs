@@ -25,7 +25,7 @@ pub async fn run(globals: &Globals, command: ConfigCommand) -> Result<(), CliErr
             Ok(())
         }
         ConfigCommand::Get { key } => {
-            let cfg = Config::load(&paths)?;
+            let cfg = Config::load_with_flags(&paths, globals)?;
             let value = cfg.get_value(&key)?;
             let result = json!({ "key": key, "value": value });
             if globals.json {

@@ -209,6 +209,22 @@ impl Config {
             .map_err(|e| CliError::local(format!("config parse error: {e}")))
     }
 
+    pub fn load_with_flags(
+        paths: &CliPaths,
+        globals: &crate::cli::Globals,
+    ) -> Result<Self, CliError> {
+        let mut config = Self::load(paths)?;
+        if let Some(color) = &globals.color {
+            config.output.color = match color {
+                crate::cli::ColorChoice::Auto => "auto",
+                crate::cli::ColorChoice::Always => "always",
+                crate::cli::ColorChoice::Never => "never",
+            }
+            .into();
+        }
+        Ok(config)
+    }
+
     fn file_figment(paths: &CliPaths) -> Figment {
         Figment::new()
             .merge(Serialized::defaults(Config::default()))

@@ -2,10 +2,14 @@
 
 #![allow(dead_code)] // backend helpers are used selectively per platform / command.
 
+#[cfg(unix)]
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
+#[cfg(unix)]
 use std::io::{self, IsTerminal, Read, Write};
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 
 use fs4::fs_std::FileExt;
 use keyring::Entry;
@@ -433,11 +437,21 @@ pub fn logout(paths: &CliPaths, store: &Store, key: &IdentityKey) -> Result<Vec<
         ActiveSource::None => {}
     }
     // Stray: present in the inactive store.
-    if row.active_source != ActiveSource::Keyring && keyring_has(key) {
+    if row.active_source != ActiveSource::Keyring
+        && !matches!(
+            read_token(paths, key, ActiveSource::Keyring),
+            Err(CredError::NotFound)
+        )
+    {
         cleanup_keyring = true;
     }
     #[cfg(not(windows))]
-    if row.active_source != ActiveSource::File && file_has(paths, key.as_str()) {
+    if row.active_source != ActiveSource::File
+        && !matches!(
+            read_token(paths, key, ActiveSource::File),
+            Err(CredError::NotFound)
+        )
+    {
         cleanup_file = true;
     }
 
@@ -601,14 +615,14 @@ pub fn stray_sources(
 // --- fallback file (Unix) ---------------------------------------------------
 
 #[cfg(not(windows))]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 struct CredentialsFile {
     #[serde(default)]
     identities: BTreeMap<String, FileIdentity>,
 }
 
 #[cfg(not(windows))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct FileIdentity {
     token: String,
 }
@@ -793,6 +807,8 @@ pub fn credentials_path(paths: &CliPaths) -> PathBuf {
 #[cfg(test)]
 mod review_tests {
     use super::*;
+    #[cfg(windows)]
+    use std::io;
 
     #[cfg(unix)]
     #[test]
