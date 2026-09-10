@@ -299,7 +299,7 @@ async fn execute_transfer_once(
     Err(Error::UnexpectedRedirect)
 }
 
-fn validate_transfer_url(url: &Url) -> Result<(), Error> {
+pub(crate) fn validate_transfer_url(url: &Url) -> Result<(), Error> {
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return Err(Error::Network);
     }
@@ -325,7 +325,7 @@ fn transfer_headers(client: &Client, request: &TransferRequest, url: &Url) -> He
     headers
 }
 
-fn validate_upload_handoff(
+pub(crate) fn validate_upload_handoff(
     client: &Client,
     current: &Url,
     status: StatusCode,
@@ -349,7 +349,7 @@ fn validate_upload_handoff(
     Ok(())
 }
 
-fn observe_headers(client: &Client, issue: u64, headers: &HeaderMap) {
+pub(crate) fn observe_headers(client: &Client, issue: u64, headers: &HeaderMap) {
     let remaining = header_f64(headers, "x-rate-limit-remaining");
     let cost = header_f64(headers, "x-request-cost");
     if let Some(cost) = cost {
@@ -367,11 +367,11 @@ fn header_f64(headers: &HeaderMap, name: &str) -> Option<f64> {
     (value.is_finite() && value >= 0.0).then_some(value)
 }
 
-fn is_redirect(status: StatusCode) -> bool {
+pub(crate) fn is_redirect(status: StatusCode) -> bool {
     matches!(status.as_u16(), 301 | 302 | 303 | 307 | 308)
 }
 
-fn is_rate_limited(status: StatusCode, body: &[u8]) -> bool {
+pub(crate) fn is_rate_limited(status: StatusCode, body: &[u8]) -> bool {
     if status.as_u16() == 429 {
         return true;
     }
@@ -382,7 +382,7 @@ fn is_rate_limited(status: StatusCode, body: &[u8]) -> bool {
     false
 }
 
-fn parse_retry_after(headers: &HeaderMap) -> Option<Duration> {
+pub(crate) fn parse_retry_after(headers: &HeaderMap) -> Option<Duration> {
     let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
     if let Ok(secs) = value.parse::<u64>() {
         return Some(Duration::from_secs(secs));
@@ -394,7 +394,7 @@ fn parse_retry_after(headers: &HeaderMap) -> Option<Duration> {
     )
 }
 
-fn location_url(current: &Url, headers: &HeaderMap) -> Result<Url, Error> {
+pub(crate) fn location_url(current: &Url, headers: &HeaderMap) -> Result<Url, Error> {
     let raw = headers
         .get(LOCATION)
         .ok_or(Error::UnexpectedRedirect)?
@@ -406,7 +406,7 @@ fn location_url(current: &Url, headers: &HeaderMap) -> Result<Url, Error> {
         .map_err(|_| Error::UnexpectedRedirect)
 }
 
-fn map_reqwest_error(err: &reqwest::Error) -> Error {
+pub(crate) fn map_reqwest_error(err: &reqwest::Error) -> Error {
     if err.is_timeout() {
         Error::Timeout
     } else {

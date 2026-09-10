@@ -14,15 +14,17 @@ jiff.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+tokio-rustls = "=0.26.5"
 wiremock.workspace = true
 # Workspace tokio omits test-util; pin the same version with test-util for paused-time tests.
-tokio = { version = "=1.53.1", features = ["rt", "macros", "time", "sync", "test-util"] }
+tokio = { version = "=1.53.1", features = ["rt", "macros", "time", "sync", "io-util", "test-util", "net"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 
 [lints]
