@@ -54,13 +54,21 @@ pub fn format_local_datetime(ts: Timestamp, zone: &TimeZone) -> String {
 /// Same as [`format_local_datetime`] with an explicit "now" (tests).
 #[must_use]
 pub fn format_local_datetime_at(ts: Timestamp, zone: &TimeZone, now: Timestamp) -> String {
-    let zoned = ts.to_zoned(zone.clone());
-    let absolute = zoned
-        .strftime("%a %b %-d, %-I:%M %p")
-        .to_string()
-        .replace("  ", " ");
+    let absolute = format_local_instant(ts, zone);
     let relative = format_relative_suffix_at(ts, now);
     format!("{absolute} {relative}")
+}
+
+/// The §7 date without a relative suffix: `Tue Sep 15, 11:59 PM`.
+///
+/// The suffix reads a date as a deadline (`in 2d 4h` / `overdue 3h`), so it
+/// belongs on due dates. Use this for a time something happened at.
+#[must_use]
+pub fn format_local_instant(ts: Timestamp, zone: &TimeZone) -> String {
+    ts.to_zoned(zone.clone())
+        .strftime("%a %b %-d, %-I:%M %p")
+        .to_string()
+        .replace("  ", " ")
 }
 
 /// Relative suffix only: `(in 2d 4h)` / `(overdue 3h)`.

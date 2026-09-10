@@ -461,3 +461,41 @@ pub async fn refresh_stale_eligibility(
     }
     Ok(out)
 }
+
+/// Resolve `<course> <assignment>` or a bare assignment URL into ids (SPEC §6).
+///
+/// The course argument resolves first (numeric id, alias, URL, or substring),
+/// then the assignment resolves inside it; an assignment URL that names a
+/// different course fails with the §6 origin/course-agreement error.
+pub async fn resolve_target(
+    session: &Session,
+    globals: &Globals,
+    target: &str,
+    assignment: Option<&str>,
+    freshness: &mut Vec<crate::output::Freshness>,
+    outcomes: &mut Vec<RefreshOutcome>,
+) -> Result<(canvas_core::resolve::ResolvedCourse, i64), ExitCode> {
+    if assignment.is_none() && !target.contains("://") {
+        return Err(super::emit::emit_error(
+            globals.json,
+            "usage",
+            "this command requires a course and assignment or an assignment URL",
+            2,
+            session.profile.clone(),
+            Some(session.identity_ref()),
+        ));
+    }
+    let (course, course_freshness, _) =
+        super::course::resolve_with_refresh(globals, session, target).await?;
+    for row in course_freshness {
+        if !freshness
+            .iter()
+            .any(|f| f.dataset == row.dataset && f.scope == row.scope)
+        {
+            freshness.push(row);
+        }
+    }
+    let input = assignment.unwrap_or(target);
+    let id = resolve(session, globals, course.id, input, outcomes).await?;
+    Ok((course, id))
+}

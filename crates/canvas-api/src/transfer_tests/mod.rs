@@ -1,6 +1,9 @@
 //! Upload and download transport tests (§16).
 
+#[cfg(not(feature = "test-support"))]
 mod tls;
+#[cfg(feature = "test-support")]
+use crate::test_support as tls;
 
 use crate::upload::{UploadMeta, upload_submission_file};
 use crate::{Error, download};

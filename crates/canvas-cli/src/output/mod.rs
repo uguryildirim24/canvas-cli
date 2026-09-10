@@ -26,11 +26,13 @@ pub use registry::{
     SCHEMA_CONFIG, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOCTOR, SCHEMA_DOWNLOAD, SCHEMA_ERROR,
     SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_IDENTITY, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_RECEIPT,
     SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO,
-    SCHEMA_VERIFY, SCHEMA_VERSION, SchemaEntry, SubmissionStatusJson, SyncDatasetJson, SyncResult,
-    TeacherJson, TermJson, all_schemas, rejects_json,
+    SCHEMA_VERIFY, SCHEMA_VERSION, SchemaEntry, SubmissionStatusJson, SubmitCandidateJson,
+    SubmitFileJson, SubmitResult, SubmitTextJson, SyncDatasetJson, SyncResult, TeacherJson,
+    TermJson, all_schemas, rejects_json,
 };
 pub use render::{
     StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,
-    format_local_datetime_at, format_relative_suffix, format_relative_suffix_at, new_table, paint,
-    status_label, style_dim, style_due_soon, style_missing, style_overdue, style_submitted,
+    format_local_datetime_at, format_local_instant, format_relative_suffix,
+    format_relative_suffix_at, new_table, paint, status_label, style_dim, style_due_soon,
+    style_missing, style_overdue, style_submitted,
 };

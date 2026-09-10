@@ -1,1 +1,50 @@
-{ "journals": [] }
+{
+  "journals": [
+    {
+      "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+      "state": "submitted",
+      "owner": "n/a",
+      "superseded": false,
+      "acknowledged_at": null,
+      "course_id": "101",
+      "course_code": "CS-101",
+      "assignment_id": "202",
+      "assignment_name": "Essay 1",
+      "kind": "online_upload",
+      "baseline_attempt": 0,
+      "created_at": "2026-09-09T16:04:58Z",
+      "updated_at": "2026-09-09T16:05:01Z",
+      "uploaded_file_ids": ["55001"],
+      "post_status": 201,
+      "response_kind": null,
+      "not_submitted_evidence": null,
+      "posted": {
+        "evidence": "post-response",
+        "submission_id": "9001",
+        "attempt": 1,
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "workflow_state": "submitted",
+        "late": false,
+        "missing": false,
+        "excused": false,
+        "submission_type": "online_upload",
+        "attachments": [
+          {
+            "id": "55001",
+            "display_name": "essay.pdf",
+            "size": 24576,
+            "content_type": "application/pdf"
+          }
+        ],
+        "body_sha256": null,
+        "url": null,
+        "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "readback": null,
+      "server_match": null,
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+      "error": null
+    }
+  ]
+}

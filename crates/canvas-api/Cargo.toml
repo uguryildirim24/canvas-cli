@@ -6,7 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 description = "Canvas LMS HTTP client, Secret, and models"
 
+[features]
+test-support = ["dep:wiremock", "dep:tokio-rustls"]
+
 [dependencies]
+wiremock = { workspace = true, optional = true }
+tokio-rustls = { version = "=0.26.5", optional = true }
 # Retry-After also permits HTTP dates; matches the existing transitive lock pin.
 httpdate = "=1.0.3"
 futures-util.workspace = true

@@ -323,6 +323,60 @@ pub struct CachePathResult {
     pub path: String,
 }
 
+// --- M2-b typed result payloads (Appendix D) ---
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmitCandidateJson {
+    pub attempt: i64,
+    pub submitted_at: Option<String>,
+    #[serde(default)]
+    pub submitted_at_local: Option<String>,
+    pub attachment_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmitFileJson {
+    pub name: String,
+    pub size: u64,
+    pub sha256: String,
+    #[serde(default)]
+    pub canvas_file_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmitTextJson {
+    pub input_sha256: String,
+    pub transform: String,
+    pub sent_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmitResult {
+    pub outcome: String,
+    pub state: String,
+    pub journal_id: String,
+    #[serde(default)]
+    pub receipt_id: Option<String>,
+    #[serde(default)]
+    pub attribution: Option<String>,
+    #[serde(default)]
+    pub post_status: Option<i64>,
+    #[serde(default)]
+    pub response_kind: Option<String>,
+    #[serde(default)]
+    pub posted: Option<serde_json::Value>,
+    #[serde(default)]
+    pub server_match: Option<SubmitCandidateJson>,
+    pub candidates: Vec<SubmitCandidateJson>,
+    pub files: Vec<SubmitFileJson>,
+    #[serde(default)]
+    pub text: Option<SubmitTextJson>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FilesListingJson {
     pub available: bool,

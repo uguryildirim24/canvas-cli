@@ -101,20 +101,26 @@ fn assert_stub(args: &[&str]) {
     }
 }
 
-fn assert_peer_stub(args: &[&str]) {
-    let result = Command::cargo_bin("canvas")
+/// M2-b commands are wired: they must not print the Round-3 peer stub.
+fn assert_m2b_callable(args: &[&str]) {
+    let output = Command::cargo_bin("canvas")
         .unwrap()
+        .env_remove("CANVAS_IDENTITY_KEY")
+        .env_remove("CANVAS_TOKEN")
         .args(args)
-        .assert()
-        .code(2);
-    if args.contains(&"--json") {
-        let v: serde_json::Value = serde_json::from_slice(&result.get_output().stdout).unwrap();
-        assert_eq!(v["schema"], "canvas-cli/error@1");
-        assert_eq!(v["result"]["message"], "not implemented");
-        assert_eq!(v["exit"], 2);
-    } else {
-        result.stdout("").stderr("not implemented\n");
-    }
+        .write_stdin("")
+        .output()
+        .expect("run canvas");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stderr.contains("not implemented") && !stdout.contains("not implemented"),
+        "M2-b still stubbed for {args:?}: stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        !output.status.success(),
+        "expected non-success without a real identity for {args:?}"
+    );
 }
 
 fn assert_usage_error(args: &[&str]) {
@@ -146,7 +152,7 @@ fn mixed_commands_accept_typed_and_positional_forms() {
             "--assume-not-submitted",
         ],
     ] {
-        assert_peer_stub(&args);
+        assert_m2b_callable(&args);
     }
     // open is implemented (class B); without identity it exits auth.
     let empty = tempfile::TempDir::new().unwrap();
@@ -229,15 +235,15 @@ fn submission_accepts_options_between_operands() {
         let mut args = vec!["submission", "chem"];
         args.extend(options);
         args.push("123");
-        assert_peer_stub(&args);
+        assert_m2b_callable(&args);
     }
     assert_usage_error(&["submission", "chem", "--fresh", "123", "--offline"]);
     assert_usage_error(&["--offline", "submission", "chem", "--fresh", "123"]);
     assert_usage_error(&["submission", "chem", "--fresh"]);
     assert_usage_error(&["submission", "chem", "--fresh", "123", "extra"]);
     // Escape a subcommand name when it follows an option.
-    assert_peer_stub(&["submission", "chem", "--fresh", "--", "verify"]);
-    assert_peer_stub(&["submission", "--", "verify", "123"]);
+    assert_m2b_callable(&["submission", "chem", "--fresh", "--", "verify"]);
+    assert_m2b_callable(&["submission", "--", "verify", "123"]);
 }
 
 #[test]
@@ -342,7 +348,7 @@ fn command_choices_accept_documented_forms() {
             "a.txt",
         ],
     ] {
-        assert_peer_stub(&args);
+        assert_m2b_callable(&args);
     }
 }
 
@@ -381,7 +387,7 @@ fn nonraw_variants_continue_to_accept_json() {
             "--json",
         ],
     ] {
-        assert_peer_stub(&args);
+        assert_m2b_callable(&args);
     }
 }
 
@@ -419,7 +425,7 @@ fn nested_help_lists_registered_commands() {
 fn every_v1_stub_is_callable() {
     // Implemented by M0-c (auth/identity/config/doctor), M1-b
     // (courses/course/alias/sync/cache), M1-c (todo/assignments/assignment/open),
-    // M3-a (files/modules), M3-b (download), and M4-a (grades) are covered
+    // M3-a (files/modules), M3-b (download), and M4-a (grades): covered
     // elsewhere.
     let own_stubs: &[&[&str]] = &[
         &["announcements"],
@@ -434,8 +440,8 @@ fn every_v1_stub_is_callable() {
         assert_stub(args);
     }
 
-    // Round-3 peer-lane stubs (exit 2).
-    let peer_stubs: &[&[&str]] = &[
+    // M2-b wired commands (not Round-3 stubs).
+    let m2b: &[&[&str]] = &[
         &["submit", "chem", "123", "--file", "a.txt"],
         &["submission", "chem", "123", "--history"],
         &["submission", "verify", "receipt-1"],
@@ -445,8 +451,8 @@ fn every_v1_stub_is_callable() {
         &["receipts", "export", "receipt-1"],
         &["receipts", "acknowledge", "journal-1"],
     ];
-    for args in peer_stubs {
-        assert_peer_stub(args);
+    for args in m2b {
+        assert_m2b_callable(args);
     }
 }
 
