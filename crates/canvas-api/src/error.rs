@@ -1,6 +1,7 @@
 //! Canvas API error variants (SPEC §11).
 
 use std::fmt;
+
 use thiserror::Error;
 
 /// Errors returned by the Canvas API client.
@@ -35,7 +36,10 @@ pub enum Error {
     RateLimited,
 
     /// Canvas returned a validation error body.
-    #[error("validation (status={status})")]
+    #[error(
+        "validation (status={status}): {errors}",
+        errors = crate::redact::redact_join(.errors)
+    )]
     Validation {
         /// HTTP status code.
         status: u16,

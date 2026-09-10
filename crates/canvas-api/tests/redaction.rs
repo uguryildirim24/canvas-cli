@@ -1,4 +1,5 @@
 use canvas_api::{Client, Error, Secret};
+use reqwest::Url;
 
 #[test]
 fn secret_formatting_is_redacted() {
@@ -12,12 +13,14 @@ fn secret_formatting_is_redacted() {
 
 #[test]
 fn client_stores_fields_without_printing_token() {
+    let origin = Url::parse("https://canvas.example.test").unwrap();
     let client = Client::new(
-        "https://canvas.example.test",
+        origin,
         Secret::new("synthetic-token-for-tests"),
         "canvas-cli/test",
-    );
-    assert_eq!(client.origin(), "https://canvas.example.test");
+    )
+    .unwrap();
+    assert_eq!(client.origin().as_str(), "https://canvas.example.test/");
     assert_eq!(client.user_agent(), "canvas-cli/test");
     assert_eq!(client.token().expose(), "synthetic-token-for-tests");
     for rendered in [format!("{client:?}"), format!("{client:#?}")] {
@@ -52,9 +55,39 @@ fn error_formatting_never_prints_response_content() {
             format!("{error:?}"),
             format!("{error:#?}"),
         ] {
-            assert!(!rendered.contains("RAW_RESPONSE"));
-            assert!(!rendered.contains("FAKE_"));
+            assert!(!rendered.contains("RAW_RESPONSE"), "{rendered}");
+            assert!(!rendered.contains("FAKE_"), "{rendered}");
             assert!(rendered.contains("rate_limited=true") || rendered.contains("422"));
         }
+    }
+}
+
+#[test]
+fn request_response_debug_omits_capabilities_and_raw_bodies() {
+    use canvas_api::{ApiRequest, TransferRequest, TransferResponse};
+    use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+    use reqwest::{Method, StatusCode};
+    let url = Url::parse("https://storage.test/?token=SECRET").unwrap();
+    let api = ApiRequest::new(Method::POST, url.clone()).body(b"RAW_BODY".to_vec());
+    let transfer = TransferRequest::upload(url.clone())
+        .header(AUTHORIZATION, HeaderValue::from_static("SECRET"))
+        .body(b"RAW_BODY".to_vec());
+    let response = TransferResponse {
+        status: StatusCode::OK,
+        headers: HeaderMap::new(),
+        body: b"RAW_BODY".to_vec(),
+        final_url: url,
+    };
+    for diagnostic in [
+        format!("{api:?}"),
+        format!("{transfer:?}"),
+        format!("{response:?}"),
+    ] {
+        assert!(
+            !diagnostic.contains("SECRET")
+                && !diagnostic.contains("RAW_BODY")
+                && !diagnostic.contains("82, 65, 87"),
+            "{diagnostic}"
+        );
     }
 }
