@@ -595,13 +595,17 @@ fn submission_json(
         "rubric_assessed".into(),
         row.data["rubric_assessment_json"].is_array().into(),
     );
+    // A row cached before M8-a has no `rating_id`; re-projecting it keeps the
+    // shape the schema declares whatever wrote the row (§7).
     object.insert(
         "rubric_assessment".into(),
         row.data
             .get("rubric_assessment_json")
-            .filter(|v| v.is_array())
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!([])),
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(canvas_core::sync::assessment_row_json)
+            .collect(),
     );
 
     serde_json::json!({

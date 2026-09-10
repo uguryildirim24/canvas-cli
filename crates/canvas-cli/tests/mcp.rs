@@ -4,6 +4,7 @@
 //! wire format is the contract a host sees: the tool catalog, both protocol
 //! revisions, the envelope inside a tool result, and the resource namespace.
 
+use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
@@ -28,8 +29,16 @@ const CATALOG: &[&str] = &[
     "grades.get",
     "files.list",
     "modules.list",
+    "pages.list",
+    "page.get",
+    "syllabus.get",
     "announcements.list",
     "announcement.get",
+    "discussions.list",
+    "discussion.get",
+    "inbox.list",
+    "inbox.get",
+    "inbox.unread_count",
     "calendar.list",
     "submission.get",
     "receipts.list",
@@ -778,12 +787,32 @@ const EQUIVALENTS: &[(&str, &str, &[&str])] = &[
     ("grades.get", r#"{"course":"1"}"#, &["grades", "1"]),
     ("files.list", r#"{"course":"1"}"#, &["files", "1"]),
     ("modules.list", r#"{"course":"1"}"#, &["modules", "1"]),
+    ("pages.list", r#"{"course":"1"}"#, &["pages", "1"]),
+    (
+        "page.get",
+        r#"{"course":"1","page":"course-overview"}"#,
+        &["page", "1", "course-overview"],
+    ),
+    ("syllabus.get", r#"{"course":"1"}"#, &["syllabus", "1"]),
     ("announcements.list", r"{}", &["announcements"]),
     (
         "announcement.get",
         r#"{"course":"1","id":"9001"}"#,
         &["announcement", "1", "9001"],
     ),
+    (
+        "discussions.list",
+        r#"{"course":"1"}"#,
+        &["discussions", "1"],
+    ),
+    (
+        "discussion.get",
+        r#"{"course":"1","discussion":"55"}"#,
+        &["discussion", "1", "55"],
+    ),
+    ("inbox.list", r"{}", &["inbox"]),
+    ("inbox.get", r#"{"id":"700"}"#, &["inbox", "show", "700"]),
+    ("inbox.unread_count", r"{}", &["inbox", "unread-count"]),
     ("calendar.list", r"{}", &["calendar"]),
     (
         "submission.get",
@@ -874,6 +903,268 @@ async fn every_tool_returns_the_envelope_the_cli_prints() {
             "{tool}"
         );
         assert!(!text.contains(TOKEN), "{tool} leaked the token");
+    }
+    mcp.stop();
+}
+
+/// The M8-a read surface for course 1, warmed into the cache.
+///
+/// `EQUIVALENTS` runs `--offline` against a cache that holds none of these
+/// reads, so the eight M8-a tools and their commands meet there only as the
+/// same refusal — an envelope both sides reach before any operand past the
+/// first is looked at. This fixture answers the reads instead, so the
+/// comparison below covers the arguments themselves.
+async fn primed_reads(server: &MockServer) -> Fixture {
+    let f = primed(server).await;
+    mount(
+        server,
+        "/api/v1/courses/1",
+        json!({
+            "id": 1, "course_code": "CHEM", "name": "Chemistry",
+            "syllabus_body": "<p>Late work loses 10% a day.</p>",
+            "updated_at": "2026-09-01T14:00:00Z"
+        }),
+    )
+    .await;
+    mount(
+        server,
+        "/api/v1/courses/1/pages",
+        json!([
+            {
+                "page_id": 301, "url": "course-overview", "title": "Course overview",
+                "updated_at": "2026-09-01T14:00:00Z", "published": true,
+                "front_page": true, "locked_for_user": false
+            },
+            {
+                "page_id": 302, "url": "draft-notes", "title": "Draft notes",
+                "updated_at": "2026-09-02T14:00:00Z", "published": false,
+                "front_page": false, "locked_for_user": false
+            },
+        ]),
+    )
+    .await;
+    mount(
+        server,
+        "/api/v1/courses/1/pages/course-overview",
+        json!({
+            "page_id": 301, "url": "course-overview", "title": "Course overview",
+            "updated_at": "2026-09-01T14:00:00Z", "published": true,
+            "front_page": true, "locked_for_user": false,
+            "body": "<p>Read the handbook.</p>"
+        }),
+    )
+    .await;
+    mount(
+        server,
+        "/api/v1/courses/1/discussion_topics",
+        json!([discussion_topic(55), read_topic(56)]),
+    )
+    .await;
+    mount(
+        server,
+        "/api/v1/courses/1/discussion_topics/55",
+        discussion_topic(55),
+    )
+    .await;
+    mount(
+        server,
+        "/api/v1/courses/1/discussion_topics/56",
+        read_topic(56),
+    )
+    .await;
+    mount(
+        server,
+        "/api/v1/courses/1/discussion_topics/55/entries",
+        json!([{
+            "id": 900, "parent_id": null, "user_id": 31, "user_name": "Alex Kim",
+            "message": "<p>Reply 1.</p>", "created_at": "2026-09-02T09:00:00Z",
+            "read_state": "unread", "has_more_replies": false, "recent_replies": []
+        }]),
+    )
+    .await;
+    mount(server, "/api/v1/conversations", json!([conversation(700)])).await;
+    mount(server, "/api/v1/conversations/700", conversation_detail()).await;
+    mount(
+        server,
+        "/api/v1/conversations/unread_count",
+        json!({"unread_count": "1"}),
+    )
+    .await;
+
+    // Warm every dataset the comparison reads, one command each. `--scope`
+    // keys its own dataset row, so the scope the tool asks for is warmed too.
+    for args in [
+        &["pages", "1"][..],
+        &["page", "1", "course-overview"],
+        &["syllabus", "1"],
+        &["discussions", "1"],
+        &["discussion", "1", "55", "--replies"],
+        &["inbox"],
+        &["inbox", "--scope", "unread"],
+        &["inbox", "show", "700"],
+        &["inbox", "unread-count"],
+    ] {
+        f.cli(args, 0).await;
+    }
+    f
+}
+
+fn discussion_topic(id: i64) -> Value {
+    json!({
+        "id": id,
+        "title": format!("Topic {id}"),
+        "message": "<p>What surprised you?</p>",
+        "posted_at": "2026-09-01T14:00:00Z",
+        "last_reply_at": "2026-09-08T10:00:00Z",
+        "discussion_type": "threaded",
+        "user_name": "Dr. Reed",
+        "read_state": "unread",
+        "unread_count": 1,
+        "discussion_subentry_count": 1,
+        "published": true,
+        "locked": false,
+        "locked_for_user": false,
+        "pinned": false,
+        "require_initial_post": false,
+        "user_can_see_posts": true,
+        "is_announcement": false,
+        "subscribed": true,
+        "context_code": "course_1"
+    })
+}
+
+/// A topic this identity has already read, so `--unread` has one to drop.
+fn read_topic(id: i64) -> Value {
+    let mut row = discussion_topic(id);
+    row["read_state"] = json!("read");
+    row["unread_count"] = json!(0);
+    row
+}
+
+fn conversation(id: i64) -> Value {
+    json!({
+        "id": id,
+        "subject": format!("Conversation {id}"),
+        "workflow_state": "unread",
+        "last_message": "See you then.",
+        "last_message_at": "2026-09-09T12:00:00Z",
+        "message_count": 1,
+        "subscribed": true,
+        "private": true,
+        "starred": false,
+        "context_name": "CHEM",
+        "participants": [{"id": 123, "name": "You"}, {"id": 31, "name": "Alex Kim"}]
+    })
+}
+
+fn conversation_detail() -> Value {
+    let mut row = conversation(700);
+    row["messages"] = json!([{
+        "id": 9001, "author_id": 31, "created_at": "2026-09-09T12:00:00Z",
+        "body": "Can we meet before the lab?", "generated": false,
+        "attachments": [{"id": 42, "display_name": "notes.pdf", "size": 20480}]
+    }]);
+    row
+}
+
+/// The eight M8-a reads, each with every argument it takes.
+///
+/// `EQUIVALENTS` names them with their operands only. These rows add the
+/// flags — `unpublished`, `unread`, `replies`, `page`, `scope` — so a tool
+/// that dropped one, or that read its operands in the wrong order, cannot
+/// still answer with the command's envelope.
+const M8A_READS: &[(&str, &str, &[&str])] = &[
+    (
+        "pages.list",
+        r#"{"course":"1","unpublished":true}"#,
+        &["pages", "1", "--unpublished"],
+    ),
+    (
+        "page.get",
+        r#"{"course":"1","page":"course-overview"}"#,
+        &["page", "1", "course-overview"],
+    ),
+    ("syllabus.get", r#"{"course":"1"}"#, &["syllabus", "1"]),
+    (
+        "discussions.list",
+        r#"{"course":"1","unread":true}"#,
+        &["discussions", "1", "--unread"],
+    ),
+    (
+        "discussion.get",
+        r#"{"course":"1","discussion":"55","replies":true}"#,
+        &["discussion", "1", "55", "--replies"],
+    ),
+    // A window past the end: `page` must reach the command, or the answer
+    // carries the first page of replies instead of an empty one.
+    (
+        "discussion.get",
+        r#"{"course":"1","discussion":"55","replies":true,"page":2}"#,
+        &["discussion", "1", "55", "--replies", "--page", "2"],
+    ),
+    (
+        "inbox.list",
+        r#"{"scope":"unread"}"#,
+        &["inbox", "--scope", "unread"],
+    ),
+    ("inbox.get", r#"{"id":"700"}"#, &["inbox", "show", "700"]),
+    ("inbox.unread_count", r"{}", &["inbox", "unread-count"]),
+];
+
+/// The M8-a reads answer, and the answer is the CLI's, argument for argument.
+#[tokio::test]
+async fn the_m8a_read_tools_answer_with_the_envelope_their_command_prints() {
+    let server = MockServer::start().await;
+    let f = primed_reads(&server).await;
+    let mut mcp = f.mcp(&["--offline"]);
+
+    // Every M8-a tool is exercised here, not a subset of them.
+    let covered: BTreeSet<&str> = M8A_READS.iter().map(|(tool, ..)| *tool).collect();
+    let expected: BTreeSet<&str> = [
+        "pages.list",
+        "page.get",
+        "syllabus.get",
+        "discussions.list",
+        "discussion.get",
+        "inbox.list",
+        "inbox.get",
+        "inbox.unread_count",
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(covered, expected);
+
+    for (tool, arguments, args) in M8A_READS {
+        let arguments: Value = serde_json::from_str(arguments).expect("arguments");
+        let mut cli = vec!["--offline"];
+        cli.extend_from_slice(args);
+        let want = f.cli(&cli, 0).await;
+        // The cache answers, so this is a result and not the refusal
+        // `EQUIVALENTS` compares.
+        assert_eq!(want["outcome"], "ok", "{tool} did not read the cache");
+        assert!(
+            want["schema"].as_str().unwrap_or_default() != "canvas-cli/error@1",
+            "{tool} answered with an error branch"
+        );
+        let answer = mcp.primary(
+            "tools/call",
+            json!({ "name": tool, "arguments": arguments }),
+        );
+        let result = &answer["result"];
+        assert_eq!(result["isError"], json!(false), "{tool}");
+        assert_eq!(
+            result["structuredContent"],
+            want,
+            "{tool} and `canvas {}` disagree",
+            args.join(" ")
+        );
+        let text = result["content"][0]["text"].as_str().expect("text content");
+        assert!(!text.contains(TOKEN), "{tool} leaked the token");
+    }
+
+    // The reads are reads: the whole fixture saw nothing but `GET` (§16).
+    for request in server.received_requests().await.expect("the request log") {
+        assert_eq!(request.method.as_str(), "GET", "{}", request.url);
     }
     mcp.stop();
 }

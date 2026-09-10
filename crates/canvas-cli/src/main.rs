@@ -324,6 +324,43 @@ async fn main() -> ExitCode {
                 Commands::Announcement { target, id } => {
                     commands::announcement::run(&m1b_globals(&globals), target, id).await
                 }
+                Commands::Pages {
+                    course,
+                    unpublished,
+                } => commands::pages::run_list(&m1b_globals(&globals), course, unpublished).await,
+                Commands::Page { course, page } => {
+                    commands::pages::run_show(&m1b_globals(&globals), course, page).await
+                }
+                Commands::Syllabus { course } => {
+                    commands::pages::run_syllabus(&m1b_globals(&globals), course).await
+                }
+                Commands::Discussions { course, unread } => {
+                    commands::discussions::run_list(&m1b_globals(&globals), course, unread).await
+                }
+                Commands::Discussion {
+                    course,
+                    discussion,
+                    replies,
+                    page,
+                } => {
+                    commands::discussions::run_show(
+                        &m1b_globals(&globals),
+                        course,
+                        discussion,
+                        replies,
+                        page,
+                    )
+                    .await
+                }
+                Commands::Inbox { command, scope } => match command {
+                    Some(cli::InboxCommand::Show { id }) => {
+                        commands::inbox::run_show(&m1b_globals(&globals), id).await
+                    }
+                    Some(cli::InboxCommand::UnreadCount) => {
+                        commands::inbox::run_unread_count(&m1b_globals(&globals)).await
+                    }
+                    None => commands::inbox::run_list(&m1b_globals(&globals), scope).await,
+                },
                 Commands::Calendar {
                     days,
                     course,

@@ -1,0 +1,8 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "scrub_text(&f.text(&[\"inbox\"], 0).await, &server.uri())"
+---
+  ID     SUBJECT             WITH             LAST                    STATE   
+  700    Conversation 700    You, Alex Kim    2026-09-09T12:00:00Z    unread  
+  701    Conversation 701    You, Alex Kim    2026-09-09T12:00:00Z    unread  
+  702    Conversation 702    You, Alex Kim    2026-09-09T12:00:00Z    unread

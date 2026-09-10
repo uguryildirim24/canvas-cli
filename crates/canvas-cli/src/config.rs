@@ -91,6 +91,12 @@ pub struct CacheConfig {
     pub ttl_announcements: String,
     #[serde(default = "ttl_hour")]
     pub ttl_calendar: String,
+    #[serde(default = "ttl_hour")]
+    pub ttl_pages: String,
+    #[serde(default = "ttl_announcements")]
+    pub ttl_discussions: String,
+    #[serde(default = "ttl_inbox")]
+    pub ttl_inbox: String,
 }
 
 fn ttl_courses() -> String {
@@ -101,6 +107,9 @@ fn ttl_short() -> String {
 }
 fn ttl_hour() -> String {
     "1h".into()
+}
+fn ttl_inbox() -> String {
+    "5m".into()
 }
 fn ttl_announcements() -> String {
     "15m".into()
@@ -118,6 +127,9 @@ impl Default for CacheConfig {
             ttl_files: ttl_hour(),
             ttl_announcements: ttl_announcements(),
             ttl_calendar: ttl_hour(),
+            ttl_pages: ttl_hour(),
+            ttl_discussions: ttl_announcements(),
+            ttl_inbox: ttl_inbox(),
         }
     }
 }
@@ -345,6 +357,9 @@ const KNOWN_TOP: &[&str] = &[
     "cache.ttl_files",
     "cache.ttl_announcements",
     "cache.ttl_calendar",
+    "cache.ttl_pages",
+    "cache.ttl_discussions",
+    "cache.ttl_inbox",
     "network.api_concurrency",
     "network.storage_concurrency",
     "output.color",
@@ -406,6 +421,9 @@ fn apply_set(config: &mut Config, key: &str, value: &str) -> Result<(), CliError
         "cache.ttl_files" => config.cache.ttl_files = value.to_owned(),
         "cache.ttl_announcements" => config.cache.ttl_announcements = value.to_owned(),
         "cache.ttl_calendar" => config.cache.ttl_calendar = value.to_owned(),
+        "cache.ttl_pages" => config.cache.ttl_pages = value.to_owned(),
+        "cache.ttl_discussions" => config.cache.ttl_discussions = value.to_owned(),
+        "cache.ttl_inbox" => config.cache.ttl_inbox = value.to_owned(),
         "network.api_concurrency" => config.network.api_concurrency = parse_u32(value)?,
         "network.storage_concurrency" => {
             config.network.storage_concurrency = parse_u32(value)?;

@@ -1,0 +1,84 @@
+{
+  "method": "GET",
+  "path": "/api/v1/conversations",
+  "query": [
+    [
+      "scope",
+      "inbox"
+    ],
+    [
+      "auto_mark_as_read",
+      "false"
+    ]
+  ],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "context_name": "BIO-110",
+      "id": 7001,
+      "last_message": "See you then.",
+      "last_message_at": "2026-01-04T16:00:00Z",
+      "message_count": 2,
+      "participants": [
+        {
+          "id": 1001,
+          "name": "You"
+        },
+        {
+          "id": 3001,
+          "name": "Classmate 1"
+        }
+      ],
+      "private": true,
+      "starred": false,
+      "subject": "Conversation 1",
+      "subscribed": true,
+      "workflow_state": "unread"
+    },
+    {
+      "context_name": "BIO-110",
+      "id": 7002,
+      "last_message": "See you then.",
+      "last_message_at": "2026-01-03T16:00:00Z",
+      "message_count": 2,
+      "participants": [
+        {
+          "id": 1001,
+          "name": "You"
+        },
+        {
+          "id": 3002,
+          "name": "Classmate 2"
+        }
+      ],
+      "private": true,
+      "starred": false,
+      "subject": "Conversation 2",
+      "subscribed": true,
+      "workflow_state": "read"
+    },
+    {
+      "context_name": "BIO-110",
+      "id": 7003,
+      "last_message": "See you then.",
+      "last_message_at": "2026-01-02T16:00:00Z",
+      "message_count": 2,
+      "participants": [
+        {
+          "id": 1001,
+          "name": "You"
+        },
+        {
+          "id": 3003,
+          "name": "Classmate 3"
+        }
+      ],
+      "private": true,
+      "starred": false,
+      "subject": "Conversation 3",
+      "subscribed": true,
+      "workflow_state": "read"
+    }
+  ]
+}

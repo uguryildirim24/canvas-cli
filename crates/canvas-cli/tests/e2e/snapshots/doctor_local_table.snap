@@ -9,7 +9,7 @@ identity selected: true
 [ok] profile_identity: <origin> / 1
 [ok] credential_row: active_source=file cleanup_keyring=false cleanup_file=false
 [ok] stray_credentials: none
-[ok] databases: cache schema=1, state schema=2
+[ok] databases: cache schema=2, state schema=2
 [warn] credential_backend: keyring unavailable
 [ok] identity_lock: shared identity lock held; generation verified
 [skipped] owner_absent_journals: recovery hook reserved for M2-a
