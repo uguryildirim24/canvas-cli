@@ -497,3 +497,185 @@ async fn retry_must_pass_cooldown_admission_again() {
     assert_eq!(state.telemetry().api, 2);
     keep_awake.abort();
 }
+
+// ------------------------------------------------------------- M6-c seams
+
+mod seams {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use canvas_api::{
+        Governor, GovernorConfig, GovernorSnapshot, GovernorState, Lane, LaneSlot, Permits, Seams,
+    };
+
+    /// Counts acquisitions and hands back a plain guard.
+    struct CountingPermits {
+        api: AtomicUsize,
+        storage: AtomicUsize,
+    }
+
+    impl Permits for CountingPermits {
+        fn acquire(
+            &self,
+            lane: Lane,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = LaneSlot> + Send + '_>> {
+            match lane {
+                Lane::Api => self.api.fetch_add(1, Ordering::Relaxed),
+                Lane::Storage => self.storage.fetch_add(1, Ordering::Relaxed),
+            };
+            Box::pin(async move { Box::new(()) as LaneSlot })
+        }
+    }
+
+    /// An in-memory stand-in for the `governor` row.
+    #[derive(Default)]
+    struct MemoryState {
+        row: Mutex<Option<GovernorSnapshot>>,
+        writes: AtomicUsize,
+    }
+
+    impl GovernorState for MemoryState {
+        fn load(&self) -> Option<GovernorSnapshot> {
+            *self.row.lock().expect("row")
+        }
+
+        fn update(
+            &self,
+            merge: &mut dyn FnMut(Option<GovernorSnapshot>) -> Option<GovernorSnapshot>,
+        ) {
+            let mut row = self.row.lock().expect("row");
+            if let Some(next) = merge(*row) {
+                *row = Some(next);
+                self.writes.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn config() -> GovernorConfig {
+        GovernorConfig {
+            api_concurrency: 2,
+            storage_concurrency: 2,
+            full_remaining: 700.0,
+            jitter: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_supplied_permits_implementation_replaces_the_lane_semaphores() {
+        let permits = Arc::new(CountingPermits {
+            api: AtomicUsize::new(0),
+            storage: AtomicUsize::new(0),
+        });
+        let governor = Governor::with_seams(
+            config(),
+            &Seams {
+                permits: Some(permits.clone()),
+                state: None,
+            },
+        );
+        // Three API admissions at concurrency two: the seam, not the semaphore,
+        // decides, so all three are handed a slot.
+        let permits_held = vec![
+            governor.admit(Lane::Api, "GET /a").await,
+            governor.admit(Lane::Api, "GET /a").await,
+            governor.admit(Lane::Api, "GET /a").await,
+        ];
+        let transfer = governor.admit(Lane::Storage, "transfer:download").await;
+        assert_eq!(permits.api.load(Ordering::Relaxed), 3);
+        assert_eq!(permits.storage.load(Ordering::Relaxed), 1);
+        assert_eq!(governor.in_flight(), 4);
+        drop(permits_held);
+        drop(transfer);
+        assert_eq!(governor.in_flight(), 0);
+    }
+
+    #[tokio::test]
+    async fn the_shared_row_pre_charges_cost_and_carries_a_lower_estimate_across_governors() {
+        let shared = Arc::new(MemoryState::default());
+        let seams = Seams {
+            permits: None,
+            state: Some(shared.clone()),
+        };
+        let first = Governor::with_seams(config(), &seams);
+        let permit = first.admit(Lane::Api, "GET /a").await;
+        // The pre-charge is on the shared row, not only in this process.
+        let row = shared.load().expect("row written at admission");
+        assert!((row.estimate - 699.0).abs() < f64::EPSILON, "{row:?}");
+        drop(permit);
+
+        // A lower sample from one process applies in the other.
+        first.apply_observation_for_test(1, 200.0, None);
+        let second = Governor::with_seams(config(), &seams);
+        let permit = second.admit(Lane::Api, "GET /b").await;
+        assert!(second.estimate() < 210.0, "{}", second.estimate());
+        drop(permit);
+    }
+
+    #[tokio::test]
+    async fn a_higher_shared_estimate_applies_only_above_the_watermark() {
+        let shared = Arc::new(MemoryState::default());
+        let seams = Seams {
+            permits: None,
+            state: Some(shared.clone()),
+        };
+        let governor = Governor::with_seams(config(), &seams);
+        governor.set_estimate_for_test(200.0);
+        // A stale row at or below the watermark cannot raise the estimate.
+        *shared.row.lock().expect("row") = Some(GovernorSnapshot {
+            estimate: 690.0,
+            watermark: 0,
+            cooldown_until: None,
+            refill: 0.0,
+            updated_at: canvas_api::governor::unix_millis(),
+        });
+        let permit = governor.admit(Lane::Api, "GET /a").await;
+        assert!(governor.estimate() <= 200.0, "{}", governor.estimate());
+        drop(permit);
+
+        // The same value above the watermark does apply.
+        *shared.row.lock().expect("row") = Some(GovernorSnapshot {
+            estimate: 690.0,
+            watermark: 99,
+            cooldown_until: None,
+            refill: 0.0,
+            updated_at: canvas_api::governor::unix_millis(),
+        });
+        let permit = governor.admit(Lane::Api, "GET /a").await;
+        assert!(governor.estimate() > 600.0, "{}", governor.estimate());
+        drop(permit);
+    }
+
+    #[tokio::test]
+    async fn a_stale_shared_row_resets_exactly_as_the_silence_rule_says() {
+        let shared = Arc::new(MemoryState::default());
+        let seams = Seams {
+            permits: None,
+            state: Some(shared.clone()),
+        };
+        let governor = Governor::with_seams(config(), &seams);
+        // The owner died in cooldown with a low estimate, 61 seconds ago.
+        *shared.row.lock().expect("row") = Some(GovernorSnapshot {
+            estimate: 40.0,
+            watermark: 12,
+            cooldown_until: Some(canvas_api::governor::unix_millis() + 5_000),
+            refill: 3.0,
+            updated_at: canvas_api::governor::unix_millis() - 61_000,
+        });
+        let permit = governor.admit(Lane::Api, "GET /a").await;
+        assert!(governor.estimate() > 690.0, "{}", governor.estimate());
+        assert_eq!(governor.watermark(), 0);
+        drop(permit);
+
+        // The same row, written a second ago, is adopted rather than reset.
+        let governor = Governor::with_seams(config(), &seams);
+        *shared.row.lock().expect("row") = Some(GovernorSnapshot {
+            estimate: 40.0,
+            watermark: 12,
+            cooldown_until: None,
+            refill: 3.0,
+            updated_at: canvas_api::governor::unix_millis() - 1_000,
+        });
+        governor.adopt_shared_for_test();
+        assert!(governor.estimate() < 100.0, "{}", governor.estimate());
+    }
+}

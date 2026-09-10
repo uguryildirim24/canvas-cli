@@ -1,14 +1,29 @@
 //! Adaptive request throttle (SPEC §11).
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{Notify, Semaphore};
 use tokio::time::{Instant, sleep};
+
+/// Seconds of header silence that reset the estimate (SPEC §11).
+const SILENCE_SECS: u64 = 60;
+
+/// How long a published cooldown stays in force for another process.
+///
+/// SPEC §11 gives cooldown a five-second probe wait and no explicit lifetime.
+/// A shared flag needs one, or a process that dies in cooldown would hold every
+/// other process there forever. The owner republishes the flag on each of its
+/// own admissions, so a live cooldown never lapses, and a vanished owner's
+/// cooldown expires one probe wait after its last write.
+const COOLDOWN_MILLIS: i64 = 5_000;
 
 /// Lane for admission control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -17,6 +32,94 @@ pub enum Lane {
     Api,
     /// Storage upload/download transfers.
     Storage,
+}
+
+/// A held lane slot. Dropping it releases the slot.
+///
+/// The concrete guard is opaque on purpose: an in-process implementation hands
+/// back a semaphore permit, and a cross-process one hands back a locked file.
+pub type LaneSlot = Box<dyn Any + Send>;
+
+/// Slot acquisition seam (SPEC §11 concurrency caps).
+///
+/// The default implementation is one semaphore per lane, which is what the
+/// governor has always used. `canvas-core` supplies a cross-process
+/// implementation; this crate stays disk-free (§13).
+pub trait Permits: Send + Sync + 'static {
+    /// Acquire one slot on `lane`, waiting until one is free.
+    fn acquire(&self, lane: Lane) -> Pin<Box<dyn Future<Output = LaneSlot> + Send + '_>>;
+}
+
+/// The governor values that cross process boundaries (SPEC §11).
+///
+/// Times are Unix milliseconds so the row survives a process restart, unlike
+/// the monotonic instants the in-process state keeps.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GovernorSnapshot {
+    /// Remaining-cost estimate.
+    pub estimate: f64,
+    /// Highest issue number whose sample was applied.
+    pub watermark: u64,
+    /// Cooldown deadline, or `None` when no process is in cooldown.
+    pub cooldown_until: Option<i64>,
+    /// Observed refill per second, never above 10.
+    pub refill: f64,
+    /// When the row was last written.
+    pub updated_at: i64,
+}
+
+/// Load/store hook for the shared governor row.
+///
+/// The default implementation keeps everything in this process, which is what
+/// the governor has always done. `canvas-core` stores the row in
+/// `state.sqlite`. An implementation must not wait on the network inside its
+/// transaction: `update` is handed a pure merge closure and nothing else.
+pub trait GovernorState: Send + Sync + 'static {
+    /// Read the shared row without taking a write transaction.
+    fn load(&self) -> Option<GovernorSnapshot>;
+
+    /// Read, merge, and write the shared row under one exclusive transaction.
+    ///
+    /// `merge` receives the stored row, if any, and returns the row to store.
+    /// Returning `None` leaves the row unchanged.
+    fn update(&self, merge: &mut dyn FnMut(Option<GovernorSnapshot>) -> Option<GovernorSnapshot>);
+}
+
+/// The default lane slots: one semaphore per lane, this process only.
+struct InProcessPermits {
+    api: Arc<Semaphore>,
+    storage: Arc<Semaphore>,
+}
+
+impl Permits for InProcessPermits {
+    fn acquire(&self, lane: Lane) -> Pin<Box<dyn Future<Output = LaneSlot> + Send + '_>> {
+        let sem = match lane {
+            Lane::Api => self.api.clone(),
+            Lane::Storage => self.storage.clone(),
+        };
+        Box::pin(async move {
+            let permit = sem.acquire_owned().await.expect("lane semaphore");
+            Box::new(permit) as LaneSlot
+        })
+    }
+}
+
+/// Optional cross-process seams for [`Governor::with_seams`].
+#[derive(Default, Clone)]
+pub struct Seams {
+    /// Slot acquisition; `None` keeps the in-process semaphores.
+    pub permits: Option<Arc<dyn Permits>>,
+    /// Shared governor row; `None` keeps the values in this process.
+    pub state: Option<Arc<dyn GovernorState>>,
+}
+
+impl fmt::Debug for Seams {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Seams")
+            .field("permits", &self.permits.is_some())
+            .field("state", &self.state.is_some())
+            .finish()
+    }
 }
 
 /// Governor tuning knobs.
@@ -66,7 +169,7 @@ pub struct AdmissionPermit {
     lane: Lane,
     route_key: String,
     inner: Arc<Inner>,
-    _permit: OwnedSemaphorePermit,
+    _permit: LaneSlot,
 }
 
 impl fmt::Debug for AdmissionPermit {
@@ -125,8 +228,8 @@ impl fmt::Debug for Governor {
 
 struct Inner {
     config: GovernorConfig,
-    api: Arc<Semaphore>,
-    storage: Arc<Semaphore>,
+    permits: Arc<dyn Permits>,
+    shared: Option<Arc<dyn GovernorState>>,
     admission: tokio::sync::Mutex<()>,
     released: Notify,
     state: Mutex<State>,
@@ -166,14 +269,28 @@ impl Governor {
     /// Build a governor from `config`.
     #[must_use]
     pub fn new(config: GovernorConfig) -> Self {
+        Self::with_seams(config, &Seams::default())
+    }
+
+    /// Build a governor with optional cross-process seams.
+    ///
+    /// With both seams unset this is exactly [`Governor::new`].
+    #[must_use]
+    pub fn with_seams(config: GovernorConfig, seams: &Seams) -> Self {
         let api_n = config.clamped_api_concurrency();
         let storage_n = config.storage_concurrency.max(1);
+        let permits = seams.permits.clone().unwrap_or_else(|| {
+            Arc::new(InProcessPermits {
+                api: Arc::new(Semaphore::new(api_n)),
+                storage: Arc::new(Semaphore::new(storage_n)),
+            }) as Arc<dyn Permits>
+        });
         let now = Instant::now();
         let full = config.full_remaining;
         Self {
             inner: Arc::new(Inner {
-                api: Arc::new(Semaphore::new(api_n)),
-                storage: Arc::new(Semaphore::new(storage_n)),
+                permits,
+                shared: seams.state.clone(),
                 admission: tokio::sync::Mutex::new(()),
                 released: Notify::new(),
                 config,
@@ -203,13 +320,11 @@ impl Governor {
     pub async fn admit(&self, lane: Lane, route_key: &str) -> AdmissionPermit {
         // Wait for the lane before serializing admission so a full API lane
         // does not occupy the admission lock needed by storage (and vice versa).
-        let sem = match lane {
-            Lane::Api => self.inner.api.clone(),
-            Lane::Storage => self.inner.storage.clone(),
-        };
-        let permit = sem.acquire_owned().await.expect("lane semaphore");
+        let permit = self.inner.permits.acquire(lane).await;
         let _admission = self.inner.admission.lock().await;
         loop {
+            // The shared row is read before admission, never inside a wait.
+            self.inner.adopt_shared();
             let (cooldown, in_flight, wait) = {
                 let mut state = self.inner.state.lock().expect("governor state");
                 Inner::reset_silence_locked(&self.inner.config, &mut state);
@@ -235,13 +350,15 @@ impl Governor {
                 // not reuse a timer that elapsed while another request ran.
                 sleep(wait).await;
             }
+            let cost = {
+                let mut state = self.inner.state.lock().expect("governor state");
+                Inner::reset_silence_locked(&self.inner.config, &mut state);
+                Inner::grow_locked(&mut state);
+                state.route_costs.get(route_key).copied().unwrap_or(1.0)
+            };
+            // Pre-charge the cost, on the shared row when there is one.
+            self.inner.charge(cost);
             let mut state = self.inner.state.lock().expect("governor state");
-            Inner::reset_silence_locked(&self.inner.config, &mut state);
-            Inner::grow_locked(&mut state);
-            let cost = state.route_costs.get(route_key).copied().unwrap_or(1.0);
-            state.estimate -= cost;
-            state.in_cooldown |= state.estimate < 150.0;
-            state.estimate_at = Instant::now();
             let issue = self.inner.next_issue.fetch_add(1, Ordering::Relaxed);
             state.outstanding.insert(
                 issue,
@@ -278,8 +395,12 @@ impl Governor {
             return;
         }
         let cost = cost.filter(|c| c.is_finite() && *c >= 0.0);
-        let mut state = self.inner.state.lock().expect("governor state");
-        Inner::apply_observation(&mut state, issue, remaining, cost);
+        {
+            let mut state = self.inner.state.lock().expect("governor state");
+            Inner::apply_observation(&mut state, issue, remaining, cost);
+        }
+        // §11 values are updated after each response, under one transaction.
+        self.inner.publish();
     }
 
     /// Record cost telemetry without a remaining sample.
@@ -295,6 +416,14 @@ impl Governor {
             let key = o.route_key.clone();
             state.route_costs.insert(key, cost);
         }
+    }
+
+    /// The values this governor would publish to a shared row (tests).
+    #[must_use]
+    pub fn snapshot(&self) -> GovernorSnapshot {
+        let mut state = self.inner.state.lock().expect("governor state");
+        Inner::grow_locked(&mut state);
+        Inner::snapshot_locked(&state, unix_millis())
     }
 
     /// Current telemetry counters.
@@ -341,6 +470,11 @@ impl Governor {
         self.observe(issue, remaining, cost);
     }
 
+    /// Merge the shared row into local state without admitting (tests).
+    pub fn adopt_shared_for_test(&self) {
+        self.inner.adopt_shared();
+    }
+
     /// Whether jitter is enabled on retry delays.
     #[must_use]
     pub fn jitter(&self) -> bool {
@@ -349,23 +483,122 @@ impl Governor {
 }
 
 impl Inner {
+    /// Merge the shared row into local state before an admission decision.
+    fn adopt_shared(&self) {
+        let Some(shared) = &self.shared else { return };
+        let Some(row) = shared.load() else { return };
+        let mut state = self.state.lock().expect("governor state");
+        Self::merge_shared_locked(&self.config, &mut state, row, unix_millis());
+    }
+
+    /// Pre-charge `cost`, merging and republishing the shared row when there
+    /// is one. The closure runs inside the implementation's transaction and
+    /// touches nothing but memory.
+    fn charge(&self, cost: f64) {
+        let Some(shared) = &self.shared else {
+            let mut state = self.state.lock().expect("governor state");
+            Self::charge_locked(&mut state, cost);
+            return;
+        };
+        let now_ms = unix_millis();
+        shared.update(&mut |stored| {
+            let mut state = self.state.lock().expect("governor state");
+            if let Some(row) = stored {
+                Self::merge_shared_locked(&self.config, &mut state, row, now_ms);
+            }
+            Self::charge_locked(&mut state, cost);
+            Some(Self::snapshot_locked(&state, now_ms))
+        });
+    }
+
+    /// Republish the local §11 values onto the shared row after a response.
+    fn publish(&self) {
+        let Some(shared) = &self.shared else { return };
+        let now_ms = unix_millis();
+        shared.update(&mut |stored| {
+            let mut state = self.state.lock().expect("governor state");
+            if let Some(row) = stored {
+                Self::merge_shared_locked(&self.config, &mut state, row, now_ms);
+            }
+            Some(Self::snapshot_locked(&state, now_ms))
+        });
+    }
+
+    fn charge_locked(state: &mut State, cost: f64) {
+        state.estimate -= cost;
+        state.in_cooldown |= state.estimate < 150.0;
+        state.estimate_at = Instant::now();
+    }
+
+    fn snapshot_locked(state: &State, now_ms: i64) -> GovernorSnapshot {
+        GovernorSnapshot {
+            estimate: state.estimate,
+            watermark: state.watermark,
+            cooldown_until: state
+                .in_cooldown
+                .then(|| now_ms.saturating_add(COOLDOWN_MILLIS)),
+            refill: state.refill,
+            updated_at: now_ms,
+        }
+    }
+
+    /// Apply the §11 rules to a shared row.
+    ///
+    /// A lower estimate always applies; a higher one only above the watermark.
+    /// Refill is never assumed above 10/s. Cooldown is shared. A row nobody has
+    /// written for the header-silence window resets exactly as §11 says, and
+    /// nothing more: it is the same reset [`Inner::reset_silence_locked`] does,
+    /// so a vanished owner never hands anyone an invented full bucket while a
+    /// request of its own is still in flight here.
+    fn merge_shared_locked(
+        config: &GovernorConfig,
+        state: &mut State,
+        row: GovernorSnapshot,
+        now_ms: i64,
+    ) {
+        let silent_for = now_ms.saturating_sub(row.updated_at);
+        if silent_for >= i64::try_from(SILENCE_SECS).unwrap_or(60) * 1_000 {
+            if state.in_flight == 0 {
+                Self::reset_locked(config, state);
+            }
+            return;
+        }
+        if row.estimate < state.estimate || row.watermark > state.watermark {
+            state.estimate = row.estimate;
+            state.estimate_at = Instant::now();
+        }
+        if row.watermark > state.watermark {
+            state.watermark = row.watermark;
+        }
+        if row.refill > 0.0 {
+            state.refill = row.refill.min(10.0);
+        }
+        if row.cooldown_until.is_some_and(|until| until > now_ms) {
+            state.in_cooldown = true;
+        }
+    }
+
+    fn reset_locked(config: &GovernorConfig, state: &mut State) {
+        state.estimate = config.full_remaining;
+        state.estimate_at = Instant::now();
+        state.watermark = 0;
+        state.in_cooldown = false;
+        state.refill = 0.0;
+        state.last_applied = None;
+        state.last_header_at = None;
+        state.started_at = Instant::now();
+    }
+
     fn reset_silence_locked(config: &GovernorConfig, state: &mut State) {
         if state.in_flight != 0 {
             return;
         }
         let silent = match state.last_header_at {
-            Some(t) => t.elapsed() >= Duration::from_secs(60),
-            None => state.started_at.elapsed() >= Duration::from_secs(60),
+            Some(t) => t.elapsed() >= Duration::from_secs(SILENCE_SECS),
+            None => state.started_at.elapsed() >= Duration::from_secs(SILENCE_SECS),
         };
         if silent {
-            state.estimate = config.full_remaining;
-            state.estimate_at = Instant::now();
-            state.watermark = 0;
-            state.in_cooldown = false;
-            state.refill = 0.0;
-            state.last_applied = None;
-            state.last_header_at = None;
-            state.started_at = Instant::now();
+            Self::reset_locked(config, state);
         }
     }
 
@@ -474,4 +707,16 @@ pub async fn retry_delays(attempt: u32, retry_after: Option<Duration>, jitter: b
     };
     sleep(delay).await;
     delay
+}
+
+/// Wall-clock milliseconds since the Unix epoch.
+///
+/// The shared row outlives a process, so it cannot use a monotonic instant.
+#[must_use]
+pub fn unix_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
 }
