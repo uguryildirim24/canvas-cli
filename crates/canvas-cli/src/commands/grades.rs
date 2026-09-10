@@ -104,16 +104,6 @@ async fn build(
     // grading periods, `all` when it does not (SPEC §12.4).
     let period = requested.unwrap_or_else(|| default_period(&rows));
 
-    // Baseline request 2: enrollments. An explicit period adds one more.
-    let enrollments = ensure_enrollment_grades(globals, session, period.period_key()).await?;
-    let period_key = period.period_key();
-    let by_course = session
-        .open
-        .store
-        .call(move |conns| enrollment_grades_by_course(conns, period_key))
-        .await
-        .map_err(|e| local_error(globals, session, &e.to_string()))?;
-
     let mut envelope = base_envelope(
         SCHEMA_GRADES,
         session,
@@ -124,9 +114,10 @@ async fn build(
         },
     );
     envelope.freshness.push(outcome_freshness(courses_outcome));
-    envelope.freshness.push(outcome_freshness(&enrollments));
 
-    // The course view needs the period list and this course's groups.
+    // The period list validates an explicit id and titles it. It is read before
+    // that period's enrollments so an unknown id is a resolution failure (exit
+    // 6), which SPEC §14 detects ahead of an offline miss (exit 7).
     let mut periods = Vec::new();
     if let Some(course_id) = selected {
         let outcome = ensure_grading_periods(globals, session, course_id).await?;
@@ -139,17 +130,33 @@ async fn build(
             .map_err(|e| local_error(globals, session, &e.to_string()))?;
     }
 
+    // A period the selected course does not have has nothing to fetch: the
+    // course reports `unavailable` (SPEC §12.4) rather than failing.
+    let absent_here = matches!(period, PeriodSelection::Id(id) if selected.is_some()
+        && !periods.iter().any(|p| p.id == id.to_string()));
+
+    // Baseline request 2: enrollments. An explicit period adds one more.
+    let by_course = if absent_here {
+        std::collections::HashMap::new()
+    } else {
+        let enrollments = ensure_enrollment_grades(globals, session, period.period_key()).await?;
+        envelope.freshness.push(outcome_freshness(&enrollments));
+        let period_key = period.period_key();
+        session
+            .open
+            .store
+            .call(move |conns| enrollment_grades_by_course(conns, period_key))
+            .await
+            .map_err(|e| local_error(globals, session, &e.to_string()))?
+    };
+
+    // With no course operand there is no period list to check against, so an id
+    // is unknown only when Canvas reported no grades for it anywhere.
     if let PeriodSelection::Id(id) = period
-        && !period_exists(id, &periods, &by_course)
+        && selected.is_none()
+        && by_course.is_empty()
     {
-        return Err(emit_error(
-            globals.json,
-            "resolution",
-            &format!("no grading period {id} for this identity"),
-            6,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ));
+        return Err(unknown_period(globals, session, id));
     }
 
     let mut courses = Vec::new();
@@ -166,30 +173,36 @@ async fn build(
     envelope.result.courses = courses;
 
     if let Some(course_id) = selected {
-        let outcome =
-            ensure_assignment_groups(globals, session, course_id, period.period_key()).await?;
-        envelope.freshness.push(outcome_freshness(&outcome));
-        let zone = session.time_zone();
-        let key = period.period_key();
-        let groups = session
-            .open
-            .store
-            .call(move |conns| load_assignment_groups(conns, course_id, key, &zone))
-            .await
-            .map_err(|e| local_error(globals, session, &e.to_string()))?;
+        // A period the course does not have has no groups either.
+        let groups = if absent_here {
+            Vec::new()
+        } else {
+            let outcome =
+                ensure_assignment_groups(globals, session, course_id, period.period_key()).await?;
+            envelope.freshness.push(outcome_freshness(&outcome));
+            let zone = session.time_zone();
+            let key = period.period_key();
+            session
+                .open
+                .store
+                .call(move |conns| load_assignment_groups(conns, course_id, key, &zone))
+                .await
+                .map_err(|e| local_error(globals, session, &e.to_string()))?
+        };
         envelope.result.course = Some(GradesCourseViewJson { groups, periods });
     }
     Ok(envelope)
 }
 
-/// An explicit id is valid when a period row proves it, or when Canvas returned
-/// grades for it on at least one course.
-fn period_exists(
-    id: i64,
-    periods: &[crate::output::GradingPeriodJson],
-    by_course: &std::collections::HashMap<i64, PeriodTotals>,
-) -> bool {
-    periods.iter().any(|p| p.id == id.to_string()) || !by_course.is_empty()
+fn unknown_period(globals: &Globals, session: &Session, id: i64) -> ExitCode {
+    emit_error(
+        globals.json,
+        "resolution",
+        &format!("no grading period {id} for this identity"),
+        6,
+        session.profile.clone(),
+        Some(session.identity_ref()),
+    )
 }
 
 async fn load_rows(
@@ -390,6 +403,21 @@ where
     match cached_outcome(lookup, globals.fresh, globals.offline) {
         Ok(Some(outcome)) => return Ok(outcome),
         Ok(None) => {}
+        // Name the dataset that is missing, not the courses cache.
+        Err(RefreshFail::OfflineMiss) => {
+            return Err(emit_error(
+                globals.json,
+                "offline",
+                &format!(
+                    "offline and no complete {} cache coverage for {}",
+                    dataset.name(),
+                    dataset.scope_key()
+                ),
+                7,
+                session.profile.clone(),
+                Some(session.identity_ref()),
+            ));
+        }
         Err(e) => return Err(refresh_fail(globals, session, e)),
     }
     session
