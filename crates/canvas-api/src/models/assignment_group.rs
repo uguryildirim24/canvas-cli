@@ -10,6 +10,7 @@ use crate::serde_util::{deserialize_id, deserialize_opt_id};
 pub struct AssignmentGroupRules {
     pub drop_lowest: Option<u32>,
     pub drop_highest: Option<u32>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_opt_ids")]
     pub never_drop: Option<Vec<i64>>,
 }
 
@@ -19,11 +20,12 @@ pub struct AssignmentGroupRules {
 pub struct AssignmentGroup {
     #[serde(deserialize_with = "deserialize_id")]
     pub id: i64,
-    pub name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::deserialize_supplied")]
+    pub name: crate::serde_util::Supplied<String>,
     pub position: Option<i64>,
     pub group_weight: Option<f64>,
     #[serde(default, deserialize_with = "deserialize_opt_id")]
     pub course_id: Option<i64>,
     pub rules: Option<AssignmentGroupRules>,
-    pub assignments: Option<Vec<serde_json::Value>>,
+    pub assignments: Option<Vec<super::Assignment>>,
 }
