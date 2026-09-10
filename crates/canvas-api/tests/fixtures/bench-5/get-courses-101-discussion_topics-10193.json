@@ -1,0 +1,42 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses/101/discussion_topics/10193",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": {
+    "assignment_id": 10101,
+    "context_code": "course_101",
+    "discussion_subentry_count": 3,
+    "discussion_type": "threaded",
+    "group_category_id": 773,
+    "group_topic_children": [
+      {
+        "group_id": 8801,
+        "id": 10195
+      },
+      {
+        "group_id": 8802,
+        "id": 10196
+      }
+    ],
+    "html_url": "https://canvas.example.edu/courses/101/discussion_topics/10193",
+    "id": 10193,
+    "is_announcement": false,
+    "last_reply_at": "2026-01-03T13:00:00Z",
+    "locked": false,
+    "locked_for_user": false,
+    "message": "<p>What did you make of week 3?</p>",
+    "pinned": false,
+    "points_possible": 15.0,
+    "posted_at": "2025-12-22T14:00:00Z",
+    "published": true,
+    "read_state": "unread",
+    "require_initial_post": false,
+    "subscribed": true,
+    "title": "Group lab report",
+    "unread_count": 2,
+    "user_can_see_posts": true,
+    "user_name": "Prof. Ada"
+  }
+}

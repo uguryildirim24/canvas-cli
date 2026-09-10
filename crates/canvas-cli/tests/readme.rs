@@ -7,9 +7,10 @@ const README: &str = include_str!("../../../README.md");
 
 /// Every command path a user can actually invoke.
 ///
-/// A command with subcommands and no operands of its own (`canvas auth`) is a
+/// A command with subcommands and no arguments of its own (`canvas auth`) is a
 /// group, not a command, and gets no row. `submission` and `open` take both
-/// operands and subcommands, so they get a row and their subcommands do too.
+/// operands and subcommands, so they get a row and their subcommands do too;
+/// so does a command whose own form takes only flags, such as `canvas inbox`.
 fn clap_commands() -> BTreeSet<String> {
     fn walk(cmd: &clap::Command, path: &str, out: &mut BTreeSet<String>) {
         let subs: Vec<_> = cmd
@@ -17,7 +18,12 @@ fn clap_commands() -> BTreeSet<String> {
             .filter(|s| s.get_name() != "help" && !s.is_hide_set())
             .collect();
         let has_operands = cmd.get_positionals().next().is_some();
-        if !path.is_empty() && (subs.is_empty() || has_operands) {
+        let has_own_flags = cmd.get_arguments().any(|arg| {
+            !arg.is_global_set()
+                && !arg.is_hide_set()
+                && !matches!(arg.get_id().as_str(), "help" | "version")
+        });
+        if !path.is_empty() && (subs.is_empty() || has_operands || has_own_flags) {
             out.insert(path.to_owned());
         }
         for sub in subs {

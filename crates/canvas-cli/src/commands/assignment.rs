@@ -72,8 +72,10 @@ pub async fn handle(globals: &Globals, target: String, assignment: Option<String
                         rubric_assessed = v["rubric_assessment_json"].is_array();
                         rubric_assessment = v["rubric_assessment_json"]
                             .as_array()
-                            .cloned()
-                            .unwrap_or_default();
+                            .into_iter()
+                            .flatten()
+                            .map(canvas_core::sync::assessment_row_json)
+                            .collect();
                         comments_count = v["submission_comments_json"].as_array().map(Vec::len);
                     }
                     Err(e) => return sync_error(&session, &e.into()),
@@ -89,10 +91,18 @@ pub async fn handle(globals: &Globals, target: String, assignment: Option<String
         },
         None => None,
     };
+    // A rubric cached before M8-a holds only the v1 criterion keys; the same
+    // projection that writes one fills in the fields the schema declares (§7).
+    let rubric: Vec<Value> = item
+        .details
+        .rubric
+        .iter()
+        .map(canvas_core::sync::criterion_json)
+        .collect();
     let zone = read::zone(&session);
     let mut value = read::assignment_json(&item, &zone);
     let obj = value.as_object_mut().expect("assignment object");
-    obj.extend(json!({"description_markdown":description,"can_submit":item.details.can_submit,"extra_attempts":item.details.extra_attempts,"rubric":item.details.rubric,"rubric_assessed":rubric_assessed,"rubric_assessment":rubric_assessment,"comments_count":comments_count,"external_tool_name":item.details.external_tool_name}).as_object().unwrap().clone());
+    obj.extend(json!({"description_markdown":description,"can_submit":item.details.can_submit,"extra_attempts":item.details.extra_attempts,"rubric":rubric,"rubric_assessed":rubric_assessed,"rubric_assessment":rubric_assessment,"comments_count":comments_count,"external_tool_name":item.details.external_tool_name}).as_object().unwrap().clone());
     let mut envelope = base_envelope(SCHEMA_ASSIGNMENT, &session, json!({"assignment":value}));
     freshness.extend(outcomes.iter().map(super::course_load::outcome_freshness));
     envelope.freshness = freshness;

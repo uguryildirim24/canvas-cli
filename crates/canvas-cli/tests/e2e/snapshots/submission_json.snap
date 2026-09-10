@@ -72,7 +72,8 @@ expression: value
         {
           "comments": "ok",
           "criterion_id": "_123",
-          "points": 5.0
+          "points": 5.0,
+          "rating_id": "_5721"
         }
       ],
       "score": 95.0,

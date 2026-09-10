@@ -1,0 +1,10 @@
+---
+source: crates/canvas-cli/tests/review_m8a.rs
+expression: "scrub_text(&f.text(&[\"syllabus\", \"5\"], 0).await, &server.uri())"
+---
+Bring a calculator. See the [handbook](<origin>/courses/5/files/42) and [these notes](https://elsewhere.test/notes).
+
+[embedded iframe: unavailable to this tool]
+embedded iframe (https://player.test): unavailable
+file 42 handbook
+external https://elsewhere.test/notes

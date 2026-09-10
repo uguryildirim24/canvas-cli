@@ -1,0 +1,52 @@
+{
+  "method": "GET",
+  "path": "/api/v1/conversations/7001",
+  "query": [
+    [
+      "auto_mark_as_read",
+      "false"
+    ]
+  ],
+  "status": 200,
+  "headers": {},
+  "body": {
+    "context_name": "BIO-110",
+    "id": 7001,
+    "last_message": "See you then.",
+    "last_message_at": "2026-01-04T16:00:00Z",
+    "message_count": 2,
+    "messages": [
+      {
+        "attachments": [],
+        "author_id": 3001,
+        "body": "Can we meet before the lab?",
+        "created_at": "2026-01-04T15:00:00Z",
+        "generated": false,
+        "id": 8002
+      },
+      {
+        "attachments": [],
+        "author_id": 1001,
+        "body": "See you then.",
+        "created_at": "2026-01-04T16:00:00Z",
+        "generated": false,
+        "id": 8003
+      }
+    ],
+    "participants": [
+      {
+        "id": 1001,
+        "name": "You"
+      },
+      {
+        "id": 3001,
+        "name": "Classmate 1"
+      }
+    ],
+    "private": true,
+    "starred": false,
+    "subject": "Conversation 1",
+    "subscribed": true,
+    "workflow_state": "unread"
+  }
+}

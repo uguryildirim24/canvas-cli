@@ -353,7 +353,220 @@ pub fn responses() -> Vec<Recorded> {
     for (id, size) in DOWNLOAD_FILES {
         out.push(get(format!("/api/v1/files/{id}"), file_row(id, size)));
     }
+
+    push_reads(&mut out);
     out
+}
+
+/// The M8-a read surface: pages, discussions, and the inbox.
+///
+/// One page carries an iframe, a same-origin file link, and a cross-origin
+/// link, so `page` has something to report as embedded, as a file, and as an
+/// external link. The topics cover a plain thread, a thread gated behind an
+/// initial post, and a graded group discussion.
+fn push_reads(out: &mut Vec<Recorded>) {
+    let course_id = DOWNLOAD_COURSE;
+    out.push(with_query(
+        get(
+            format!("/api/v1/courses/{course_id}/pages"),
+            json!(vec![
+                page_row(course_id, 1, true),
+                page_row(course_id, 2, false)
+            ]),
+        ),
+        &[("sort", "title")],
+    ));
+    out.push(get(
+        format!("/api/v1/courses/{course_id}/pages/page-{course_id}-1"),
+        page_body(course_id, 1),
+    ));
+
+    let topics = vec![
+        topic_row(course_id, 1),
+        gated_topic_row(course_id, 2),
+        graded_group_topic_row(course_id, 3),
+    ];
+    out.push(with_query(
+        get(
+            format!("/api/v1/courses/{course_id}/discussion_topics"),
+            json!(topics.clone()),
+        ),
+        &[("only_announcements", "false")],
+    ));
+    for topic in &topics {
+        let id = topic["id"].as_i64().unwrap_or_default();
+        out.push(get(
+            format!("/api/v1/courses/{course_id}/discussion_topics/{id}"),
+            topic.clone(),
+        ));
+    }
+    let plain = topics[0]["id"].as_i64().unwrap_or_default();
+    out.push(get(
+        format!("/api/v1/courses/{course_id}/discussion_topics/{plain}/entries"),
+        json!((1..=3).map(|n| entry_row(plain, n)).collect::<Vec<_>>()),
+    ));
+    // The gate refuses the entries route; the topic itself still reads.
+    let gated = topics[1]["id"].as_i64().unwrap_or_default();
+    out.push(Recorded {
+        status: 403,
+        ..get(
+            format!("/api/v1/courses/{course_id}/discussion_topics/{gated}/entries"),
+            json!({"status": "unauthorized", "errors": [{"message": "initial post required"}]}),
+        )
+    });
+
+    let conversations: Vec<Value> = (1..=3).map(conversation_row).collect();
+    out.push(with_query(
+        get("/api/v1/conversations".to_owned(), json!(conversations)),
+        &[("scope", "inbox"), ("auto_mark_as_read", "false")],
+    ));
+    for n in 1..=3 {
+        out.push(with_query(
+            get(
+                format!("/api/v1/conversations/{}", 7000 + n),
+                conversation_detail(n),
+            ),
+            &[("auto_mark_as_read", "false")],
+        ));
+    }
+    out.push(get(
+        "/api/v1/conversations/unread_count".to_owned(),
+        json!({"unread_count": "2"}),
+    ));
+}
+
+fn page_row(course_id: i64, n: i64, front: bool) -> Value {
+    json!({
+        "page_id": course_id * 1000 + n,
+        "url": format!("page-{course_id}-{n}"),
+        "title": format!("Page {n}"),
+        "created_at": at(-40, 0),
+        "updated_at": at(-12, 3),
+        "published": true,
+        "front_page": front,
+        "locked_for_user": false,
+        "editing_roles": "teachers",
+        "html_url": format!("{LINK_HOST}/courses/{course_id}/pages/page-{course_id}-{n}")
+    })
+}
+
+fn page_body(course_id: i64, n: i64) -> Value {
+    let mut row = page_row(course_id, n, true);
+    let file_id = DOWNLOAD_FILES[0].0;
+    row["body"] = json!(format!(
+        concat!(
+            "<p>Read the <a href=\"/courses/{course}/files/{file}\">handbook</a>.</p>",
+            "<p>See <a href=\"https://example.org/notes\">the notes</a>.</p>",
+            "<iframe src=\"https://player.example.net/embed/1\"></iframe>"
+        ),
+        course = course_id,
+        file = file_id
+    ));
+    row
+}
+
+fn topic_row(course_id: i64, n: i64) -> Value {
+    json!({
+        "id": course_id * 100 + 90 + n,
+        "title": format!("Discussion {n}"),
+        "message": format!("<p>What did you make of week {n}?</p>"),
+        "posted_at": at(-14, 2),
+        "last_reply_at": at(-2, 1),
+        "discussion_type": "threaded",
+        "user_name": "Prof. Ada",
+        "read_state": "unread",
+        "unread_count": 2,
+        "discussion_subentry_count": 3,
+        "published": true,
+        "locked": false,
+        "locked_for_user": false,
+        "pinned": false,
+        "require_initial_post": false,
+        "user_can_see_posts": true,
+        "is_announcement": false,
+        "subscribed": true,
+        "context_code": format!("course_{course_id}"),
+        "html_url": format!("{LINK_HOST}/courses/{course_id}/discussion_topics/{}", course_id * 100 + 90 + n)
+    })
+}
+
+fn gated_topic_row(course_id: i64, n: i64) -> Value {
+    let mut row = topic_row(course_id, n);
+    row["title"] = json!("Introduce yourself");
+    row["require_initial_post"] = json!(true);
+    row["user_can_see_posts"] = json!(false);
+    row["unread_count"] = json!(0);
+    row
+}
+
+fn graded_group_topic_row(course_id: i64, n: i64) -> Value {
+    let mut row = topic_row(course_id, n);
+    row["title"] = json!("Group lab report");
+    row["assignment_id"] = json!(course_id * 100 + 1);
+    row["points_possible"] = json!(15.0);
+    row["group_category_id"] = json!(770 + n);
+    row["group_topic_children"] = json!([
+        {"id": course_id * 100 + 95, "group_id": 8801},
+        {"id": course_id * 100 + 96, "group_id": 8802},
+    ]);
+    row
+}
+
+fn entry_row(topic_id: i64, n: i64) -> Value {
+    json!({
+        "id": topic_id * 10 + n,
+        "parent_id": null,
+        "user_id": 2000 + n,
+        "user_name": format!("Student {n}"),
+        "message": format!("<p>Reply {n}.</p>"),
+        "created_at": at(-3, n),
+        "updated_at": at(-3, n),
+        "read_state": "unread",
+        "has_more_replies": false,
+        "recent_replies": []
+    })
+}
+
+fn conversation_row(n: i64) -> Value {
+    json!({
+        "id": 7000 + n,
+        "subject": format!("Conversation {n}"),
+        "workflow_state": if n == 1 { "unread" } else { "read" },
+        "last_message": "See you then.",
+        "last_message_at": at(-n, 4),
+        "message_count": 2,
+        "subscribed": true,
+        "private": true,
+        "starred": false,
+        "context_name": CODES[0],
+        "participants": [
+            {"id": USER_ID, "name": "You"},
+            {"id": 3000 + n, "name": format!("Classmate {n}")},
+        ]
+    })
+}
+
+fn conversation_detail(n: i64) -> Value {
+    let mut row = conversation_row(n);
+    row["messages"] = json!([
+        {
+            "id": 8000 + n * 2,
+            "author_id": 3000 + n,
+            "created_at": at(-n, 3),
+            "body": "Can we meet before the lab?",
+            "generated": false,
+            "attachments": []
+        },
+        {
+            "id": 8001 + n * 2,
+            "author_id": USER_ID,
+            "created_at": at(-n, 4),
+            "body": "See you then.",
+            "generated": false,
+            "attachments": []
+        },
+    ]);
+    row
 }
 
 fn file_rows(course_id: i64) -> Vec<Value> {
@@ -508,8 +721,9 @@ mod tests {
     #[test]
     fn every_body_decodes_with_the_real_models() {
         use canvas_api::models::{
-            Announcement, Assignment, CalendarEvent, Course, Enrollment, File, Folder,
-            GradingPeriod, MissingSubmission, Module, PlannerItem, User, WrappedCollection,
+            Announcement, Assignment, CalendarEvent, Conversation, Course, DiscussionEntry,
+            DiscussionTopic, Enrollment, File, Folder, GradingPeriod, MissingSubmission, Module,
+            PlannerItem, UnreadCount, User, WikiPage, WrappedCollection,
         };
         fn check<T: serde::de::DeserializeOwned>(path: &str, body: &Value) {
             serde_json::from_value::<T>(body.clone())
@@ -546,6 +760,25 @@ mod tests {
                     check::<Vec<CalendarEvent>>(path, body);
                 } else if path.starts_with("/api/v1/files/") {
                     check::<File>(path, body);
+                } else if path == "/api/v1/conversations/unread_count" {
+                    check::<UnreadCount>(path, body);
+                } else if path.ends_with("/pages") {
+                    check::<Vec<WikiPage>>(path, body);
+                } else if path.contains("/pages/") {
+                    check::<WikiPage>(path, body);
+                } else if path.ends_with("/discussion_topics") {
+                    check::<Vec<DiscussionTopic>>(path, body);
+                } else if path.ends_with("/entries") {
+                    // The gated topic answers 403 with an error body, not a list.
+                    if recorded.status == 200 {
+                        check::<Vec<DiscussionEntry>>(path, body);
+                    }
+                } else if path.contains("/discussion_topics/") {
+                    check::<DiscussionTopic>(path, body);
+                } else if path == "/api/v1/conversations" {
+                    check::<Vec<Conversation>>(path, body);
+                } else if path.starts_with("/api/v1/conversations/") {
+                    check::<Conversation>(path, body);
                 } else {
                     panic!("{path} is not covered by the decode check");
                 }
@@ -576,7 +809,10 @@ mod tests {
             match value {
                 Value::Object(map) => {
                     for (key, child) in map {
+                        // Only a file row's own `url` is fetched. A wiki page
+                        // also has a `url`, and there it is the slug.
                         if key == "url"
+                            && map.contains_key("filename")
                             && let Some(text) = child.as_str()
                         {
                             assert!(

@@ -104,6 +104,14 @@ Every command below runs in this build.
 | `canvas modules` | List a course's modules. `--items`. |
 | `canvas announcements` | Recent announcements. `--since`, `--unread`. |
 | `canvas announcement` | Show one announcement as Markdown. |
+| `canvas pages` | List a course's pages. `--unpublished`. |
+| `canvas page` | Show one page as Markdown, with what the Markdown cannot show. |
+| `canvas syllabus` | Show the course syllabus as Markdown, with its file links. |
+| `canvas discussions` | List a course's discussion topics. `--unread`. |
+| `canvas discussion` | Show one discussion. `--replies`, `--page`. |
+| `canvas inbox` | List conversations. `--scope inbox\|unread\|sent\|archived`. |
+| `canvas inbox show` | Show one conversation and its messages. |
+| `canvas inbox unread-count` | Show the unread conversation count. |
 | `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. |
 | `canvas open` | Open a course, or any Canvas URL, in the browser. |
 | `canvas open assignment` | Open an assignment page in the browser. |
