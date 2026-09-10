@@ -289,9 +289,6 @@ pub enum Commands {
         /// Unread only.
         #[arg(long)]
         unread: bool,
-        /// Include announcements: yes (default) or no.
-        #[arg(long)]
-        announcements: Option<String>,
     },
     /// Show one discussion.
     Discussion {

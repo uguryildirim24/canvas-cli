@@ -37,40 +37,21 @@ use crate::session::{Session, ttl_discussions};
 const REPLY_PAGE: usize = 100;
 
 /// Run `canvas discussions` for the CLI: one envelope, one exit code.
-pub async fn run_list(
-    globals: &Globals,
-    course: String,
-    unread: bool,
-    announcements: Option<String>,
-) -> ExitCode {
-    handle_list(globals, course, unread, announcements)
+pub async fn run_list(globals: &Globals, course: String, unread: bool) -> ExitCode {
+    handle_list(globals, course, unread)
         .await
         .emit(globals.json)
 }
 
 /// Run `canvas discussions <course> [--unread]`.
-pub async fn handle_list(
-    globals: &Globals,
-    course: String,
-    unread: bool,
-    announcements: Option<String>,
-) -> Handled {
+///
+/// The pinned request is `only_announcements=false`, so this listing holds
+/// discussion topics and never an announcement (SPEC §19 item 27). The human
+/// output says where announcements live instead.
+pub async fn handle_list(globals: &Globals, course: String, unread: bool) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
         Err(e) => return session_error(e, globals.profile.clone()),
-    };
-    let show_announcements = match announcements.as_deref() {
-        None | Some("yes") => true,
-        Some("no") => false,
-        Some(_) => {
-            return emit_error(
-                "usage",
-                "--announcements takes yes or no",
-                2,
-                session.profile.clone(),
-                Some(session.identity_ref()),
-            );
-        }
     };
     let (resolved, mut freshness, _) = match resolve_with_refresh(globals, &session, &course).await
     {
@@ -94,9 +75,6 @@ pub async fn handle_list(
         Err(e) => return local_error(&session, &e),
     };
     let mut items: Vec<DiscussionSummaryJson> = rows.iter().map(TopicRow::summary).collect();
-    if !show_announcements {
-        items.retain(|item| item.is_announcement != Some(true));
-    }
     if unread {
         // Filtered locally on the stored state; nothing is marked read.
         items.retain(|item| {
@@ -623,9 +601,13 @@ fn local_error(session: &Session, err: &DbError) -> Handled {
     )
 }
 
+/// Announcements are a different listing, so the table says so rather than
+/// letting a reader take an empty or short list for the whole course feed.
+const ANNOUNCEMENTS_POINTER: &str = "announcements are listed by `canvas announcements`";
+
 fn print_topic_table(items: &[DiscussionSummaryJson]) -> io::Result<()> {
     if items.is_empty() {
-        return writeln!(io::stdout(), "no discussions");
+        return writeln!(io::stdout(), "no discussions\n{ANNOUNCEMENTS_POINTER}");
     }
     let mut table = new_table();
     table.set_header(Row::from(vec![
@@ -647,7 +629,7 @@ fn print_topic_table(items: &[DiscussionSummaryJson]) -> io::Result<()> {
         ]));
     }
     apply_two_space_padding(&mut table);
-    writeln!(io::stdout(), "{table}")
+    writeln!(io::stdout(), "{table}\n{ANNOUNCEMENTS_POINTER}")
 }
 
 fn print_topic(topic: &DiscussionDetailJson) -> io::Result<()> {

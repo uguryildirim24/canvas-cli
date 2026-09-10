@@ -7,7 +7,7 @@ expression: "normalized(listing, &server.uri())"
   "freshness": [
     {
       "complete": true,
-      "count": 4,
+      "count": 3,
       "dataset": "discussions",
       "fetched_at": "2026-09-09T17:05:12Z",
       "scope": "course:5",
@@ -87,25 +87,6 @@ expression: "normalized(listing, &server.uri())"
         "reply_count": 3,
         "require_initial_post": false,
         "title": "Group lab report",
-        "unread_count": 2
-      },
-      {
-        "assignment_id": null,
-        "author": "Dr. Reed",
-        "course_id": "5",
-        "group_category_id": null,
-        "html_url": "https://canvas.test/courses/5/discussion_topics/60",
-        "id": "60",
-        "is_announcement": true,
-        "last_reply_at": "2026-09-08T10:00:00Z",
-        "locked": false,
-        "pinned": false,
-        "points_possible": null,
-        "posted_at": "2026-09-01T14:00:00Z",
-        "read_state": "unread",
-        "reply_count": 3,
-        "require_initial_post": false,
-        "title": "Welcome",
         "unread_count": 2
       }
     ],

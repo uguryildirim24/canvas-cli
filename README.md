@@ -107,7 +107,7 @@ Every command below runs in this build.
 | `canvas pages` | List a course's pages. `--unpublished`. |
 | `canvas page` | Show one page as Markdown, with what the Markdown cannot show. |
 | `canvas syllabus` | Show the course syllabus as Markdown, with its file links. |
-| `canvas discussions` | List a course's discussions. `--unread`, `--announcements`. |
+| `canvas discussions` | List a course's discussion topics. `--unread`. |
 | `canvas discussion` | Show one discussion. `--replies`, `--page`. |
 | `canvas inbox` | List conversations. `--scope inbox\|unread\|sent\|archived`. |
 | `canvas inbox show` | Show one conversation and its messages. |
