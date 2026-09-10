@@ -53,12 +53,12 @@ exit: 0
   "due_at": "2026-09-20T03:59:00Z",
   "cli_version": "<version>",
   "created_at": "<clock>",
-  "plan_id": "<clock>",
+  "plan_id": "<id>",
   "approval": {
     "channel": "yes-flag",
     "at": "2026-09-09T17:05:12Z",
     "consumer": null,
-    "plan_sha256": "<clock>"
+    "plan_sha256": "<digest>"
   }
 }
 --- stderr ---
