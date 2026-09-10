@@ -15,10 +15,11 @@ pub use envelope::{
 };
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
-    AliasJson, AliasResult, AssignmentGroupJson, CacheClearResult, CachePathResult,
-    CacheStatsResult, CacheTableJson, CourseBaseJson, CourseDetailJson, CourseJson, CourseResult,
-    CoursesResult, DownloadCourseJson, DownloadFileJson, DownloadResult, DownloadTotalsJson,
-    FileEntryJson, FilesListingJson, FilesResult, GradeJson, GradesCourseJson,
+    AliasJson, AliasResult, AnnouncementDetailJson, AnnouncementJson, AnnouncementResult,
+    AnnouncementsResult, AssignmentGroupJson, CacheClearResult, CachePathResult, CacheStatsResult,
+    CacheTableJson, CalendarItemJson, CalendarResult, CourseBaseJson, CourseDetailJson, CourseJson,
+    CourseResult, CoursesResult, DownloadCourseJson, DownloadFileJson, DownloadResult,
+    DownloadTotalsJson, FileEntryJson, FilesListingJson, FilesResult, GradeJson, GradesCourseJson,
     GradesCourseViewJson, GradesResult, GradingPeriodJson, GroupAssignmentJson, GroupRulesJson,
     GroupSubtotalJson, ModuleEntryJson, ModuleItemJson, ModulesResult, PeriodJson, SCHEMA_ALIAS,
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
@@ -28,7 +29,7 @@ pub use registry::{
     SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO,
     SCHEMA_VERIFY, SCHEMA_VERSION, SchemaEntry, SubmissionStatusJson, SubmitCandidateJson,
     SubmitFileJson, SubmitResult, SubmitTextJson, SyncDatasetJson, SyncResult, TeacherJson,
-    TermJson, all_schemas, rejects_json,
+    TermJson, WindowJson, all_schemas, rejects_json,
 };
 pub use render::{
     StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,

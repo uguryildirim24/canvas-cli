@@ -66,6 +66,8 @@ struct CacheConfig {
     ttl_planner: Option<String>,
     ttl_files: Option<String>,
     ttl_modules: Option<String>,
+    ttl_announcements: Option<String>,
+    ttl_calendar: Option<String>,
 }
 
 impl Session {
@@ -418,6 +420,34 @@ pub fn ttl_modules() -> jiff::Span {
             .unwrap_or_default()
             .cache
             .ttl_modules
+            .as_deref(),
+        1,
+        true,
+    )
+}
+
+/// Default announcements TTL (15m), optionally overridden by config.
+#[must_use]
+pub fn ttl_announcements() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_announcements
+            .as_deref(),
+        15,
+        false,
+    )
+}
+
+/// Default calendar-events TTL (1h), optionally overridden by config.
+#[must_use]
+pub fn ttl_calendar() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_calendar
             .as_deref(),
         1,
         true,

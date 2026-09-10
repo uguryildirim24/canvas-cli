@@ -1,0 +1,48 @@
+---
+source: crates/canvas-cli/tests/m4b.rs
+expression: normalized(out)
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "announcement",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "announcement:9001",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "announcement": {
+      "author": "Ada Lovelace",
+      "course_code": null,
+      "course_id": "1",
+      "html_url": "https://canvas.test/courses/1/discussion_topics/9001",
+      "id": "9001",
+      "message_markdown": "Read **chapter 3** first.",
+      "posted_at": "2026-09-08T14:00:00Z",
+      "posted_at_local": "2026-09-08T10:00:00-04:00",
+      "read": false,
+      "title": "Lab 3 is posted"
+    }
+  },
+  "schema": "canvas-cli/announcement@1",
+  "warnings": []
+}
