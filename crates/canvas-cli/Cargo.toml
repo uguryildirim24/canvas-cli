@@ -24,6 +24,7 @@ etcetera.workspace = true
 figment.workspace = true
 fs4.workspace = true
 futures-util.workspace = true
+indicatif.workspace = true
 jiff.workspace = true
 keyring.workspace = true
 open.workspace = true
