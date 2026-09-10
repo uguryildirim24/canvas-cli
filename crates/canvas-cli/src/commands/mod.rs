@@ -9,7 +9,9 @@ pub mod course_load;
 pub mod courses;
 pub mod doctor;
 pub mod emit;
+pub mod files;
 pub mod identity;
+pub mod modules;
 pub mod sync;
 
 use crate::output::ColorMode;

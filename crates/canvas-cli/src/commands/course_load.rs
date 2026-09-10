@@ -100,6 +100,42 @@ fn cache_outcome(row: &FetchLogRow, stale: bool) -> RefreshOutcome {
     }
 }
 
+fn cache_outcome_with_error(row: &FetchLogRow, stale: bool) -> RefreshOutcome {
+    RefreshOutcome {
+        freshness: FreshnessInfo {
+            dataset: row.dataset.clone(),
+            scope: row.scope.clone(),
+            source: SyncFreshnessSource::Cache,
+            fetched_at: row.fetched_at,
+            complete: row.complete,
+            count: row.count,
+            stale,
+        },
+        requests: 0,
+        error: row.error.clone(),
+    }
+}
+
+/// Like [`cached_outcome`], but keeps `fetch_log.error` (listing denials).
+pub fn cached_outcome_with_error(
+    lookup: LookupResult,
+    fresh: bool,
+    offline: bool,
+) -> Result<Option<RefreshOutcome>, RefreshFail> {
+    if let LookupResult::Hit(row) = &lookup
+        && !fresh
+        && !offline
+    {
+        return Ok(Some(cache_outcome_with_error(row, false)));
+    }
+    if offline {
+        return complete_row(lookup)
+            .map(|row| Some(cache_outcome_with_error(&row, true)))
+            .ok_or(RefreshFail::OfflineMiss);
+    }
+    Ok(None)
+}
+
 /// Convert a sync freshness source to an envelope source.
 #[must_use]
 pub fn map_source(source: SyncFreshnessSource) -> FreshnessSource {
