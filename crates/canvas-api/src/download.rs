@@ -89,8 +89,17 @@ async fn download_once(
             return Err(Error::UnexpectedRedirect);
         }
         if !status.is_success() {
-            let bytes = response.bytes().await.map_err(|e| map_err(&e))?;
-            if is_rate_limited(status, &bytes) {
+            // Only 403 needs a body to distinguish a throttle from a denial.
+            // A broken error body must not turn a final 401/404 into Network.
+            let throttled = if status == StatusCode::FORBIDDEN {
+                response
+                    .bytes()
+                    .await
+                    .is_ok_and(|bytes| is_rate_limited(status, &bytes))
+            } else {
+                status == StatusCode::TOO_MANY_REQUESTS
+            };
+            if throttled {
                 *retry_after = parse_retry_after(&headers);
                 return Err(Error::RateLimited);
             }
