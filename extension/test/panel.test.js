@@ -194,3 +194,30 @@ test("the whole panel renders notes through the sanitizer", () => {
   assert.equal(kinds.has("link"), false);
   assert.equal(kinds.has("button"), false);
 });
+
+test("a note that cannot be rendered costs that row and not the panel", () => {
+  // The panel is where a person approves a submission. A note is written by
+  // an agent that reads web pages, so a note that made the renderer throw
+  // must never take the plans waiting for a decision down with it.
+  const real = companion.renderMarkdown;
+  companion.renderMarkdown = () => {
+    throw new RangeError("Maximum call stack size exceeded");
+  };
+  try {
+    const model = panelView({
+      attachment_state: "attached",
+      origin: ORIGIN,
+      notes: [{ note_id: "n1", consumer: "mcp:host", at: "2026-09-10T16:00:00Z", text: "boom" }],
+      approvals: [{ plan_id: "p1", handle: "h1", plan_sha256: "00" }],
+      journals: [],
+    });
+    assert.equal(model.approvals.length, 1, "the approvals still draw");
+    assert.equal(model.notes.length, 1);
+    // The text is still shown, unrendered: nothing is hidden from the person.
+    const shown = JSON.stringify(model.notes[0].blocks);
+    assert.ok(shown.includes("could not be rendered"));
+    assert.ok(shown.includes("boom"));
+  } finally {
+    companion.renderMarkdown = real;
+  }
+});

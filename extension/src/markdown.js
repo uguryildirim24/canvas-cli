@@ -27,6 +27,14 @@ const MAX_NOTE_BYTES = 8 * 1024;
 // How deep an emphasis run may nest before the rest is taken as text.
 const MAX_INLINE_DEPTH = 4;
 
+// How deep a block quote may nest before its body is taken as plain lines.
+//
+// Each `>` on a line is one level, and each level is one recursive call, so
+// an unbounded nesting is a stack overflow — which in this panel is not a
+// wrong render but no render at all, approvals included. A note is hostile
+// text; `>` repeated eight thousand times fits inside the 8 KiB bound.
+const MAX_QUOTE_DEPTH = 6;
+
 /**
  * What may be done with a link target.
  *
@@ -62,9 +70,10 @@ globalThis.canvasCli.linkPolicy = function linkPolicy(href, origin) {
  *
  * @param {string} source the note text, exactly as the host holds it
  * @param {string} origin the granted origin; the only host a link may name
+ * @param {number} depth how many block quotes this call is already inside
  * @returns {Array<object>} block nodes: heading, paragraph, list, quote, code
  */
-globalThis.canvasCli.renderMarkdown = function renderMarkdown(source, origin) {
+globalThis.canvasCli.renderMarkdown = function renderMarkdown(source, origin, depth = 0) {
   const text = String(source == null ? "" : source);
   const bounded = globalThis.canvasCli.truncateUtf8
     ? globalThis.canvasCli.truncateUtf8(text, MAX_NOTE_BYTES).text
@@ -109,9 +118,16 @@ globalThis.canvasCli.renderMarkdown = function renderMarkdown(source, origin) {
         body.push(lines[index].replace(/^\s{0,3}>\s?/, ""));
         index += 1;
       }
+      const inner = body.join("\n");
+      // Past the bound the quote's body is text, exactly as an emphasis run
+      // past `MAX_INLINE_DEPTH` is text. Nothing is dropped and nothing
+      // recurses further.
       blocks.push({
         type: "quote",
-        children: globalThis.canvasCli.renderMarkdown(body.join("\n"), origin),
+        children:
+          depth < MAX_QUOTE_DEPTH
+            ? globalThis.canvasCli.renderMarkdown(inner, origin, depth + 1)
+            : [{ type: "paragraph", children: [{ type: "text", text: inner }] }],
       });
       continue;
     }
@@ -255,3 +271,4 @@ function linkNode(label, href, origin, depth) {
 }
 
 globalThis.canvasCli.MAX_NOTE_BYTES = MAX_NOTE_BYTES;
+globalThis.canvasCli.MAX_QUOTE_DEPTH = MAX_QUOTE_DEPTH;

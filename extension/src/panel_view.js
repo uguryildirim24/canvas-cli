@@ -192,6 +192,26 @@ globalThis.canvasCli.attachmentView = function attachmentView(state) {
   };
 };
 
+/**
+ * One note's blocks, or a row saying that note could not be rendered.
+ *
+ * A note is hostile text, and the panel is where a person approves a
+ * submission. A note that made the renderer throw must cost the person that
+ * one row and no more: without this, the whole panel — the plans waiting for
+ * a decision included — would fail to draw because of something an agent
+ * wrote. The text is still shown, unrendered, so nothing is hidden.
+ */
+function blocksOf(text, origin) {
+  try {
+    return globalThis.canvasCli.renderMarkdown(text, origin);
+  } catch {
+    return [
+      { type: "paragraph", children: [{ type: "text", text: "this note could not be rendered; it is shown as it was written" }] },
+      { type: "code", text: String(text == null ? "" : text).slice(0, 2000) },
+    ];
+  }
+}
+
 /** The whole panel, as plain data. */
 globalThis.canvasCli.panelView = function panelView(state) {
   const attachment = globalThis.canvasCli.attachmentView(state);
@@ -209,7 +229,7 @@ globalThis.canvasCli.panelView = function panelView(state) {
       consumer: note.consumer ? String(note.consumer) : null,
       at: String(note.at || ""),
       generation: typeof note.generation === "number" ? note.generation : null,
-      blocks: globalThis.canvasCli.renderMarkdown(note.text, origin),
+      blocks: blocksOf(note.text, origin),
       source_refs: (Array.isArray(note.source_refs) ? note.source_refs : []).map((ref) => ({
         ref: String(ref),
         policy: globalThis.canvasCli.linkPolicy(ref, origin),
