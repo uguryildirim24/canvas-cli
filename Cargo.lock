@@ -488,6 +488,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "unicode-normalization",
  "uuid",
  "wiremock",

@@ -10,6 +10,7 @@ use std::thread;
 use rusqlite::{Connection, OpenFlags};
 use thiserror::Error;
 
+use crate::coord::{CoordConfig, CoordError, Coordinator};
 use crate::identity::{IdentityDocument, IdentityError, IdentityLock, Paths};
 
 use super::migrate::{self, CACHE_USER_VERSION, STATE_USER_VERSION};
@@ -33,6 +34,7 @@ pub struct Store {
     tx: SyncSender<Job>,
     id: u64,
     pub(super) lock: Arc<IdentityLock>,
+    coord: Arc<Coordinator>,
 }
 
 static WORKER: OnceLock<SyncSender<Job>> = OnceLock::new();
@@ -83,12 +85,31 @@ pub enum DbError {
     Message(String),
 }
 
+impl From<CoordError> for DbError {
+    fn from(value: CoordError) -> Self {
+        match value {
+            CoordError::Io(e) => Self::Identity(IdentityError::Io(e)),
+            CoordError::Sqlite(e) => Self::Sqlite(e),
+        }
+    }
+}
+
 impl Store {
     /// Open `cache.sqlite` and `state.sqlite` on a dedicated thread.
     pub fn open(paths: &Paths, identity: &IdentityDocument) -> Result<Self, DbError> {
+        Self::open_with_coord(paths, identity, CoordConfig::from_env())
+    }
+
+    /// Open with explicit coordinator tuning (`[network] api_concurrency`).
+    pub fn open_with_coord(
+        paths: &Paths,
+        identity: &IdentityDocument,
+        coord: CoordConfig,
+    ) -> Result<Self, DbError> {
         identity.verify()?;
         paths.verify(&identity.key)?;
         let lock = Arc::new(IdentityLock::acquire_shared(paths, identity)?);
+        let coord_paths = paths.clone();
         let paths = paths.clone();
         let doc = identity.clone();
         let db_lock = Arc::clone(&lock);
@@ -144,7 +165,21 @@ impl Store {
         }))
         .map_err(|_| DbError::WorkerClosed)?;
         ready_rx.recv().map_err(|_| DbError::WorkerClosed)??;
-        Ok(Self { tx, id, lock })
+        // The coordinator needs the migrated `governor` and `interest` tables,
+        // so it opens after the store thread reports both databases ready.
+        let coord = Arc::new(Coordinator::open(&coord_paths, coord)?);
+        Ok(Self {
+            tx,
+            id,
+            lock,
+            coord,
+        })
+    }
+
+    /// The per-identity coordinator (permits, governor row, single-flight).
+    #[must_use]
+    pub fn coordinator(&self) -> &Arc<Coordinator> {
+        &self.coord
     }
 
     /// Run `f` on the `SQLite` thread and return its result.
@@ -225,7 +260,7 @@ fn sqlite_thread(rx: &Receiver<Job>) {
 fn open_db(
     path: &Path,
     supported: i32,
-    migrate: fn(&Connection) -> Result<(), DbError>,
+    migrate: fn(&Connection, i32) -> Result<(), DbError>,
 ) -> Result<Connection, DbError> {
     // Create privately before SQLite opens the database or its journal sidecars.
     let mut options = std::fs::OpenOptions::new();
@@ -270,7 +305,7 @@ fn open_db(
             });
         }
         if locked_version < supported {
-            migrate(&tx)?;
+            migrate(&tx, locked_version)?;
             tx.pragma_update(None, "user_version", supported)?;
         }
         tx.commit()?;
