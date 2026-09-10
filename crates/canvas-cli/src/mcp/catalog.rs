@@ -985,6 +985,16 @@ pub fn spec(name: &str) -> Option<&'static ToolSpec> {
     specs().iter().find(|spec| spec.name == name)
 }
 
+/// Whether this tool asks a person for a decision before it acts.
+///
+/// Only such a tool can be the second half of an approval round trip. Every
+/// `*.execute` runs a plan under an approval, and nothing else ever asks, so
+/// the rule stays true as more writes are added.
+#[must_use]
+pub fn asks_for_approval(name: &str) -> bool {
+    spec(name).is_some_and(|spec| spec.name.ends_with(".execute"))
+}
+
 /// Parse `arguments` for a tool, rejecting anything its schema does not name.
 fn parse<T: for<'de> Deserialize<'de>>(arguments: Option<JsonObject>) -> Result<T, String> {
     let value = Value::Object(arguments.unwrap_or_default());

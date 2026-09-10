@@ -48,10 +48,6 @@ const APPROVAL_KEY: &str = "approval";
 /// The consumer id recorded when a host does not name itself.
 const ANONYMOUS_CONSUMER: &str = "mcp";
 
-/// The one tool that can return `input_required`, and so the only tool whose
-/// retry may carry a `requestState`.
-const APPROVAL_TOOL: &str = "submission.execute";
-
 /// How long a host may cache the shape of this server, in milliseconds.
 ///
 /// The catalog and the resource list are fixed when the binary is built, and
@@ -366,14 +362,14 @@ impl ServerHandler for CanvasServer {
         }
         let consumer = consumer_of(&context);
         if let Some(state) = request.request_state.as_deref() {
-            // Only one tool ever asks for a decision, so only that tool can be
-            // the second half of a round trip. A retry that names any other
-            // tool is a host bug or a replayed state, and answering it would
-            // record an approval against a call that never asked for one.
-            if name != APPROVAL_TOOL {
+            // Only a tool that asks for a decision can be the second half of
+            // a round trip. A retry that names any other tool is a host bug or
+            // a replayed state, and answering it would record an approval
+            // against a call that never asked for one.
+            if !catalog::asks_for_approval(&name) {
                 return Err(ErrorData::invalid_params(
                     format!(
-                        "{name} never asks for an approval: `requestState` belongs to {APPROVAL_TOOL}"
+                        "{name} never asks for an approval: `requestState` belongs to an execute tool"
                     ),
                     Some(serde_json::json!({ "tool": name })),
                 ));
