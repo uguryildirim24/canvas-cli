@@ -290,6 +290,25 @@ async fn a_reply_posts_once_and_lists_beside_a_submission_receipt() {
     assert_eq!(receipt["operation"]["delivery"], "observable");
     assert_eq!(receipt["assignment_id"], Value::Null);
 
+    // And it exports, by journal id, with the operation block intact.
+    let out_path = f.dir.path().join("receipt.json");
+    let exported = f
+        .run(
+            &[
+                "receipts",
+                "export",
+                journal_id,
+                "--out",
+                out_path.to_str().unwrap(),
+            ],
+            0,
+        )
+        .await;
+    assert_eq!(exported["result"]["receipt_id"], receipt_id, "{exported}");
+    let document: Value = serde_json::from_slice(&std::fs::read(&out_path).unwrap()).unwrap();
+    assert_eq!(document["operation"]["kind"], "discussion_reply");
+    assert_eq!(document["assignment_id"], Value::Null);
+
     // §10: the thread is settled once the write resolves.
     let read = f.run(&["discussion", "5", "55"], 0).await;
     assert_eq!(read["result"]["pending"], false);
