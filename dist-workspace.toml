@@ -24,9 +24,11 @@ ci = ["github"]
 # The release job only ever runs from a pushed tag; pull requests stop at
 # `dist plan`.
 pr-run-mode = "plan"
-# On a tag, push the formula to the tap. No crates.io or npm publish from CI,
-# and no self-updater.
-publish-jobs = ["homebrew"]
+# No publish job. The tap does not exist yet, and dist 0.32 would push its own
+# formula, which has no man page or completion install lines: `xtask
+# dist-formula` adds those, and docs/release.md is the owner's tap step. This is
+# what `dist plan` warns about, and the warning is expected.
+publish-jobs = []
 install-updater = false
 # `cargo xtask dist-assets` writes these before the archives are built.
 include = [
