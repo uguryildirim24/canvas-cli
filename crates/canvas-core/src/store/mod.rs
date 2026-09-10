@@ -15,6 +15,7 @@ pub use dataset::{
     IngestError, IngestOpts, IngestPage, LookupResult, Supplied, apply_field_writes,
     field_observed_at, upsert_enrollment_grades,
 };
+pub(crate) use db::auxiliary_sqlite;
 pub use db::{DbError, Store, StoreConns};
 pub use ops::{
     CACHE_TABLES, CacheStats, EpochAbort, FetchLogRow, LookupQuery, WindowQuery, bump_epochs,

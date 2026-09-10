@@ -49,6 +49,21 @@ fn worker() -> &'static SyncSender<Job> {
     })
 }
 
+/// Run download-manifest work on the same bounded worker as cache/state.
+pub(crate) fn auxiliary_sqlite<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, rusqlite::Error> + Send + 'static,
+) -> Result<T, rusqlite::Error> {
+    let (tx, rx) = mpsc::sync_channel(1);
+    worker()
+        .send(Box::new(move |_| {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
+                .unwrap_or(Err(rusqlite::Error::InvalidQuery));
+            let _ = tx.send(result);
+        }))
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    rx.recv().map_err(|_| rusqlite::Error::InvalidQuery)?
+}
+
 /// Database open / call errors.
 #[derive(Debug, Error)]
 pub enum DbError {
