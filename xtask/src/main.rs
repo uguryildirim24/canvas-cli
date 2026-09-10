@@ -2,6 +2,7 @@
 
 mod bench;
 mod bench_fixture;
+mod bench_mcp;
 mod dist_assets;
 mod fixture;
 mod record;
@@ -29,6 +30,9 @@ enum Command {
         /// Measured runs per metric.
         #[arg(long, default_value_t = 5)]
         runs: u32,
+        /// Also measure the agent surface (`canvas mcp`).
+        #[arg(long)]
+        mcp: bool,
         /// Report a missed target without failing.
         #[arg(long)]
         no_fail: bool,
@@ -144,6 +148,7 @@ fn main() -> ExitCode {
         Command::Bench {
             fixture,
             runs,
+            mcp,
             no_fail,
             doc,
         } => {
@@ -151,6 +156,7 @@ fn main() -> ExitCode {
                 fixture,
                 runs,
                 no_fail,
+                mcp,
                 doc,
             };
             match bench::run(&options) {
