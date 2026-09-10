@@ -145,7 +145,12 @@ fn remove(
         })
     };
     let mut remove_profiles = || {
-        let mut config = Config::load(&paths_clone).map_err(|e| {
+        let _config_lock = crate::config::ConfigLock::acquire(&paths_clone).map_err(|e| {
+            canvas_core::identity::IdentityError::Mismatch {
+                reason: e.to_string(),
+            }
+        })?;
+        let mut config = Config::load_file(&paths_clone).map_err(|e| {
             canvas_core::identity::IdentityError::Mismatch {
                 reason: e.to_string(),
             }

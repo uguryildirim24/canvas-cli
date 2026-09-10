@@ -41,7 +41,8 @@ pub async fn run(globals: &Globals, command: ConfigCommand) -> Result<(), CliErr
             Ok(())
         }
         ConfigCommand::Set { key, value } => {
-            let mut cfg = Config::load(&paths)?;
+            let _lock = config::ConfigLock::acquire(&paths)?;
+            let mut cfg = Config::load_file(&paths)?;
             let previous = cfg.set_value(&key, &value)?;
             cfg.save(&paths)?;
             let result = json!({

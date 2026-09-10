@@ -2,6 +2,7 @@
 
 #![allow(dead_code)]
 
+use fs4::fs_std::FileExt;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -172,11 +173,7 @@ impl Default for Config {
 impl Config {
     /// Load defaults → `config.toml` → `CANVAS_*` env (config keys only).
     pub fn load(paths: &CliPaths) -> Result<Self, CliError> {
-        let mut figment = Figment::new().merge(Serialized::defaults(Config::default()));
-        let file = paths.config_file();
-        if file.exists() {
-            figment = figment.merge(Toml::file(&file));
-        }
+        let mut figment = Self::file_figment(paths);
         // Ignore auth/path/test env vars that share the CANVAS_ prefix.
         figment = figment.merge(
             Env::prefixed("CANVAS_")
@@ -191,11 +188,38 @@ impl Config {
                     "TEST_KEYRING",
                     "NOW",
                 ])
-                .split("_"),
+                .map(|key| {
+                    let raw = key.as_str().to_ascii_lowercase();
+                    let mapped = if raw.contains("__") {
+                        raw.replace("__", ".")
+                    } else if let Some((root, field)) = raw.split_once('_') {
+                        if ["download", "cache", "network", "output"].contains(&root) {
+                            format!("{root}.{field}")
+                        } else {
+                            raw
+                        }
+                    } else {
+                        raw
+                    };
+                    mapped.into()
+                }),
         );
         figment
             .extract()
             .map_err(|e| CliError::local(format!("config parse error: {e}")))
+    }
+
+    fn file_figment(paths: &CliPaths) -> Figment {
+        Figment::new()
+            .merge(Serialized::defaults(Config::default()))
+            .merge(Toml::file(paths.config_file()))
+    }
+
+    /// Read persistent settings without baking temporary environment overrides into them.
+    pub fn load_file(paths: &CliPaths) -> Result<Self, CliError> {
+        Self::file_figment(paths)
+            .extract()
+            .map_err(|_| CliError::local("config parse error"))
     }
 
     /// Persist the config atomically.
@@ -394,17 +418,11 @@ pub fn edit_config(paths: &CliPaths) -> Result<(), CliError> {
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).map_err(|e| CliError::local(e.to_string()))?;
-    let tmp = parent.join(format!(
-        ".{}.tmp",
-        path.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("config")
-    ));
+    let tmp = parent.join(format!(".config.{}.tmp", uuid::Uuid::new_v4()));
     {
         let mut f = fs::OpenOptions::new()
             .write(true)
-            .create(true)
-            .truncate(true)
+            .create_new(true)
             .open(&tmp)
             .map_err(|e| CliError::local(e.to_string()))?;
         f.write_all(bytes)
@@ -412,6 +430,10 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
         f.sync_all().map_err(|e| CliError::local(e.to_string()))?;
     }
     fs::rename(&tmp, path).map_err(|e| CliError::local(e.to_string()))?;
+    #[cfg(unix)]
+    fs::File::open(parent)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| CliError::local(e.to_string()))?;
     Ok(())
 }
 
@@ -425,4 +447,23 @@ pub fn profile_name_or_default(flag: Option<&str>) -> String {
 #[must_use]
 pub fn config_path_value(paths: &CliPaths) -> PathBuf {
     paths.config_file()
+}
+
+/// Serialize read-modify-replace across login, config set, and removal.
+pub struct ConfigLock {
+    _file: fs::File,
+}
+impl ConfigLock {
+    pub fn acquire(paths: &CliPaths) -> Result<Self, CliError> {
+        fs::create_dir_all(&paths.config_dir).map_err(|e| CliError::local(e.to_string()))?;
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(paths.config_dir.join("config.lock"))
+            .map_err(|e| CliError::local(e.to_string()))?;
+        FileExt::lock_exclusive(&file).map_err(|e| CliError::local(e.to_string()))?;
+        Ok(Self { _file: file })
+    }
 }

@@ -132,6 +132,7 @@ impl IdentityKey {
     /// Parse a filesystem-safe identity key operand (for `identity remove`).
     pub fn parse(raw: &str) -> Result<Self, IdentityError> {
         if raw.is_empty()
+            || matches!(raw, "." | "..")
             || !raw
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))

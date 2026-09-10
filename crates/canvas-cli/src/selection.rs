@@ -10,7 +10,7 @@ use fs4::fs_std::FileExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use canvas_core::identity::{IdentityDocument, IdentityKey, Paths as CorePaths};
+use canvas_core::identity::{IdentityDocument, IdentityKey, IdentityLock, Paths as CorePaths};
 
 use crate::config::{Config, Profile};
 use crate::exit::CliError;
@@ -122,7 +122,11 @@ fn selected_from_profile(
     let key = IdentityKey::parse(&profile.key)?;
     let core_paths = CorePaths::for_identity(&paths.data_dir, &key);
     let identity = IdentityDocument::read(&core_paths.identity_json())?;
-    if identity.origin != profile.origin || identity.user_id != profile.user_id {
+    core_paths.verify(&key)?;
+    if identity.key != key
+        || identity.origin != profile.origin
+        || identity.user_id != profile.user_id
+    {
         return Err(CliError::local("profile does not match identity.json"));
     }
     Ok(Selected {
@@ -147,7 +151,11 @@ fn select_env_pair(
     if let Some(key) = read_binding(paths, &binding_key)? {
         let core_paths = CorePaths::for_identity(&paths.data_dir, &key);
         match IdentityDocument::read(&core_paths.identity_json()) {
-            Ok(identity) => {
+            Ok(identity)
+                if identity.key == key
+                    && identity.origin == origin
+                    && IdentityLock::acquire_shared(&core_paths, &identity).is_ok() =>
+            {
                 return Ok(Selected {
                     profile_name: Some("env".into()),
                     identity,
@@ -155,7 +163,7 @@ fn select_env_pair(
                     from_env: true,
                 });
             }
-            Err(_) => {
+            _ => {
                 remove_binding(paths, &binding_key)?;
             }
         }
@@ -286,7 +294,7 @@ fn with_bindings_lock(
 
     let path = paths.env_bindings_file();
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let tmp = parent.join(format!(".env-bindings.{}.tmp", std::process::id()));
+    let tmp = parent.join(format!(".env-bindings.{}.tmp", uuid::Uuid::new_v4()));
     {
         #[cfg(unix)]
         {
@@ -316,9 +324,10 @@ fn with_bindings_lock(
         }
     }
     fs::rename(&tmp, &path).map_err(|e| CliError::local(e.to_string()))?;
-    if let Ok(dir) = File::open(parent) {
-        let _ = dir.sync_all();
-    }
+    #[cfg(unix)]
+    File::open(parent)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| CliError::local(e.to_string()))?;
     Ok(())
 }
 
@@ -385,4 +394,77 @@ pub fn read_to_string(path: &Path) -> Result<String, CliError> {
     f.read_to_string(&mut s)
         .map_err(|e| CliError::local(e.to_string()))?;
     Ok(s)
+}
+
+/// Select an online identity, validating every class-D env pair before trusting it.
+pub async fn select_online(
+    class: CommandClass,
+    paths: &CliPaths,
+    config: &Config,
+    input: &SelectionInput<'_>,
+) -> Result<Selected, CliError> {
+    if class == CommandClass::D && input.offline {
+        return Err(CliError::usage("command requires the network"));
+    }
+    let explicit = input.profile_flag.is_some() || std::env::var_os("CANVAS_PROFILE").is_some();
+    if !explicit && !input.offline && matches!(class, CommandClass::C | CommandClass::D) {
+        if let (Ok(host), Ok(token)) = (std::env::var("CANVAS_HOST"), std::env::var("CANVAS_TOKEN"))
+        {
+            if !host.is_empty() && !token.is_empty() {
+                if class == CommandClass::C {
+                    if let Ok(selected) = select(class, paths, config, input) {
+                        return Ok(selected);
+                    }
+                }
+                let origin = canonicalize_origin(&host)?;
+                let user = crate::token::validate_users_self(&origin, &token).await?;
+                let (identity, _lock) = initialize_identity(paths, &origin, user.id)?;
+                write_env_binding(paths, &origin, &token, &identity.key)?;
+                let core_paths = CorePaths::for_identity(&paths.data_dir, &identity.key);
+                return Ok(Selected {
+                    profile_name: Some("env".into()),
+                    identity,
+                    core_paths,
+                    from_env: true,
+                });
+            }
+        }
+    }
+    select(class, paths, config, input)
+}
+
+/// Initialize once under the credential lock and a shared identity lock.
+/// Retaining the returned lock prevents removal until the caller opens its store.
+pub fn initialize_identity(
+    paths: &CliPaths,
+    origin: &str,
+    user_id: i64,
+) -> Result<(IdentityDocument, File), CliError> {
+    let candidate = IdentityDocument::new(origin, user_id, jiff::Timestamp::now().to_string());
+    let core = CorePaths::for_identity(&paths.data_dir, &candidate.key);
+    core.verify(&candidate.key)?;
+    fs::create_dir_all(paths.data_dir.join("locks")).map_err(|e| CliError::local(e.to_string()))?;
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&core.lock_path)
+        .map_err(|e| CliError::local(e.to_string()))?;
+    FileExt::lock_shared(&lock).map_err(|e| CliError::local(e.to_string()))?;
+    let _credential_lock = crate::credentials::CredLock::acquire(paths, &candidate.key)?;
+    core.verify(&candidate.key)?;
+    let identity = if core.identity_json().exists() {
+        IdentityDocument::read(&core.identity_json())?
+    } else {
+        candidate.write(&core.identity_json())?;
+        candidate
+    };
+    if identity.origin != origin
+        || identity.user_id != user_id
+        || identity.key != IdentityKey::compute(origin, user_id)
+    {
+        return Err(CliError::local("identity mismatch"));
+    }
+    Ok((identity, lock))
 }
