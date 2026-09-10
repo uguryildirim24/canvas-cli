@@ -37,10 +37,12 @@ fn the_companion_is_shipped_and_referenced() {
 
 /// The companion asks for one tab on a gesture and a pipe, and nothing else.
 ///
-/// `scripting` is the one permission beyond the two REPORT §3.3 names: Chrome
-/// requires it for `chrome.scripting.executeScript` even under `activeTab`,
-/// and it grants no host access of its own. `docs/companion.md` records the
-/// deviation. Everything below would widen the reach and is refused here.
+/// `scripting` is one of two permissions beyond the two REPORT §3.3 names:
+/// Chrome requires it for `chrome.scripting.executeScript` even under
+/// `activeTab`, and it grants no host access of its own. `sidePanel` is the
+/// other, added in M7-b: it opens the extension's own surface and reaches no
+/// page at all. `docs/companion.md` records both. Everything below would
+/// widen the reach and is refused here.
 #[test]
 fn the_manifest_asks_for_nothing_it_does_not_need() {
     let manifest = manifest();
@@ -51,7 +53,10 @@ fn the_manifest_asks_for_nothing_it_does_not_need() {
         .iter()
         .map(|p| p.as_str().unwrap_or_default())
         .collect();
-    assert_eq!(permissions, ["activeTab", "nativeMessaging", "scripting"]);
+    assert_eq!(
+        permissions,
+        ["activeTab", "nativeMessaging", "scripting", "sidePanel"]
+    );
     for forbidden in [
         "cookies",
         "webRequest",
@@ -86,6 +91,47 @@ fn the_manifest_asks_for_nothing_it_does_not_need() {
         manifest["commands"]["attach"].is_object(),
         "no keyboard shortcut"
     );
+    // The panel is a page of this extension, served from the package.
+    let panel = manifest["side_panel"]["default_path"]
+        .as_str()
+        .expect("no side panel");
+    assert!(
+        root().join("extension").join(panel).is_file(),
+        "{panel} is the panel but does not ship"
+    );
+}
+
+/// The panel page loads only files that ship, and builds nothing from a
+/// string.
+///
+/// A note is written by an agent that reads web pages. It reaches the panel
+/// as Markdown source and reaches the document through `textContent`; an
+/// `innerHTML` anywhere in this surface would undo every bound around it.
+#[test]
+fn the_panel_builds_no_markup_from_a_string() {
+    let panel_dir = root().join("extension/src");
+    let html = std::fs::read_to_string(panel_dir.join("panel.html")).expect("the panel ships");
+    for span in html.split('"') {
+        if span.ends_with(".js") {
+            assert!(
+                panel_dir.join(span).is_file(),
+                "{span} is loaded by the panel but does not ship"
+            );
+        }
+    }
+    for file in ["panel.js", "panel_view.js", "markdown.js"] {
+        let source = std::fs::read_to_string(panel_dir.join(file)).expect(file);
+        for forbidden in [
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+            "eval(",
+            "new Function",
+        ] {
+            assert!(!source.contains(forbidden), "{file} uses {forbidden}");
+        }
+    }
 }
 
 /// The package has no dependency at all, so nothing is installed to run it.

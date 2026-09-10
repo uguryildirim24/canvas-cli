@@ -8,6 +8,8 @@ import "../src/routes.js";
 import "../src/zones.js";
 import "../src/sanitize.js";
 import "../src/extract.js";
+import "../src/markdown.js";
+import "../src/panel_view.js";
 
 export const companion = globalThis.canvasCli;
 
