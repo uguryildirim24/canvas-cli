@@ -326,7 +326,17 @@ impl Client {
 
     /// Execute an API-phase builder with the same origin and redirect checks.
     pub async fn send_api<T: DeserializeOwned>(&self, request: ApiRequest) -> Result<T, Error> {
-        let (status, _headers, bytes, _url) = request::execute_api(self, request).await?;
+        self.send_api_with_headers(request)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    /// Execute an API request and retain response headers for diagnostics.
+    pub async fn send_api_with_headers<T: DeserializeOwned>(
+        &self,
+        request: ApiRequest,
+    ) -> Result<(T, HeaderMap), Error> {
+        let (status, headers, bytes, _url) = request::execute_api(self, request).await?;
         if status.is_success() {
             let bytes = if status == StatusCode::NO_CONTENT {
                 b"null".as_slice()
@@ -335,7 +345,8 @@ impl Client {
             };
             return serde_util::with_origin(self.origin(), || {
                 serde_json::from_slice(bytes).map_err(|_| Error::Decode)
-            });
+            })
+            .map(|value| (value, headers));
         }
         Err(classify_status(status, &bytes))
     }

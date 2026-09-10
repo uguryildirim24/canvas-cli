@@ -264,8 +264,9 @@ fn open_db(
 }
 
 // Changing the journal mode can return BUSY without invoking SQLite's busy
-// handler when two fresh openers upgrade their locks at once. Retry that
-// idempotent initialization within the same five-second contention budget.
+// handler when two fresh openers upgrade their locks at once (M0-c / M2-a).
+// Retry that idempotent initialization within the same five-second contention
+// budget, verify the resulting mode is WAL, and restore the full busy_timeout.
 fn enable_wal(conn: &Connection) -> Result<(), DbError> {
     use std::time::{Duration, Instant};
     let budget = Duration::from_secs(5);
