@@ -513,6 +513,55 @@ async fn one_api_slot_bounds_a_cli_command_and_a_watch_together() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn interest_that_arrives_during_a_tick_stops_the_rest_of_it() {
+    // Only `courses` is slow, so the tick is caught with one request in flight
+    // and every later refresh would be immediate if nothing stopped it.
+    let (_server, slow, env) = slow_canvas(Duration::from_millis(800), Some(COURSES)).await;
+    let vars = [
+        ("CANVAS_TEST_API_CONCURRENCY", "1"),
+        ("CANVAS_TOKEN", TOKEN),
+    ];
+
+    let watcher = spawn_piped(&env, &["watch", "--jsonl", "--once"], &vars);
+    // The tick has already passed its own start-of-tick check and is waiting
+    // on the network. This is the moment §3.6 is about.
+    slow.wait_for_hits(COURSES, 1);
+    let coord = Coordinator::open(&env.paths(), CoordConfig::default().with_concurrency(1, 1))
+        .expect("the coordinator opens");
+    let interest = coord
+        .register_interest(InterestKind::Submit, ASSIGNMENT_ID)
+        .expect("interest is recorded")
+        .expect("nothing else holds this assignment");
+
+    let output = watcher.wait_with_output().expect("watch exits");
+    drop(interest);
+    assert!(output.status.success(), "watch exited {:?}", output.status);
+    let run = Run {
+        code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::new(),
+    };
+    let (_, summary) = stream(&run);
+
+    assert_eq!(
+        summary["result"]["skipped"],
+        json!("foreground_interest"),
+        "watch kept polling after a submission registered interest: {summary}"
+    );
+    // The request already in flight finished; nothing after it was admitted.
+    let refreshed: Vec<&str> = summary["result"]["datasets"]
+        .as_array()
+        .expect("datasets is an array")
+        .iter()
+        .filter_map(|row| row["dataset"].as_str())
+        .collect();
+    assert!(
+        refreshed.iter().all(|d| *d == "courses"),
+        "watch admitted {refreshed:?} while a submission waited: {summary}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn two_processes_refreshing_one_scope_fetch_it_once() {
     let (_server, slow, env) = slow_canvas(Duration::from_secs(3), Some(COURSES)).await;
 
@@ -574,6 +623,20 @@ async fn a_waiter_that_times_out_serves_what_the_cache_has() {
         1,
         "the waiter fetched the scope the holder was already fetching"
     );
+}
+
+/// Spawn `canvas` with its stdout captured, so the caller can read the stream.
+fn spawn_piped(env: &E2e, args: &[&str], vars: &[(&str, &str)]) -> std::process::Child {
+    let mut command: Command = env.command();
+    command.args(args).args(["--color", "never"]);
+    for (key, value) in vars {
+        command.env(key, value);
+    }
+    command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("canvas starts")
 }
 
 /// Spawn `canvas` without waiting for it.

@@ -333,6 +333,9 @@ async fn refresh_due(
     };
 
     if let Some(outcome) = attempt(
+        globals,
+        session,
+        summary,
         backoff,
         ("courses", "active"),
         refresh_courses(
@@ -350,6 +353,9 @@ async fn refresh_due(
         record(summary, &outcome);
     }
     if let Some(outcome) = attempt(
+        globals,
+        session,
+        summary,
         backoff,
         ("enrollment_grades", "none"),
         refresh_enrollment_grades(
@@ -375,6 +381,9 @@ async fn refresh_due(
     })?;
     for course_id in course_ids.iter().copied() {
         if let Some(outcome) = attempt(
+            globals,
+            session,
+            summary,
             backoff,
             ("assignments", &format!("course:{course_id}")),
             refresh_assignments(
@@ -394,6 +403,9 @@ async fn refresh_due(
     }
 
     if let Some(outcome) = attempt(
+        globals,
+        session,
+        summary,
         backoff,
         ("missing", "self"),
         refresh_missing(client, store, ttl_missing(), now, false, false),
@@ -404,6 +416,9 @@ async fn refresh_due(
     }
     let window = PlannerWindow::todo_default(now.to_zoned(session.time_zone()).date(), 14);
     if let Some(outcome) = attempt(
+        globals,
+        session,
+        summary,
         backoff,
         ("planner", "default"),
         refresh_planner(
@@ -420,19 +435,26 @@ async fn refresh_due(
     {
         record(summary, &outcome);
     }
-    let announcements = attempt(backoff, ("announcements", "courses"), async {
-        refresh_announcements(
-            client,
-            store,
-            ContextWindow::courses(window, &course_ids),
-            ttl_announcements(),
-            now,
-            false,
-            false,
-        )
-        .await
-        .map(|batch| batch.outcome)
-    })
+    let announcements = attempt(
+        globals,
+        session,
+        summary,
+        backoff,
+        ("announcements", "courses"),
+        async {
+            refresh_announcements(
+                client,
+                store,
+                ContextWindow::courses(window, &course_ids),
+                ttl_announcements(),
+                now,
+                false,
+                false,
+            )
+            .await
+            .map(|batch| batch.outcome)
+        },
+    )
     .await?;
     if let Some(outcome) = announcements {
         record(summary, &outcome);
@@ -447,6 +469,9 @@ async fn refresh_due(
 /// authentication failure is different — no wait fixes it — so it ends the run
 /// with the §14 exit its classification names.
 async fn attempt<F>(
+    globals: &Globals,
+    session: &Session,
+    summary: &mut Summary,
     backoff: &mut BTreeMap<(String, String), (Instant, Duration)>,
     key: (&str, &str),
     future: F,
@@ -454,6 +479,17 @@ async fn attempt<F>(
 where
     F: std::future::Future<Output = Result<RefreshOutcome, SyncError>>,
 {
+    // Priority is re-read before every refresh, not once per tick. A `submit`
+    // that registers interest while a tick is running must not wait behind the
+    // rest of that tick: §3.6 stops watch admitting *new* polling work as soon
+    // as the foreground waits, and lets only the request already in flight
+    // finish. `future` has not been polled yet, so nothing has been admitted.
+    if summary.skipped.is_none() {
+        summary.skipped = skip_reason(globals, session)?;
+    }
+    if summary.skipped.is_some() {
+        return Ok(None);
+    }
     let key = (key.0.to_owned(), key.1.to_owned());
     if let Some((until, _)) = backoff.get(&key)
         && Instant::now() < *until
