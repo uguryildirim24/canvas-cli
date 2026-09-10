@@ -11,14 +11,17 @@ mod course;
 mod course_totals;
 mod courses;
 mod discovery;
+mod discussions;
 mod enrollment_grades;
 mod fields;
 mod files;
 mod folders;
 mod grading_periods;
+mod inbox;
 mod missing;
 mod modules;
 mod outcome;
+mod pages;
 mod planner;
 mod refresh;
 mod submission;
@@ -63,6 +66,12 @@ pub use courses::{
     courses_to_ingest_page, default_ttl_courses,
 };
 pub use discovery::{discovery_plan_input, is_canvas_root};
+pub use discussions::{
+    DiscussionDataset, DiscussionsDataset, RepliesBlock, RepliesCoverage, attach_replies,
+    default_ttl_discussions, discussion_entries_path, discussion_path, discussion_replies_path,
+    discussions_path, discussions_to_ingest_page, entry_to_entity, refresh_discussion,
+    refresh_discussions, topic_to_entity,
+};
 pub use enrollment_grades::{
     EnrollmentGradesDataset, PeriodKey, enrollment_grades_path, enrollment_to_entity,
     enrollments_to_ingest_page,
@@ -75,12 +84,22 @@ pub use grading_periods::{
     GradingPeriodsDataset, grading_period_to_entity, grading_periods_path,
     grading_periods_to_ingest_page,
 };
+pub use inbox::{
+    ConversationDataset, InboxDataset, InboxScope, InboxUnreadDataset, UNREAD_ROW_ID,
+    conversation_path, conversation_to_entity, conversations_to_ingest_page, default_ttl_inbox,
+    inbox_path, refresh_conversation, refresh_inbox, refresh_inbox_unread, unread_count_path,
+    unread_to_entity,
+};
 pub use missing::{MissingDataset, default_ttl_missing, missing_path, missing_to_ingest_page};
 pub use modules::{
     ModulesDataset, count_item_fetch_requests, default_ttl_modules, module_item_to_entity,
     module_items_path, module_to_entity, modules_path, modules_to_ingest_page, needs_items_fetch,
 };
 pub use outcome::{FreshnessInfo, FreshnessSource, RefreshOutcome, SyncError};
+pub use pages::{
+    PageDetailDataset, PagesDataset, default_ttl_pages, encode_path_segment, page_path,
+    page_to_entity, pages_path, pages_to_ingest_page, refresh_page, refresh_pages,
+};
 pub use planner::{
     PlannerDataset, PlannerWindow, default_ttl_planner, planner_item_to_entity, planner_path,
     planner_to_ingest_page,
