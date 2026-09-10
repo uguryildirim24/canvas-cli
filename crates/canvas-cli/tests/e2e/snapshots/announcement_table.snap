@@ -4,6 +4,10 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-cleared: true
-rows_deleted: 101
+Welcome
+posted 2026-09-01T08:00:00-04:00
+unread
+<origin>/courses/100/discussion_topics/40
+
+Hello
 --- stderr ---

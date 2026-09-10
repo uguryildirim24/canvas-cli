@@ -89,8 +89,8 @@ file to `SHAPES` in `tests/e2e/schema.rs` too;
 | Module | Deliverable |
 |---|---|
 | `harness.rs` | the fixture server, the isolated environment, the snapshot helper |
-| `commands.rs` | every implemented v1 command, table and `--json` |
-| `raw_output.rs` | `completions`, `receipts export --out -`, `auth token --reveal`, `config edit`, and the `--json` usage error on each |
+| `commands.rs` | every v1 command, table and `--json` |
+| `raw_output.rs` | `completions`, `receipts export --out -`, `calendar --ics -`, `auth token --reveal`, `config edit`, and the `--json` usage error on each |
 | `exits.rs` | one test per SPEC §14 exit code, 0 through 13 |
 | `precedence.rs` | the §14 abort order and the completed-command order |
 | `selection.rs` | the §16 row 3 items with no earlier end-to-end test |

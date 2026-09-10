@@ -10,20 +10,20 @@ size_bytes: 114688
   courses              1     
   terms                1     
   assignment_groups    0     
-  assignments          0     
+  assignments          2     
   submissions          0     
   modules              0     
   module_items         0     
   folders              0     
   files                0     
-  announcements        0     
+  announcements        1     
   calendar_events      0     
-  planner_items        0     
+  planner_items        1     
   enrollment_grades    1     
   course_totals        2     
   grading_periods      1     
   fake_entities        0     
-  field_obs            34    
-  membership           6     
-  fetch_log            5     
+  field_obs            72    
+  membership           10    
+  fetch_log            9     
 --- stderr ---
