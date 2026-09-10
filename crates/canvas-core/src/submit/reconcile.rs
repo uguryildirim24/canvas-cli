@@ -13,7 +13,7 @@ use crate::identity::Paths;
 use crate::journal::{
     CandidateRecord, Evidence, IntendedPayload, JournalError, JournalRow, LockError, OwnerLock,
     OwnerStatus, PostedRecord, ReadbackRecord, ReceiptRecord, ResponseKind, State, TransitionPatch,
-    allowlist_from_json, assume_not_submitted, commit_matched, enrich_readback, get_journal,
+    allowlist_from_json, assume_not_submitted, commit_matched, enrich_readback_full, get_journal,
     recover_owned, transition,
 };
 use crate::receipts::{export, rebuild_from_journal};
@@ -94,7 +94,29 @@ pub async fn reconcile(
 ) -> Result<ReconcileResult, ReconcileError> {
     let identity_dir = paths.identity_dir.as_path();
     let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
+    if matches!(
+        row.state,
+        State::UploadIncomplete | State::UploadedNotSubmitted | State::Refused
+    ) {
+        return Ok(base_result(
+            &row,
+            OwnerStatus::NotApplicable,
+            ReconcileOutcome::Refused,
+            "re-run submit",
+        ));
+    }
+    if matches!(row.state, State::Submitted | State::Matched) && row.readback_record_json.is_some()
+    {
+        return confirmed_result(store, &row, "confirmed");
+    }
     let Some(owner_lock) = OwnerLock::try_acquire(identity_dir, journal_id)? else {
+        if matches!(row.state, State::Submitted | State::Matched) {
+            return confirmed_result(
+                store,
+                &row,
+                "confirmed; readback enrichment deferred while owner is live",
+            );
+        }
         return Ok(base_result(
             &row,
             OwnerStatus::Live,
@@ -158,7 +180,7 @@ pub async fn reconcile(
             server_match: None,
             candidates: eval.candidates,
             message: "assumed not submitted; a later commit of the original request may create a second attempt".into(),
-            response_kind: None,
+            response_kind: row.response_kind.as_deref().and_then(|s|s.parse().ok()),
             not_submitted_evidence: Some("assumed".into()),
         });
     }
@@ -190,6 +212,7 @@ struct HistoryEval {
     current_attempt: Option<i64>,
 }
 
+#[allow(clippy::too_many_lines)]
 fn evaluate_history(
     row: &JournalRow,
     history: &Submission,
@@ -334,7 +357,12 @@ fn apply_positive_evidence(
                     readback: Some(readback),
                 };
                 commit_matched(store, owner, &row.journal_id, &receipt)?;
-                let _ = export(store, paths, &row.journal_id, None);
+                let warning = export(store, paths, &row.journal_id, None)
+                    .err()
+                    .map(|e| format!("; receipt export failed: {e}"));
+                let posted = rebuild_from_journal(store, &row.journal_id)
+                    .map_err(|_| JournalError::StateConflict)?
+                    .posted;
                 return Ok(ReconcileResult {
                     outcome: ReconcileOutcome::Ok,
                     state: State::Matched,
@@ -346,8 +374,11 @@ fn apply_positive_evidence(
                     posted: Some(posted),
                     server_match: None,
                     candidates: eval.candidates.clone(),
-                    message: "matched via history file ids".into(),
-                    response_kind: None,
+                    message: format!(
+                        "matched via history file ids; attribution is unproven{}",
+                        warning.unwrap_or_default()
+                    ),
+                    response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
                     not_submitted_evidence: None,
                 });
             }
@@ -358,10 +389,8 @@ fn apply_positive_evidence(
                 {
                     "no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes".into()
                 } else {
-                    format!(
-                        "Canvas shows {} newer attempt(s); none match this journal's uploaded file ids",
-                        eval.candidates.len()
-                    )
+                    "Canvas shows a newer attempt; none match this journal's uploaded file ids"
+                        .into()
                 };
                 return Ok(ReconcileResult {
                     outcome: ReconcileOutcome::Recovery,
@@ -402,8 +431,19 @@ fn apply_positive_evidence(
         }
     }
 
-    // Replace stale evidence even when this read no longer has a match.
-    let json = serde_json::to_string(&eval.server_match)?;
+    let message = if let Some(candidate) = &eval.server_match {
+        format!(
+            "Canvas shows matching content at attempt {}; this CLI cannot prove it created that attempt; re-running submit creates a new attempt; receipts acknowledge retires the pending flag",
+            candidate.attempt
+        )
+    } else if !eval.newer_attempt_visible && eval.current_attempt == Some(baseline) {
+        "no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes".into()
+    } else {
+        format!(
+            "unknown ({} newer attempts, none matching); Canvas shows the listed attempts; this CLI cannot prove it created any of them; re-running submit creates a new attempt; receipts acknowledge retires the pending flag",
+            eval.candidates.len()
+        )
+    };
     transition(
         store,
         owner,
@@ -411,55 +451,12 @@ fn apply_positive_evidence(
         State::OutcomeUnknown,
         State::OutcomeUnknown,
         TransitionPatch {
-            server_match_json: Some(json),
+            server_match_json: Some(serde_json::to_string(&eval.server_match)?),
+            error_text: Some(message.clone()),
             ..TransitionPatch::default()
         },
     )?;
-    if let Some(server_match) = &eval.server_match {
-        let message = format!(
-            "Canvas shows matching content at attempt {}; this CLI cannot prove it created that attempt; re-running submit creates a new attempt; receipts acknowledge retires the pending flag",
-            server_match.attempt
-        );
-        return Ok(ReconcileResult {
-            outcome: ReconcileOutcome::Recovery,
-            state: State::OutcomeUnknown,
-            journal_id: row.journal_id.clone(),
-            owner: OwnerStatus::NotApplicable,
-            assume_available: eval.assume_available,
-            attribution: None,
-            receipt_id: None,
-            posted: None,
-            server_match: Some(server_match.clone()),
-            candidates: eval.candidates.clone(),
-            message,
-            response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
-            not_submitted_evidence: None,
-        });
-    }
-
-    let message = if !eval.newer_attempt_visible && eval.current_attempt == Some(baseline) {
-        "no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes".into()
-    } else {
-        format!(
-            "Canvas shows {} newer attempt(s), none matching; this CLI cannot prove it created any of them; re-running submit creates a new attempt; receipts acknowledge retires the pending flag",
-            eval.candidates.len()
-        )
-    };
-    Ok(ReconcileResult {
-        outcome: ReconcileOutcome::Recovery,
-        state: State::OutcomeUnknown,
-        journal_id: row.journal_id.clone(),
-        owner: OwnerStatus::NotApplicable,
-        assume_available: eval.assume_available,
-        attribution: None,
-        receipt_id: None,
-        posted: None,
-        server_match: None,
-        candidates: eval.candidates.clone(),
-        message,
-        response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
-        not_submitted_evidence: None,
-    })
+    Ok(unknown_result(row, eval, &message))
 }
 
 fn unknown_result(row: &JournalRow, eval: &HistoryEval, message: &str) -> ReconcileResult {
@@ -503,6 +500,25 @@ fn base_result(
     }
 }
 
+fn confirmed_result(
+    store: &Store,
+    row: &JournalRow,
+    message: &str,
+) -> Result<ReconcileResult, ReconcileError> {
+    let doc =
+        rebuild_from_journal(store, &row.journal_id).map_err(|_| JournalError::StateConflict)?;
+    let mut result = base_result(
+        row,
+        OwnerStatus::NotApplicable,
+        ReconcileOutcome::Ok,
+        message,
+    );
+    result.posted = Some(doc.posted);
+    result.receipt_id = Some(doc.receipt_id);
+    result.attribution = Some(doc.attribution);
+    Ok(result)
+}
+
 async fn enrich_confirmed(
     client: &Client,
     store: &Store,
@@ -516,6 +532,7 @@ async fn enrich_confirmed(
             .ok_or(JournalError::StateConflict)?,
     )?;
     let attempt = posted.attempt.ok_or(JournalError::StateConflict)?;
+    let mut warning = None;
     if row.readback_record_json.is_none()
         && let Ok(history) = get_submission_history(client, row.course_id, row.assignment_id).await
         && let Some(entry) = history
@@ -525,27 +542,24 @@ async fn enrich_confirmed(
             .iter()
             .find(|e| e.attempt.as_value().copied() == Some(attempt))
     {
-        let readback = readback_from_entry(entry);
-        let _ = enrich_readback(store, owner, &row.journal_id, attempt, &readback);
-        let _ = export(store, paths, &row.journal_id, None);
+        let record = allowlist_from_json(Evidence::HistoryFiles, &history_entry_json(entry), None)?;
+        enrich_readback_full(store, owner, &row.journal_id, &record)?;
+        warning = export(store, paths, &row.journal_id, None)
+            .err()
+            .map(|e| format!("confirmed; receipt export failed: {e}"));
     }
     let row = get_journal(store, &row.journal_id)?.ok_or(JournalError::NotFound)?;
-    let doc = rebuild_from_journal(store, &row.journal_id).ok();
-    Ok(ReconcileResult {
-        outcome: ReconcileOutcome::Ok,
-        state: row.state,
-        journal_id: row.journal_id.clone(),
-        owner: OwnerStatus::NotApplicable,
-        assume_available: false,
-        attribution: doc.as_ref().map(|d| d.attribution.clone()),
-        receipt_id: doc.as_ref().map(|d| d.receipt_id.clone()),
-        posted: Some(posted),
-        server_match: None,
-        candidates: Vec::new(),
-        message: "confirmed".into(),
-        response_kind: None,
-        not_submitted_evidence: None,
-    })
+    confirmed_result(
+        store,
+        &row,
+        if let Some(warning) = &warning {
+            warning
+        } else if row.readback_record_json.is_none() {
+            "confirmed; readback unavailable; reconcile can retry enrichment"
+        } else {
+            "confirmed"
+        },
+    )
 }
 
 pub(crate) fn history_entry_json(entry: &SubmissionHistoryEntry) -> Value {
