@@ -1,1 +1,15 @@
-{ "profile": "default", "identity": { "origin": "https://example.instructure.com", "user_id": "1", "key": "example.instructure.com-1-deadbeef" }, "token_source": "keyring", "stray_sources": [], "backend": "keyring", "validated_at": "2026-09-09T17:05:12Z" }
+{
+  "profile": "default",
+  "identity": {
+    "origin": "https://example.instructure.com",
+    "user_id": "1",
+    "key": "example.instructure.com-1-deadbeef"
+  },
+  "token_source": "keyring",
+  "stray_sources": [],
+  "pending_cleanup": [
+    "keyring"
+  ],
+  "backend": "keyring",
+  "validated_at": "2026-09-09T17:05:12Z"
+}

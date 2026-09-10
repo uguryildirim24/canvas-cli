@@ -205,9 +205,13 @@ impl CanvasServer {
             assignment,
         )
         .await;
+        // The shipped comment has no `created_at`; Appendix D declares that
+        // field non-nullable, and every real Canvas comment carries it.
+        let mut submission = Fixtures::submission();
+        submission["submission_comments"][0]["created_at"] = json!("2026-09-09T15:00:00Z");
         self.json(
             &format!("/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}/submissions/self"),
-            Fixtures::submission(),
+            submission,
         )
         .await;
     }
@@ -844,6 +848,11 @@ impl E2e {
         }
         out = mask_number_after(&out, "size=");
         out = mask_number_after(&out, "seconds=");
+        // `receipts export --out -` streams the receipt document itself, whose
+        // `created_at` comes from the wall clock (see `VOLATILE_KEYS`).
+        for key in ["created_at", "updated_at"] {
+            out = mask_quoted_after(&out, &format!("\"{key}\": "));
+        }
         out = out
             .replace(TOKEN, "<token>")
             .replace(env!("CANVAS_BUILD_TARGET"), "<target>")
@@ -904,6 +913,28 @@ fn mask_number_after(text: &str, prefix: &str) -> String {
     out
 }
 
+/// Replace the quoted string that follows every `prefix` with `"<clock>"`.
+fn mask_quoted_after(text: &str, prefix: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(prefix) {
+        let (head, tail) = rest.split_at(at + prefix.len());
+        out.push_str(head);
+        match tail
+            .strip_prefix('"')
+            .and_then(|body| body.find('"').map(|end| end + 2))
+        {
+            Some(end) => {
+                out.push_str("\"<clock>\"");
+                rest = &tail[end..];
+            }
+            None => rest = tail,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 fn ensure_newline(text: &str) -> String {
     if text.is_empty() || text.ends_with('\n') {
         text.to_owned()
@@ -925,6 +956,10 @@ const VOLATILE_KEYS: [(&str, &str); 4] = [
 ];
 
 /// Numeric keys whose value is a filesystem measurement, not a command result.
+///
+/// They are replaced with `0`, not a placeholder string: the schema
+/// conformance test reads these snapshots and checks the JSON type of every
+/// field, so a string here would report a type the command never emits.
 const VOLATILE_NUMBER_KEYS: [&str; 1] = ["size_bytes"];
 
 /// Replace ids and paths that change between runs.
@@ -946,7 +981,7 @@ fn scrub_json(value: &mut Value, env: &E2e) {
                         };
                     }
                     _ if VOLATILE_NUMBER_KEYS.contains(&key.as_str()) && entry.is_number() => {
-                        *entry = json!("<n>");
+                        *entry = json!(0);
                     }
                     _ => scrub_json(entry, env),
                 }

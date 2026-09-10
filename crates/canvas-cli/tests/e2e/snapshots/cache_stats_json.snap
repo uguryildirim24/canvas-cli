@@ -68,7 +68,7 @@ expression: value
       }
     ],
     "path": "<scratch>/data/<identity>/cache.sqlite",
-    "size_bytes": "<n>",
+    "size_bytes": 0,
     "tables": [
       {
         "name": "courses",
