@@ -850,7 +850,14 @@ async fn every_tool_returns_the_envelope_the_cli_prints() {
         let schema = want["schema"].as_str().unwrap_or_default();
         assert!(schema.starts_with("canvas-cli/"), "{tool} returned {want}");
         assert!(want["outcome"].is_string(), "{tool} returned {want}");
-        // A domain failure is marked, and a success is not.
+        // A domain failure is marked, and a success is not. Every case in this
+        // table is an answer, a refusal, or a usage error, so the exit alone
+        // says which; `partial` (12) is the one outcome that carries a
+        // non-zero exit and is still not an error result.
+        assert!(
+            code != 12,
+            "{tool} returned a partial result: assert its `isError` explicitly"
+        );
         assert_eq!(result["isError"], json!(code != 0), "{tool} exit {code}");
         // The text block is the same document, for a host that shows text.
         let text = result["content"][0]["text"].as_str().expect("text content");
