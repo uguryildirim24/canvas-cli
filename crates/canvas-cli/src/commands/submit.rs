@@ -176,12 +176,16 @@ async fn freeze_plan(
         } else {
             InputKind::OnlineTextEntry
         };
-        // REPORT §3.6: foreground submission interest, registered before the
-        // pre-flight read of the assignment and held until the command
-        // finishes. While it is registered `watch` admits no new polling
-        // request and holds no slot, so the person waiting on a deadline is
-        // never queued behind a poll. A coordinator that cannot record it
-        // costs priority, not the submission.
+        // REPORT §3.6: foreground submission interest, registered as early as
+        // it can be and held until the command finishes. An interest is keyed
+        // by assignment, so it cannot be registered before the resolution read
+        // that produces the id: the token validation and `resolve_target`
+        // above run without it. Everything the plan flow does from here — the
+        // eligibility read, the freeze, the post — is covered. While it is
+        // registered `watch` admits no new polling request and holds no slot,
+        // so the person waiting on a deadline is never queued behind a poll. A
+        // coordinator that cannot record it costs priority, not the
+        // submission.
         interest = match session
             .open
             .store
