@@ -10,12 +10,18 @@ description = "Canvas CLI domain logic: store, sync, resolve, journal, download"
 canvas-api.workspace = true
 cap-fs-ext.workspace = true
 cap-std.workspace = true
+fs4.workspace = true
 jiff.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+uuid = { version = "=1.18.1", features = ["serde", "v4"] }
+
+[dev-dependencies]
+tempfile = "=3.23.0"
 
 [lints]
 workspace = true
