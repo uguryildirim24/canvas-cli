@@ -13,7 +13,12 @@
     clippy::unused_async
 )]
 
-mod cli;
+/// The clap definition lives in the library target so `xtask dist-assets`
+/// builds man pages and completions from this exact command tree.
+mod cli {
+    pub use canvas_cli::cli::*;
+}
+
 mod commands;
 mod config;
 mod credentials;
@@ -25,11 +30,9 @@ mod selection;
 mod session;
 mod token;
 
-use std::io;
 use std::process::ExitCode;
 
-use clap::{CommandFactory, Parser};
-use clap_complete::generate;
+use clap::Parser;
 
 use cli::{AliasCommand, CacheCommand, Cli, ColorChoice, Commands, Globals};
 use output::ColorMode;
@@ -82,23 +85,8 @@ async fn main() -> ExitCode {
     canvas_core::io::run_blocking(move || {
         runtime.block_on(async move {
             match cli.command {
-                Commands::Version => {
-                    let envelope = output::Envelope::new(output::SCHEMA_VERSION, None, None)
-                        .with_result(serde_json::json!({
-                            "version": env!("CARGO_PKG_VERSION"),
-                            "commit": option_env!("CANVAS_COMMIT"),
-                            "target": env!("CANVAS_BUILD_TARGET")
-                        }));
-                    commands::emit::emit(globals.json, &envelope, || {
-                        use std::io::Write;
-                        writeln!(io::stdout(), "{}", env!("CARGO_PKG_VERSION"))
-                    })
-                }
-                Commands::Completions { shell } => {
-                    let mut cmd = Cli::command();
-                    generate(shell, &mut cmd, "canvas", &mut io::stdout());
-                    ExitCode::SUCCESS
-                }
+                Commands::Version => commands::version::run(globals.json),
+                Commands::Completions { shell } => commands::completions::run(shell),
                 Commands::Auth { command } => match commands::auth::run(&globals, command).await {
                     Ok(()) => ExitCode::SUCCESS,
                     Err(e) => e.exit_with_json(globals.json),
