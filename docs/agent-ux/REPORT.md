@@ -1,12 +1,12 @@
 # Agent-first Canvas: agreed design
 
-Date: 2026-09-09. Authors: fable and gpt. Consensus: [turn 05](turns/05-fable.md) and [turn 06](turns/06-gpt.md). Report author: gpt. Final peer review: pending.
+Date: 2026-09-09. Authors: fable and gpt. Consensus: [turn 05](turns/05-fable.md) and [turn 06](turns/06-gpt.md), with [turn 07 corrections](turns/07-fable-review.md) applied. Report author: gpt. Final peer review: turn 07 applied.
 
 This is a post-M5 design, based on [SPEC v0.8](../SPEC.md), especially §§0–5, 7, 12.2, 13, and 18. It does not amend v1 or claim implementation, performance measurements, client interoperability, or authenticated Lasell testing. Bracketed source identifiers refer to §6.
 
 ## 1. Answer for Rolf
 
-Make `canvas-cli` the shared coursework engine for whichever agent you use: quick structured reads, accessible course material, downloads, and submissions with a durable record. Give shell agents the CLI and a small skill; give local MCP hosts `canvas mcp`. For “come with me,” attach your existing Canvas tab to the conversation you choose. A thin companion supplies your location and selected passage, displays the agent's notes and submission status, and asks you to approve the exact work before sending it. Keep factual coursework reads and writes on the API path; use the browser for presentation and supported handoffs. Existing Claude and OpenAI browser integrations already provide useful in-place assistance, so use them with the CLI before building another browser controller. The new companion earns its place through portable context, account checks, and operation receipts. “Single interaction” means one conversation coordinating these surfaces; quizzes and unsupported external tools still require your direct participation. [S1–S3]
+Make `canvas-cli` the shared coursework engine for whichever agent you use: quick structured reads, accessible course material, downloads, and submissions with a durable record. Give shell agents the CLI and a small skill; give local MCP hosts `canvas mcp`. For “come with me,” attach your existing Canvas tab to the conversation you choose. A thin companion supplies your location and selected passage, displays the agent's notes and submission status, and asks you to approve the exact work before sending it. Keep factual coursework reads and writes on the API path; use the browser for presentation and supported handoffs. Existing Claude and OpenAI browser integrations document useful in-place assistance, so use them with the CLI before building another browser controller. The new companion earns its place through portable context, account checks, and operation receipts. “Single interaction” means one conversation coordinating these surfaces; quizzes and unsupported external tools still require your direct participation. [S1–S3]
 
 ## 2. Options considered
 
@@ -23,7 +23,7 @@ Effort is relative engineering scope. Latencies below are targets or qualitative
 | `canvas open` with optional follow | Local dispatch; target follow acknowledgement p95 <300 ms | Validate origin/target; navigation may have normal Canvas side effects | Low | Reliable handoff and navigation from a conversation | No context or presence by itself |
 | Cookie import or arbitrary browser-session API proxy | Unmeasured; little benefit with a working PAT | Additional credential and write channel | High maintenance | Token-less automation in some environments | Excluded; undermines one operation path and exceeds the narrow companion need |
 
-Chrome 136 restricts old remote-debugging flags on the default profile; this does not make existing-profile automation impossible. Chrome's documented 144+ `--autoConnect` flow requests consent for each connection and displays an automation banner. [S4, S5] OpenAI documents tab mentions, selected text, side chat in supported browsers, and signed-in interaction; Claude documents integration with Chrome. Neither is assumed to require screenshots for every action or to be unable to use our CLI. Their capabilities do not establish our custom contracts. [S2, S3]
+Chrome 136 restricts old remote-debugging flags on the default profile; this does not make existing-profile automation impossible. Chrome's documented 144+ `--auto-connect` flow requests consent for each connection and displays an automation banner; the flag spelling here follows the MCP configuration document. [S4, S5] OpenAI documents tab mentions, selected text, side chat in supported browsers, and signed-in interaction; Claude documents integration with Chrome. Neither is assumed to require screenshots for every action or to be unable to use our CLI. Their capabilities do not establish our custom contracts. [S2, S3]
 
 Prior art includes an existing Go Canvas CLI with MCP support. MCP availability alone is not the project's distinction; the student workflow, complete cache metadata, and recoverable writes are. Stars, response times, and feature percentages in the older research file are not treated as fresh measurements. [S1]
 
@@ -82,14 +82,43 @@ All names here are proposed post-M5 contracts. Existing v1 commands and their on
 | Location and routing | `context.attach(attachment_id)`, `context.here(attachment_id, include_text=false)`, `context.detach(attachment_id)` | Explicit consumer attachment; no implicit sharing from resource subscriptions |
 | Presence | `context.note(attachment_id,generation,text,source_refs)` | Bounded inert note; no Canvas edit; cannot approve a plan |
 | Navigation | `open.url(target)`; `context.follow(attachment_id,generation,target)` | First resolves only; second navigates within the granted origin and rejects obsolete generations |
-| CLI companion | `canvas here [--attachment ID] [--text] --json`; `canvas open ... --follow`; `canvas bridge install|host|status|detach` | Sole attachment may be selected by CLI; installation/status are human setup, not general model tools |
+| CLI companion | `canvas here [--attachment ID] [--text] --json`; `canvas open ... --follow`; `canvas bridge install\|host\|status\|detach` | Sole attachment may be selected by CLI; installation/status are human setup, not general model tools |
 | Watch | `canvas watch --jsonl [--since CURSOR]`; later `canvas notify` | Versioned events with replay; desktop alerts consume events, not a new data source |
+
+**Schema registry additions.** Each name below has the `canvas-cli/` prefix, consistent with §7 and Appendix D.
+
+| Schema | Producer | Result or output contract |
+|---|---|---|
+| `here@1` | `canvas here` / `context.here` | `ContextBundle@1`, including explicit unavailable reasons |
+| `bridge@1` | `canvas bridge install\|status\|detach` | Installation, broker status, or detachment result |
+| `plan@1` | `submission.prepare` and the human `submit` plan phase | Frozen plan, state, expiry, and nullable approval audit (§3.5) |
+| `event@1` | `canvas watch --jsonl` | One complete event document per line (§3.6) |
+| `schema@1` | `canvas schema <command>` | Raw schema output, like `completions`; no §7 envelope; `--json` is a usage error, exit 2 |
+
+The human `submit` plan phase is a preview/internal contract: confirmations stay on stderr and its final `--json` output remains exactly one `submit@1` envelope. `canvas mcp` and `canvas bridge host` use their respective transport framing, not the ordinary CLI output contract.
+
+**CLI exit mappings.** These additions extend §14 for the proposed surfaces; ordinary single invocations still emit one envelope, and MCP domain errors carry the same outcome and exit.
+
+| Condition | Outcome / reason or event | Exit |
+|---|---|---|
+| Plan expired, invalidated, or missing human approval | `refused`; `reason: expired`, `invalidated`, or `approval_required` | 8 |
+| Attachment unavailable | `refused`; `reason: not_attached`, `paused`, or `validating` | 8 |
+| `context.follow` uses a stale generation | `refused`; `reason: stale_generation` | 8 |
+| Broker required but not running | `refused`; `reason: bridge_unavailable` | 8 |
+| Watch cursor expired or belongs to another identity generation | Emit `resync_required` as an `event@1` document and close normally | 0 |
+| Local lock timeout or database failure | Existing §14 local-persistence error | 13 |
+
+Broker absence is a domain refusal, not partial success (12) or persistence failure (13). Existing §14 distinctions between operation conflicts and lock timeouts still apply.
 
 Credentials, token reveal, identity administration, arbitrary HTTP/shell, generic DOM actions, `--yes`, cache clearing, and `download --force` are absent from the MCP tool catalog. Annotations describe effects rather than command classes: `submission.prepare`, reconciliation with durable changes, downloads, and navigation are not pure reads. Tool hints never substitute for enforcement. New operation tools use schemas such as `canvas-cli/plan@1`; the normal envelope retains identity, requests, partial results, warnings, outcome, and exit. Domain failures preserve the envelope in `structuredContent` and serialized text; protocol/argument failures use the appropriate MCP error. Output schemas must admit both success and domain-error shapes. [SPEC §§5, 7, 14; S8]
 
 Resources are namespaced by identity **and generation**, with canonical encoding: `canvas://<identity-key>/<generation>/todo`, `/course/<id>/assignments`, `/receipts`, and `/context/<consumer-handle>`. Consumer handles express routing within Rolf's OS trust domain, not isolation from another unrestricted process. Context resources return `not_attached` until attachment is explicit. No tool/resource discovery leaks another consumer's text. Results that carry private data use `cacheScope: private`; `ttlMs` is no greater than remaining relevant freshness and is zero for browser context or unresolved/invalidated values. §7 coverage remains authoritative. [S9]
 
 **Protocol target:** `2026-07-28`, including `server/discover`, per-request version/capabilities, and `subscriptions/listen`. Elicitation is an `input_required` result with a keyed input request; the host retries the tool with a new JSON-RPC request ID, echoed `requestState`, and keyed `inputResponses`. `2025-11-25` requires an explicit lifecycle/elicitation/subscription adapter. An unsupported version fails explicitly. [S8–S11]
+
+The candidate Rust SDK is `rmcp` 3.2.0. Its published crate documentation confirms that version; the official repository documents `2026-07-28` support and compatibility with `2025-11-25`. This is documentation, not tested interoperability. M6-b must wire the version-specific approval and subscription behavior and verify it in the host matrix; an SDK compatibility claim does not establish a working Canvas adapter. [S27]
+
+Claude Code documents local stdio configuration and local, project, and user installation scopes. Scope determines where a configured server loads; it does not verify a Canvas identity or approve a submission. The setup instructions must state the chosen scope and explicit identity/profile binding. This is documentation, not a tested configuration. [S28]
 
 | Host | Required release evidence | Established in this dialogue |
 |---|---|---|
@@ -104,7 +133,7 @@ A host without a proven approval UI may use the extension-owned panel or TTY. Ot
 1. Rolf opens a Canvas tab and invokes the companion through its toolbar button or shortcut. `activeTab` grants access from this gesture. Select the conversation/consumer; the panel shows it. Same-origin navigation preserves the grant. [S12]
 2. The extension validates the browser-reported origin and document/frame identifiers, classifies the route, and performs a fixed same-origin `GET /api/v1/users/self` in extension-owned isolated code with redirects refused. Its user ID must equal the CLI identity. Cookies stay in Chrome. This is the sole proposed browser-session API exception; there is no cookie import or arbitrary fetch proxy.
 3. Create one active attachment per identity, bound to browser-profile instance, tab, origin, account, identity generation, and a changing navigation generation. Account mismatch or inability to verify prevents joining API and browser content. No credentials or login page text enter a bundle.
-4. `context.attach` opts the chosen consumer in. `context.here` resolves IDs through the API and returns API facts separately from bounded browser context. A selected passage or unsaved editor excerpt is supplied only on request, after another account check. Metadata-only cached reads do not wait for model generation. The UI may offer explicit sharing with another consumer; subscriptions alone never do so.
+4. `context.attach` opts the chosen consumer in. `context.here` resolves IDs through the API and returns API facts separately from bounded browser context. A selected passage or unsaved editor excerpt is supplied only on request, after another account check. Metadata-only reads are served from the broker without a new account probe; the probe runs before any text is released. The UI may offer explicit sharing with another consumer; subscriptions alone never do so.
 5. The agent answers in its existing conversation and can send `context.note` to the panel. Show source links, freshness, pending journals, and receipts. Notes are inert text/sanitized markup, never page-executed HTML or commands. No model or chat backend is built into the companion.
 6. A new document enters `validating`; erase old text, recheck account/zone, and reject late document-generation messages. Cross-origin navigation revokes access; returning requires a new gesture. Account change requires rebinding. Tab closure, detach, host loss, assessment entry, or configured hidden-tab timeout pauses/ends sharing. Assessment/external/unknown frames remain opaque.
 7. For a requested submission, prepare and show the exact plan, collect approval through a supported channel, dispatch through the common journal, and display its actual state. Follow navigation is explicit and separately annotated: it can trigger normal page side effects. Canvas's page-display controller changes discussion read state, so API preview guarantees do not extend to ordinary navigation. [S13]
@@ -115,11 +144,13 @@ Classify **before** extracting text. Prefer known routes and authenticated API m
 
 ### 3.4 Native host and lifecycle
 
-`canvas bridge host` speaks Chrome's length-prefixed native-messaging JSON; it is distinct from MCP stdio. The host manifest allows exact extension IDs; Canvas origins are checked separately. A private broker endpoint uses a `0700` directory and `0600` Unix socket, or a Windows named pipe with user-restricted ACLs. No global `here.json`, no public port, and no browser credentials persisted. Native-message size limits exceed the proposed bounded context, but enforce limits before allocation. [S14]
+`canvas bridge host` speaks Chrome's length-prefixed native-messaging JSON; it is distinct from MCP stdio. The host manifest allows exact extension IDs; Canvas origins are checked separately. The private Unix broker socket is `<data root>/bridge/<identity-key>.sock`, in `<data root>/bridge/` (directory mode `0700`, socket mode `0600`). Windows uses the named pipe `\\.\pipe\canvas-cli-<identity-key>` with user-restricted ACLs. These are the §9 path additions for the companion. No global `here.json`, no public port, and no browser credentials persisted. Native-message size limits exceed the proposed bounded context, but enforce limits before allocation. [S14]
 
 Elect a single broker owner per identity; a second browser profile/host cannot silently replace its attachment. Use explicit handoff or report an existing owner. Reconnects invalidate old document state and require validation. Installation includes the native manifest and extension; the binary alone cannot grant browser permissions. The side panel is an extension-owned surface, not a Canvas DOM overlay. [S14, S15]
 
-Resident bridge, MCP, and watch consumers hold identity leases/locks while using the identity. Identity removal requests cooperative release from **all** resident consumers, then follows §10's exclusive-lock protocol. A refusal/timeout reports busy; never kill unrelated processes, delete live lock files, or reopen a removed identity. Existing read-only invocations remain read-only.
+Resident bridge, MCP, and watch consumers hold identity leases/locks while using the identity. Identity removal requests cooperative release from **all** resident consumers, then follows §10's exclusive-lock protocol and removes that identity's broker endpoint. A refusal/timeout reports busy; never kill unrelated processes, delete live lock files, or reopen a removed identity. Existing read-only invocations remain read-only.
+
+All additions follow SPEC §10's identity, locking, and database lifecycle rules. The root identity lock is never deleted, including during identity removal. New identity-local lock files (§3.6) are never deleted except by `identity remove`. Socket/pipe endpoints are transient IPC rather than lock files: stale Unix socket cleanup is serialized by broker ownership after the old owner is absent and never unlinks a live endpoint. This permits broker restart without weakening the persistent-lock rules.
 
 ### 3.5 Confirmation and durable operations
 
@@ -133,9 +164,22 @@ Resident bridge, MCP, and watch consumers hold identity leases/locks while using
 
 `submission.prepare` freezes exact text/HTML bytes and input/sent digests, file names/sizes/hashes, URL/comment, course/assignment, identity generation, baseline submission/attempt, and meaningful eligibility/due-date observations. Store a `plan@1` row with a proposed 15-minute admission expiry. Preparing does not upload or post and never holds an admission lock across human consideration. The plan state is `prepared | approved | executed | expired | invalidated`; `executed` means journal-linked, not successful submission.
 
+Record the approval audit on the approved `plan@1` and its journal row:
+
+```text
+approval {
+  channel: "tty" | "elicitation" | "panel" | "yes-flag",
+  at: ts,
+  consumer?: string,
+  plan_sha256
+}
+```
+
+`at` is an RFC 3339 UTC timestamp and `plan_sha256` identifies the frozen plan that was approved. Before approval, the plan's `approval` is null. The proposed Appendix D additions to both `Journal` and `receipt@1` are `plan_id?` and `approval?`; `?` follows that appendix's nullable convention, so legacy records expose null rather than invented approval evidence. Copy the approved audit into the journal in the admission transaction and preserve it in receipt exports. `yes-flag` records explicit CLI `--yes` without asserting an interactive human decision; it is never represented as panel or elicitation approval.
+
 The approval request binds a random server-issued handle to plan digest, identity, consumer, and expiry. The **host's human-response path** or private panel/TTY event provides approval. Echoing a handle, digest, or boolean is not proof of human participation. MCP returns the handle through `requestState`; keyed `inputResponses` supplies accept/decline/cancel. Ordinary model tool arguments cannot assert approval. [S8, S10]
 
-At execute, acquire assignment admission, revalidate the target, account generation, baseline attempt/submission ID, allowed kinds/extensions/group restrictions, dates, and eligibility; changed meaningful facts require a fresh plan/approval. Check all existing §12.2 conditions, including extra attempts and hash verification. Under the owner/admission locks, one state transaction consumes approval, links the unique plan to a journal, and marks the plan executed. Uploads begin only after it commits. Streamed file hashing remains mandatory. A concurrent execute, restarted host, or replayed acceptance returns the existing journal; it never creates another attempt for that plan.
+At execute, acquire assignment admission, revalidate the target, account generation, baseline attempt/submission ID, allowed kinds/extensions/group restrictions, dates, and eligibility; changed meaningful facts require a fresh plan/approval. An expired or invalidated plan, or `approval_required`, returns outcome `refused`, exit 8, before upload or posting (§3.2). Check all existing §12.2 conditions, including extra attempts and hash verification. Under the owner/admission locks, one state transaction consumes approval, links the unique plan to a journal, and marks the plan executed. Uploads begin only after it commits. Streamed file hashing remains mandatory. A concurrent execute, restarted host, or replayed acceptance returns the existing journal; it never creates another attempt for that plan.
 
 After a POST is dispatched, retain §12.2's conservative uncertainty, owner-absent recovery, reconciliation, and observed/unproven attribution. No automatic repost follows a lost response. `reconcile` without an assumption never posts and needs no additional approval. Cancellation after dispatch reports the journal, not “nothing submitted.” Expiry prevents first admission, not later status queries. Human `canvas submit` retains its single-flow interaction; CLI-only `--yes` is recorded honestly and is not exposed by the supported agent adapters.
 
@@ -149,13 +193,23 @@ Use staggered dataset refreshes based on configured TTLs, with backoff and manua
 
 All CLI/MCP/watch network work uses one **logical per-identity coordinator**, implemented initially with shared state and cross-platform file permits rather than an additional daemon. Per-dataset/scope locks suppress duplicate refreshes. Global permits cap concurrent requests across processes. A state transaction reserves request cost before dispatch; responses update conservative shared estimates, request-order watermarks, cooldowns, and refill state. Recover vanished owners without resetting to an invented full bucket. Apply storage limits separately. No network wait occurs inside a database transaction.
 
+The concrete §9 storage additions are:
+
+| Purpose | Path or table |
+|---|---|
+| Cross-process request permit | `<identity dir>/locks/api-slot-<n>.lock`, for `0 <= n < api_concurrency` |
+| Dataset/scope refresh single-flight | `<identity dir>/locks/refresh-<dataset>-<scope>.lock` |
+| Shared governor, plans, approval handles, event log | `governor`, `plans`, `approval_handles`, and `events` tables in `<identity dir>/state.sqlite` |
+
+Dataset/scope path components use canonical filesystem-safe encodings. Create lock files if absent using `create_new` semantics; use `fs4` (`flock` on Unix, `LockFileEx` on Windows) and never delete these identity-local lock files except by `identity remove`. The state database remains durable under §10, with transactional migrations and writes; `cache clear` does not remove it or these tables. Retention expires event rows transactionally, not the database file. The root identity lock remains at its existing §9 path and is never deleted.
+
 Register foreground submission interest before its first preflight request. Stop admitting new polling work while higher-priority work waits; an already-running request may finish. Limiting watch to one slot is insufficient to promise zero wait, especially at concurrency one. Test bounded priority and eventual polling progress. A terminal `outcome_unknown` journal does not freeze polling forever: readback/reconciliation must continue. Refresh waiters time out at 30 seconds; return existing coverage with honest stale/partial metadata, or the normal miss/error when nothing usable exists.
 
 `canvas-cli/event@1` contains `cursor`, `kind`, `observed_at`, identity/generation, dataset/scope, entity key, and per-kind allowlisted before/after fields. Kinds include assignment added/changed/removed, due changed, grade changed/posted, announcement new, missing new, submission state, inbox unread count, and `resync_required`. Do not store full messages, DOM captures, tokens, or signed URLs in events.
 
 Maintain the event cursor, comparison baseline, and deduplication key together in `state.sqlite`; journal events commit with journal transitions. For cache observations use a unique durable observation ID, not time alone. Cache commits and state events are not one transaction: preserve an outbox/observation record for replay, or detect an overwritten observation and emit an explicit gap requiring resync. A restart cannot silently pretend the gap did not happen. First complete observation establishes a baseline. Compare only the same complete scope/window; `removed` means absent from that membership. Failed pages never imply deletion. `grade.posted` needs publication evidence; otherwise emit `grade.changed`.
 
-Proposed retention is 30 days. Replay is at least once; consumers deduplicate cursors. An expired or wrong-generation cursor requires resync. Desktop alerts are deduplicated derived events; event subscriptions are hints, not guaranteed agent wake-ups. Remote transitions between polls may never be observed. Streaming has its own `--jsonl` contract and does not alter §7's single-document `--json` rule.
+Proposed retention is 30 days. Replay is at least once; consumers deduplicate cursors. An expired or wrong-generation cursor emits a `resync_required` event and closes normally with exit 0; consumers establish a fresh baseline/cursor before watching again. Desktop alerts are deduplicated derived events; event subscriptions are hints, not guaranteed agent wake-ups. Remote transitions between polls may never be observed. Streaming has its own `--jsonl` contract and does not alter §7's single-document `--json` rule.
 
 | Path | Acceptance target or boundary |
 |---|---|
@@ -170,19 +224,32 @@ Measure fixture size, process startup, schema tokens, payload bytes, tool calls 
 
 ## 4. Additions to SPEC §18 after M5
 
-These are proposed packages for the coordinator to integrate after the current v1 work. All M5 packages and existing gates remain prerequisites; implementation is not authorized by this report. Assign owners for command enum, schema registry, migrations, and new extension interfaces before parallel work.
+These are proposed packages for the coordinator to integrate after the current v1 work. All M5 packages and existing gates remain prerequisites; implementation is not authorized by this report. The columns match SPEC §18 for integration.
 
-| Package | Owns / depends on | Acceptance criteria |
-|---|---|---|
-| **M6-a: operation plans and approval core** | Core plan/approval state, journal linkage, human submit refactor; depends on M5 | Preserve all §12.2 tests; concurrent execute/replay creates one journal; kill before/after atomic approval-link transaction; changed bytes/identity/eligibility rejected; no lock during approval wait; unknown POST never auto-reposted; exact body/hash visible in plan |
-| **M6-b: agent adapters, schemas, skill** | Reusable contracts, `canvas mcp`, `canvas schema`, skill; M6-a | Snapshot successful/error envelopes against CLI; exclude forbidden tools/flags; test both declared MCP versions or explicit refusal; publish real Claude Code/Codex/Cursor compatibility matrix; accept/decline/cancel/replay; no-elicitation refusal; private identity-generation resources; measure schema tokens and warm latency |
-| **M6-c: shared coordinator and watch/notify** | Cross-process permits/governor, observation recovery, events/JSONL, optional desktop notifications; M6-b | Combined CLI/MCP/watch caps; owner death/cooldown recovery; concurrency-one priority and starvation; same-scope single-flight; partial page emits no removals; first baseline silent; crash across cache/state handoff yields replay or resync; retention/cursor dedup; unknown journal does not halt readback |
-| **M7-a: companion attachment and broker** | MV3 extension, native host/install, IPC, `here`, account probe, consumer routing; M6-b/M6-c | Real Chrome gesture and same-origin navigation; cross-origin revocation; two tabs/profiles/consumers; account switch; stale document messages; exact extension/origin checks; failed/redirected identity probe; no capture before zone classification; no secrets/cookie files; byte bounds; broker restart and identity removal |
-| **M7-b: presence, panel approvals, follow** | Notes/status/receipts panel, `context.note`, follow, private approval events; M7-a/M6-a | Display existing agent's note without a model backend; inert malicious markup; generation-bound notes/navigation; exact plan approve/decline; no page-forged approval; observed/unknown receipt states distinct; follow acknowledgement separated from load; API preview and browser read-state side effects distinguished |
-| **M8-a: richer reading context** | Pages/page, syllabus, accessible rubric extension, discussions and inbox reads; M6-b/M6-c, independent of M7 | Explicit schemas/coverage; permission and initial-post failures; paginated replies; graded/group metadata; inbox requests set `auto_mark_as_read=false`; API previews do not mutate unread state; unavailable embedded content reported; file references preserve origin and containment |
-| **M8-b: discussion and inbox writes** | Per-operation prepare/execute/status/reconcile and attribution; M8-a/M6-a/M6-b | Exact recipients/thread/body/attachments frozen; trusted approval; group writes refused; no placeholder unlock; ambiguous timeout never resent automatically; distinguish accepted request, observed object, and unattributed matching content; no claim of email delivery from an API acceptance |
-| **M8-c: measured GraphQL option** | Fixed read queries/adapters and benchmarks; M5-a/M8-a | Compare identical workloads/coverage to REST; paginate every connection; map `_id`; preserve nulls, permission failures, partial errors, request costs; adopt only for a measured benefit without changing output semantics |
-| **M8-d: conditional OAuth distribution gate** | Native OAuth and institutional developer-key onboarding; before multi-user release | Demonstrate supported institutional flow, scopes, identity binding, token rotation/revocation, secure storage, and refusal to send credentials across origins; no request for other students to paste manual PATs; existing personal setup remains available |
+| # | Package | Owns | Depends on | Acceptance |
+|---|---|---|---|---|
+| M6-a | Operation plans and approval core | Core plan/approval state, journal linkage, human submit refactor | All M5 packages | Preserve all §12.2 tests; concurrent execute/replay creates one journal; kill before/after atomic approval-link transaction; approval channel/digest retained in journal and receipt; expired/invalidated/unapproved plan exits 8; changed bytes/identity/eligibility rejected; no lock during approval wait; unknown POST never auto-reposted; exact body/hash visible in plan |
+| M6-b | Agent adapters, schemas, skill | Reusable contracts, `canvas mcp`, `canvas schema`, skill | M6-a | Snapshot successful/error envelopes against CLI; register §3.2 schemas; raw `schema` rejects `--json` with exit 2; exclude forbidden tools/flags; test both declared MCP versions or explicit refusal; publish real Claude Code/Codex/Cursor compatibility matrix; accept/decline/cancel/replay; no-elicitation refusal; private identity-generation resources; measure schema tokens and warm latency |
+| M6-c | Shared coordinator and watch/notify | Cross-process permits/governor, observation recovery, events/JSONL, optional desktop notifications | M6-b, M4-b | Combined CLI/MCP/watch caps; owner death/cooldown recovery; concurrency-one priority and starvation; same-scope single-flight; partial page emits no removals; first baseline silent; crash across cache/state handoff yields replay or resync; expired cursor emits `resync_required` and exits 0; retention/cursor dedup; unknown journal does not halt readback |
+| M7-a | Companion attachment and broker | `extension/` MV3 companion, native manifest template, native host/install, IPC, `here`, account probe, consumer routing | M6-b, M6-c | Real Chrome gesture and same-origin navigation; cross-origin revocation; two tabs/profiles/consumers; account switch; stale document messages; exact extension/origin checks; failed/redirected identity probe; no capture before zone classification; no secrets/cookie files; byte bounds; unavailable attachment/broker exits 8 with reason; broker restart and identity removal |
+| M7-b | Presence, panel approvals, follow | Notes/status/receipts panel, `context.note`, follow, private approval events | M7-a, M6-a | Display existing agent's note without a model backend; inert malicious markup; generation-bound notes/navigation; stale follow exits 8; exact plan approve/decline; no page-forged approval; observed/unknown receipt states distinct; follow acknowledgement separated from load; API preview and browser read-state side effects distinguished |
+| M8-a | Richer reading context | Pages/page, syllabus, accessible rubric extension, discussions and inbox reads | M6-b, M6-c; independent of M7 | Explicit schemas/coverage; permission and initial-post failures; paginated replies; graded/group metadata; inbox requests set `auto_mark_as_read=false`; API previews do not mutate unread state; unavailable embedded content reported; file references preserve origin and containment |
+| M8-b | Discussion and inbox writes | Per-operation prepare/execute/status/reconcile and attribution | M8-a, M6-a, M6-b | Exact recipients/thread/body/attachments frozen; trusted approval; group writes refused; no placeholder unlock; ambiguous timeout never resent automatically; distinguish accepted request, observed object, and unattributed matching content; no claim of email delivery from an API acceptance |
+| M8-c | Measured GraphQL option | Fixed read queries/adapters and benchmarks | M5-a, M8-a | Compare identical workloads/coverage to REST; paginate every connection; map `_id`; preserve nulls, permission failures, partial errors, request costs; adopt only for a measured benefit without changing output semantics |
+| M8-d | Conditional OAuth distribution gate | Native OAuth and institutional developer-key onboarding | M6-b; required before any multi-user release | Demonstrate supported institutional flow, scopes, identity binding, token rotation/revocation, secure storage, and refusal to send credentials across origins; no request for other students to paste manual PATs; existing personal setup remains available |
+
+**Rounds and shared-file owners.** Continue §18's lane model with one owner per shared file per round. M6-a and M6-b touch the command enum, JSON schema registry, and migration list in successive rounds. M7-a owns the new `extension/` directory and native manifest template; M7-b takes ownership of its panel/presence files in the following round.
+
+| Round | w1 | w2 | w3 | Enum owner | Registry owner | Migration owner | Merge order |
+|---|---|---|---|---|---|---|---|
+| R6 | M6-a | — | — | w1 | w1 | w1 | w1 |
+| R7 | M6-b | — | — | w1 | w1 | w1 | w1 |
+| R8 | M6-c | — | — | w1 | w1 | w1 | w1 |
+| R9 | M7-a | M8-a | — | w1 | w2 | w2 | w2, w1 |
+| R10 | M7-b | M8-b | M8-c (optional) | w1 | w2 | w2 | w1, w2, w3 |
+| R11 | M8-d (conditional) | — | — | w1 | w1 | w1 | w1 |
+
+Shared-file owners supply the needed enum/schema/migration interfaces at the start of the round; other lanes rebase on those interfaces and request changes through the coordinator. No other lane edits a shared file in that round. A migration owner is responsible for any required change, not a requirement to add an otherwise unnecessary migration. M6-c explicitly depends on M4-b because announcements and calendar-window datasets originate there.
 
 Pages/inbox/discussion reads can proceed after M6 without waiting for the companion. M8-d is mandatory only when distributing for other users. GraphQL is optional and cannot delay the reliable REST path.
 
@@ -215,6 +282,14 @@ Pages/inbox/discussion reads can proceed after M6 without waiting for the compan
 
 **Operational limits.** Browser updates, native-host packaging, missed polling transitions, stale caches, and API failures remain possible. Handle them through explicit unavailable/partial/unknown states and replay; a local receipt is an integrity record, not a server-signed guarantee of deadline compliance. API documentation and the inspected upstream source snapshot do not establish Lasell's deployed version or enabled features. A later implementation must test actual behavior.
 
+Questions for Rolf, to resolve during setup and release planning:
+
+1. What is the final authenticated origin in your Canvas tab: `lasell.instructure.com` or `courses.lasell.edu`?
+2. Which agent do you use most—Claude Code, Codex, or Cursor—so M6-b can prioritize that host's compatibility tests?
+3. Which courses permit AI drafting, and which embedded tools appear in them?
+4. What defaults do you prefer for consumer selection, hidden-tab pause, event retention, and desktop notifications?
+5. Do you intend to distribute this to other students? That triggers the M8-d OAuth gate before their release.
+
 ## 6. Sources and evidence
 
 Official pages below were read during the dialogue/report work; access date 2026-09-09. Canvas source inspection used commit `1c9f0bb8013ed69c4f2efe11fd483025469b7e6c` returned by the public repository API (commit date 2026-04-30). It is an inspected upstream snapshot, not a claim about Lasell deployment. Design choices and acceptance targets are our proposals.
@@ -224,7 +299,7 @@ Official pages below were read during the dialogue/report work; access date 2026
 - **S2:** [OpenAI browser extension documentation](https://learn.chatgpt.com/docs/chrome-extension), signed-in interaction, tab/selection context, side chat, desktop/Codex entry points and availability limits.
 - **S3:** [Claude Code with Chrome](https://code.claude.com/docs/en/chrome), browser integration, native-host setup, troubleshooting and permissions.
 - **S4:** [Chrome 136 remote-debugging change](https://developer.chrome.com/blog/remote-debugging-port).
-- **S5:** [Chrome DevTools MCP existing-session connection](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session), Chrome 144+ and `--autoConnect`.
+- **S5:** [Chrome DevTools MCP existing-session connection](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session), Chrome 144+, connection consent and banner; [MCP configuration document](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/configuration.md), documented `--auto-connect` spelling (also lists the camel-case alias).
 - **S6:** [Canvas assignment controller, pinned source](https://github.com/instructure/canvas-lms/blob/1c9f0bb8013ed69c4f2efe11fd483025469b7e6c/app/controllers/assignments_controller.rb#L251), page-environment IDs.
 - **S7:** [Chrome content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts), isolated worlds and injection.
 - **S8:** [MCP tools, 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/server/tools), schemas, structured results, input-required retry shape and tool semantics.
@@ -246,3 +321,5 @@ Official pages below were read during the dialogue/report work; access date 2026
 - **S24:** [Official Canvas iOS apps](https://github.com/instructure/canvas-ios), mobile-adapter investigation entry point; no mobile runtime test performed.
 - **S25:** [Official Canvas Studio documentation](https://developerdocs.instructure.com/services/studio), published media/caption API references; student access unverified.
 - **S26:** [Lasell Canvas login](https://www.lasell.edu/academics/canvas-login.html), public login destinations only.
+- **S27:** [Official MCP Rust SDK](https://github.com/modelcontextprotocol/rust-sdk), whose README documents `2026-07-28` support and compatibility with `2025-11-25`; [published `rmcp` 3.2.0 documentation](https://docs.rs/rmcp/3.2.0/rmcp/) and [workspace manifest](https://github.com/modelcontextprotocol/rust-sdk/blob/main/Cargo.toml) establish the version examined. Documentation, not tested: no Canvas compatibility adapter or host interoperability was exercised.
+- **S28:** [Claude Code MCP configuration](https://code.claude.com/docs/en/mcp), local stdio setup and local/project/user installation scopes. Documentation, not tested: scope/configuration does not establish the proposed approval or identity-binding behavior.
