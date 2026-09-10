@@ -499,7 +499,7 @@ async fn the_initial_post_gate_refuses_replies_and_still_reads_the_topic() {
     assert_eq!(topic["result"]["discussion"]["require_initial_post"], true);
 
     let gated = f.run(&["discussion", "5", "56", "--replies"], 8).await;
-    assert_eq!(gated["result"]["code"], "denied");
+    assert_eq!(gated["result"]["code"], "refused");
     assert!(
         gated["result"]["message"]
             .as_str()

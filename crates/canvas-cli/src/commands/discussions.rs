@@ -313,7 +313,7 @@ pub async fn run_show(
     if replies && coverage.blocked.as_deref() == Some("initial_post_required") {
         return emit_error(
             globals.json,
-            "denied",
+            "refused",
             "initial_post_required: post to this discussion before you can read its replies",
             8,
             session.profile.clone(),
