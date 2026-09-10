@@ -75,55 +75,54 @@ with `canvas doctor`.
 
 ## Commands
 
-`Status` says what this build does: `available` runs, `planned` is registered
-and exits with `not implemented`.
+Every command below runs in this build.
 
-| Command | What it does | Status |
-|---|---|---|
-| `canvas auth login` | Store a personal access token for a Canvas host. `--host`, `--token-stdin`, `--replace`. | available |
-| `canvas auth status` | Show the active profile, identity, and credential backend. | available |
-| `canvas auth logout` | Remove the active token from the credential store. | available |
-| `canvas auth token` | Print token metadata, or the secret itself with `--reveal`. | available |
-| `canvas identity list` | List stored identities with their profiles and on-disk sizes. | available |
-| `canvas identity remove` | Delete an identity: credentials, then data, then profiles. | available |
-| `canvas courses` | List your courses. `--all`, `--term`, `--favorites`. | available |
-| `canvas course` | Show one course: term, teachers, and reported scores. | available |
-| `canvas todo` | What is due and what is missing. `--days`, `--all`, `--missing`, `--course`. | available |
-| `canvas assignments` | List a course's assignments. `--bucket`, `--search`. | available |
-| `canvas assignment` | Show one assignment prompt, dates, and your submission. | available |
-| `canvas submit` | Submit files, text, HTML, or a URL, journaled and receipted. | planned |
-| `canvas submission` | Show your submission for an assignment. `--history`. | planned |
-| `canvas submission verify` | Re-check a receipt against what Canvas reports now. | planned |
-| `canvas submission reconcile` | Resolve a journal left unfinished by an interrupted submit. | planned |
-| `canvas receipts list` | List local submission receipts. `--course`, `--state`. | planned |
-| `canvas receipts show` | Show one receipt or journal in full. | planned |
-| `canvas receipts export` | Write a receipt to a JSON file. `--out`. | planned |
-| `canvas receipts acknowledge` | Accept a journal whose outcome stays unknown. | planned |
-| `canvas grades` | Scores as Canvas reports them. `--period current\|all\|ID`. | planned |
-| `canvas files` | List a course's files. `--tree`, `--search`. | available |
-| `canvas download` | Download course files per module, never clobbering. `--dest`, `--module`, `--file`, `--jobs`, `--dry-run`, `--force`, `--verify`. | available |
-| `canvas modules` | List a course's modules. `--items`. | available |
-| `canvas announcements` | Recent announcements. `--since`, `--unread`. | available |
-| `canvas announcement` | Show one announcement as Markdown. | available |
-| `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. | available |
-| `canvas open` | Open a course, or any Canvas URL, in the browser. | available |
-| `canvas open assignment` | Open an assignment page in the browser. | available |
-| `canvas open file` | Open a file by id in the browser. | available |
-| `canvas open announcement` | Open an announcement page in the browser. | available |
-| `canvas sync` | Refresh the cached datasets. `--full` adds files, modules, and the calendar. | available |
-| `canvas cache stats` | Row counts and size per cached dataset. | available |
-| `canvas cache clear` | Drop the cache database. State and receipts survive. | available |
-| `canvas cache path` | Print the cache database path. | available |
-| `canvas config path` | Print the config file path. | available |
-| `canvas config edit` | Open the config file in `$EDITOR`. | available |
-| `canvas config get` | Read one config key. | available |
-| `canvas config set` | Write one config key, validated. | available |
-| `canvas alias set` | Give a course a short name of your own. | available |
-| `canvas alias list` | List your course aliases. | available |
-| `canvas alias remove` | Remove a course alias. | available |
-| `canvas doctor` | Check config, databases, credentials, and locks. `--network`. | available |
-| `canvas completions` | Print a completion script: bash, zsh, fish, powershell, elvish. | available |
-| `canvas version` | Print the version, build commit, and target triple. | available |
+| Command | What it does |
+|---|---|
+| `canvas auth login` | Store a personal access token for a Canvas host. `--host`, `--token-stdin`, `--replace`. |
+| `canvas auth status` | Show the active profile, identity, and credential backend. |
+| `canvas auth logout` | Remove the active token from the credential store. |
+| `canvas auth token` | Print token metadata, or the secret itself with `--reveal`. |
+| `canvas identity list` | List stored identities with their profiles and on-disk sizes. |
+| `canvas identity remove` | Delete an identity: credentials, then data, then profiles. |
+| `canvas courses` | List your courses. `--all`, `--term`, `--favorites`. |
+| `canvas course` | Show one course: term, teachers, and reported scores. |
+| `canvas todo` | What is due and what is missing. `--days`, `--all`, `--missing`, `--course`. |
+| `canvas assignments` | List a course's assignments. `--bucket`, `--search`. |
+| `canvas assignment` | Show one assignment prompt, dates, and your submission. |
+| `canvas submit` | Submit files, text, HTML, or a URL, journaled and receipted. |
+| `canvas submission` | Show your submission for an assignment. `--history`. |
+| `canvas submission verify` | Re-check a receipt against what Canvas reports now. |
+| `canvas submission reconcile` | Resolve a journal left unfinished by an interrupted submit. |
+| `canvas receipts list` | List local submission receipts. `--course`, `--state`. |
+| `canvas receipts show` | Show one receipt or journal in full. |
+| `canvas receipts export` | Write a receipt to a JSON file. `--out`. |
+| `canvas receipts acknowledge` | Accept a journal whose outcome stays unknown. |
+| `canvas grades` | Scores as Canvas reports them. `--period current\|all\|ID`. |
+| `canvas files` | List a course's files. `--tree`, `--search`. |
+| `canvas download` | Download course files per module, never clobbering. `--dest`, `--module`, `--file`, `--jobs`, `--dry-run`, `--force`, `--verify`. |
+| `canvas modules` | List a course's modules. `--items`. |
+| `canvas announcements` | Recent announcements. `--since`, `--unread`. |
+| `canvas announcement` | Show one announcement as Markdown. |
+| `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. |
+| `canvas open` | Open a course, or any Canvas URL, in the browser. |
+| `canvas open assignment` | Open an assignment page in the browser. |
+| `canvas open file` | Open a file by id in the browser. |
+| `canvas open announcement` | Open an announcement page in the browser. |
+| `canvas sync` | Refresh the cached datasets. `--full` adds files, modules, and the calendar. |
+| `canvas cache stats` | Row counts and size per cached dataset. |
+| `canvas cache clear` | Drop the cache database. State and receipts survive. |
+| `canvas cache path` | Print the cache database path. |
+| `canvas config path` | Print the config file path. |
+| `canvas config edit` | Open the config file in `$EDITOR`. |
+| `canvas config get` | Read one config key. |
+| `canvas config set` | Write one config key, validated. |
+| `canvas alias set` | Give a course a short name of your own. |
+| `canvas alias list` | List your course aliases. |
+| `canvas alias remove` | Remove a course alias. |
+| `canvas doctor` | Check config, databases, credentials, and locks. `--network`. |
+| `canvas completions` | Print a completion script: bash, zsh, fish, powershell, elvish. |
+| `canvas version` | Print the version, build commit, and target triple. |
 
 `<course>` accepts a numeric Canvas ID, one of your aliases, a Canvas URL, or a
 case-insensitive substring of the course code or name. `<assignment>` works the

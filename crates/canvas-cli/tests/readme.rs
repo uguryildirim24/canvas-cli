@@ -1,7 +1,7 @@
 //! The README command table is the user-facing copy of the clap command list.
 //! These tests fail when one drifts from the other.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 const README: &str = include_str!("../../../README.md");
 
@@ -37,8 +37,8 @@ fn clap_commands() -> BTreeSet<String> {
     out
 }
 
-/// Rows of the README `## Commands` table: command path -> status cell.
-fn readme_commands() -> BTreeMap<String, String> {
+/// Command paths named by the rows of the README `## Commands` table.
+fn readme_commands() -> BTreeSet<String> {
     let table = README
         .split("\n## Commands\n")
         .nth(1)
@@ -46,21 +46,20 @@ fn readme_commands() -> BTreeMap<String, String> {
         .split("\n## ")
         .next()
         .expect("split always yields a first element");
-    let mut rows = BTreeMap::new();
+    let mut rows = BTreeSet::new();
     for line in table.lines() {
         let line = line.trim();
         if !line.starts_with("| `canvas") {
             continue;
         }
         let cells: Vec<&str> = line.trim_matches('|').split(" | ").collect();
-        assert_eq!(cells.len(), 3, "row needs 3 cells: {line}");
+        assert_eq!(cells.len(), 2, "row needs 2 cells: {line}");
         let command = cells[0].trim().trim_matches('`');
         let path = command
             .strip_prefix("canvas ")
             .unwrap_or_else(|| panic!("row command must start with `canvas `: {line}"));
-        let status = cells[2].trim().to_owned();
         assert!(
-            rows.insert(path.to_owned(), status).is_none(),
+            rows.insert(path.to_owned()),
             "duplicate README row for {path}"
         );
     }
@@ -70,7 +69,7 @@ fn readme_commands() -> BTreeMap<String, String> {
 #[test]
 fn readme_command_table_matches_the_clap_command_list() {
     let clap: BTreeSet<String> = clap_commands();
-    let readme: BTreeSet<String> = readme_commands().into_keys().collect();
+    let readme: BTreeSet<String> = readme_commands();
     let missing: Vec<_> = clap.difference(&readme).collect();
     let extra: Vec<_> = readme.difference(&clap).collect();
     assert!(
@@ -78,16 +77,6 @@ fn readme_command_table_matches_the_clap_command_list() {
         "README command table is out of date.\n  missing from README: {missing:?}\n  \
          not a canvas command: {extra:?}"
     );
-}
-
-#[test]
-fn readme_command_table_uses_known_status_labels() {
-    for (path, status) in readme_commands() {
-        assert!(
-            status == "available" || status == "planned",
-            "unknown status {status:?} for `canvas {path}`"
-        );
-    }
 }
 
 #[test]
