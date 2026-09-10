@@ -28,7 +28,14 @@ pub async fn run(globals: &Globals, target: String, id: Option<String>) -> ExitC
     let (course_id, announcement_id) = match id {
         Some(id) => {
             let Some(announcement_id) = parse_id(&id) else {
-                return refuse_bare_id(globals, &session);
+                return emit_error(
+                    globals.json,
+                    "resolution",
+                    "announcement id must be a positive number",
+                    6,
+                    session.profile.clone(),
+                    Some(session.identity_ref()),
+                );
             };
             let (resolved, rows, _) =
                 match super::course::resolve_with_refresh(globals, &session, &target).await {
