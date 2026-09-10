@@ -131,7 +131,9 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
         end: window.end,
         days,
     };
-    let event_scope = context_window.scope_key().to_owned();
+    // A wider cached window can serve a narrower request (§10), so the rows
+    // come from the scope of the row that answered.
+    let event_scope = events.outcome.freshness.scope.clone();
     let loaded = session
         .open
         .store
@@ -193,7 +195,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
     }
     let mut warnings = Vec::new();
     for row in event_rows {
-        if course_id.is_some_and(|id| row.course_id != Some(id)) {
+        if course_id.is_some_and(|id| row.course_id != Some(id)) || !row.in_window(&window) {
             continue;
         }
         // The calendar-events representation wins for event fields (§12.5).
@@ -204,7 +206,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
     }
 
     let mut undated = 0u64;
-    let mut items: Vec<CalendarItemJson> = merged
+    let mut rows: Vec<Merged> = merged
         .into_values()
         .filter(|item| {
             let dated =
@@ -214,14 +216,14 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
             }
             dated
         })
-        .map(|item| item.to_json(&key, &zone))
         .collect();
-    sort_items(&mut items);
+    rows.sort_by_key(|row| row.sort_key(&key));
     if undated > 0 {
         warnings.push(format!("{undated} item(s) without a date are not shown"));
     }
+    let items: Vec<CalendarItemJson> = rows.iter().map(|row| row.to_json(&key, &zone)).collect();
 
-    let document = match write_calendar(&items, &warnings, alarm.as_deref(), now) {
+    let document = match write_calendar(&rows, &key, &warnings, alarm.as_deref(), now) {
         Ok(doc) => doc,
         Err(e) => {
             return usage(globals, &session, &format!("cannot write iCalendar: {e}"));
@@ -302,16 +304,16 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
 
 /// Render the ICS text and collect the one-day conversion warnings.
 fn write_calendar(
-    items: &[CalendarItemJson],
+    rows: &[Merged],
+    identity_key: &str,
     warnings: &[String],
     alarm: Option<&str>,
     now: Timestamp,
 ) -> Result<canvas_core::ics::IcsDocument, IcsError> {
-    let ics_items: Vec<CalendarItem> = items
+    let ics_items: Vec<CalendarItem> = rows
         .iter()
-        .map(|item| to_ics_item(item, alarm))
-        .collect::<Option<Vec<_>>>()
-        .unwrap_or_default();
+        .map(|row| row.to_ics(identity_key, alarm))
+        .collect();
     let mut document = write_ics(&ics_items, now)?;
     // The one-day warning belongs to the command, not only to the file, so it
     // is computed before the write and merged here without repeats.
@@ -323,30 +325,6 @@ fn write_calendar(
     }
     document.warnings = merged;
     Ok(document)
-}
-
-fn to_ics_item(item: &CalendarItemJson, alarm: Option<&str>) -> Option<CalendarItem> {
-    let (_, key) = item.uid.split_once('@')?;
-    Some(CalendarItem {
-        kind: item.kind.clone(),
-        id: item.id.parse().unwrap_or_default(),
-        identity_key: key.to_owned(),
-        course_code: item.course_code.clone(),
-        title: item.title.clone(),
-        is_deadline: item.is_deadline,
-        due_at: parse_ts(item.due_at.as_deref()),
-        start_at: parse_ts(item.start_at.as_deref()),
-        end_at: parse_ts(item.end_at.as_deref()),
-        all_day: item.all_day,
-        all_day_date: item.all_day_date.as_deref().and_then(|d| d.parse().ok()),
-        url: item.html_url.clone(),
-        description: None,
-        alarm: alarm.map(str::to_owned),
-    })
-}
-
-fn parse_ts(raw: Option<&str>) -> Option<Timestamp> {
-    raw.and_then(|s| s.parse().ok())
 }
 
 /// One merged calendar row before it becomes JSON.
@@ -363,11 +341,18 @@ struct Merged {
     all_day: bool,
     all_day_date: Option<Date>,
     html_url: Option<String>,
+    /// `DESCRIPTION` body: points and status for a deadline (§12.5).
+    description: Option<String>,
 }
 
 impl Merged {
     fn from_todo(item: &TodoItem, _zone: &TimeZone) -> Self {
         let is_deadline = item.due_at.is_some();
+        let mut parts = Vec::new();
+        if let Some(points) = item.points_possible {
+            parts.push(format!("{points} points"));
+        }
+        parts.push(read::label(item));
         Self {
             kind: item.kind.as_str().to_owned(),
             id: item.id,
@@ -381,12 +366,48 @@ impl Merged {
             all_day: false,
             all_day_date: None,
             html_url: item.html_url.clone(),
+            description: Some(parts.join(" · ")).filter(|d| !d.is_empty()),
+        }
+    }
+
+    /// Appendix D: `(all_day_date ?? start_at ?? due_at)` ascending, then
+    /// `uid`, so the JSON and the ICS carry one order.
+    fn sort_key(&self, identity_key: &str) -> (String, String) {
+        let when = self
+            .all_day_date
+            .map(|d| d.to_string())
+            .or_else(|| self.start_at.map(|at| at.to_string()))
+            .or_else(|| self.due_at.map(|at| at.to_string()))
+            .unwrap_or_default();
+        (when, self.uid(identity_key))
+    }
+
+    fn uid(&self, identity_key: &str) -> String {
+        format!("canvas-{}-{}@{identity_key}", self.kind, self.id)
+    }
+
+    fn to_ics(&self, identity_key: &str, alarm: Option<&str>) -> CalendarItem {
+        CalendarItem {
+            kind: self.kind.clone(),
+            id: self.id,
+            identity_key: identity_key.to_owned(),
+            course_code: self.course_code.clone(),
+            title: self.title.clone(),
+            is_deadline: self.is_deadline,
+            due_at: self.due_at,
+            start_at: self.start_at,
+            end_at: self.end_at,
+            all_day: self.all_day,
+            all_day_date: self.all_day_date,
+            url: self.html_url.clone(),
+            description: self.description.clone(),
+            alarm: alarm.map(str::to_owned),
         }
     }
 
     fn to_json(&self, identity_key: &str, zone: &TimeZone) -> CalendarItemJson {
         CalendarItemJson {
-            uid: format!("canvas-{}-{}@{identity_key}", self.kind, self.id),
+            uid: self.uid(identity_key),
             kind: self.kind.clone(),
             id: self.id.to_string(),
             course_id: self.course_id.map(|id| id.to_string()),
@@ -404,23 +425,6 @@ impl Merged {
             html_url: self.html_url.clone(),
         }
     }
-}
-
-/// Appendix D: `(all_day_date ?? start_at ?? due_at)` ascending, then `uid`.
-fn sort_items(items: &mut [CalendarItemJson]) {
-    items.sort_by(|a, b| {
-        sort_key(a)
-            .cmp(&sort_key(b))
-            .then_with(|| a.uid.cmp(&b.uid))
-    });
-}
-
-fn sort_key(item: &CalendarItemJson) -> String {
-    item.all_day_date
-        .clone()
-        .or_else(|| item.start_at.clone())
-        .or_else(|| item.due_at.clone())
-        .unwrap_or_default()
 }
 
 /// Contexts the events fetch covers: the user plus every active course
@@ -548,6 +552,16 @@ struct EventRow {
 }
 
 impl EventRow {
+    /// Keep the answer inside the window the command asked for: an all-day
+    /// event by its civil date, a timed event by its start.
+    fn in_window(&self, window: &PlannerWindow) -> bool {
+        if let Some(date) = self.all_day_date.filter(|_| self.all_day) {
+            return date >= window.start && date <= window.end;
+        }
+        self.start_at
+            .is_none_or(|at| at >= window.start_timestamp() && at < window.end_timestamp())
+    }
+
     /// §12.5: an all-day event is one civil day; a longer span is warned about.
     fn longer_span_warning(&self) -> Option<String> {
         let (start, end) = self.start_at.zip(self.end_at)?;
@@ -579,6 +593,9 @@ impl EventRow {
             all_day: self.all_day,
             all_day_date,
             html_url: self.html_url.clone(),
+            // §12.5 puts points and status in DESCRIPTION; an event has
+            // neither.
+            description: None,
         }
     }
 }
