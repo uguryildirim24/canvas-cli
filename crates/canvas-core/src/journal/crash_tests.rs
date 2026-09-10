@@ -38,6 +38,7 @@ fn opts(doc: &IdentityDocument) -> CreateOpts {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn helper() {
     let Ok(root) = std::env::var("CANVAS_JOURNAL_ROOT") else {
         return;
@@ -85,6 +86,40 @@ fn helper() {
                 recover_if_owner_absent(&store, &paths.identity_dir, &jid).unwrap(),
                 None
             );
+            assert!(
+                store
+                    .call_blocking(|c| crate::store::pending_for_assignment(&c.state, 42))
+                    .unwrap()
+            );
+            let rows = crate::receipts::list_journals(
+                &store,
+                &paths.identity_dir,
+                &crate::receipts::ListFilter::default(),
+            )
+            .unwrap();
+            assert_eq!(rows[0].owner, "live");
+            let client = canvas_api::Client::new(
+                "https://canvas.example".parse().unwrap(),
+                canvas_api::Secret::new("test"),
+                "test",
+            )
+            .unwrap();
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let result = rt
+                .block_on(crate::submit::reconcile(
+                    &client,
+                    &store,
+                    &paths,
+                    &jid,
+                    false,
+                    jiff::Timestamp::now(),
+                ))
+                .unwrap();
+            assert_eq!(result.outcome, crate::submit::ReconcileOutcome::Recovery);
+            assert_eq!(client.telemetry().api, 0);
             assert_eq!(get_journal(&store, &jid).unwrap().unwrap().state, row.state);
         } else {
             recover_if_owner_absent(&store, &paths.identity_dir, &jid).unwrap();
@@ -266,6 +301,10 @@ fn kills_cover_publication_active_phases_and_success_atomicity() {
             assert!(receipt["readback"].is_null());
             assert!(!receipt.to_string().contains("token=secret"));
             assert_eq!(row.post_status, Some(201));
+            let exported = crate::receipts::export(&store, &paths, &jid, None).unwrap();
+            let rebuilt: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(exported.path.unwrap()).unwrap()).unwrap();
+            assert_eq!(rebuilt, receipt);
         } else {
             assert!(row.receipt_record_json.is_none());
         }

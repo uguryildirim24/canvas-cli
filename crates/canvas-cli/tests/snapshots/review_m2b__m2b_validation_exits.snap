@@ -1,0 +1,87 @@
+---
+source: crates/canvas-cli/tests/review_m2b.rs
+expression: snapshots
+---
+[
+  {
+    "exit": 2,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "<identity>",
+      "origin": "<origin>",
+      "user_id": "123"
+    },
+    "outcome": "error",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 1,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "code": "usage",
+      "details": {},
+      "http_status": null,
+      "message": "comment longer than 65535 characters",
+      "server_errors": []
+    },
+    "schema": "canvas-cli/error@1",
+    "warnings": []
+  },
+  {
+    "exit": 8,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "<identity>",
+      "origin": "<origin>",
+      "user_id": "123"
+    },
+    "outcome": "error",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 1,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "code": "refused",
+      "details": {},
+      "http_status": null,
+      "message": "closed",
+      "server_errors": []
+    },
+    "schema": "canvas-cli/error@1",
+    "warnings": []
+  },
+  {
+    "exit": 13,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "<identity>",
+      "origin": "<origin>",
+      "user_id": "123"
+    },
+    "outcome": "error",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 1,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "code": "local",
+      "details": {},
+      "http_status": null,
+      "message": "injected persistence failure",
+      "server_errors": []
+    },
+    "schema": "canvas-cli/error@1",
+    "warnings": []
+  }
+]
