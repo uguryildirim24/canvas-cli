@@ -134,12 +134,23 @@ async fn config_edit_without_a_terminal() {
     refuses_json(&env, "config_edit", &["config", "edit"]);
 }
 
-/// `calendar --ics -` is M4-b; only the `--json` refusal is parseable today.
-///
-/// The clap layer already rejects the combination, and it does so before any
-/// command runs, so this assertion holds whether or not `calendar` is wired up.
+/// `calendar --ics -` streams an iCalendar document to stdout.
 #[tokio::test]
-async fn calendar_ics_stdout_refuses_json() {
-    let env = E2e::new();
+async fn calendar_ics_to_stdout() {
+    let server = CanvasServer::start().await;
+    let env = E2e::with_server(&server);
+    let stream = env.run_raw(&["calendar", "--ics", "-"]);
+    stream.assert_code(0);
+    let body = stream.stdout.replace("\r\n", "\n");
+    assert!(
+        body.starts_with("BEGIN:VCALENDAR\n") && body.trim_end().ends_with("END:VCALENDAR"),
+        "the stream is one iCalendar document: {body}"
+    );
+    assert!(
+        stream.stdout.contains("\r\n"),
+        "RFC 5545 folds on CRLF, which the snapshot cannot show"
+    );
+    env.snapshot("calendar_ics_stdout", &stream);
+
     refuses_json(&env, "calendar_ics", &["calendar", "--ics", "-"]);
 }

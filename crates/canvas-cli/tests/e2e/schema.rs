@@ -90,11 +90,16 @@ const SHAPES: &[Shape] = shapes![
 /// with `[]` for an array step.
 const NULLABLE_WITH_EXAMPLE: &[&str] = &[
     "canvas-cli/alias@1:aliases[].course_code",
+    "canvas-cli/announcement@1:announcement.course_code",
+    "canvas-cli/announcements@1:announcements[].author",
     "canvas-cli/assignment@1:assignment.status.excused",
     "canvas-cli/assignment@1:assignment.status.late",
     "canvas-cli/assignments@1:assignments[].status.excused",
     "canvas-cli/assignments@1:assignments[].status.late",
     "canvas-cli/auth_logout@1:backend",
+    "canvas-cli/calendar@1:items[].due_at",
+    "canvas-cli/calendar@1:items[].due_at_local",
+    "canvas-cli/calendar@1:items[].html_url",
     "canvas-cli/course@1:course.modules_count",
     "canvas-cli/course@1:course.time_zone",
     "canvas-cli/download@1:courses[].files[].verify",

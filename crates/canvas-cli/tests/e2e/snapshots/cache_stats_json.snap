@@ -23,6 +23,24 @@ expression: value
     "datasets": [
       {
         "complete": true,
+        "count": 1,
+        "dataset": "announcements",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "window:2026-09-08..2026-09-21:ctx:ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "assignments",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "course:100",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
         "count": 2,
         "dataset": "course_totals",
         "fetched_at": "2026-09-09T17:05:12Z",
@@ -60,6 +78,24 @@ expression: value
       {
         "complete": true,
         "count": 1,
+        "dataset": "missing",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "all",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "planner",
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "scope": "window:2026-09-08..2026-09-21",
+        "source": "cache",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
         "dataset": "terms",
         "fetched_at": "2026-09-09T17:05:12Z",
         "scope": "active",
@@ -84,7 +120,7 @@ expression: value
       },
       {
         "name": "assignments",
-        "rows": 0
+        "rows": 2
       },
       {
         "name": "submissions",
@@ -108,7 +144,7 @@ expression: value
       },
       {
         "name": "announcements",
-        "rows": 0
+        "rows": 1
       },
       {
         "name": "calendar_events",
@@ -116,7 +152,7 @@ expression: value
       },
       {
         "name": "planner_items",
-        "rows": 0
+        "rows": 1
       },
       {
         "name": "enrollment_grades",
@@ -136,15 +172,15 @@ expression: value
       },
       {
         "name": "field_obs",
-        "rows": 34
+        "rows": 72
       },
       {
         "name": "membership",
-        "rows": 6
+        "rows": 10
       },
       {
         "name": "fetch_log",
-        "rows": 5
+        "rows": 9
       }
     ]
   },

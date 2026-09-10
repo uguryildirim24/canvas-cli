@@ -25,6 +25,15 @@ expression: value
     },
     {
       "complete": true,
+      "count": 1,
+      "dataset": "calendar_events",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-09-08..2026-09-21:ctx:d21ee8da5900505f23e4d4dfa5fe7b90c2dbc4a8a0e40edd1c03ddb1234e5820",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
       "count": 2,
       "dataset": "course_totals",
       "fetched_at": "2026-09-09T17:05:12Z",
@@ -53,6 +62,24 @@ expression: value
     {
       "complete": true,
       "count": 1,
+      "dataset": "files",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "folders",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
       "dataset": "grading_periods",
       "fetched_at": "2026-09-09T17:05:12Z",
       "scope": "course:100",
@@ -65,6 +92,15 @@ expression: value
       "dataset": "missing",
       "fetched_at": "2026-09-09T17:05:12Z",
       "scope": "all",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "modules",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
       "source": "network",
       "stale": false
     },
@@ -97,7 +133,7 @@ expression: value
   "partial": [],
   "profile": null,
   "requests": {
-    "api": 7,
+    "api": 11,
     "cost": null,
     "storage": 0
   },
@@ -122,6 +158,17 @@ expression: value
         "fetched_at": "2026-09-09T17:05:12Z",
         "requests": 1,
         "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "calendar_events",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "window:2026-09-08..2026-09-21:ctx:d21ee8da5900505f23e4d4dfa5fe7b90c2dbc4a8a0e40edd1c03ddb1234e5820",
         "source": "network",
         "stale": false
       },
@@ -161,6 +208,28 @@ expression: value
       {
         "complete": true,
         "count": 1,
+        "dataset": "files",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "folders",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "course:100",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
         "dataset": "grading_periods",
         "error": null,
         "fetched_at": "2026-09-09T17:05:12Z",
@@ -177,6 +246,17 @@ expression: value
         "fetched_at": "2026-09-09T17:05:12Z",
         "requests": 1,
         "scope": "all",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "modules",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "course:100",
         "source": "network",
         "stale": false
       },

@@ -1,0 +1,9 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  POSTED              COURSE     ID    TITLE      READ    
+  2026-09-01 08:00    CHEM301    40    Welcome    unread  
+--- stderr ---

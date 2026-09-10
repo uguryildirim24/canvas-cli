@@ -179,6 +179,30 @@ async fn sync() {
 }
 
 #[tokio::test]
+async fn sync_full() {
+    both_modes("sync_full", &["sync", "--full"]).await;
+}
+
+#[tokio::test]
+async fn announcements() {
+    both_modes("announcements", &["announcements"]).await;
+}
+
+#[tokio::test]
+async fn announcement() {
+    both_modes(
+        "announcement",
+        &["announcement", &COURSE_ID.to_string(), "40"],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn calendar() {
+    both_modes("calendar", &["calendar"]).await;
+}
+
+#[tokio::test]
 async fn download_dry_run() {
     let server = CanvasServer::start().await;
     let env = E2e::with_server(&server);
