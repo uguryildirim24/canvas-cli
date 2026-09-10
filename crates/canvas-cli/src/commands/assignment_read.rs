@@ -1,4 +1,5 @@
 //! Shared cache-or-network orchestration and payloads for assignment reads.
+use super::handled::Handled;
 use super::{
     Globals,
     emit::{call_resolve, resolve_error, sync_error},
@@ -10,7 +11,6 @@ use canvas_core::sync::{self, RefreshOutcome, SyncError};
 use canvas_core::todo::TodoItem;
 use jiff::{Timestamp, tz::TimeZone};
 use serde_json::{Value, json};
-use std::process::ExitCode;
 
 pub async fn cached<D: Dataset + Clone + Send + 'static>(
     session: &Session,
@@ -244,7 +244,7 @@ pub async fn resolve(
     course_id: i64,
     input: &str,
     freshness: &mut Vec<RefreshOutcome>,
-) -> Result<i64, ExitCode> {
+) -> Result<i64, Handled> {
     let mut fetched = false;
     loop {
         let origin = session.identity.origin.clone();
@@ -259,12 +259,12 @@ pub async fn resolve(
                 freshness.push(
                     assignments(session, globals, course_id)
                         .await
-                        .map_err(|e| sync_error(globals, session, &e))?,
+                        .map_err(|e| sync_error(session, &e))?,
                 );
                 fetched = true;
             }
-            Ok(Err(e)) => return Err(resolve_error(globals, session, &e)),
-            Err(e) => return Err(sync_error(globals, session, &e.into())),
+            Ok(Err(e)) => return Err(resolve_error(session, &e)),
+            Err(e) => return Err(sync_error(session, &e.into())),
         }
     }
 }
@@ -474,10 +474,9 @@ pub async fn resolve_target(
     assignment: Option<&str>,
     freshness: &mut Vec<crate::output::Freshness>,
     outcomes: &mut Vec<RefreshOutcome>,
-) -> Result<(canvas_core::resolve::ResolvedCourse, i64), ExitCode> {
+) -> Result<(canvas_core::resolve::ResolvedCourse, i64), Handled> {
     if assignment.is_none() && !target.contains("://") {
         return Err(super::emit::emit_error(
-            globals.json,
             "usage",
             "this command requires a course and assignment or an assignment URL",
             2,

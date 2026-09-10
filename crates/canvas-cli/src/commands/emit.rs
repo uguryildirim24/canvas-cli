@@ -1,10 +1,6 @@
 //! Envelope emit helpers (JSON and human error paths).
 
-use std::io::{self, Write};
-use std::process::ExitCode;
-
-use serde::Serialize;
-
+use super::handled::Handled;
 use crate::output::{
     Envelope, ErrorResult, IdentityRef, Outcome, SCHEMA_ERROR, error_envelope, generated_at_now,
 };
@@ -29,55 +25,23 @@ where
         .await
 }
 
-/// Write a success (or completed) envelope as JSON, or run the human renderer.
-pub fn emit<T: Serialize>(
-    json: bool,
-    envelope: &Envelope<T>,
-    mut human: impl FnMut() -> io::Result<()>,
-) -> ExitCode {
-    if json {
-        if let Err(e) = envelope.write_json(io::stdout()) {
-            let _ = writeln!(io::stderr(), "failed to write JSON: {e}");
-            return ExitCode::from(1);
-        }
-        return envelope.exit_code();
-    }
-    for warning in &envelope.warnings {
-        let _ = writeln!(io::stderr(), "warning: {warning}");
-    }
-    if let Err(e) = human() {
-        let _ = writeln!(io::stderr(), "{e}");
-        return ExitCode::from(1);
-    }
-    envelope.exit_code()
-}
-
-/// Emit an `error@1` envelope (JSON) or a human message on stderr.
+/// Build an `error@1` result for an aborted command (§7, §14).
 pub fn emit_error(
-    json: bool,
     code: &str,
     message: &str,
     exit: u8,
     profile: Option<String>,
     identity: Option<IdentityRef>,
-) -> ExitCode {
-    let mut env = error_envelope(code, message, None, serde_json::json!({}), exit);
-    env.profile = if identity.is_some() { profile } else { None };
-    env.identity = identity;
-    if json {
-        let _ = env.write_json(io::stdout());
-    } else {
-        let _ = writeln!(io::stderr(), "{message}");
-    }
-    ExitCode::from(exit)
+) -> Handled {
+    Handled::error(code, message, exit, profile, identity)
 }
 
 /// Map [`SessionError`] to an exit.
-pub fn session_error(json: bool, err: SessionError, profile: Option<String>) -> ExitCode {
+pub fn session_error(err: SessionError, profile: Option<String>) -> Handled {
     match err {
-        SessionError::Usage(message) => emit_error(json, "usage", &message, 2, profile, None),
-        SessionError::Auth(message) => emit_error(json, "auth", &message, 3, profile, None),
-        SessionError::Local(message) => emit_error(json, "local", &message, 13, profile, None),
+        SessionError::Usage(message) => emit_error("usage", &message, 2, profile, None),
+        SessionError::Auth(message) => emit_error("auth", &message, 3, profile, None),
+        SessionError::Local(message) => emit_error("local", &message, 13, profile, None),
     }
 }
 
@@ -123,10 +87,9 @@ pub fn error_schema() -> &'static str {
 pub fn require_client<'a>(
     globals: &super::Globals,
     session: &'a Session,
-) -> Result<&'a canvas_api::Client, ExitCode> {
+) -> Result<&'a canvas_api::Client, Handled> {
     if globals.offline {
         return Err(emit_error(
-            globals.json,
             "usage",
             "this command cannot run with --offline",
             2,
@@ -142,7 +105,6 @@ pub fn require_client<'a>(
                 Some(canvas_api::Error::Network)
             ) {
                 Err(emit_error(
-                    globals.json,
                     "network",
                     "network error",
                     4,
@@ -151,7 +113,6 @@ pub fn require_client<'a>(
                 ))
             } else {
                 Err(emit_error(
-                    globals.json,
                     "auth",
                     "no token; set CANVAS_TOKEN or run auth login",
                     3,
@@ -164,11 +125,7 @@ pub fn require_client<'a>(
 }
 
 /// Keep API variants, status, and invocation telemetry on every abort.
-pub fn sync_error(
-    globals: &super::Globals,
-    session: &Session,
-    err: &canvas_core::sync::SyncError,
-) -> ExitCode {
+pub fn sync_error(session: &Session, err: &canvas_core::sync::SyncError) -> Handled {
     let (code, exit, status) = err.classification();
     let mut env = error_envelope(
         code,
@@ -180,16 +137,11 @@ pub fn sync_error(
     env.profile.clone_from(&session.profile);
     env.identity = Some(session.identity_ref());
     env.requests = session.requests();
-    emit(globals.json, &env, || {
-        writeln!(io::stderr(), "{}", env.result.message)
-    })
+    let message = env.result.message.clone();
+    Handled::error_envelope(env, message)
 }
 
-pub fn resolve_error(
-    globals: &super::Globals,
-    session: &Session,
-    err: &canvas_core::resolve::ResolveError,
-) -> ExitCode {
+pub fn resolve_error(session: &Session, err: &canvas_core::resolve::ResolveError) -> Handled {
     use canvas_core::resolve::ResolveError;
     let candidates: Vec<_> = match err {
         ResolveError::NotFound { candidates } | ResolveError::Ambiguous { candidates } => {
@@ -213,17 +165,16 @@ pub fn resolve_error(
     env.profile.clone_from(&session.profile);
     env.identity = Some(session.identity_ref());
     env.requests = session.requests();
-    emit(globals.json, &env, || {
-        writeln!(io::stderr(), "{err}")?;
-        for c in &candidates {
-            writeln!(
-                io::stderr(),
-                "{}  {}  {}",
-                c["id"].as_str().unwrap_or(""),
-                c["code"].as_str().unwrap_or(""),
-                c["name"].as_str().unwrap_or("")
-            )?;
-        }
-        Ok(())
-    })
+    let mut message = err.to_string();
+    for c in &candidates {
+        use std::fmt::Write as _;
+        let _ = write!(
+            message,
+            "\n{}  {}  {}",
+            c["id"].as_str().unwrap_or(""),
+            c["code"].as_str().unwrap_or(""),
+            c["name"].as_str().unwrap_or("")
+        );
+    }
+    Handled::error_envelope(env, message)
 }

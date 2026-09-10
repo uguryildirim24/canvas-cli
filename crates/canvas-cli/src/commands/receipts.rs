@@ -9,7 +9,8 @@ use canvas_core::receipts::{ListFilter, acknowledge, export, list_journals, show
 use serde::Serialize;
 
 use super::Globals;
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use crate::output::SCHEMA_RECEIPTS;
 
 /// Receipts subcommand after clap parsing.
@@ -54,8 +55,13 @@ struct AckJson {
     acknowledged_at: String,
 }
 
-/// Dispatch receipts commands.
+/// Run `canvas receipts` for the CLI: one envelope, one exit code.
 pub fn run(globals: &Globals, cmd: ReceiptsCmd) -> ExitCode {
+    handle(globals, cmd).emit(globals.json)
+}
+
+/// Dispatch receipts commands.
+pub fn handle(globals: &Globals, cmd: ReceiptsCmd) -> Handled {
     match cmd {
         ReceiptsCmd::List { course, state } => list(globals, course.as_deref(), state.as_deref()),
         ReceiptsCmd::Show { id } => show_cmd(globals, &id),
@@ -64,10 +70,10 @@ pub fn run(globals: &Globals, cmd: ReceiptsCmd) -> ExitCode {
     }
 }
 
-fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCode {
+fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let course_id = if let Some(course) = course {
         let course = course.to_owned();
@@ -82,10 +88,9 @@ fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCod
         });
         match resolved {
             Ok(Ok(id)) => Some(id),
-            Ok(Err(e)) => return super::emit::resolve_error(globals, &session, &e),
+            Ok(Err(e)) => return super::emit::resolve_error(&session, &e),
             Err(e) => {
                 return emit_error(
-                    globals.json,
                     "local",
                     &e.to_string(),
                     13,
@@ -102,7 +107,6 @@ fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCod
             Ok(st) => Some(st),
             Err(()) => {
                 return emit_error(
-                    globals.json,
                     "usage",
                     &format!("unknown state {s}"),
                     2,
@@ -121,7 +125,6 @@ fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCod
         Ok(j) => j,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -137,7 +140,7 @@ fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCod
             .collect(),
     };
     let env = base_envelope(SCHEMA_RECEIPTS, &session, payload);
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         for j in &env.result.journals {
             if let Some(id) = j.get("journal_id").and_then(|v| v.as_str()) {
                 let state = j.get("state").and_then(|v| v.as_str()).unwrap_or("?");
@@ -162,16 +165,15 @@ fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCod
     })
 }
 
-fn show_cmd(globals: &Globals, id: &str) -> ExitCode {
+fn show_cmd(globals: &Globals, id: &str) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let shown = match show(&session.open.store, &session.paths.identity_dir, id) {
         Ok(s) => s,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "not_found",
                 &e.to_string(),
                 8,
@@ -188,7 +190,7 @@ fn show_cmd(globals: &Globals, id: &str) -> ExitCode {
             .and_then(|r| serde_json::to_value(r).ok()),
     };
     let env = base_envelope(SCHEMA_RECEIPTS, &session, payload);
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         let mut table = crate::output::new_table();
         for field in [
             "journal_id",
@@ -223,10 +225,10 @@ fn show_cmd(globals: &Globals, id: &str) -> ExitCode {
     })
 }
 
-fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> ExitCode {
+fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let result = match export(&session.open.store, &session.paths, id, out) {
         Ok(r) => r,
@@ -237,7 +239,6 @@ fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> Exi
                 13
             };
             return emit_error(
-                globals.json,
                 "export",
                 &e.to_string(),
                 exit,
@@ -246,14 +247,15 @@ fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> Exi
             );
         }
     };
+    // `--out -` streams the receipt with no envelope (§7).
     if let Some(body) = result.body {
-        return match io::stdout().write_all(&body) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                let _ = writeln!(io::stderr(), "{e}");
-                ExitCode::from(1)
-            }
+        let payload = ExportJson {
+            receipt_id: result.receipt_id,
+            path: None,
+            bytes: result.bytes,
         };
+        let envelope = base_envelope(SCHEMA_RECEIPTS, &session, payload);
+        return Handled::raw(envelope, body);
     }
     let payload = ExportJson {
         receipt_id: result.receipt_id,
@@ -261,7 +263,7 @@ fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> Exi
         bytes: result.bytes,
     };
     let env = base_envelope(SCHEMA_RECEIPTS, &session, payload);
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         if let Some(path) = &env.result.path {
             writeln!(io::stdout(), "exported {} ({path})", env.result.receipt_id)?;
         }
@@ -269,16 +271,15 @@ fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> Exi
     })
 }
 
-fn ack_cmd(globals: &Globals, journal_id: &str) -> ExitCode {
+fn ack_cmd(globals: &Globals, journal_id: &str) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let result = match acknowledge(&session.open.store, journal_id) {
         Ok(r) => r,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "acknowledge",
                 &e.to_string(),
                 8,
@@ -292,7 +293,7 @@ fn ack_cmd(globals: &Globals, journal_id: &str) -> ExitCode {
         acknowledged_at: result.acknowledged_at,
     };
     let env = base_envelope(SCHEMA_RECEIPTS, &session, payload);
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         writeln!(
             io::stdout(),
             "acknowledged {} at {}",
