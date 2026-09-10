@@ -98,6 +98,36 @@ pub async fn preflight(
     frozen: FrozenInput,
     now: Timestamp,
 ) -> Result<PreflightOutcome, PreflightError> {
+    preflight_with_input(
+        client,
+        store,
+        identity_dir,
+        identity_key,
+        course_id,
+        assignment_id,
+        frozen.kind,
+        move || Ok(frozen),
+        now,
+    )
+    .await
+}
+
+/// Run the ordered preflight, freezing on a blocking worker only after eligibility.
+#[allow(clippy::too_many_arguments)]
+pub async fn preflight_with_input<F>(
+    client: &Client,
+    store: &Store,
+    identity_dir: &Path,
+    identity_key: &str,
+    course_id: i64,
+    assignment_id: i64,
+    kind: InputKind,
+    freeze: F,
+    now: Timestamp,
+) -> Result<PreflightOutcome, PreflightError>
+where
+    F: FnOnce() -> Result<FrozenInput, FreezeError> + Send + 'static,
+{
     let _ = identity_key;
     // Step 1: fresh assignment GET.
     let assignment = get_assignment_for_submit(client, course_id, assignment_id).await?;
@@ -111,10 +141,37 @@ pub async fn preflight(
     let recovered = recover_active(store, identity_dir, assignment_id)?;
 
     // Steps 3–4.
-    check_group_and_types(&assignment, frozen.kind)?;
+    check_group_and_types(&assignment, kind)?;
     check_eligibility(&assignment, now)?;
 
-    // Steps 5–6 (freeze already done by caller; baseline from assignment).
+    // Step 5: freeze once under admission, after eligibility.
+    let frozen = tokio::task::spawn_blocking(freeze)
+        .await
+        .map_err(|_| std::io::Error::other("input worker failed"))??;
+    if frozen.kind != kind {
+        return Err(PreflightError::Validation("input kind changed".into()));
+    }
+    if kind == InputKind::OnlineUpload {
+        let extensions = assignment.allowed_extensions.as_value();
+        if let Some(extensions) = extensions.filter(|xs| !xs.is_empty()) {
+            for file in &frozen.payload.files {
+                let extension = std::path::Path::new(&file.name)
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                if !extensions
+                    .iter()
+                    .any(|allowed| allowed.eq_ignore_ascii_case(extension))
+                {
+                    return Err(PreflightError::Refused(format!(
+                        "disallowed extension: {}",
+                        file.name
+                    )));
+                }
+            }
+        }
+    }
+    // Step 6: baseline from the fresh assignment.
     let baseline_attempt = assignment
         .submission
         .as_ref()
@@ -130,6 +187,18 @@ pub async fn preflight(
         .and_then(|c| c.course_code.clone());
 
     let mut frozen = frozen;
+    frozen.payload.time_zone = store
+        .call_blocking(|c| {
+            use rusqlite::OptionalExtension;
+            Ok(c.state
+                .query_row(
+                    "SELECT value FROM identity WHERE key='time_zone'",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?)
+        })
+        .map_err(JournalError::from)?;
     frozen.payload.assignment_name.clone_from(&assignment_name);
     frozen.payload.course_code.clone_from(&course_code);
     frozen.payload.due_at.clone_from(&due_at);
@@ -292,7 +361,7 @@ fn check_eligibility(assignment: &Assignment, now: Timestamp) -> Result<(), Pref
             .as_ref()
             .and_then(|s| s.extra_attempts)
             .unwrap_or(0);
-        if used >= allowed + extra {
+        if i128::from(used) >= i128::from(allowed) + i128::from(extra) {
             return Err(PreflightError::Refused("no attempts remaining".into()));
         }
     }
