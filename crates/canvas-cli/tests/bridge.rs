@@ -155,7 +155,7 @@ impl Fixture {
             stdin: Some(stdin),
             stdout: Some(stdout),
             log: Arc::new(Mutex::new(Vec::new())),
-            from_host: Arc::new(Mutex::new(Vec::new())),
+            answers: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -170,7 +170,7 @@ struct Host {
     /// Every message that crossed either pipe, as raw JSON.
     log: Arc<Mutex<Vec<String>>>,
     /// Only the messages the host wrote.
-    from_host: Arc<Mutex<Vec<String>>>,
+    answers: Arc<Mutex<Vec<String>>>,
 }
 
 impl Host {
@@ -208,7 +208,7 @@ impl Host {
             .expect("a message body");
         let text = String::from_utf8_lossy(&body).into_owned();
         self.log.lock().unwrap().push(text.clone());
-        self.from_host.lock().unwrap().push(text);
+        self.answers.lock().unwrap().push(text);
         serde_json::from_slice(&body).expect("json")
     }
 
@@ -229,8 +229,8 @@ impl Host {
     }
 
     /// Only what the host wrote, which is the half this package promises.
-    fn from_host(&self) -> String {
-        self.from_host.lock().unwrap().join("\n")
+    fn answered(&self) -> String {
+        self.answers.lock().unwrap().join("\n")
     }
 
     fn hello(&mut self, extension_id: &str) {
@@ -432,7 +432,7 @@ fn nothing_on_the_wire_carries_a_secret() {
 
     // The whole wire, and the host's half of it on its own.
     let wire = host.wire();
-    let from_host = host.from_host();
+    let answered = host.answered();
     for forbidden in [
         TOKEN,
         "Cookie",
@@ -450,8 +450,8 @@ fn nothing_on_the_wire_carries_a_secret() {
     }
     for forbidden in [PAGE_SECRET, "verifier", "X-Amz-Signature", "deadbeef"] {
         assert!(
-            !from_host.contains(forbidden),
-            "the host echoed {forbidden}:\n{from_host}"
+            !answered.contains(forbidden),
+            "the host echoed {forbidden}:\n{answered}"
         );
     }
     host.stop();
