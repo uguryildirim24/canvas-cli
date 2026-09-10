@@ -13,28 +13,46 @@ use canvas_core::submit::{
 use jiff::Timestamp;
 
 use super::Globals;
-use super::emit::{base_envelope, emit, emit_error, require_client, session_error, sync_error};
+use super::emit::{base_envelope, emit_error, require_client, session_error, sync_error};
+use super::handled::Handled;
 use crate::output::{
     Outcome, SCHEMA_SUBMIT, SubmitCandidateJson, SubmitFileJson, SubmitResult, SubmitTextJson,
 };
 use crate::session::Session;
 
-/// Run `canvas submit`.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-pub async fn run(
-    globals: &Globals,
-    target: String,
-    assignment: Option<String>,
-    files: Vec<PathBuf>,
-    text: Option<String>,
-    html: Option<PathBuf>,
-    url: Option<String>,
-    comment: Option<String>,
-    yes: bool,
-) -> ExitCode {
+/// Operands and flags of one `canvas submit` invocation (§5).
+#[derive(Debug, Clone, Default)]
+pub struct SubmitArgs {
+    pub target: String,
+    pub assignment: Option<String>,
+    pub files: Vec<PathBuf>,
+    pub text: Option<String>,
+    pub html: Option<PathBuf>,
+    pub url: Option<String>,
+    pub comment: Option<String>,
+    pub yes: bool,
+}
+
+/// Run `canvas submit` for the CLI: one envelope, one exit code.
+pub async fn run(globals: &Globals, args: SubmitArgs) -> ExitCode {
+    handle(globals, args).await.emit(globals.json)
+}
+
+/// Prepare and dispatch one submission (§12.2).
+#[allow(clippy::too_many_lines)]
+pub async fn handle(globals: &Globals, args: SubmitArgs) -> Handled {
+    let SubmitArgs {
+        target,
+        assignment,
+        files,
+        text,
+        html,
+        url,
+        comment,
+        yes,
+    } = args;
     if globals.offline {
         return emit_error(
-            globals.json,
             "usage",
             "this command cannot run with --offline",
             2,
@@ -45,14 +63,14 @@ pub async fn run(
 
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let client = match require_client(globals, &session) {
         Ok(c) => c,
         Err(code) => return code,
     };
     if let Err(e) = session.validate_network_token().await {
-        return sync_error(globals, &session, &e);
+        return sync_error(&session, &e);
     }
 
     // Pre-flight step 1: resolve the course and the assignment (SPEC §6).
@@ -105,7 +123,7 @@ pub async fn run(
     .await
     {
         Ok(o) => o,
-        Err(e) => return map_preflight_error(globals, &session, e),
+        Err(e) => return map_preflight_error(&session, e),
     };
 
     // The assignment GET omits the course include; fall back to the resolved code.
@@ -129,11 +147,11 @@ pub async fn run(
             Ok(true) => {}
             Ok(false) => {
                 drop(outcome.admission);
-                return selected_error(globals, &session, "cancelled", "submission cancelled", 11);
+                return selected_error(&session, "cancelled", "submission cancelled", 11);
             }
             Err(message) => {
                 drop(outcome.admission);
-                return selected_error(globals, &session, "usage", &message, 2);
+                return selected_error(&session, "usage", &message, 2);
             }
         }
     }
@@ -148,7 +166,7 @@ pub async fn run(
         Ok(pair) => pair,
         Err(e) => {
             drop(outcome.admission);
-            return map_preflight_error(globals, &session, e);
+            return map_preflight_error(&session, e);
         }
     };
     drop(outcome.admission);
@@ -171,9 +189,9 @@ pub async fn run(
                     |w| format!("assignment is past due; {w}"),
                 ));
             }
-            emit_submit_ok(globals, &session, &exec, &frozen, freshness)
+            emit_submit_ok(&session, &exec, &frozen, freshness)
         }
-        Err(e) => map_execute_error(globals, &session, &journal_id, e, freshness),
+        Err(e) => map_execute_error(&session, &journal_id, e, freshness),
     }
 }
 
@@ -301,12 +319,11 @@ fn read_confirmation() -> Result<bool, String> {
 }
 
 fn emit_submit_ok(
-    globals: &Globals,
     session: &Session,
     exec: &ExecuteOutcome,
     frozen: &FrozenInput,
     freshness: Vec<crate::output::Freshness>,
-) -> ExitCode {
+) -> Handled {
     let (outcome, exit) = match exec.state {
         State::Submitted | State::Matched => (Outcome::Ok, 0),
         State::Refused => (Outcome::Refused, 8),
@@ -319,7 +336,6 @@ fn emit_submit_ok(
     let mut result = build_submit_result(exec, frozen);
     if let Err(e) = hydrate_submit_result(&session.open.store, &mut result) {
         return emit_error(
-            globals.json,
             "local",
             &e.to_string(),
             13,
@@ -373,7 +389,7 @@ fn emit_submit_ok(
     if let Some(w) = &exec.warning {
         envelope.warnings.push(w.clone());
     }
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         render_submit(io::stdout(), &envelope.result)
     })
 }
@@ -413,17 +429,16 @@ fn build_submit_result(exec: &ExecuteOutcome, frozen: &FrozenInput) -> SubmitRes
     }
 }
 
-fn map_preflight_error(globals: &Globals, session: &Session, err: PreflightError) -> ExitCode {
-    map_submit_error(globals, session, err.into())
+fn map_preflight_error(session: &Session, err: PreflightError) -> Handled {
+    map_submit_error(session, err.into())
 }
 
 fn map_execute_error(
-    globals: &Globals,
     session: &Session,
     journal_id: &str,
     err: ExecuteError,
     freshness: Vec<crate::output::Freshness>,
-) -> ExitCode {
+) -> Handled {
     let row = get_journal(&session.open.store, journal_id).ok().flatten();
     if let Some(row) = &row
         && matches!(
@@ -450,7 +465,7 @@ fn map_execute_error(
             payload: canvas_core::journal::IntendedPayload::default(),
             file_paths: vec![],
         };
-        return emit_submit_ok(globals, session, &exec, &frozen, freshness);
+        return emit_submit_ok(session, &exec, &frozen, freshness);
     }
     let details = row.map_or_else(|| serde_json::json!({"journal_id":journal_id}), |row| serde_json::json!({
         "journal_id":journal_id,"state":row.state.as_str(),
@@ -461,7 +476,7 @@ fn map_execute_error(
     env.profile.clone_from(&session.profile);
     env.identity = Some(session.identity_ref());
     env.requests = session.requests();
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         writeln!(io::stderr(), "{}", env.result.message)
     })
 }
@@ -565,10 +580,10 @@ pub(super) fn render_submit(mut out: impl Write, result: &SubmitResult) -> io::R
     Ok(())
 }
 
-fn map_submit_error(globals: &Globals, session: &Session, err: SubmitError) -> ExitCode {
+fn map_submit_error(session: &Session, err: SubmitError) -> Handled {
     let (code, exit, message) = match err {
         SubmitError::Validation(message) => ("usage", 2, message),
-        SubmitError::Network(error) => return sync_error(globals, session, &error.into()),
+        SubmitError::Network(error) => return sync_error(session, &error.into()),
         SubmitError::InProgress { journal_id } => (
             "refused",
             8,
@@ -586,21 +601,15 @@ fn map_submit_error(globals: &Globals, session: &Session, err: SubmitError) -> E
         SubmitError::Io(e) => ("local", 13, e.to_string()),
         SubmitError::Json(e) => ("local", 13, e.to_string()),
     };
-    selected_error(globals, session, code, &message, exit)
+    selected_error(session, code, &message, exit)
 }
 
-fn selected_error(
-    globals: &Globals,
-    session: &Session,
-    code: &str,
-    message: &str,
-    exit: u8,
-) -> ExitCode {
+fn selected_error(session: &Session, code: &str, message: &str, exit: u8) -> Handled {
     let mut env = crate::output::error_envelope(code, message, None, serde_json::json!({}), exit);
     env.profile.clone_from(&session.profile);
     env.identity = Some(session.identity_ref());
     env.requests = session.requests();
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         writeln!(io::stderr(), "{}", env.result.message)
     })
 }

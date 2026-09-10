@@ -10,7 +10,8 @@ use canvas_core::store::DbError;
 use comfy_table::Row;
 
 use super::Globals;
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use crate::output::{AliasJson, AliasResult, SCHEMA_ALIAS, apply_two_space_padding, new_table};
 use crate::session::Session;
 
@@ -21,21 +22,26 @@ pub enum AliasCmd {
     Remove { name: String },
 }
 
-/// Run `canvas alias …`.
+/// Run `canvas alias` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, command: AliasCmd) -> ExitCode {
+    handle(globals, command).await.emit(globals.json)
+}
+
+/// Run `canvas alias …`.
+pub async fn handle(globals: &Globals, command: AliasCmd) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     match command {
-        AliasCmd::Set { name, course } => set(globals, &session, name, course).await,
-        AliasCmd::List => list(globals, &session).await,
-        AliasCmd::Remove { name } => remove(globals, &session, name).await,
+        AliasCmd::Set { name, course } => set(&session, name, course).await,
+        AliasCmd::List => list(&session).await,
+        AliasCmd::Remove { name } => remove(&session, name).await,
     }
 }
 
-async fn set(globals: &Globals, session: &Session, name: String, course: String) -> ExitCode {
+async fn set(session: &Session, name: String, course: String) -> Handled {
     let origin = session.identity.origin.clone();
     let resolved = match session
         .open
@@ -50,10 +56,9 @@ async fn set(globals: &Globals, session: &Session, name: String, course: String)
         .await
     {
         Ok(Ok(r)) => r,
-        Ok(Err(e)) => return super::emit::resolve_error(globals, session, &e),
+        Ok(Err(e)) => return super::emit::resolve_error(session, &e),
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -76,9 +81,8 @@ async fn set(globals: &Globals, session: &Session, name: String, course: String)
         })
         .await
     {
-        Ok(result) => emit_alias(globals, session, result),
+        Ok(result) => emit_alias(session, result),
         Err(e) => emit_error(
-            globals.json,
             "local",
             &e.to_string(),
             13,
@@ -88,11 +92,10 @@ async fn set(globals: &Globals, session: &Session, name: String, course: String)
     }
 }
 
-async fn list(globals: &Globals, session: &Session) -> ExitCode {
+async fn list(session: &Session) -> Handled {
     match session.open.store.call(load_alias_result).await {
-        Ok(result) => emit_alias(globals, session, result),
+        Ok(result) => emit_alias(session, result),
         Err(e) => emit_error(
-            globals.json,
             "local",
             &e.to_string(),
             13,
@@ -102,7 +105,7 @@ async fn list(globals: &Globals, session: &Session) -> ExitCode {
     }
 }
 
-async fn remove(globals: &Globals, session: &Session, name: String) -> ExitCode {
+async fn remove(session: &Session, name: String) -> Handled {
     match session
         .open
         .store
@@ -115,9 +118,8 @@ async fn remove(globals: &Globals, session: &Session, name: String) -> ExitCode 
         })
         .await
     {
-        Ok(result) => emit_alias(globals, session, result),
+        Ok(result) => emit_alias(session, result),
         Err(e) => emit_error(
-            globals.json,
             "local",
             &e.to_string(),
             13,
@@ -156,9 +158,9 @@ fn load_alias_result(conns: &mut canvas_core::store::StoreConns) -> Result<Alias
     Ok(AliasResult { aliases })
 }
 
-fn emit_alias(globals: &Globals, session: &Session, result: AliasResult) -> ExitCode {
+fn emit_alias(session: &Session, result: AliasResult) -> Handled {
     let envelope = base_envelope(SCHEMA_ALIAS, session, result);
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         let mut table = new_table();
         table.set_header(Row::from(vec!["NAME", "COURSE_ID", "CODE"]));
         for a in &envelope.result.aliases {

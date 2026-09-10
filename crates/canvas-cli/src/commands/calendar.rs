@@ -20,7 +20,8 @@ use serde_json::Value;
 use super::announcements::{denial_scopes, json_string};
 use super::course_load::{RefreshFail, cached_outcome_with_error, outcome_freshness};
 use super::duration::rfc_duration;
-use super::emit::{base_envelope, emit, emit_error, session_error, sync_error};
+use super::emit::{base_envelope, emit_error, session_error, sync_error};
+use super::handled::Handled;
 use super::{Globals, assignment_read as read};
 use crate::output::{
     CalendarItemJson, CalendarResult, Freshness, Outcome, SCHEMA_CALENDAR, WindowJson,
@@ -49,10 +50,15 @@ enum IcsTarget {
 
 /// Run `canvas calendar [--days N] [--course <course>] [--ics PATH|-] [--alarm DURATION]`.
 #[allow(clippy::too_many_lines)]
+/// Run `canvas calendar` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
+    handle(globals, args).await.emit(globals.json)
+}
+
+pub async fn handle(globals: &Globals, args: CalendarArgs) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let days = args.days.unwrap_or(DEFAULT_DAYS);
     if days == 0
@@ -63,7 +69,6 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
             .is_err()
     {
         return usage(
-            globals,
             &session,
             "days must be positive and fit the supported date range",
         );
@@ -76,11 +81,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
         Some(raw) => match rfc_duration(raw).filter(|d| canvas_core::ics::valid_alarm(d)) {
             Some(alarm) => Some(alarm),
             None => {
-                return usage(
-                    globals,
-                    &session,
-                    "--alarm takes a duration such as 30m, 24h, or 2d",
-                );
+                return usage(&session, "--alarm takes a duration such as 30m, 24h, or 2d");
             }
         },
     };
@@ -115,7 +116,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
             freshness.push(outcome_freshness(&outcome));
             scope
         }
-        Err(e) => return sync_error(globals, &session, &e),
+        Err(e) => return sync_error(&session, &e),
     };
 
     let contexts = match contexts_for(globals, &session, &mut freshness).await {
@@ -125,7 +126,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
     let context_window = ContextWindow::contexts(window.clone(), &contexts);
     let events = match ensure_calendar_events(globals, &session, &context_window).await {
         Ok(o) => o,
-        Err(e) => return super::course::refresh_fail(globals, &session, e),
+        Err(e) => return super::course::refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&events.outcome));
 
@@ -185,7 +186,7 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
         .await;
     let (deadlines, event_rows) = match loaded {
         Ok(v) => v,
-        Err(e) => return sync_error(globals, &session, &e.into()),
+        Err(e) => return sync_error(&session, &e.into()),
     };
 
     let key = session.identity.key.to_string();
@@ -244,7 +245,6 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
             // from Canvas, so this is exit 1 (§14).
             Err(e) => {
                 return emit_error(
-                    globals.json,
                     "generic",
                     &format!("cannot write iCalendar: {e}"),
                     1,
@@ -255,26 +255,10 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
         }
     };
 
-    // `--ics -` streams raw text with no envelope (§7).
-    if matches!(target, IcsTarget::Stdout) {
-        for warning in &warnings {
-            let _ = writeln!(io::stderr(), "warning: {warning}");
-        }
-        if let Err(e) = io::stdout().write_all(text.as_bytes()) {
-            let _ = writeln!(io::stderr(), "{e}");
-            return ExitCode::from(1);
-        }
-        return if events.denials.is_empty() {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::from(12)
-        };
-    }
     if let IcsTarget::Path(path) = &target
         && let Err(e) = std::fs::write(path, text.as_bytes())
     {
         return emit_error(
-            globals.json,
             "local",
             &format!("cannot write {}: {e}", path.display()),
             13,
@@ -307,11 +291,17 @@ pub async fn run(globals: &Globals, args: CalendarArgs) -> ExitCode {
         envelope.exit = 12;
     }
 
+    // `--ics -` streams raw text with no envelope (§7). The envelope still
+    // carries the outcome, so the exit and the warnings stay the command's.
+    if matches!(target, IcsTarget::Stdout) {
+        return Handled::raw(envelope, text.into_bytes());
+    }
+
     let written = match &target {
         IcsTarget::Path(path) => Some(path.display().to_string()),
         IcsTarget::None | IcsTarget::Stdout => None,
     };
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         if let Some(path) = &written {
             writeln!(
                 io::stdout(),
@@ -456,7 +446,7 @@ async fn contexts_for(
     globals: &Globals,
     session: &Session,
     freshness: &mut Vec<Freshness>,
-) -> Result<Vec<String>, ExitCode> {
+) -> Result<Vec<String>, Handled> {
     let courses = match super::course_load::ensure_courses(
         session,
         CoursesScope::Active,
@@ -468,7 +458,7 @@ async fn contexts_for(
     .await
     {
         Ok(o) => o,
-        Err(e) => return Err(super::course::refresh_fail(globals, session, e)),
+        Err(e) => return Err(super::course::refresh_fail(session, e)),
     };
     freshness.push(outcome_freshness(&courses));
     let ids = session
@@ -483,7 +473,6 @@ async fn contexts_for(
         .await
         .map_err(|e| {
             emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -663,9 +652,8 @@ fn load_calendar_events(conns: &StoreConns, scope: &str) -> Result<Vec<EventRow>
     Ok(rows)
 }
 
-fn usage(globals: &Globals, session: &Session, message: &str) -> ExitCode {
+fn usage(session: &Session, message: &str) -> Handled {
     emit_error(
-        globals.json,
         "usage",
         message,
         2,

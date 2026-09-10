@@ -11,7 +11,8 @@ use jiff::Timestamp;
 use serde::Serialize;
 
 use super::Globals;
-use super::emit::{base_envelope, emit, emit_error, require_client, session_error};
+use super::emit::{base_envelope, emit_error, require_client, session_error};
+use super::handled::Handled;
 use crate::output::{Outcome, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_VERIFY};
 
 /// Submission subcommand operands after clap parsing.
@@ -74,8 +75,13 @@ struct VerifyBodyJson {
     status: String,
 }
 
-/// Dispatch submission commands.
+/// Run `canvas submission` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, cmd: SubmissionCmd) -> ExitCode {
+    handle(globals, cmd).await.emit(globals.json)
+}
+
+/// Dispatch submission commands.
+pub async fn handle(globals: &Globals, cmd: SubmissionCmd) -> Handled {
     match cmd {
         SubmissionCmd::Show {
             course,
@@ -90,14 +96,10 @@ pub async fn run(globals: &Globals, cmd: SubmissionCmd) -> ExitCode {
     }
 }
 
-async fn reconcile_cmd(
-    globals: &Globals,
-    journal_id: &str,
-    assume_not_submitted: bool,
-) -> ExitCode {
+async fn reconcile_cmd(globals: &Globals, journal_id: &str, assume_not_submitted: bool) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let client = match require_client(globals, &session) {
         Ok(c) => c,
@@ -120,7 +122,7 @@ async fn reconcile_cmd(
             .is_ok_and(|s| s != canvas_core::journal::OwnerStatus::Live)
         && let Err(e) = session.validate_network_token().await
     {
-        return super::emit::sync_error(globals, &session, &e);
+        return super::emit::sync_error(&session, &e);
     }
     let result = match reconcile(
         client,
@@ -137,7 +139,6 @@ async fn reconcile_cmd(
             let error: canvas_core::sync::SyncError = e.into();
             let (code, exit, status) = error.classification();
             return reconcile_abort(
-                globals,
                 &session,
                 journal_id,
                 code,
@@ -148,7 +149,6 @@ async fn reconcile_cmd(
         }
         Err(ReconcileError::Journal(canvas_core::journal::JournalError::NotFound)) => {
             return emit_error(
-                globals.json,
                 "refused",
                 "journal not found",
                 8,
@@ -157,15 +157,7 @@ async fn reconcile_cmd(
             );
         }
         Err(e) => {
-            return reconcile_abort(
-                globals,
-                &session,
-                journal_id,
-                "local",
-                &e.to_string(),
-                13,
-                None,
-            );
+            return reconcile_abort(&session, journal_id, "local", &e.to_string(), 13, None);
         }
     };
     let (outcome, exit) = match result.outcome {
@@ -207,7 +199,7 @@ async fn reconcile_cmd(
     env.exit = exit;
     env.outcome = outcome;
     env.requests = session.requests();
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         writeln!(
             io::stdout(),
             "reconcile {} — {}",
@@ -245,14 +237,13 @@ async fn reconcile_cmd(
 }
 
 fn reconcile_abort(
-    globals: &Globals,
     session: &crate::session::Session,
     jid: &str,
     code: &str,
     message: &str,
     exit: u8,
     status: Option<u16>,
-) -> ExitCode {
+) -> Handled {
     let row = canvas_core::journal::get_journal(&session.open.store, jid)
         .ok()
         .flatten();
@@ -261,21 +252,20 @@ fn reconcile_abort(
     env.profile.clone_from(&session.profile);
     env.identity = Some(session.identity_ref());
     env.requests = session.requests();
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         writeln!(io::stderr(), "{}", env.result.message)
     })
 }
 
-async fn verify_cmd(globals: &Globals, receipt_id: &str) -> ExitCode {
+async fn verify_cmd(globals: &Globals, receipt_id: &str) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let receipt = match load_receipt_for_verify(&session.open.store, &session.paths, receipt_id) {
         Ok(r) => r,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "refused",
                 &e.to_string(),
                 8,
@@ -294,7 +284,7 @@ async fn verify_cmd(globals: &Globals, receipt_id: &str) -> ExitCode {
             Err(code) => return code,
         };
         if let Err(e) = session.validate_network_token().await {
-            return super::emit::sync_error(globals, &session, &e);
+            return super::emit::sync_error(&session, &e);
         }
         match verify(
             client,
@@ -307,11 +297,10 @@ async fn verify_cmd(globals: &Globals, receipt_id: &str) -> ExitCode {
         {
             Ok(r) => r,
             Err(VerifyError::Network(e)) => {
-                return super::emit::sync_error(globals, &session, &e.into());
+                return super::emit::sync_error(&session, &e.into());
             }
             Err(e) => {
                 return emit_error(
-                    globals.json,
                     "verify",
                     &e.to_string(),
                     13,
@@ -361,7 +350,7 @@ async fn verify_cmd(globals: &Globals, receipt_id: &str) -> ExitCode {
     env.exit = exit;
     env.outcome = outcome;
     env.requests = session.requests();
-    emit(globals.json, &env, || {
+    Handled::new(env, move |env| {
         writeln!(
             io::stdout(),
             "verify {}  receipt={}  attempt={}  attribution={}",
@@ -415,10 +404,10 @@ async fn show_cmd(
     course: &str,
     assignment: Option<&str>,
     history: bool,
-) -> ExitCode {
+) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let mut freshness = Vec::new();
     let mut outcomes = Vec::new();
@@ -437,7 +426,7 @@ async fn show_cmd(
     };
     match super::assignment_read::submission(&session, globals, course.id, assignment_id).await {
         Ok(o) => outcomes.push(o),
-        Err(e) => return super::emit::sync_error(globals, &session, &e),
+        Err(e) => return super::emit::sync_error(&session, &e),
     }
 
     let cached = match session
@@ -451,12 +440,11 @@ async fn show_cmd(
         .await
     {
         Ok(pair) => pair,
-        Err(e) => return super::emit::sync_error(globals, &session, &e.into()),
+        Err(e) => return super::emit::sync_error(&session, &e.into()),
     };
     let (row, pending_journals) = cached;
     let Some(row) = row else {
         return emit_error(
-            globals.json,
             "offline",
             "no cached submission for this assignment",
             7,
@@ -474,7 +462,7 @@ async fn show_cmd(
         .warnings
         .extend(outcomes.into_iter().filter_map(|o| o.error));
     envelope.requests = session.requests();
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         render_submission(io::stdout(), &envelope.result, &course, &zone)
     })
 }

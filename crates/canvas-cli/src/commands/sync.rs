@@ -13,7 +13,8 @@ use comfy_table::Row;
 
 use super::Globals;
 use super::course_load::{load_courses_for_scope, map_source, u64_count};
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use crate::output::{
     FreshnessSource, SCHEMA_SYNC, SyncDatasetJson, SyncResult, apply_two_space_padding, new_table,
     now_timestamp,
@@ -23,11 +24,15 @@ use crate::session::{
     ttl_missing, ttl_modules, ttl_planner,
 };
 
-/// Run `canvas sync`.
+/// Run `canvas sync` for the CLI: one envelope, one exit code.
 pub async fn run(globals: &Globals, full: bool) -> ExitCode {
+    handle(globals, full).await.emit(globals.json)
+}
+
+/// Run `canvas sync`.
+pub async fn handle(globals: &Globals, full: bool) -> Handled {
     if globals.offline {
         return emit_error(
-            globals.json,
             "usage",
             "sync cannot be used with --offline",
             2,
@@ -38,12 +43,11 @@ pub async fn run(globals: &Globals, full: bool) -> ExitCode {
 
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
 
     let Some(client) = session.client.as_ref() else {
         return emit_error(
-            globals.json,
             "auth",
             "no token; set CANVAS_TOKEN or run auth login",
             3,
@@ -53,12 +57,12 @@ pub async fn run(globals: &Globals, full: bool) -> ExitCode {
     };
 
     if let Err(e) = session.validate_network_token().await {
-        return super::emit::sync_error(globals, &session, &e);
+        return super::emit::sync_error(&session, &e);
     }
 
     let warnings = Vec::new();
 
-    let refreshed = match refresh_all(globals, &session, client, full).await {
+    let refreshed = match refresh_all(&session, client, full).await {
         Ok(d) => d,
         Err(code) => return code,
     };
@@ -81,7 +85,7 @@ pub async fn run(globals: &Globals, full: bool) -> ExitCode {
     }
     envelope.warnings = warnings;
 
-    emit(globals.json, &envelope, || print_table(&envelope.result))
+    Handled::new(envelope, move |envelope| print_table(&envelope.result))
 }
 
 struct Refreshed {
@@ -91,11 +95,10 @@ struct Refreshed {
 
 #[allow(clippy::too_many_lines)]
 async fn refresh_all(
-    globals: &Globals,
     session: &Session,
     client: &canvas_api::Client,
     full: bool,
-) -> Result<Refreshed, ExitCode> {
+) -> Result<Refreshed, Handled> {
     let now = now_timestamp();
     let ttl_c = ttl_courses();
     let ttl_g = ttl_grades();
@@ -112,7 +115,7 @@ async fn refresh_all(
         false,
     )
     .await
-    .map_err(|e| sync_err(globals, session, &e))?;
+    .map_err(|e| sync_err(session, &e))?;
     datasets.push(to_dataset(&courses));
 
     let grades = refresh_enrollment_grades(
@@ -125,7 +128,7 @@ async fn refresh_all(
         false,
     )
     .await
-    .map_err(|e| sync_err(globals, session, &e))?;
+    .map_err(|e| sync_err(session, &e))?;
     datasets.push(to_dataset(&grades));
 
     let course_ids = session
@@ -140,7 +143,6 @@ async fn refresh_all(
         .await
         .map_err(|e| {
             emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -181,7 +183,7 @@ async fn refresh_all(
                     error: Some(e.safe_message()),
                 });
             }
-            Err(e) => return Err(sync_err(globals, session, &e)),
+            Err(e) => return Err(sync_err(session, &e)),
         }
     }
     // §5: the base refresh also covers assignments (with `include[]=submission`,
@@ -199,12 +201,12 @@ async fn refresh_all(
             false,
         )
         .await
-        .map_err(|e| sync_err(globals, session, &e))?;
+        .map_err(|e| sync_err(session, &e))?;
         datasets.push(to_dataset(&outcome));
     }
     let missing = refresh_missing(client, &session.open.store, ttl_missing(), now, true, false)
         .await
-        .map_err(|e| sync_err(globals, session, &e))?;
+        .map_err(|e| sync_err(session, &e))?;
     datasets.push(to_dataset(&missing));
     let planner = refresh_planner(
         client,
@@ -216,7 +218,7 @@ async fn refresh_all(
         false,
     )
     .await
-    .map_err(|e| sync_err(globals, session, &e))?;
+    .map_err(|e| sync_err(session, &e))?;
     datasets.push(to_dataset(&planner));
 
     let announcements = refresh_announcements(
@@ -229,7 +231,7 @@ async fn refresh_all(
         false,
     )
     .await
-    .map_err(|e| sync_err(globals, session, &e))?;
+    .map_err(|e| sync_err(session, &e))?;
     datasets.push(to_dataset(&announcements.outcome));
     partial.extend(denial_partials("announcements", &announcements.denials));
 
@@ -246,7 +248,7 @@ async fn refresh_all(
                     false,
                 )
                 .await
-                .map_err(|e| sync_err(globals, session, &e))?,
+                .map_err(|e| sync_err(session, &e))?,
                 refresh_files(
                     client,
                     &session.open.store,
@@ -257,7 +259,7 @@ async fn refresh_all(
                     false,
                 )
                 .await
-                .map_err(|e| sync_err(globals, session, &e))?,
+                .map_err(|e| sync_err(session, &e))?,
                 // `modules` fetches the module items it needs in the same
                 // refresh (§10).
                 refresh_modules(
@@ -270,7 +272,7 @@ async fn refresh_all(
                     false,
                 )
                 .await
-                .map_err(|e| sync_err(globals, session, &e))?,
+                .map_err(|e| sync_err(session, &e))?,
             ] {
                 datasets.push(to_dataset(&outcome));
             }
@@ -287,7 +289,7 @@ async fn refresh_all(
             false,
         )
         .await
-        .map_err(|e| sync_err(globals, session, &e))?;
+        .map_err(|e| sync_err(session, &e))?;
         datasets.push(to_dataset(&events.outcome));
         partial.extend(denial_partials("calendar_events", &events.denials));
     }
@@ -296,7 +298,7 @@ async fn refresh_all(
         let mut stmt = conns.cache.prepare("SELECT dataset,scope FROM fetch_log WHERE (dataset='terms' AND scope='active') OR (dataset='course_totals' AND scope IN (SELECT 'course:' || entity_id FROM membership WHERE dataset='courses' AND scope='active'))")?;
         let keys = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
         keys.into_iter().map(|(d,s)| super::course_load::fetch_log_freshness(conns, &d, &s)).collect::<Result<Vec<_>,_>>()
-    }).await.map_err(|e| sync_err(globals, session, &SyncError::Db(e)))?;
+    }).await.map_err(|e| sync_err(session, &SyncError::Db(e)))?;
     for row in derived.into_iter().flatten() {
         datasets.push(SyncDatasetJson {
             dataset: row.dataset,
@@ -397,6 +399,6 @@ fn to_dataset(outcome: &RefreshOutcome) -> SyncDatasetJson {
     }
 }
 
-fn sync_err(globals: &Globals, session: &Session, err: &SyncError) -> ExitCode {
-    super::emit::sync_error(globals, session, err)
+fn sync_err(session: &Session, err: &SyncError) -> Handled {
+    super::emit::sync_error(session, err)
 }
