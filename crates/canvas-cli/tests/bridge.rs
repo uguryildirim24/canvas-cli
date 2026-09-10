@@ -547,6 +547,42 @@ fn an_absent_broker_refuses_with_a_reason() {
     assert_eq!(status["result"]["attachments"], json!([]));
 }
 
+/// `bridge.pause_hidden_after` is validated, and the host tells the companion
+/// what it says: only the extension can see whether the tab is hidden.
+#[test]
+fn the_hidden_tab_timeout_is_configured_and_sent_to_the_companion() {
+    let f = Fixture::new();
+
+    // The default reaches the companion when nothing is configured.
+    let mut host = f.host(EXTENSION);
+    assert_eq!(host.recv_type("ready")["pause_hidden_after_ms"], 600_000);
+    host.stop();
+
+    for good in ["30s", "90s", "600s", "5m", "1h"] {
+        f.run(
+            &["config", "set", "bridge.pause_hidden_after", good],
+            Some(0),
+        );
+    }
+    // A count with no unit, a unit with no count, and zero are not durations.
+    for bad in ["10", "soon", "m", "0m", "1d"] {
+        let output = f
+            .command()
+            .args(["config", "set", "bridge.pause_hidden_after", bad])
+            .output()
+            .expect("run");
+        assert_eq!(output.status.code(), Some(2), "`{bad}` was accepted");
+    }
+
+    f.run(
+        &["config", "set", "bridge.pause_hidden_after", "90s"],
+        Some(0),
+    );
+    let mut host = f.host(EXTENSION);
+    assert_eq!(host.recv_type("ready")["pause_hidden_after_ms"], 90_000);
+    host.stop();
+}
+
 /// `bridge install` writes a private manifest naming this binary, and the
 /// human output tells a person what to do next.
 #[test]
