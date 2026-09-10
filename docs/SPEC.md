@@ -1,6 +1,6 @@
 # canvas-cli — Specification
 
-Status: draft v0.9, 2026-09-10. Owner: Rolf. Supersedes v0.8. Research inputs: `docs/research/r1-canvas-api.md`, `r2-prior-art.md`, `r3-rust-stack.md`, and `docs/agent-ux/REPORT.md` for the post-v1 rounds. §§1–19 and Appendices A–E are the v1 contract. §§20–23 record what the post-v1 packages **built**, as `main` has them; Appendix C names those packages and their review files. §24 and §25 are placeholders for the packages still in flight. Appendix E maps every round-1 to round-7 finding to its resolution.
+Status: v0.9, 2026-09-10. Owner: Rolf. Supersedes v0.8. Research inputs: `docs/research/r1-canvas-api.md`, `r2-prior-art.md`, `r3-rust-stack.md`, and `docs/agent-ux/REPORT.md` for the post-v1 rounds. §§1–19 and Appendices A–E are the v1 contract. §§20–25 record what the post-v1 packages **built**, as `main` has them; Appendix C names those packages and their review files. There are no placeholders left: every section of this document describes code on `main`. §19 holds the questions still open for the owner, and Appendix E maps every round-1 to round-7 finding to its resolution.
 
 ## 0. Summary
 
