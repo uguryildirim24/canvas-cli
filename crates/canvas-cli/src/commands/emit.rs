@@ -9,6 +9,25 @@ use crate::output::{
     Envelope, ErrorResult, IdentityRef, Outcome, SCHEMA_ERROR, error_envelope, generated_at_now,
 };
 use crate::session::{Session, SessionError};
+use canvas_core::resolve::ResolveError;
+use canvas_core::store::DbError;
+
+/// Map a store `call` that returns nested resolve results.
+pub async fn call_resolve<T, F>(session: &Session, f: F) -> Result<Result<T, ResolveError>, DbError>
+where
+    F: FnOnce(&canvas_core::store::StoreConns) -> Result<T, ResolveError> + Send + 'static,
+    T: Send + 'static,
+{
+    session
+        .open
+        .store
+        .call(move |conns| match f(conns) {
+            Ok(v) => Ok(Ok(v)),
+            Err(ResolveError::Db(e)) => Err(e),
+            Err(e) => Ok(Err(e)),
+        })
+        .await
+}
 
 /// Write a success (or completed) envelope as JSON, or run the human renderer.
 pub fn emit<T: Serialize>(
@@ -137,6 +156,7 @@ pub fn resolve_error(
                 )
                 .collect()
         }
+        ResolveError::AssignmentNotFound { candidates } | ResolveError::AssignmentAmbiguous { candidates } => candidates.iter().map(|c| serde_json::json!({"id": c.id.to_string(), "course_id": c.course_id.to_string(), "name":c.name})).collect(),
         _ => Vec::new(),
     };
     let mut env = error_envelope(

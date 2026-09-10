@@ -1,22 +1,39 @@
 //! Hit-predicate refresh helpers.
 
+#![allow(clippy::too_many_arguments, clippy::too_many_lines)]
+
 use canvas_api::Client;
-use canvas_api::models::{Course, Enrollment, File, Folder, GradingPeriod, Module, ModuleItem};
+use canvas_api::models::{
+    Assignment, Course, Enrollment, File, Folder, GradingPeriod, Module, ModuleItem,
+};
 use futures_util::StreamExt;
 use jiff::{Span, Timestamp};
 
 use crate::store::{
-    Dataset, DbError, FetchLogRow, IngestOpts, IngestPage, LookupResult, Store, lookup_dataset,
+    Dataset, DbError, FetchLogRow, IngestOpts, IngestPage, LookupResult, Store, WindowQuery,
+    lookup_dataset,
 };
 
+use super::assignments::{AssignmentsDataset, assignments_path};
 use super::courses::{CoursesDataset, CoursesScope, courses_path};
 use super::enrollment_grades::{EnrollmentGradesDataset, PeriodKey, enrollment_grades_path};
 use super::files::{FilesDataset, files_path};
 use super::folders::{FoldersDataset, folders_path};
 use super::grading_periods::{GradingPeriodsDataset, grading_periods_path};
+use super::missing::{MissingDataset, missing_path};
 use super::modules::{ModulesDataset, module_items_path, modules_path, needs_items_fetch};
 use super::outcome::{FreshnessInfo, FreshnessSource, RefreshOutcome, SyncError};
+use super::planner::{PlannerDataset, PlannerWindow, planner_path};
+use super::submission::{SubmissionDataset, observed_submission, submission_path};
 use super::wire::Observed;
+
+/// Optional window metadata written into `fetch_log`.
+#[derive(Debug, Clone)]
+pub struct WindowMeta {
+    pub start: Timestamp,
+    pub end: Timestamp,
+    pub contexts: String,
+}
 
 /// Refresh the `courses` dataset for `scope`.
 pub async fn refresh_courses(
@@ -29,27 +46,37 @@ pub async fn refresh_courses(
     offline: bool,
 ) -> Result<RefreshOutcome, SyncError> {
     let dataset = CoursesDataset::new(scope, ttl);
-    refresh_dataset(client, store, &dataset, now, fresh, offline, || async {
-        let mut pages = Vec::new();
-        for state in scope.enrollment_states() {
-            let path = courses_path(state);
-            let mut items = Vec::new();
-            let mut stream = std::pin::pin!(client.get_all::<Observed<Course>>(&path));
-            while let Some(page) = stream.next().await {
-                let page = page?;
-                items.extend(page.items);
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let mut pages = Vec::new();
+            for state in scope.enrollment_states() {
+                let path = courses_path(state);
+                let mut items = Vec::new();
+                let mut stream = std::pin::pin!(client.get_all::<Observed<Course>>(&path));
+                while let Some(page) = stream.next().await {
+                    let page = page?;
+                    items.extend(page.items);
+                }
+                let mut entities = Vec::new();
+                for item in items {
+                    entities.push(item.entity(state).await?);
+                }
+                pages.push(IngestPage {
+                    fetched_at: now,
+                    entities,
+                });
             }
-            let mut entities = Vec::new();
-            for item in items {
-                entities.push(item.entity(state).await?);
-            }
-            pages.push(IngestPage {
-                fetched_at: now,
-                entities,
-            });
-        }
-        Ok(FetchBundle { pages })
-    })
+            Ok(FetchBundle { pages })
+        },
+    )
     .await
 }
 
@@ -64,24 +91,34 @@ pub async fn refresh_enrollment_grades(
     offline: bool,
 ) -> Result<RefreshOutcome, SyncError> {
     let dataset = EnrollmentGradesDataset::new(period, ttl);
-    refresh_dataset(client, store, &dataset, now, fresh, offline, || async {
-        let path = enrollment_grades_path(period);
-        let mut items = Vec::new();
-        let mut stream = std::pin::pin!(client.get_all::<Observed<Enrollment>>(&path));
-        while let Some(page) = stream.next().await {
-            let page = page?;
-            items.extend(page.items);
-        }
-        Ok(FetchBundle {
-            pages: vec![IngestPage {
-                fetched_at: now,
-                entities: items
-                    .into_iter()
-                    .map(|e| e.entity(&period.period_value()))
-                    .collect(),
-            }],
-        })
-    })
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let path = enrollment_grades_path(period);
+            let mut items = Vec::new();
+            let mut stream = std::pin::pin!(client.get_all::<Observed<Enrollment>>(&path));
+            while let Some(page) = stream.next().await {
+                let page = page?;
+                items.extend(page.items);
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: items
+                        .into_iter()
+                        .map(|e| e.entity(&period.period_value()))
+                        .collect(),
+                }],
+            })
+        },
+    )
     .await
 }
 
@@ -96,21 +133,198 @@ pub async fn refresh_grading_periods(
     offline: bool,
 ) -> Result<RefreshOutcome, SyncError> {
     let dataset = GradingPeriodsDataset::new(course_id, ttl);
-    refresh_dataset(client, store, &dataset, now, fresh, offline, || async {
-        let path = grading_periods_path(course_id);
-        let mut items = Vec::new();
-        let mut stream = std::pin::pin!(client.get_all_wrapped::<Observed<GradingPeriod>>(&path));
-        while let Some(page) = stream.next().await {
-            let page = page?;
-            items.extend(page.items);
-        }
-        Ok(FetchBundle {
-            pages: vec![IngestPage {
-                fetched_at: now,
-                entities: items.into_iter().map(|p| p.entity(course_id)).collect(),
-            }],
-        })
-    })
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let path = grading_periods_path(course_id);
+            let mut items = Vec::new();
+            let mut stream =
+                std::pin::pin!(client.get_all_wrapped::<Observed<GradingPeriod>>(&path));
+            while let Some(page) = stream.next().await {
+                let page = page?;
+                items.extend(page.items);
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: items.into_iter().map(|p| p.entity(course_id)).collect(),
+                }],
+            })
+        },
+    )
+    .await
+}
+
+/// Refresh `assignments` for one course.
+pub async fn refresh_assignments(
+    client: &Client,
+    store: &Store,
+    course_id: i64,
+    ttl: Span,
+    now: Timestamp,
+    fresh: bool,
+    offline: bool,
+) -> Result<RefreshOutcome, SyncError> {
+    let dataset = AssignmentsDataset::new(course_id, ttl);
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let path = assignments_path(course_id);
+            let mut items = Vec::new();
+            let mut stream = std::pin::pin!(client.get_all::<Observed<Assignment>>(&path));
+            while let Some(page) = stream.next().await {
+                let page = page?;
+                items.extend(page.items);
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: items
+                        .into_iter()
+                        .map(|a| a.entity(Some(course_id)))
+                        .collect(),
+                }],
+            })
+        },
+    )
+    .await
+}
+
+/// Refresh `missing` (`all`).
+pub async fn refresh_missing(
+    client: &Client,
+    store: &Store,
+    ttl: Span,
+    now: Timestamp,
+    fresh: bool,
+    offline: bool,
+) -> Result<RefreshOutcome, SyncError> {
+    let dataset = MissingDataset::new(ttl);
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let path = missing_path();
+            let mut items = Vec::new();
+            let mut stream = std::pin::pin!(client.get_all::<Observed<Assignment>>(&path));
+            while let Some(page) = stream.next().await {
+                let page = page?;
+                items.extend(page.items);
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: items.into_iter().map(|o| o.entity(None)).collect(),
+                }],
+            })
+        },
+    )
+    .await
+}
+
+/// Refresh `planner` for a UTC-day window.
+pub async fn refresh_planner(
+    client: &Client,
+    store: &Store,
+    window: PlannerWindow,
+    ttl: Span,
+    now: Timestamp,
+    fresh: bool,
+    offline: bool,
+) -> Result<RefreshOutcome, SyncError> {
+    let dataset = PlannerDataset::new(window.clone(), ttl);
+    let meta = WindowMeta {
+        start: window.start_timestamp(),
+        end: window.end_timestamp(),
+        contexts: String::new(),
+    };
+    let lookup = Some((meta.start, meta.end, meta.contexts.clone()));
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        lookup,
+        Some(meta),
+        || async {
+            let path = planner_path(&window);
+            let mut items = Vec::new();
+            let mut stream = std::pin::pin!(client.get_all::<serde_json::Value>(&path));
+            while let Some(page) = stream.next().await {
+                let page = page?;
+                items.extend(page.items);
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: items
+                        .into_iter()
+                        .map(|raw| super::planner::observed_planner(&raw))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect(),
+                }],
+            })
+        },
+    )
+    .await
+}
+
+/// Refresh `submission` for one assignment.
+pub async fn refresh_submission(
+    client: &Client,
+    store: &Store,
+    course_id: i64,
+    assignment_id: i64,
+    ttl: Span,
+    now: Timestamp,
+    fresh: bool,
+    offline: bool,
+) -> Result<RefreshOutcome, SyncError> {
+    let dataset = SubmissionDataset::new(course_id, assignment_id, ttl);
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let path = submission_path(course_id, assignment_id);
+            let submission = observed_submission(&client.get(&path).await?, assignment_id)?;
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: vec![submission],
+                }],
+            })
+        },
+    )
     .await
 }
 
@@ -183,25 +397,35 @@ pub async fn refresh_modules(
     offline: bool,
 ) -> Result<RefreshOutcome, SyncError> {
     let dataset = ModulesDataset::new(course_id, ttl);
-    refresh_dataset(client, store, &dataset, now, fresh, offline, || async {
-        let path = modules_path(course_id);
-        let mut modules = Vec::new();
-        let mut stream = std::pin::pin!(client.get_all::<Observed<Module>>(&path));
-        while let Some(page) = stream.next().await {
-            let page = page?;
-            modules.extend(page.items);
-        }
-        let mut entities = Vec::new();
-        for observed in modules {
-            entities.push(resolve_module_entity(client, course_id, observed).await?);
-        }
-        Ok(FetchBundle {
-            pages: vec![IngestPage {
-                fetched_at: now,
-                entities,
-            }],
-        })
-    })
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let path = modules_path(course_id);
+            let mut modules = Vec::new();
+            let mut stream = std::pin::pin!(client.get_all::<Observed<Module>>(&path));
+            while let Some(page) = stream.next().await {
+                let page = page?;
+                modules.extend(page.items);
+            }
+            let mut entities = Vec::new();
+            for observed in modules {
+                entities.push(resolve_module_entity(client, course_id, observed).await?);
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities,
+                }],
+            })
+        },
+    )
     .await
 }
 
@@ -285,6 +509,8 @@ pub(super) async fn refresh_dataset<D, F, Fut>(
     now: Timestamp,
     fresh: bool,
     offline: bool,
+    window_lookup: Option<(Timestamp, Timestamp, String)>,
+    window_meta: Option<WindowMeta>,
     fetch: F,
 ) -> Result<RefreshOutcome, SyncError>
 where
@@ -295,7 +521,17 @@ where
     let lookup = store
         .call({
             let dataset = dataset.clone();
-            move |conns| lookup_dataset(conns, &dataset, now, None)
+            let window_lookup = window_lookup.clone();
+            move |conns| {
+                let window = window_lookup
+                    .as_ref()
+                    .map(|(start, end, contexts)| WindowQuery {
+                        start: *start,
+                        end: *end,
+                        contexts: contexts.as_str(),
+                    });
+                lookup_dataset(conns, &dataset, now, window)
+            }
         })
         .await?;
 
@@ -319,12 +555,34 @@ where
 
     let before = client.telemetry().api;
     match fetch().await {
-        Ok(bundle) => ingest_success(client, store, dataset, now, before, epoch_seen, bundle).await,
+        Ok(bundle) => {
+            ingest_success(
+                client,
+                store,
+                dataset,
+                now,
+                before,
+                epoch_seen,
+                bundle,
+                window_meta,
+            )
+            .await
+        }
         Err(err) => {
             if matches!(err, SyncError::Api(canvas_api::Error::Unauthorized)) {
                 return Err(err);
             }
-            mark_stale_or_serve(client, store, dataset, before, epoch_seen, lookup, err).await
+            mark_stale_or_serve(
+                client,
+                store,
+                dataset,
+                before,
+                epoch_seen,
+                lookup,
+                err,
+                window_meta,
+            )
+            .await
         }
     }
 }
@@ -375,11 +633,16 @@ where
 
     let before = client.telemetry().api;
     match fetch().await {
-        Ok(bundle) => ingest_success(client, store, dataset, now, before, epoch_seen, bundle).await,
+        Ok(bundle) => {
+            ingest_success(
+                client, store, dataset, now, before, epoch_seen, bundle, None,
+            )
+            .await
+        }
         Err(err) => {
             let SyncError::Api(ref api_err) = err else {
                 return mark_stale_or_serve(
-                    client, store, dataset, before, epoch_seen, lookup, err,
+                    client, store, dataset, before, epoch_seen, lookup, err, None,
                 )
                 .await;
             };
@@ -427,8 +690,10 @@ where
                     })
                 }
                 DenialAction::Propagate => {
-                    mark_stale_or_serve(client, store, dataset, before, epoch_seen, lookup, err)
-                        .await
+                    mark_stale_or_serve(
+                        client, store, dataset, before, epoch_seen, lookup, err, None,
+                    )
+                    .await
                 }
             }
         }
@@ -443,6 +708,7 @@ async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
     before: u64,
     epoch_seen: i64,
     bundle: FetchBundle,
+    window_meta: Option<WindowMeta>,
 ) -> Result<RefreshOutcome, SyncError> {
     let count = bundle
         .pages
@@ -455,6 +721,8 @@ async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
     let requests = u32::try_from(client.telemetry().api.saturating_sub(before)).unwrap_or(u32::MAX);
     let pages = bundle.pages;
     let dataset_for_ingest = dataset.clone();
+    let window_pair = window_meta.as_ref().map(|m| (m.start, m.end));
+    let contexts = window_meta.map(|m| m.contexts);
     store
         .call(move |conns| {
             dataset_for_ingest
@@ -465,8 +733,8 @@ async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
                         complete: true,
                         stale: false,
                         error: None,
-                        window: None,
-                        contexts: None,
+                        window: window_pair,
+                        contexts: contexts.as_deref(),
                     },
                     conns,
                 )
@@ -497,6 +765,7 @@ async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'static>(
     epoch_seen: i64,
     lookup: LookupResult,
     err: SyncError,
+    window_meta: Option<WindowMeta>,
 ) -> Result<RefreshOutcome, SyncError> {
     // A failed retry changes freshness, not the availability of the retained listing.
     let denial = match &lookup {
@@ -515,6 +784,8 @@ async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'static>(
     let message = denial.unwrap_or_else(|| sanitize_error(&err));
     let dataset_fail = dataset.clone();
     let fail_msg = message.clone();
+    let window_pair = window_meta.as_ref().map(|m| (m.start, m.end));
+    let contexts = window_meta.map(|m| m.contexts);
     store
         .call(move |conns| {
             dataset_fail
@@ -525,8 +796,8 @@ async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'static>(
                         complete: false,
                         stale: true,
                         error: Some(fail_msg.as_str()),
-                        window: None,
-                        contexts: None,
+                        window: window_pair,
+                        contexts: contexts.as_deref(),
                     },
                     conns,
                 )
