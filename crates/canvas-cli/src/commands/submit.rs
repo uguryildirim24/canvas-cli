@@ -10,7 +10,6 @@ use canvas_core::submit::{
     SubmitError, TextSource, create_from_plan, execute, freeze_files, freeze_html, freeze_text,
     freeze_url, preflight_with_input,
 };
-use jiff::Timestamp;
 
 use super::Globals;
 use super::emit::{base_envelope, emit, emit_error, require_client, session_error, sync_error};
@@ -100,7 +99,7 @@ pub async fn run(
                 comment.as_deref(),
             )
         },
-        Timestamp::now(),
+        crate::output::now_timestamp(),
     )
     .await
     {

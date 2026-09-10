@@ -1,0 +1,37 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "attempt": 1,
+    "attribution": "observed",
+    "body": {
+      "actual_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683",
+      "expected_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683",
+      "status": "ok"
+    },
+    "files": [],
+    "outcome": "verified_body",
+    "reason": null,
+    "receipt_id": "00000000-0000-4000-8000-00000000000r"
+  },
+  "schema": "canvas-cli/verify@1",
+  "warnings": []
+}

@@ -1,0 +1,75 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "folders",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "files",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "cache",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "modules",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "cache",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course_id": "100",
+    "files": [
+      {
+        "folder_id": "20",
+        "folder_path": "Week 1",
+        "hidden": false,
+        "id": "501",
+        "lock_explanation": null,
+        "locked": false,
+        "module_id": null,
+        "module_position": null,
+        "name": "syllabus.pdf",
+        "size": 2048,
+        "source": "listing",
+        "updated_at": null
+      }
+    ],
+    "listing": {
+      "available": true,
+      "http_status": null
+    }
+  },
+  "schema": "canvas-cli/files@1",
+  "warnings": []
+}

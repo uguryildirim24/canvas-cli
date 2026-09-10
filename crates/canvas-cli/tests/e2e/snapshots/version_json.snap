@@ -1,0 +1,25 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": null,
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "commit": "<commit>",
+    "target": "<target>",
+    "version": "<version>"
+  },
+  "schema": "canvas-cli/version@1",
+  "warnings": []
+}

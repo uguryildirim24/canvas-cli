@@ -141,7 +141,7 @@ async fn login(
             ));
         }
 
-        let validated_at = jiff::Timestamp::now().to_string();
+        let validated_at = crate::output::now_timestamp().to_string();
         let source = credentials::activate(paths, &open.store, &key, &token, &validated_at)?;
 
         config.profiles.insert(

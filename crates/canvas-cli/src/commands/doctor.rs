@@ -237,6 +237,9 @@ pub async fn run(globals: &Globals, network: bool) -> Result<(), CliError> {
             .get("date")
             .and_then(|h| h.to_str().ok())
             .and_then(|h| jiff::fmt::rfc2822::parse(h).ok());
+        // Deliberately the wall clock, not `output::now_timestamp`: this check
+        // compares the machine's clock with the server's, and a frozen
+        // `CANVAS_NOW` would only ever report the distance to the frozen value.
         let skew = date.map(|d| jiff::Timestamp::now().as_second() - d.timestamp().as_second());
         push_check(
             &mut checks,

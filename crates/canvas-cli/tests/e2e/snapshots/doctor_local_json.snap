@@ -1,0 +1,85 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": "default",
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "checks": [
+      {
+        "message": "config parsed",
+        "name": "config",
+        "status": "ok"
+      },
+      {
+        "message": "<origin> / 1",
+        "name": "profile_identity",
+        "status": "ok"
+      },
+      {
+        "message": "active_source=file cleanup_keyring=false cleanup_file=false",
+        "name": "credential_row",
+        "status": "ok"
+      },
+      {
+        "message": "none",
+        "name": "stray_credentials",
+        "status": "ok"
+      },
+      {
+        "message": "cache schema=1, state schema=1",
+        "name": "databases",
+        "status": "ok"
+      },
+      {
+        "message": "keyring unavailable",
+        "name": "credential_backend",
+        "status": "warn"
+      },
+      {
+        "message": "shared identity lock held; generation verified",
+        "name": "identity_lock",
+        "status": "ok"
+      },
+      {
+        "message": "recovery hook reserved for M2-a",
+        "name": "owner_absent_journals",
+        "status": "skipped"
+      },
+      {
+        "message": "network checks not run",
+        "name": "network_users_self",
+        "status": "skipped"
+      },
+      {
+        "message": "network checks not run",
+        "name": "network_rate_limit",
+        "status": "skipped"
+      },
+      {
+        "message": "network checks not run",
+        "name": "network_clock_skew",
+        "status": "skipped"
+      }
+    ],
+    "identity_selected": true,
+    "recovered_journals": []
+  },
+  "schema": "canvas-cli/doctor@1",
+  "warnings": []
+}

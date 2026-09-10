@@ -2,6 +2,8 @@
   "set": "bench-5",
   "recorded_at": "2026-01-05T12:00:00Z",
   "endpoints": [
+    "GET /api/v1/announcements",
+    "GET /api/v1/calendar_events",
     "GET /api/v1/courses",
     "GET /api/v1/courses/101/assignments",
     "GET /api/v1/courses/101/files",
