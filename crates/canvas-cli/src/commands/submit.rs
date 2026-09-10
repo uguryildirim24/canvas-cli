@@ -51,6 +51,8 @@ pub async fn handle(globals: &Globals, args: SubmitArgs) -> Handled {
         session,
         prepared,
         freshness,
+        // Held until this function returns: the whole foreground submission.
+        interest: _interest,
     } = *frozen;
     let plan_id = prepared.plan.plan_id.clone();
     print_plan(&prepared.display);
@@ -89,6 +91,8 @@ struct Frozen {
     session: Session,
     prepared: Prepared,
     freshness: Vec<Freshness>,
+    /// Foreground interest, held for as long as the caller holds this.
+    interest: Option<canvas_core::coord::Interest>,
 }
 
 /// What [`run_plan`] does with a plan that already admitted a journal.
@@ -136,6 +140,7 @@ async fn freeze_plan(
     // The plan borrows the session for its pre-flight only; the borrow ends
     // here so the session can travel with the plan.
     let mut freshness = Vec::new();
+    let interest;
     let prepared = {
         let client = match require_client(globals, &session) {
             Ok(c) => c,
@@ -170,6 +175,28 @@ async fn freeze_plan(
             InputKind::OnlineUrl
         } else {
             InputKind::OnlineTextEntry
+        };
+        // REPORT §3.6: foreground submission interest, registered as early as
+        // it can be and held until the command finishes. An interest is keyed
+        // by assignment, so it cannot be registered before the resolution read
+        // that produces the id: the token validation and `resolve_target`
+        // above run without it. Everything the plan flow does from here — the
+        // eligibility read, the freeze, the post — is covered. While it is
+        // registered `watch` admits no new polling request and holds no slot,
+        // so the person waiting on a deadline is never queued behind a poll. A
+        // coordinator that cannot record it costs priority, not the
+        // submission.
+        interest = match session
+            .open
+            .store
+            .coordinator()
+            .register_interest(canvas_core::coord::InterestKind::Submit, assignment_id)
+        {
+            Ok(interest) => interest,
+            Err(error) => {
+                tracing::debug!(%error, "cannot register foreground submission interest");
+                None
+            }
         };
         // Both flows are the plan flow: freeze and store a plan, record the
         // decision as an approval, then execute the approved plan (§3.5).
@@ -212,6 +239,7 @@ async fn freeze_plan(
         session,
         prepared,
         freshness,
+        interest,
     }))
 }
 
@@ -662,6 +690,8 @@ pub async fn agent_prepare(globals: &Globals, args: SubmitArgs, consumer: &str) 
         session,
         prepared,
         freshness,
+        // Held until this function returns: the whole foreground submission.
+        interest: _interest,
     } = *frozen;
     let result = PlanResult {
         plan: PlanJson::of(&prepared.plan),

@@ -117,6 +117,12 @@ async fn main() -> ExitCode {
                     commands::alias::run(&m1b_globals(&globals), cmd).await
                 }
                 Commands::Sync { full } => commands::sync::run(&m1b_globals(&globals), full).await,
+                Commands::Watch { jsonl, since, once } => {
+                    commands::watch::run(&m1b_globals(&globals), jsonl, since, once).await
+                }
+                Commands::Notify { since, stdout } => {
+                    commands::notify::run(&m1b_globals(&globals), since, stdout).await
+                }
                 Commands::Cache { command } => {
                     let cmd = match command {
                         CacheCommand::Stats => commands::cache::CacheCmd::Stats,

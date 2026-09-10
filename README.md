@@ -118,6 +118,8 @@ Every command below runs in this build.
 | `canvas open file` | Open a file by id in the browser. |
 | `canvas open announcement` | Open an announcement page in the browser. |
 | `canvas sync` | Refresh the cached datasets. `--full` adds files, modules, and the calendar. |
+| `canvas watch` | Stream local events. `--jsonl` for one document per line, `--since CURSOR`, `--once`. |
+| `canvas notify` | Post desktop alerts for observed events. `--since CURSOR`, `--stdout`. |
 | `canvas cache stats` | Row counts and size per cached dataset. |
 | `canvas cache clear` | Drop the cache database. State and receipts survive. |
 | `canvas cache path` | Print the cache database path. |

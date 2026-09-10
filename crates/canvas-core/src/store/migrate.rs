@@ -9,6 +9,7 @@
 //! | `0001_initial` | both | M1-a | the v1 cache and state schema |
 //! | `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link |
 //! | `0002_reads` | cache | M8-a | `pages`, `discussion_topics`, `discussion_entries`, `conversations` |
+//! | `0003_events` | state | M6-c | `governor`, `interest`, `observations`, `baselines`, `events` |
 
 use rusqlite::Connection;
 
@@ -17,7 +18,7 @@ use super::db::DbError;
 /// Current cache.sqlite schema version.
 pub const CACHE_USER_VERSION: i32 = 2;
 /// Current state.sqlite schema version.
-pub const STATE_USER_VERSION: i32 = 2;
+pub const STATE_USER_VERSION: i32 = 3;
 
 /// Apply cache migrations from `from` up to [`CACHE_USER_VERSION`].
 pub fn migrate_cache(conn: &Connection, from: i32) -> Result<(), DbError> {
@@ -37,6 +38,9 @@ pub fn migrate_state(conn: &Connection, from: i32) -> Result<(), DbError> {
     }
     if from < 2 {
         conn.execute_batch(STATE_0002)?;
+    }
+    if from < 3 {
+        conn.execute_batch(STATE_0003)?;
     }
     Ok(())
 }
@@ -446,6 +450,85 @@ CREATE TABLE destinations (
     canonical_path TEXT NOT NULL,
     root_fingerprint TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+";
+
+/// Coordinator, observation, and event tables (REPORT §3.6, migration `0003_events`).
+const STATE_0003: &str = r"
+-- The shared rate-limit governor (SPEC §11). One row, id 1.
+CREATE TABLE governor (
+    id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+    estimate REAL NOT NULL,
+    watermark INTEGER NOT NULL DEFAULT 0,
+    cooldown_until INTEGER,
+    refill REAL NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+);
+
+-- Foreground submission interest. One row per assignment; liveness is the
+-- matching `locks/interest-assignment-<id>.lock`, so a dead registrant frees
+-- its interest with its descriptor.
+CREATE TABLE interest (
+    assignment_id INTEGER PRIMARY KEY NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('submit', 'plan_execute')),
+    registered_at TEXT NOT NULL
+);
+
+-- The observation outbox. `observation_id` is
+-- `<dataset>:<scope>:<fetch_log rowid>:<fetched_at>`, so a cache row that was
+-- removed or refreshed again before the comparison ran no longer matches.
+CREATE TABLE observations (
+    observation_id TEXT PRIMARY KEY NOT NULL,
+    dataset TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    fetch_row_id INTEGER NOT NULL,
+    fetched_at TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('pending', 'applied')),
+    recorded_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX observations_row
+ON observations(dataset, scope, fetch_row_id, fetched_at);
+
+CREATE INDEX observations_pending ON observations(state, recorded_at);
+
+-- The last complete membership of a dataset scope and the allowlisted fields
+-- compared against it.
+CREATE TABLE baselines (
+    dataset TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    observation_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    members_json TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (dataset, scope)
+);
+
+-- The event log. AUTOINCREMENT so retention never hands a deleted cursor to a
+-- second event, which is what a consumer's deduplication key relies on.
+CREATE TABLE events (
+    cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+    observation_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    identity_key TEXT NOT NULL,
+    generation TEXT NOT NULL,
+    dataset TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    entity_key TEXT,
+    [before] TEXT NOT NULL DEFAULT '{}',
+    [after] TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX events_observed_at ON events(observed_at);
+CREATE INDEX events_observation ON events(observation_id);
+
+-- How far a derived consumer has read the log. `notify` keeps its position
+-- here, so a second run posts nothing the first one already posted: alerts are
+-- deduplicated by cursor, never by content (REPORT §3.6).
+CREATE TABLE consumer_cursor (
+    consumer TEXT PRIMARY KEY NOT NULL,
+    cursor INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
 );
 ";
 
