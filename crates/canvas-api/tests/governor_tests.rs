@@ -645,6 +645,97 @@ mod seams {
         drop(permit);
     }
 
+    #[tokio::test]
+    async fn a_sample_survives_the_shared_row_instead_of_ratcheting_down() {
+        let shared = Arc::new(MemoryState::default());
+        let seams = Seams {
+            permits: None,
+            state: Some(shared.clone()),
+        };
+        let governor = Governor::with_seams(config(), &seams);
+        // Canvas reports a full budget on every response, as it does when the
+        // account is nowhere near its limit.
+        for _ in 0..10 {
+            let permit = governor.admit(Lane::Api, "GET /a").await;
+            let issue = permit.issue();
+            drop(permit);
+            governor.observe(issue, 700.0, None);
+        }
+        assert!(
+            governor.estimate() > 690.0,
+            "the shared estimate fell to {} although every header said 700",
+            governor.estimate()
+        );
+        let row = shared.load().expect("row");
+        assert!(row.estimate > 690.0, "{row:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_shared_cooldown_ends_on_an_applied_sample() {
+        let shared = Arc::new(MemoryState::default());
+        let seams = Seams {
+            permits: None,
+            state: Some(shared.clone()),
+        };
+        let governor = Governor::with_seams(config(), &seams);
+        governor.set_estimate_for_test(100.0);
+        // The cooldown admission publishes the flag on the shared row.
+        let permit = governor.admit(Lane::Api, "GET /a").await;
+        let issue = permit.issue();
+        drop(permit);
+        assert!(
+            shared.load().expect("row").cooldown_until.is_some(),
+            "the cooldown was not shared"
+        );
+        // §11: an applied sample of 300 or more ends the cooldown.
+        governor.observe(issue, 400.0, None);
+        assert!(
+            shared.load().expect("row").cooldown_until.is_none(),
+            "the shared row kept a cooldown its own sample ended: {:?}",
+            shared.load()
+        );
+        let started = tokio::time::Instant::now();
+        let permit = governor.admit(Lane::Api, "GET /b").await;
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "the next request still waited out a cooldown that had ended"
+        );
+        drop(permit);
+    }
+
+    #[tokio::test]
+    async fn a_process_that_adopts_a_watermark_can_still_apply_its_own_sample() {
+        let shared = Arc::new(MemoryState::default());
+        let seams = Seams {
+            permits: None,
+            state: Some(shared.clone()),
+        };
+        // A long-running `watch` has reached issue 5000 and left the estimate
+        // low. Issue numbers are per process, so a process starting at 1 must
+        // not find every sample of its own ranked below that watermark.
+        *shared.row.lock().expect("row") = Some(GovernorSnapshot {
+            estimate: 200.0,
+            watermark: 5_000,
+            cooldown_until: None,
+            refill: 0.0,
+            updated_at: canvas_api::governor::unix_millis(),
+        });
+        let governor = Governor::with_seams(config(), &seams);
+        let permit = governor.admit(Lane::Api, "GET /a").await;
+        let issue = permit.issue();
+        assert!(
+            issue > 5_000,
+            "issue {issue} cannot outrank the shared watermark"
+        );
+        governor.observe(issue, 650.0, None);
+        assert!(
+            governor.estimate() > 600.0,
+            "the process could not apply a header of its own: {}",
+            governor.estimate()
+        );
+        drop(permit);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_quiet_process_cannot_reset_a_shared_row_another_one_keeps_fresh() {
         let shared = Arc::new(MemoryState::default());

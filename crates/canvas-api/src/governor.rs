@@ -404,12 +404,12 @@ impl Governor {
             return;
         }
         let cost = cost.filter(|c| c.is_finite() && *c >= 0.0);
-        {
+        let applied = {
             let mut state = self.inner.state.lock().expect("governor state");
-            Inner::apply_observation(&mut state, issue, remaining, cost);
-        }
+            Inner::apply_observation(&mut state, issue, remaining, cost)
+        };
         // §11 values are updated after each response, under one transaction.
-        self.inner.publish();
+        self.inner.publish(applied);
     }
 
     /// Record cost telemetry without a remaining sample.
@@ -491,13 +491,51 @@ impl Governor {
     }
 }
 
+/// Which §11 rule set a shared-row merge follows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Merge {
+    /// Before an admission decision: the conservative rule. A lower stored
+    /// estimate always applies, a higher one only above the watermark, and a
+    /// live cooldown is shared.
+    Admission,
+    /// Right after this process applied a response sample. In process §11 lets
+    /// a header replace the estimate outright — `apply_observation` discards
+    /// the pre-charges of requests still in flight — and the shared row has to
+    /// behave the same way. Re-adopting the stored estimate here would undo
+    /// the sample with this process's own pre-charge, so the shared estimate
+    /// would fall by one cost per request and never recover, and a cooldown
+    /// could never end. Only a strictly newer row displaces the sample.
+    AppliedSample,
+}
+
 impl Inner {
     /// Merge the shared row into local state before an admission decision.
     fn adopt_shared(&self) {
         let Some(shared) = &self.shared else { return };
         let Some(row) = shared.load() else { return };
         let mut state = self.state.lock().expect("governor state");
-        Self::merge_shared_locked(&self.config, &mut state, row, unix_millis());
+        Self::merge_locked(
+            &self.config,
+            &mut state,
+            row,
+            unix_millis(),
+            Merge::Admission,
+        );
+        self.align_issue_locked(&state);
+    }
+
+    /// Keep this process's issue numbers above every sample it has adopted.
+    ///
+    /// SPEC §11 orders samples by issue number, and the counter is per
+    /// process. A watermark another process wrote would otherwise sit above
+    /// every issue this one hands out, so none of its own higher samples could
+    /// ever apply and its estimate could only fall — a fresh process next to a
+    /// long-running `watch` would stay in the other process's cooldown until
+    /// that process happened to publish a recovery. Continuing the sequence
+    /// above the adopted watermark restores the ordering the rule assumes.
+    fn align_issue_locked(&self, state: &State) {
+        self.next_issue
+            .fetch_max(state.watermark.saturating_add(1), Ordering::Relaxed);
     }
 
     /// Pre-charge `cost`, merging and republishing the shared row when there
@@ -513,22 +551,33 @@ impl Inner {
         shared.update(&mut |stored| {
             let mut state = self.state.lock().expect("governor state");
             if let Some(row) = stored {
-                Self::merge_shared_locked(&self.config, &mut state, row, now_ms);
+                Self::merge_locked(&self.config, &mut state, row, now_ms, Merge::Admission);
             }
             Self::charge_locked(&mut state, cost);
+            self.align_issue_locked(&state);
             Some(Self::snapshot_locked(&state, now_ms))
         });
     }
 
     /// Republish the local §11 values onto the shared row after a response.
-    fn publish(&self) {
+    ///
+    /// `applied` says whether the response's sample became the estimate. When
+    /// it did, this process holds the newest evidence and only a strictly
+    /// newer row may displace it; see [`Merge::AppliedSample`].
+    fn publish(&self, applied: bool) {
         let Some(shared) = &self.shared else { return };
+        let merge_kind = if applied {
+            Merge::AppliedSample
+        } else {
+            Merge::Admission
+        };
         let now_ms = unix_millis();
         shared.update(&mut |stored| {
             let mut state = self.state.lock().expect("governor state");
             if let Some(row) = stored {
-                Self::merge_shared_locked(&self.config, &mut state, row, now_ms);
+                Self::merge_locked(&self.config, &mut state, row, now_ms, merge_kind);
             }
+            self.align_issue_locked(&state);
             Some(Self::snapshot_locked(&state, now_ms))
         });
     }
@@ -551,7 +600,7 @@ impl Inner {
         }
     }
 
-    /// Apply the §11 rules to a shared row.
+    /// Merge the shared row into local state (SPEC §11).
     ///
     /// A lower estimate always applies; a higher one only above the watermark.
     /// Refill is never assumed above 10/s. Cooldown is shared. A row nobody has
@@ -559,11 +608,15 @@ impl Inner {
     /// nothing more: it is the same reset [`Inner::reset_silence_locked`] does,
     /// so a vanished owner never hands anyone an invented full bucket while a
     /// request of its own is still in flight here.
-    fn merge_shared_locked(
+    ///
+    /// [`Merge::AppliedSample`] narrows that to what is strictly newer than
+    /// the sample this process has just applied.
+    fn merge_locked(
         config: &GovernorConfig,
         state: &mut State,
         row: GovernorSnapshot,
         now_ms: i64,
+        kind: Merge,
     ) {
         state.shared_seen_at = Some(Instant::now());
         let silent_for = now_ms.saturating_sub(row.updated_at);
@@ -573,17 +626,30 @@ impl Inner {
             }
             return;
         }
-        if row.estimate < state.estimate || row.watermark > state.watermark {
+        let newer = row.watermark > state.watermark;
+        let adopt = match kind {
+            Merge::Admission => row.estimate < state.estimate || newer,
+            Merge::AppliedSample => newer,
+        };
+        if adopt {
             state.estimate = row.estimate;
             state.estimate_at = Instant::now();
         }
-        if row.watermark > state.watermark {
+        if newer {
             state.watermark = row.watermark;
         }
         if row.refill > 0.0 {
             state.refill = row.refill.min(10.0);
         }
-        if row.cooldown_until.is_some_and(|until| until > now_ms) {
+        // A live cooldown is shared, except against the sample this process
+        // has just applied: §11 ends a cooldown on an applied sample of 300 or
+        // more, and the row's flag is this process's own pre-charge, older
+        // than the header that ended it.
+        let share_cooldown = match kind {
+            Merge::Admission => true,
+            Merge::AppliedSample => newer,
+        };
+        if share_cooldown && row.cooldown_until.is_some_and(|until| until > now_ms) {
             state.in_cooldown = true;
         }
     }
@@ -605,7 +671,7 @@ impl Inner {
             return;
         }
         // A shared row that was written inside the silence window means some
-        // process is live: `merge_shared_locked` owns the reset for it, and it
+        // process is live: `merge_locked` owns the reset for it, and it
         // has already run for this admission. Resetting here as well would
         // hand this process an invented full bucket and drop a shared cooldown
         // (SPEC §11, REPORT §3.6).
@@ -633,7 +699,7 @@ impl Inner {
         }
     }
 
-    fn apply_observation(state: &mut State, issue: u64, remaining: f64, cost: Option<f64>) {
+    fn apply_observation(state: &mut State, issue: u64, remaining: f64, cost: Option<f64>) -> bool {
         Self::grow_locked(state);
         let now = Instant::now();
         state.last_header_at = Some(now);
@@ -690,6 +756,7 @@ impl Inner {
                 state.in_cooldown = true;
             }
         }
+        apply
     }
 
     fn on_release(&self, issue: u64) {
