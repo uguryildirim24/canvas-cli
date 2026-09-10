@@ -73,10 +73,45 @@ pub async fn upload_submission_file(
 ) -> Result<UploadResult, Error> {
     let path =
         format!("/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/self/files");
-    let url = client.origin().join(&path).map_err(|_| Error::Network)?;
-    let req = ApiRequest::new(reqwest::Method::POST, url).json(&json!({
+    let session = json!({
         "name": meta.name, "size": meta.size, "content_type": meta.content_type,
-    }))?;
+    });
+    upload_via(client, &path, &session, meta, body).await
+}
+
+/// Upload one file into the user's own files, for a conversation attachment.
+///
+/// Same §11 transport as a submission upload: a session request, a streamed
+/// multipart body hashed as it is sent, and the completion handoff. Only the
+/// session endpoint differs, and `parent_folder_path` names the folder Canvas
+/// keeps conversation attachments in.
+pub async fn upload_user_file(
+    client: &Client,
+    parent_folder_path: &str,
+    meta: &UploadMeta,
+    body: impl AsyncRead + Unpin + Send,
+) -> Result<UploadResult, Error> {
+    let session = json!({
+        "name": meta.name,
+        "size": meta.size,
+        "content_type": meta.content_type,
+        "parent_folder_path": parent_folder_path,
+        // Never replace a file the user already has: a same-named upload gets
+        // a new name instead of overwriting bytes this tool did not write.
+        "on_duplicate": "rename",
+    });
+    upload_via(client, "/api/v1/users/self/files", &session, meta, body).await
+}
+
+async fn upload_via(
+    client: &Client,
+    path: &str,
+    session_body: &serde_json::Value,
+    meta: &UploadMeta,
+    body: impl AsyncRead + Unpin + Send,
+) -> Result<UploadResult, Error> {
+    let url = client.origin().join(path).map_err(|_| Error::Network)?;
+    let req = ApiRequest::new(reqwest::Method::POST, url).json(session_body)?;
     let session: UploadSession = client.send_api(req).await?;
     let upload_url = Url::parse(&session.upload_url).map_err(|_| Error::Network)?;
     validate_transfer_url(&upload_url)?;

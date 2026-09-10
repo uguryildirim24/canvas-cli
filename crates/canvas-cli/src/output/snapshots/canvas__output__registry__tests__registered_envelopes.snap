@@ -660,6 +660,7 @@ expression: rendered
       },
       "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
       "kind": "online_upload",
+      "operation": null,
       "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
       "posted": {
         "attachments": [
@@ -742,6 +743,7 @@ expression: rendered
           "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
           "kind": "online_upload",
           "not_submitted_evidence": null,
+          "operation": null,
           "owner": "n/a",
           "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
           "post_status": 201,
@@ -2118,6 +2120,7 @@ expression: rendered
         "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
         "kind": "online_upload",
         "not_submitted_evidence": null,
+        "operation": null,
         "owner": "n/a",
         "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
         "post_status": 201,
@@ -2186,6 +2189,7 @@ expression: rendered
         },
         "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
         "kind": "online_upload",
+        "operation": null,
         "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
         "posted": {
           "attachments": [

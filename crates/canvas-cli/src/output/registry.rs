@@ -360,11 +360,14 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
         },
         SchemaEntry {
             id: SCHEMA_WATCH,
+            command: Some("watch"),
             variant: None,
             fixture: include_str!("schemas/watch.json"),
         },
         SchemaEntry {
             id: SCHEMA_EVENT,
+            // One line of the `watch --jsonl` stream, not a command envelope.
+            command: None,
             variant: None,
             fixture: include_str!("schemas/event.json"),
         },
@@ -1143,7 +1146,7 @@ mod tests {
             consumer: Some("mcp".into()),
             course_id: 101,
             assignment_id: 202,
-            kind: InputKind::OnlineHtml,
+            kind: canvas_core::plan::PlanKind::Submission(InputKind::OnlineHtml),
             payload: IntendedPayload {
                 files: vec![IntendedFile {
                     name: "essay.pdf".into(),
@@ -1182,6 +1185,7 @@ mod tests {
             }),
             journal_id: None,
             invalidated_reason: None,
+            operation: None,
         };
 
         let json = serde_json::to_string(&PlanResult {

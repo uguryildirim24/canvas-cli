@@ -831,15 +831,17 @@ fn plan_summary(plan: &canvas_core::plan::PlanRow) -> String {
         .assignment_name
         .as_deref()
         .unwrap_or("this assignment");
-    let what = match plan.kind {
-        InputKind::OnlineUpload => {
+    let what = match plan.kind.submission() {
+        Some(InputKind::OnlineUpload) => {
             let count = plan.payload.files.len();
             let bytes: u64 = plan.payload.files.iter().map(|f| f.size).sum();
             format!("{count} file(s), {bytes} bytes")
         }
-        InputKind::OnlineTextEntry => "a text entry".to_owned(),
-        InputKind::OnlineHtml => "an HTML entry".to_owned(),
-        InputKind::OnlineUrl => "a website URL".to_owned(),
+        Some(InputKind::OnlineTextEntry) => "a text entry".to_owned(),
+        Some(InputKind::OnlineHtml) => "an HTML entry".to_owned(),
+        Some(InputKind::OnlineUrl) => "a website URL".to_owned(),
+        // An operation plan never reaches the submission summary.
+        None => plan.kind.as_str().to_owned(),
     };
     let due = plan
         .payload

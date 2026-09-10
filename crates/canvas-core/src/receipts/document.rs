@@ -53,24 +53,28 @@ pub struct ReceiptDocument {
     pub journal_id: String,
     /// Bound identity.
     pub identity: ReceiptIdentity,
-    /// Course id (string).
-    pub course_id: String,
+    /// Course id (string). `null` on an operation with no course.
+    #[serde(default)]
+    pub course_id: Option<String>,
     /// Course code when known.
     #[serde(default)]
     pub course_code: Option<String>,
-    /// Assignment id (string).
-    pub assignment_id: String,
+    /// Assignment id (string). `null` on an operation receipt.
+    #[serde(default)]
+    pub assignment_id: Option<String>,
     /// Assignment name when known.
     #[serde(default)]
     pub assignment_name: Option<String>,
-    /// Submission kind.
+    /// Submission kind, or the operation kind on an operation receipt.
     pub kind: String,
-    /// Baseline attempt at plan time.
-    pub baseline_attempt: i64,
-    /// `observed` or `unproven`.
+    /// Baseline attempt at plan time. `null` on an operation receipt.
+    #[serde(default)]
+    pub baseline_attempt: Option<i64>,
+    /// `observed`, `unproven`, `accepted`, `none`.
     pub attribution: String,
-    /// Allowlisted posted record.
-    pub posted: PostedRecord,
+    /// Allowlisted posted record. `null` on an operation receipt.
+    #[serde(default)]
+    pub posted: Option<PostedRecord>,
     /// Readback when enriched.
     #[serde(default)]
     pub readback: Option<ReadbackRecord>,
@@ -99,6 +103,13 @@ pub struct ReceiptDocument {
     /// The approval audit copied in at admission; `null` for legacy journals.
     #[serde(default)]
     pub approval: Option<Approval>,
+    /// The operation this receipt records; `null` for a submission (M8-b).
+    ///
+    /// Additive: a submission receipt carries the same fields it always did
+    /// and `operation: null`, and an operation receipt carries this block with
+    /// the submission-only fields `null`.
+    #[serde(default)]
+    pub operation: Option<crate::operations::OperationReceipt>,
 }
 
 impl ReceiptDocument {
@@ -107,9 +118,14 @@ impl ReceiptDocument {
         if let Some(text) = &mut self.text {
             text.server_body_sha256 = self
                 .posted
-                .body_sha256
-                .clone()
-                .or_else(|| self.readback.as_ref().and_then(|r| r.body_sha256.clone()));
+                .as_ref()
+                .and_then(|p| p.body_sha256.clone())
+                .or_else(|| self.readback.as_ref().and_then(|r| r.body_sha256.clone()))
+                .or_else(|| {
+                    self.operation
+                        .as_ref()
+                        .and_then(|o| o.server_body_sha256.clone())
+                });
         }
     }
 }

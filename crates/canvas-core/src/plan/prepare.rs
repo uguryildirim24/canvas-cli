@@ -14,7 +14,7 @@ use crate::submit::{FreezeError, FrozenInput, InputKind, Plan, PreflightError};
 
 use super::PlanError;
 use super::ops::{self, NewPlan};
-use super::record::{Observations, PlanRow};
+use super::record::{Observations, PlanKind, PlanRow};
 
 /// What [`prepare`] needs besides the client, the store, and the input.
 #[derive(Debug, Clone, Copy)]
@@ -105,12 +105,13 @@ where
             consumer: request.consumer.map(str::to_owned),
             course_id: request.course_id,
             assignment_id: request.assignment_id,
-            kind: frozen.kind,
+            kind: PlanKind::Submission(frozen.kind),
             payload: frozen.payload.clone(),
             file_paths,
             baseline_attempt: facts.baseline_attempt,
             baseline_submission_id: facts.baseline_submission_id,
             observations: Observations::of(&assignment),
+            operation: None,
         },
         now,
     )?;
