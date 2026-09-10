@@ -448,6 +448,15 @@ CREATE TABLE events (
 
 CREATE INDEX events_observed_at ON events(observed_at);
 CREATE INDEX events_observation ON events(observation_id);
+
+-- How far a derived consumer has read the log. `notify` keeps its position
+-- here, so a second run posts nothing the first one already posted: alerts are
+-- deduplicated by cursor, never by content (REPORT §3.6).
+CREATE TABLE consumer_cursor (
+    consumer TEXT PRIMARY KEY NOT NULL,
+    cursor INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
 ";
 
 /// Operation plans and the approval record (M6-a; REPORT §3.5).

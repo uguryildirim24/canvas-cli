@@ -46,6 +46,12 @@ impl EventKind {
         }
     }
 
+    /// The kind a stored `events.kind` value names.
+    #[must_use]
+    pub fn parse(raw: &str) -> Option<Self> {
+        Self::all().iter().copied().find(|k| k.as_str() == raw)
+    }
+
     /// Every registered kind, in a stable order.
     #[must_use]
     pub fn all() -> &'static [Self] {
