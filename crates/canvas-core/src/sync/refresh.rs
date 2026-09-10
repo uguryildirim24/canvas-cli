@@ -700,7 +700,7 @@ where
     }
 }
 
-async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
+pub(super) async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
     client: &Client,
     store: &Store,
     dataset: &D,
@@ -757,7 +757,7 @@ async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
     })
 }
 
-async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'static>(
+pub(super) async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'static>(
     client: &Client,
     store: &Store,
     dataset: &D,
@@ -816,21 +816,21 @@ async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'static>(
     }
 }
 
-fn offline_outcome(lookup: LookupResult) -> Result<RefreshOutcome, SyncError> {
+pub(super) fn offline_outcome(lookup: LookupResult) -> Result<RefreshOutcome, SyncError> {
     match complete_row(lookup) {
         Some(row) => Ok(cache_outcome(&row, true, 0, None)),
         None => Err(SyncError::OfflineMiss),
     }
 }
 
-fn complete_row(lookup: LookupResult) -> Option<FetchLogRow> {
+pub(super) fn complete_row(lookup: LookupResult) -> Option<FetchLogRow> {
     match lookup {
         LookupResult::Hit(row) | LookupResult::Stale(row) if row.complete => Some(row),
         LookupResult::Hit(_) | LookupResult::Stale(_) | LookupResult::Miss => None,
     }
 }
 
-fn cache_outcome(
+pub(super) fn cache_outcome(
     row: &FetchLogRow,
     stale: bool,
     requests: u32,
@@ -851,7 +851,7 @@ fn cache_outcome(
     }
 }
 
-fn ingest_err(err: &crate::store::IngestError) -> DbError {
+pub(super) fn ingest_err(err: &crate::store::IngestError) -> DbError {
     DbError::Message(err.to_string())
 }
 

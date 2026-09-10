@@ -18,8 +18,9 @@ pub use dataset::{
 pub(crate) use db::auxiliary_sqlite;
 pub use db::{DbError, Store, StoreConns};
 pub use ops::{
-    CACHE_TABLES, CacheStats, EpochAbort, FetchLogRow, LookupQuery, WindowQuery, bump_epochs,
-    cache_clear, cache_path, cache_stats, load_fetch_log, lookup, lookup_dataset,
+    CACHE_TABLES, CONTEXT_DENIED_PREFIX, CacheStats, EpochAbort, FetchLogRow, LookupQuery,
+    WindowQuery, bump_epochs, cache_clear, cache_path, cache_stats, encode_context_denials,
+    is_context_denial, load_fetch_log, lookup, lookup_dataset, parse_context_denials,
     pending_for_assignment, read_scope_epoch,
 };
 
