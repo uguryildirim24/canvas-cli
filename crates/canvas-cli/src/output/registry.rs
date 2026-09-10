@@ -1544,7 +1544,12 @@ pub struct DiscussionDetailJson {
     /// `replies` shows at most one page of them, so a page past the end is an
     /// empty list beside a non-zero total, and a reader can tell that apart
     /// from a thread with no replies (SPEC §19 item 28).
-    pub replies_total: u32,
+    ///
+    /// `null` when the thread was never read — `--replies` was not asked, so
+    /// `replies_coverage.blocked` is `not_requested`. A count of 0 is an
+    /// observation that the thread has no replies, and this field never
+    /// reports one the command did not make.
+    pub replies_total: Option<u32>,
     pub replies_coverage: RepliesCoverageJson,
 }
 
