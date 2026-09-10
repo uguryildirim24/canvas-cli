@@ -115,6 +115,35 @@ fn course_endpoints(id: i64) -> Vec<(String, bool)> {
     ]
 }
 
+/// The Appendix B endpoints that take a batch of course context codes.
+///
+/// `announcements` and `calendar` are the two v1 commands whose endpoint is
+/// neither account-wide nor addressed by a single course: both take a list of
+/// context codes, at most ten per call (Appendix B). Without them a recorded
+/// set cannot back either command.
+fn context_endpoints(courses: &[i64]) -> Vec<(String, bool)> {
+    let (start, end) = planner_window();
+    let mut out = Vec::new();
+    for chunk in courses.chunks(10) {
+        let mut codes = String::new();
+        for id in chunk {
+            use std::fmt::Write as _;
+            let _ = write!(codes, "&context_codes[]=course_{id}");
+        }
+        out.push((
+            format!("/api/v1/announcements?start_date={start}&end_date={end}&per_page=100{codes}"),
+            true,
+        ));
+        out.push((
+            format!(
+                "/api/v1/calendar_events?type=event&start_date={start}&end_date={end}                 &per_page=100{codes}"
+            ),
+            true,
+        ));
+    }
+    out
+}
+
 /// A two-week window around today, the same shape `todo` asks for.
 fn planner_window() -> (String, String) {
     let now = jiff::Timestamp::now();
@@ -150,6 +179,7 @@ pub async fn run(args: &Args) -> Result<Vec<PathBuf>> {
     for id in &args.courses {
         plan.extend(course_endpoints(*id));
     }
+    plan.extend(context_endpoints(&args.courses));
 
     let mut written = Vec::new();
     for (path, paginated) in plan {
@@ -350,5 +380,31 @@ mod tests {
                 "{needle} missing"
             );
         }
+        let context: Vec<String> = context_endpoints(&[7, 8])
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        for needle in ["announcements", "calendar_events"] {
+            assert!(
+                context.iter().any(|p| p.contains(needle)),
+                "{needle} missing"
+            );
+        }
+        for path in &context {
+            assert!(path.contains("context_codes[]=course_7"), "{path}");
+            assert!(path.contains("context_codes[]=course_8"), "{path}");
+        }
+        assert!(context_endpoints(&[]).is_empty());
+    }
+
+    #[test]
+    fn context_codes_are_batched_ten_to_a_call() {
+        let courses: Vec<i64> = (1..=21).collect();
+        let plan = context_endpoints(&courses);
+        // Three batches, each with an announcements and a calendar call.
+        assert_eq!(plan.len(), 6);
+        let last = &plan[4].0;
+        assert!(last.contains("context_codes[]=course_21"), "{last}");
+        assert_eq!(last.matches("context_codes[]=").count(), 1, "{last}");
     }
 }

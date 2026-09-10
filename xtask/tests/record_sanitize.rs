@@ -127,8 +127,29 @@ async fn mount(server: &MockServer) {
             .await;
     }
 
-    // The remaining account endpoints answer with empty collections.
+    mount_context(server, &authorized).await;
+}
+
+/// The two Appendix B endpoints addressed by a list of course context codes.
+async fn mount_context<M: wiremock::Match + 'static>(
+    server: &MockServer,
+    authorized: &impl Fn() -> M,
+) {
+    server
+        .register(
+            Mock::given(method("GET"))
+                .and(path("/api/v1/announcements"))
+                .and(query_param("context_codes[]", "course_77"))
+                .and(authorized())
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
+                    "id": 88, "title": "Welcome", "context_code": "course_77",
+                    "message": "<p>Office hours moved.</p>",
+                    "author": {"display_name": "Ada Lovelace"}
+                }]))),
+        )
+        .await;
     for endpoint in [
+        "/api/v1/calendar_events",
         "/api/v1/planner/items",
         "/api/v1/users/self/missing_submissions",
         "/api/v1/users/self/enrollments",
@@ -209,6 +230,18 @@ async fn record_keeps_the_read_headers_and_writes_the_token_nowhere() {
     assert!(
         files.keys().any(|n| n.ends_with("-page-2.json")),
         "the next page was not recorded: {:?}",
+        files.keys().collect::<Vec<_>>()
+    );
+
+    // The two context endpoints of Appendix B are walked as well.
+    assert!(
+        files.keys().any(|n| n.starts_with("get-announcements")),
+        "announcements not recorded: {:?}",
+        files.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        files.keys().any(|n| n.starts_with("get-calendar_events")),
+        "calendar events not recorded: {:?}",
         files.keys().collect::<Vec<_>>()
     );
 
