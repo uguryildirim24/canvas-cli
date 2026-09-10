@@ -162,11 +162,25 @@ canvas notify [--since CURSOR] [--stdout]
 
 canvas schema <command> | canvas schema --list
 canvas mcp
+
+canvas bridge install [--extension-id ID] [--browser chrome|chromium|edge]
+canvas bridge host [CALLER_ORIGIN] [--parent-window HANDLE]
+canvas bridge status
+canvas bridge detach [--attachment ID]
+canvas here [--attachment ID] [--text]
+canvas note --text T [--source-ref REF]… [--attachment ID] [--generation N]
+canvas open <target> --follow [--attachment ID]
+
+canvas discussion reply <course> <topic|URL> [--to ENTRY_ID] (--text T | --text-file P | --text -) [--attach P]… [--yes]
+canvas inbox send --to USER_ID[,…] [--subject S] (--text T | --text-file P | --text -) [--attach P]… [--yes]
+canvas inbox reply <conversation_id> (--text T | --text-file P | --text -) [--attach P]… [--yes]
+canvas operation status <journal_id>
+canvas operation reconcile <journal_id> [--assume-not-posted]
 ```
 
-`pages`, `page`, `syllabus`, `discussions`, `discussion`, and `inbox *` are §23. `watch` and `notify` are §22. `schema` and `mcp` are §21.
+`pages`, `page`, `syllabus`, `discussions`, `discussion`, and `inbox *` are §23. `watch` and `notify` are §22. `schema` and `mcp` are §21. `bridge *`, `here`, `note`, and `open --follow` are §24. `discussion reply`, `inbox send`, `inbox reply`, and `operation *` are §25.
 
-Command names still reserved for a later round (no contract in this document): `grades estimate|what-if|target`, `dashboard`, `submit --resume`, `bridge …`, `here`, and the write halves of `inbox` and `discussion`.
+Command names still reserved for a later round (no contract in this document): `grades estimate|what-if|target`, `dashboard`, and `submit --resume`.
 
 ### Behaviour notes
 
@@ -186,6 +200,9 @@ Command names still reserved for a later round (no contract in this document): `
 - **`pages`**, **`page`**, **`syllabus`**, **`discussions`**, **`discussion`**, **`inbox`**, **`inbox show`**, **`inbox unread-count`** §23. Every one is a `GET` and marks nothing read.
 - **`watch`**, **`notify`** §22. `watch --json` is exit 2 and names `--jsonl`; `notify` is a raw-output command.
 - **`schema`**, **`mcp`** §21.
+- **`bridge install|host|status|detach`**, **`here`**, **`note`**, **`open --follow`** §24. `bridge host` is raw output: Chrome starts it and it speaks native messaging on stdin and stdout. `here` is the one companion command that reaches Canvas, because its API half calls the `course`, `assignment`, and `announcement` cores.
+- **`discussion reply`**, **`inbox send`**, **`inbox reply`** §25. Each freezes a plan, prints it, asks for confirmation at the terminal, and needs a recorded approval before anything is sent. `--yes` is recorded as the `yes-flag` channel, never as an interactive answer.
+- **`operation status|reconcile`** §25. `status` reads the thread back and changes no journal state; `reconcile` may move a journal out of `outcome_unknown`, and only on evidence.
 - **`doctor`** selects an identity like any class-B command when one is selectable and otherwise runs only the identity-free checks. Local checks: config parse, profile and identity, active credential source and stray or pending-cleanup entries, DB integrity and schema versions, credential backend status, identity lock, journals with an absent owner (recovered per §12.2). Only with `--network`, network checks (`GET /users/self` id equals the profile's user id, `X-Rate-Limit-Remaining`, clock skew from the `Date` header). Without `--network`, or with `--offline`, network checks are reported as `skipped`.
 
 ### Command classes
@@ -195,9 +212,11 @@ Every command belongs to exactly one class. The class decides identity selection
 | Class | Commands |
 |---|---|
 | A. identity-free, local | `version`, `completions`, `config *`, `identity list`, `schema` |
-| B. identity-bound, local | `alias *`, `receipts list\|show\|export\|acknowledge`, `cache *`, `identity remove` (operand selects the identity), `open` (browser launch only), `auth status`, `auth logout`, `auth token`, `doctor` (without `--network`; falls back to the identity-free subset when no identity can be selected), `notify` |
-| C. identity-bound, cache-backed read | `courses`, `course`, `todo`, `assignments`, `assignment`, `submission` (without `verify`/`reconcile`), `grades`, `files`, `modules`, `announcements`, `announcement`, `calendar`, `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox`, `inbox show`, `inbox unread-count` |
-| D. network-required | `auth login`, `submit`, `submission verify`, `submission reconcile`, `sync`, `download`, `doctor --network`, `watch` |
+| B. identity-bound, local | `alias *`, `receipts list\|show\|export\|acknowledge`, `cache *`, `identity remove` (operand selects the identity), `open` (browser launch only, and `--follow`, which reaches the broker socket only), `auth status`, `auth logout`, `auth token`, `doctor` (without `--network`; falls back to the identity-free subset when no identity can be selected), `notify`, `bridge install\|host\|status\|detach`, `note` |
+| C. identity-bound, cache-backed read | `courses`, `course`, `todo`, `assignments`, `assignment`, `submission` (without `verify`/`reconcile`), `grades`, `files`, `modules`, `announcements`, `announcement`, `calendar`, `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox`, `inbox show`, `inbox unread-count`, `here` |
+| D. network-required | `auth login`, `submit`, `submission verify`, `submission reconcile`, `sync`, `download`, `doctor --network`, `watch`, `discussion reply`, `inbox send`, `inbox reply`, `operation status`, `operation reconcile` |
+
+`canvas here` is class C because its API half calls the `course`, `assignment`, and `announcement` cores; its browser half reaches the broker socket and nothing else. `operation status --offline` returns the stored journal rather than the class-D exit 2 `operation reconcile` gives; §19 item 37 records that exception.
 
 `canvas mcp` has no class of its own. It binds one identity locally at startup and refuses to start without one (exit 3); the process itself opens no network connection, and each tool takes the class of the command behind it.
 
@@ -256,7 +275,7 @@ Rules:
 - `profile` and `identity` are `null` for class-A commands and for errors raised before identity selection.
 - `outcome` is `ok`, `partial`, `recovery`, `mismatch`, `refused`, or `error`; `exit` is the process exit code (§14). On `error`, `result` is `{ "code": "auth", "message": "…", "http_status": 401, "server_errors": [], "details": {} }` and the schema is `canvas-cli/error@1`. When an error aborts a command after a durable side effect, `details` carries `journal_id`, the journal `state`, and any known `posted` identity, or the per-file results already produced.
 - `requests` is `{ "api": n, "storage": n, "cost": x }`, where `cost` is the sum of `X-Request-Cost` values seen (`null` when none).
-- Raw-output commands reject `--json` with exit 2: `completions`, `auth token --reveal`, `config edit`, `calendar --ics -`, `receipts export --out -`, `schema`, `notify`. Clap usage errors and `--help` keep clap's text output.
+- Raw-output commands reject `--json` with exit 2: `completions`, `auth token --reveal`, `config edit`, `calendar --ics -`, `receipts export --out -`, `schema`, `notify`, `bridge host` (which speaks Chrome native messaging on stdin and stdout, §24). Clap usage errors and `--help` keep clap's text output.
 - `canvas watch` also rejects `--json` with exit 2 and names `--jsonl`. Its stream is a separate contract (§22): one self-describing `event@1` document per line, closed by one `watch@1` envelope. This rule for `--json` is unchanged.
 - `--json` disables color and progress.
 
@@ -342,12 +361,13 @@ XDG layout on every Unix, including macOS. Windows uses AppData. Implemented wit
 | Env binding file | `<data root>/env-bindings.toml` | same |
 | Identity locks (never deleted) | `<data root>/locks/<identity-key>.lock`, `<identity-key>.cred.lock` | same |
 | Coordinator locks (never deleted, §22) | `<identity dir>/locks/api-slot-<n>.lock`, `refresh-<dataset>-<scope>.lock`, `interest-assignment-<id>.lock` | same |
-| Broker endpoint (reserved for M7-a, §24) | `<data root>/bridge/<identity-key>.sock` in `<data root>/bridge/` (dir `0700`, socket `0600`) | named pipe `\\.\pipe\canvas-cli-<identity-key>` |
+| Broker endpoint (§24) | `<data root>/bridge/<identity-key>.sock` in `<data root>/bridge/` (dir `0700`, socket `0600`) | named pipe `\\.\pipe\canvas-cli-<identity-key>`, DACL `D:P(A;;GA;;;{owner SID})(A;;GA;;;SY)` |
+| Broker ownership lock (§24) | `<data root>/bridge/<identity-key>.lock`, held exclusively for the host's lifetime; removed only by `identity remove` | same |
 | Env binding lock | `<data root>/env-bindings.lock` | same |
 | Identity dir | `<data root>/<identity-key>/` | same |
 | Cache DB (disposable) | `<identity dir>/cache.sqlite` | same |
 | State DB (durable) | `<identity dir>/state.sqlite` | same |
-| Journal owner and admission locks | `<identity dir>/journals/<journal-id>.lock`, `<identity dir>/journals/assignment-<id>.lock` | same |
+| Journal owner and admission locks | `<identity dir>/journals/<journal-id>.lock`; admission by target: `assignment-<id>.lock` (§12.2), `topic-<tid>.lock`, `conversation-<id>.lock`, `conversation-new-<plan-id>.lock` (§25) | same |
 | Download manifests and locks (one per destination) | `<identity dir>/downloads/<dest-id>.sqlite`, `<dest-id>.lock` | same |
 | Receipt exports | `<identity dir>/receipts/*.json` (mode `0600`) | same |
 | Verify scratch | `<identity dir>/tmp/` | same |
@@ -382,6 +402,10 @@ ttl_pages         = "1h"
 ttl_discussions   = "15m"
 ttl_inbox         = "5m"
 
+[bridge]
+extension_id       = "abcdefghijklmnopabcdefghijklmnop"
+pause_hidden_after = "10m"
+
 [network]
 api_concurrency     = 4
 storage_concurrency = 4
@@ -392,9 +416,14 @@ color = "auto"
 
 Precedence: defaults → `config.toml` → `CANVAS_*` env → flags, via `figment`. `config set` validates keys.
 
-`cache.ttl_pages`, `cache.ttl_discussions`, and `cache.ttl_inbox` were added by M8-a (§23). No `bridge.*` key exists yet; the companion's own keys arrive with §24.
+`cache.ttl_pages`, `cache.ttl_discussions`, and `cache.ttl_inbox` were added by M8-a (§23). M7-a added the two `bridge.*` keys (§24):
 
-The `governor`, `interest`, `observations`, `baselines`, `events`, `consumer_cursor`, `plans`, and `approval_handles` tables all live in the identity's `state.sqlite`, so `cache clear` cannot reach them (§20, §22).
+| Key | Default | What it does |
+|---|---|---|
+| `bridge.extension_id` | none | the only extension the broker will serve. `bridge install --extension-id ID` writes it |
+| `bridge.pause_hidden_after` | `10m` | how long a hidden tab keeps sharing. `<n>h`, `<n>m`, or `<n>s`; zero is rejected |
+
+The `governor`, `interest`, `observations`, `baselines`, `events`, `consumer_cursor`, `plans`, `approval_handles`, and `operation_journal` tables all live in the identity's `state.sqlite`, so `cache clear` cannot reach them (§20, §22, §25).
 
 ## 10. Cache, state, and sync
 
@@ -416,8 +445,11 @@ Each database keeps its own `PRAGMA user_version` and its own ordered batch list
 | `0002_reads` | cache | M8-a | `pages`, `discussion_topics`, `discussion_entries`, `conversations`, `conversation_unread` (§23) |
 | `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link and its partial unique index (§20) |
 | `0003_events` | state | M6-c | `governor`, `interest`, `observations`, `baselines`, `events`, `consumer_cursor` (§22) |
+| `0004_operations` | state | M8-b | `operation_journal` with the unique index `operation_journal_plan ON operation_journal(plan_id)` and indexes on state and course, plus the nullable column `plans.operation_json` (§25) |
 
-`CACHE_USER_VERSION` is 2 and `STATE_USER_VERSION` is 3. A database at a newer version is refused (exit 13).
+`CACHE_USER_VERSION` is 2 and `STATE_USER_VERSION` is 4. A database at a newer version is refused (exit 13).
+
+`plans.course_id` and `plans.assignment_id` stay `NOT NULL` and hold `0` for a write that names no course and no assignment; `plans.operation_json` carries the real target, and `plan@1` prints `null` for the fields that mean nothing there (§25.2).
 
 ### Entities, observations, membership, coverage
 
@@ -460,9 +492,19 @@ A list refresh downloads every page, then in one transaction upserts entities pe
 
 `state.sqlite` has `scope_epoch(scope, epoch)`. A local write (`submit` reaching any state after `planned`, `reconcile` establishing an outcome) increments, **in the same state transaction as the journal transition**, the epoch of every affected scope: `submission:assignment:<id>`, `assignments:course:<id>`, `assignment_groups:course:<id>:*`, `missing:all`, `planner:*`, `enrollment_grades:*`, `course_totals:course:<id>`. Prefix scopes (`planner:*`) are stored as prefixes and match any scope with that prefix.
 
+An operation journal reaching `posted` or `matched` bumps its own scopes in the same transaction (§25.4):
+
+| Operation kind | Scopes |
+|---|---|
+| `discussion_reply` | `discussion:topic:<tid>`, `discussion:topic:<tid>:replies`, `discussions:course:<cid>` |
+| `inbox_send` | `inbox:*`, `inbox_unread:*` |
+| `inbox_reply` | `conversation:conversation:<id>`, `inbox:*`, `inbox_unread:*` |
+
 A refresh records `epoch_seen` = the state epoch read **before** its first request; at commit, inside `BEGIN IMMEDIATE` on the cache DB, it re-reads the state epoch and aborts (leaving the previous rows) if it advanced. Because the epoch lives in the durable DB and is written with the journal transition, a crash between the journal transition and any cache work cannot leave a falsely fresh cache, and `cache clear` cannot reset it.
 
 **Pending hook.** A journal for assignment A is **pending** when its state is `planned`, `uploading`, `uploaded`, or `posting`, or when it is `outcome_unknown` and neither **superseded** nor **acknowledged**. Superseded = a journal for A created later reached `submitted` or `matched`. Acknowledged = the user ran `receipts acknowledge <journal>` (sets `acknowledged_at`; the state stays `outcome_unknown`). While any pending journal exists for A, every read that touches A reports `pending = true` and treats A's status as unknown regardless of cache age. This is evaluated at read time from `state.sqlite`. Reads never change journal state.
+
+The hook covers operation journals too (§25.8). An operation journal is pending while its state is `planned` or `posting`, and an `outcome_unknown` one is pending until it is acknowledged; **there is no superseding rule for a write**, because a second reply or message is a second post. There are three pending targets, and each of the four §23 reads names one. `discussion@1` names its topic and reports that topic's own journals. `conversation@1` names its conversation and reports that conversation's journals **and every unresolved `inbox_send`**, because a send has no conversation id until Canvas answers, so an unresolved one may have landed in exactly this conversation. `inbox@1` and `inbox_unread@1` name the inbox and report every unresolved `inbox_send` and `inbox_reply`. Each of the four carries `pending: bool` and `pending_journals: [id]`, oldest first.
 
 ### Request budgets
 
@@ -718,9 +760,29 @@ Single-invocation rule: exactly one JSON envelope (§7). Aborts use the `error` 
 | `expired` | the plan's 15-minute admission window passed (§20) |
 | `invalidated` | the plan was declined, cancelled, or is gone, or a frozen observation changed (§20) |
 | `approval_required` | the plan has no recorded human approval, or its handle was rejected (§20, §21) |
-| `not_attached` | `canvas://…/context/<handle>` has no attachment (§21; the bridge is §24) |
+| `not_attached` | nothing is attached, or the caller has not attached (§24) |
+| `paused` | sharing is paused (§24) |
+| `validating` | the attached page just changed and has not been confirmed (§24) |
+| `account_mismatch` | the browser is signed in as another Canvas account (§24) |
+| `bridge_unavailable` | no `canvas bridge host` is running (§24) |
+| `stale_generation` | the named navigation generation is not the tab's current one, in either direction (§24) |
+| `protocol` | a message `bridge-ipc@1` does not name, or a request over its 64 KiB bound (§24) |
+| `note_too_large` | the note is over 8 KiB; nothing was held (§24) |
+| `source_ref_rejected` | a note's source ref is not `canvas://` or `https` on the attached origin; nothing was held (§24) |
+| `note_rejected` | the note was empty, carried more than 16 refs, or the attachment already holds its 32; nothing was held (§24) |
+| `origin_mismatch` | a follow target outside the granted origin (§24) |
+| `navigation_timeout` | the companion did not acknowledge a follow within two seconds; the tab may still have moved (§24) |
+| `group_write` | the discussion topic is a group topic (§25) |
+| `locked` | the discussion topic is locked or closed for comments (§25) |
+| `initial_post_required` | the topic gates its replies and this identity has not posted (§25) |
+| `unresolved` | a `--to` entry outside the topic, or a recipient id Canvas does not return (§25) |
+| `empty_body` | the body is empty or only whitespace (§25) |
+| `denied` | a `401`/`403` on the course, topic, or conversation at prepare (§25) |
+| `unsupported` | an attachment on a discussion reply, a body over 1 MiB, or more than 10 attachments (§25) |
 
-`in_progress` stays a message on an exit-8 refusal, not a reason. The M8-a refusals keep `code: refused` with the `initial_post_required:` message prefix (§23). Every reason above is decided before any upload and before the submission `POST`.
+`zone_opaque` is the one companion reason that is **not** a refusal: the attachment is healthy, the page carries nothing, and the exit is 0 (§24.7).
+
+`in_progress` stays a message on an exit-8 refusal, not a reason. The M8-a **read** refusals keep `code: refused` with the `initial_post_required:` message prefix and carry no reason (§23); the M8-b **write** refusal of the same gate carries `details.reason: "initial_post_required"`. Every reason above is decided before any upload, before the submission `POST`, and before any write `POST`.
 
 **Precedence** when several apply in one invocation: an abort (2, 3, 13, 4, 5, 6, 7, in that order of detection) ends the command immediately, after the durable phase outcome (journal state, per-file results) has been committed and is carried in `details`. For a completed command: 9 > 10 > 8 > 12 > 11 > 0.
 
