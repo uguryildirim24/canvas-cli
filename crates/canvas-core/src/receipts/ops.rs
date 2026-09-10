@@ -325,7 +325,7 @@ pub fn list_journals(
         {
             continue;
         }
-        out.push(summarize_operation(store, identity_dir, &row)?);
+        out.push(summarize_operation(identity_dir, &row)?);
     }
     out.sort_by(|a, b| {
         b.created_at
@@ -338,7 +338,7 @@ pub fn list_journals(
 /// Show a journal by journal id or receipt id. Class B: never lock, never transition.
 pub fn show(store: &Store, identity_dir: &Path, id: &str) -> Result<ShowResult, ReceiptError> {
     if let Some(row) = operation_by_id(store, id)? {
-        let journal = summarize_operation(store, identity_dir, &row)?;
+        let journal = summarize_operation(identity_dir, &row)?;
         let receipt = operation_receipt(store, &row)?;
         return Ok(ShowResult { journal, receipt });
     }
@@ -519,14 +519,14 @@ fn summarize(
 /// The submission-only fields are `null` rather than invented, and the
 /// operation block carries the target, the digests, and the attribution.
 fn summarize_operation(
-    store: &Store,
     identity_dir: &Path,
     row: &crate::operations::OperationRow,
 ) -> Result<JournalSummary, ReceiptError> {
     let owner = crate::operations::owner_status_for(identity_dir, &row.journal_id, row.state)
         .map_err(JournalError::from)?;
-    let superseded = crate::operations::is_superseded(store, &row.journal_id)
-        .map_err(|_| ReceiptError::StateConflict)?;
+    // A write is never superseded by another write (M8-b review): the column
+    // exists because `receipts list` prints one table for both kinds.
+    let superseded = crate::operations::is_superseded();
     Ok(JournalSummary {
         journal_id: row.journal_id.clone(),
         state: row.state.as_str().to_string(),
