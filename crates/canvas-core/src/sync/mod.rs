@@ -32,8 +32,9 @@ mod review_tests;
 mod tests;
 
 pub use announcements::{
-    AnnouncementsDataset, announcement_path, announcement_to_entity, announcements_path,
-    announcements_to_ingest_page, course_id_from_context, default_ttl_announcements,
+    AnnouncementDetailDataset, AnnouncementsDataset, announcement_path, announcement_to_entity,
+    announcements_path, announcements_to_ingest_page, course_id_from_context,
+    default_ttl_announcements, refresh_announcement,
 };
 pub use assignments::{
     AssignmentsDataset, assignment_detail_path, assignment_to_entity, assignments_path,

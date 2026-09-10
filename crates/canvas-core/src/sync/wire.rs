@@ -244,6 +244,21 @@ impl Observed<Announcement> {
     }
 }
 
+impl Observed<Announcement> {
+    /// Entity for the detail route (§12.6), where the course comes from the
+    /// path and not from `context_code`.
+    pub fn entity_in_course(self, course_id: i64) -> EntityIngest {
+        let mut entity = self.entity();
+        entity.fields.retain(|f| f.name != "course_id");
+        entity.fields.push(FieldWrite {
+            name: "course_id",
+            group: FieldGroup::Core,
+            value: Some(course_id.to_string()),
+        });
+        entity
+    }
+}
+
 impl Observed<CalendarEvent> {
     /// Entity for one calendar event, keeping explicit `null` distinct from an
     /// absent field (§10).
