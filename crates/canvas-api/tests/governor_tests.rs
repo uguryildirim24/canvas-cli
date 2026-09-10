@@ -1,0 +1,261 @@
+//! Governor and retry delay tests.
+
+mod common;
+
+use std::time::Duration;
+
+use canvas_api::governor::{Governor, Lane, retry_delays};
+use canvas_api::{Error, GovernorConfig};
+use serde::Deserialize;
+use serde_json::json;
+use tokio::time::{Instant, advance, pause};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+#[derive(Deserialize)]
+struct OkBody {
+    ok: bool,
+}
+
+fn gov_config() -> GovernorConfig {
+    GovernorConfig {
+        jitter: false,
+        full_remaining: 700.0,
+        ..Default::default()
+    }
+}
+
+async fn wall_sleep(ms: u64) {
+    let _ =
+        tokio::task::spawn_blocking(move || std::thread::sleep(Duration::from_millis(ms))).await;
+}
+
+async fn wait_for_received(server: &MockServer, n: usize) {
+    for _ in 0..10_000 {
+        if server.received_requests().await.map_or(0, |r| r.len()) >= n {
+            return;
+        }
+        wall_sleep(2).await;
+    }
+    panic!("timed out waiting for {n} received request(s)");
+}
+
+/// Advance virtual time until `handle` completes.
+///
+/// reqwest + `start_paused` auto-advance races with request timeouts, so HTTP
+/// retry tests use [`pause`] and drive time explicitly.
+async fn drive_while_advancing<T>(handle: tokio::task::JoinHandle<T>, max: Duration) -> T {
+    let start = Instant::now();
+    while !handle.is_finished() {
+        advance(Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            start.elapsed() <= max,
+            "driven request did not finish within {max:?}"
+        );
+    }
+    handle.await.expect("join driven request")
+}
+
+#[tokio::test(start_paused = true)]
+async fn delayed_high_sample_discarded() {
+    let gov = Governor::new(gov_config());
+    let p1 = gov.admit(Lane::Api, "r").await;
+    let p2 = gov.admit(Lane::Api, "r").await;
+    let issue1 = p1.issue();
+    let issue2 = p2.issue();
+
+    gov.observe(issue2, 100.0, Some(1.0));
+    assert!((gov.estimate() - 100.0).abs() < 1e-6);
+    assert_eq!(gov.watermark(), issue2);
+
+    gov.observe(issue1, 500.0, Some(1.0));
+    assert!(
+        (gov.estimate() - 100.0).abs() < 1e-6,
+        "stale high sample must not raise estimate; got {}",
+        gov.estimate()
+    );
+    assert_eq!(gov.watermark(), issue2);
+
+    drop(p1);
+    drop(p2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn header_silence_resets_when_nothing_in_flight() {
+    let gov = Governor::new(gov_config());
+    gov.set_estimate_for_test(200.0);
+    assert!((gov.estimate() - 200.0).abs() < 1e-6);
+
+    advance(Duration::from_secs(60)).await;
+
+    let permit = gov.admit(Lane::Api, "r").await;
+    drop(permit);
+
+    assert!(
+        (gov.estimate() - 699.0).abs() < 1e-6,
+        "expected ~699 after silence reset + cost; got {}",
+        gov.estimate()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn header_silence_does_not_reset_while_in_flight() {
+    let gov = Governor::new(gov_config());
+    gov.set_estimate_for_test(200.0);
+    let permit = gov.admit(Lane::Api, "r").await;
+    let after_admit = gov.estimate();
+    assert!((after_admit - 199.0).abs() < 1e-6);
+    assert_eq!(gov.in_flight(), 1);
+
+    advance(Duration::from_secs(60)).await;
+
+    assert!(
+        (gov.estimate() - after_admit).abs() < 1e-6,
+        "estimate must not reset to full while a permit is held; got {}",
+        gov.estimate()
+    );
+    assert!(gov.estimate() < 300.0);
+
+    drop(permit);
+}
+
+#[tokio::test(start_paused = true)]
+async fn cooldown_recovery_under_climbing_samples() {
+    let gov = Governor::new(gov_config());
+    gov.set_estimate_for_test(100.0);
+    assert!(gov.estimate() < 150.0, "in cooldown via low estimate");
+
+    gov.apply_observation_for_test(1, 200.0, Some(1.0));
+    assert!((gov.estimate() - 200.0).abs() < 1e-6);
+    assert!(gov.estimate() < 300.0);
+
+    gov.apply_observation_for_test(2, 320.0, Some(1.0));
+    assert!(
+        gov.estimate() >= 300.0,
+        "sample >= 300 should raise estimate out of cooldown band; got {}",
+        gov.estimate()
+    );
+}
+
+#[tokio::test]
+async fn retry_after_header_pauses_about_three_seconds() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/x"))
+        .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "3"))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/x"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = common::test_client_with_governor(&server, gov_config());
+    pause();
+
+    let handle = tokio::spawn(async move { client.get::<OkBody>("/api/v1/x").await });
+
+    // Reach the first 429 without advancing (real I/O via wall_sleep yields).
+    wait_for_received(&server, 1).await;
+    wall_sleep(50).await;
+
+    let start = Instant::now();
+    let body = drive_while_advancing(handle, Duration::from_secs(10))
+        .await
+        .expect("get after retry");
+    assert!(body.ok);
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed >= Duration::from_secs(3) && elapsed < Duration::from_secs(8),
+        "expected ~3s Retry-After delay, got {elapsed:?}"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn exponential_retries_delay_fifteen_seconds_before_success() {
+    let server = MockServer::start().await;
+
+    for _ in 0..4 {
+        Mock::given(method("GET"))
+            .and(path("/api/v1/x"))
+            .respond_with(ResponseTemplate::new(429))
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/x"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = common::test_client_with_governor(&server, gov_config());
+    pause();
+
+    let handle = tokio::spawn(async move { client.get::<OkBody>("/api/v1/x").await });
+
+    wait_for_received(&server, 1).await;
+    wall_sleep(50).await;
+
+    let start = Instant::now();
+    let body = drive_while_advancing(handle, Duration::from_secs(40))
+        .await
+        .expect("get after retries");
+    assert!(body.ok);
+    let elapsed = start.elapsed();
+    // Delays 1+2+4+8=15s; extra virtual time covers inter-request scheduling.
+    assert!(
+        elapsed >= Duration::from_secs(15) && elapsed < Duration::from_secs(35),
+        "expected >=15s exponential delays, got {elapsed:?}"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 5);
+}
+
+#[tokio::test]
+async fn exhausted_retries_return_rate_limited() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/x"))
+        .respond_with(ResponseTemplate::new(429))
+        .expect(5)
+        .mount(&server)
+        .await;
+
+    let client = common::test_client_with_governor(&server, gov_config());
+    pause();
+
+    let handle = tokio::spawn(async move { client.get::<serde_json::Value>("/api/v1/x").await });
+
+    wait_for_received(&server, 1).await;
+    wall_sleep(50).await;
+
+    let err = drive_while_advancing(handle, Duration::from_secs(40))
+        .await
+        .expect_err("retries exhausted");
+    assert!(matches!(err, Error::RateLimited), "{err:?}");
+    assert_eq!(server.received_requests().await.unwrap().len(), 5);
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_delays_without_retry_after_are_powers_of_two() {
+    let d0 = retry_delays(0, None, false).await;
+    assert_eq!(d0, Duration::from_secs(1));
+    let d1 = retry_delays(1, None, false).await;
+    assert_eq!(d1, Duration::from_secs(2));
+    let d2 = retry_delays(2, None, false).await;
+    assert_eq!(d2, Duration::from_secs(4));
+    let d3 = retry_delays(3, None, false).await;
+    assert_eq!(d3, Duration::from_secs(8));
+}
