@@ -14,37 +14,37 @@ license = "MIT OR Apache-2.0"
 version = "0.1.0"
 
 [workspace.dependencies]
-anyhow = "1.0.104"
-anstream = "1.0.0"
-anstyle = "1.0.14"
-assert_cmd = "2.2.2"
-cap-fs-ext = { version = "3.4.6", features = ["std"] }
-cap-std = "3.4.6"
-clap = { version = "4.6.6", features = ["derive", "env"] }
-clap_complete = "4.6.9"
-clap_mangen = "0.3.3"
-comfy-table = "8.0.0"
-etcetera = "0.11.0"
-figment = { version = "0.10.19", features = ["toml", "env"] }
-fs4 = "0.13.1"
-futures-util = "0.3.34"
-indicatif = "0.18.6"
-insta = "1.48.0"
-jiff = { version = "0.2.35", features = ["serde"] }
+anyhow = "=1.0.104"
+anstream = "=1.0.0"
+anstyle = "=1.0.14"
+assert_cmd = "=2.2.2"
+cap-fs-ext = { version = "=3.4.6", features = ["std"] }
+cap-std = "=3.4.6"
+clap = { version = "=4.6.6", features = ["derive", "env"] }
+clap_complete = "=4.6.9"
+clap_mangen = "=0.3.3"
+comfy-table = "=8.0.0"
+etcetera = "=0.11.0"
+figment = { version = "=0.10.19", features = ["toml", "env"] }
+fs4 = "=0.13.1"
+futures-util = "=0.3.34"
+indicatif = "=0.18.6"
+insta = "=1.48.0"
+jiff = { version = "=0.2.35", features = ["serde"] }
 keyring = { version = "=4.2.0", default-features = false, features = ["v1"] }
-open = "5.4.3"
-predicates = "3.1.4"
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream", "gzip", "brotli", "multipart"] }
-rusqlite = { version = "0.40.2", features = ["bundled"] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-sha2 = "0.10.9"
-thiserror = "2.0.20"
-tokio = { version = "1.53.1", features = ["rt", "macros", "fs", "time", "sync"] }
-toml = "1.1.5"
-tracing = "0.1.44"
-tracing-subscriber = "0.3.23"
-wiremock = "0.6.5"
+open = "=5.4.3"
+predicates = "=3.1.4"
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "json", "stream", "gzip", "brotli", "multipart"] }
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+sha2 = "=0.10.9"
+thiserror = "=2.0.20"
+tokio = { version = "=1.53.1", features = ["rt", "macros", "fs", "time", "sync"] }
+toml = "=1.1.5"
+tracing = "=0.1.44"
+tracing-subscriber = "=0.3.23"
+wiremock = "=0.6.5"
 
 canvas-api = { path = "crates/canvas-api" }
 canvas-core = { path = "crates/canvas-core" }
