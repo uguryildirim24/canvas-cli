@@ -985,9 +985,11 @@ async fn resources_are_private_to_the_identity_generation() {
     );
     let text = context["result"]["contents"][0]["text"].as_str().unwrap();
     let document: Value = serde_json::from_str(text).unwrap();
-    assert_eq!(document["result"]["code"], "not_attached");
     assert_eq!(document["outcome"], "refused");
     assert_eq!(document["exit"], 8);
+    // The reason travels in `reason`, as every §3.2 refusal does.
+    assert_eq!(document["result"]["code"], "refused");
+    assert_eq!(document["result"]["details"]["reason"], "not_attached");
     assert_eq!(context["result"]["ttlMs"], 0);
     mcp.stop();
 }
