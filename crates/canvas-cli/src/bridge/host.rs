@@ -454,12 +454,27 @@ async fn answer(host: &Arc<Host>, request: ipc::Request) -> Body {
 /// released only after the extension re-probed the account for **this**
 /// document (REPORT §3.3 step 4), and an account that no longer matches
 /// refuses the whole answer rather than returning a bundle without it.
+///
+/// The order matters: the caller's capability is checked before the probe is
+/// asked for, so an unentitled caller costs the browser nothing and learns
+/// nothing about the account.
 async fn here(
     host: &Arc<Host>,
     attachment_id: Option<String>,
     consumer: Option<String>,
     include_text: bool,
 ) -> Body {
+    // The capability first, and only then the browser. A caller that may not
+    // read this attachment must not be able to make the companion re-probe
+    // the account or read the page on its behalf.
+    if let Err(reason) = host
+        .broker
+        .lock()
+        .await
+        .may_read(attachment_id.as_deref(), consumer.as_deref())
+    {
+        return Body::Refused { reason };
+    }
     let probe = if include_text {
         request_text(host).await.err()
     } else {
