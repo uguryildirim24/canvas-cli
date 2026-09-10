@@ -129,6 +129,8 @@ pub struct Destination {
     pub install_mutex: Arc<Mutex<()>>,
     /// Startup marker resolution, including unmanaged leftovers.
     pub recovery_actions: Vec<(i64, super::install::Action)>,
+    /// Original rows retained for accurate recovery paths and course attribution.
+    pub recovery_rows: Vec<ManifestRow>,
     /// Path to `install.lock` (for reopening).
     identity_downloads: Arc<Dir>,
 }
@@ -502,7 +504,9 @@ pub fn open_destination(
         install_mutex: Arc::new(Mutex::new(())),
         identity_downloads,
         recovery_actions: Vec::new(),
+        recovery_rows: Vec::new(),
     };
+    destination.recovery_rows = destination.manifest.pending_moves()?;
     destination.recovery_actions = super::install::recover_pending_moves_inner(&destination)
         .map_err(|e| match e {
             super::install::InstallError::Manifest(e) => e,
