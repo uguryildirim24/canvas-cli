@@ -15,6 +15,13 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true
+# Workspace tokio omits test-util; pin the same version with test-util for paused-time tests.
+tokio = { version = "=1.53.1", features = ["rt", "macros", "time", "sync", "test-util"] }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 
 [lints]
 workspace = true
