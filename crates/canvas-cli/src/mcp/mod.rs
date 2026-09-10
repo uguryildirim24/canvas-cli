@@ -46,9 +46,14 @@ pub async fn run(globals: &Globals) -> ExitCode {
     let server = CanvasServer::new(globals.clone(), binding.clone());
     // The command cores are `!Send`, so the service runs on this thread.
     let local = tokio::task::LocalSet::new();
-    local
+    let code = local
         .run_until(Box::pin(serve(server, binding, identity_json)))
-        .await
+        .await;
+    // The stdio reader is a blocking read that ends only when the host writes
+    // again, so letting the runtime drain it would keep a stopped instance
+    // alive. The transport is already closed here, so leave at once.
+    let _ = io::stdout().flush();
+    std::process::exit(i32::from(code));
 }
 
 /// Bind one identity key and generation, or refuse to start.
@@ -67,12 +72,12 @@ fn bind(globals: &Globals) -> Result<(Binding, PathBuf), ExitCode> {
 }
 
 /// Serve until the host disconnects or the identity changes.
-async fn serve(server: CanvasServer, binding: Binding, identity_json: PathBuf) -> ExitCode {
+async fn serve(server: CanvasServer, binding: Binding, identity_json: PathBuf) -> u8 {
     let service = match server.serve(stdio()).await {
         Ok(service) => service,
         Err(e) => {
             let _ = writeln!(io::stderr(), "cannot start the MCP server: {e}");
-            return ExitCode::from(13);
+            return 13;
         }
     };
     let stop = service.cancellation_token();
@@ -88,13 +93,13 @@ async fn serve(server: CanvasServer, binding: Binding, identity_json: PathBuf) -
     watch.abort();
     if changed.get() {
         // §10: the identity is gone or was recreated.
-        return ExitCode::from(13);
+        return 13;
     }
     match quit {
-        Ok(_) => ExitCode::SUCCESS,
+        Ok(_) => 0,
         Err(e) => {
             let _ = writeln!(io::stderr(), "the MCP server stopped: {e}");
-            ExitCode::from(13)
+            13
         }
     }
 }
