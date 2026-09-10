@@ -325,6 +325,24 @@ pub fn ttl_grades() -> jiff::Span {
     )
 }
 
+/// Default assignments TTL (30m).
+#[must_use]
+pub fn ttl_assignments() -> jiff::Span {
+    jiff::Span::new().minutes(30)
+}
+
+/// Default missing TTL (10m).
+#[must_use]
+pub fn ttl_missing() -> jiff::Span {
+    jiff::Span::new().minutes(10)
+}
+
+/// Default planner TTL (10m).
+#[must_use]
+pub fn ttl_planner() -> jiff::Span {
+    jiff::Span::new().minutes(10)
+}
+
 fn parse_ttl(raw: Option<&str>, default_amount: i64, hours: bool) -> jiff::Span {
     let Some(raw) = raw else {
         return if hours {

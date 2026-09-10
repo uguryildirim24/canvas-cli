@@ -1,10 +1,13 @@
 //! Preserve field presence while projecting API models onto allowlisted cache fields.
 
-use super::{SyncError, course_to_entity, enrollment_to_entity, grading_period_to_entity};
+use super::{
+    SyncError, assignment_to_entity, course_to_entity, enrollment_to_entity,
+    grading_period_to_entity,
+};
 use crate::store::{EntityIngest, FieldGroup, FieldWrite};
 use canvas_api::{
     Supplied,
-    models::{Course, Enrollment, GradingPeriod},
+    models::{Assignment, Course, Enrollment, GradingPeriod},
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -223,6 +226,34 @@ impl Observed<GradingPeriod> {
                 };
                 observe(&mut entity.fields, &self.raw, name, group);
             }
+        }
+        entity
+    }
+}
+
+impl Observed<Assignment> {
+    /// Project an assignment, preserving three-state supply from the raw payload.
+    pub fn entity(self, course_hint: Option<i64>) -> EntityIngest {
+        let mut entity = assignment_to_entity(&self.model, course_hint);
+        for (name, group) in [
+            ("name", FieldGroup::Core),
+            ("due_at", FieldGroup::Core),
+            ("unlock_at", FieldGroup::Core),
+            ("lock_at", FieldGroup::Core),
+            ("points_possible", FieldGroup::Core),
+            ("html_url", FieldGroup::Core),
+            ("description", FieldGroup::Detail),
+            ("submission_types", FieldGroup::Detail),
+            ("allowed_extensions", FieldGroup::Detail),
+            ("allowed_attempts", FieldGroup::Detail),
+            ("can_submit", FieldGroup::Detail),
+            ("workflow_state", FieldGroup::Status),
+        ] {
+            observe(&mut entity.fields, &self.raw, name, group);
+        }
+        // List endpoints omit `can_submit`; ensure we do not invent a write when absent.
+        if self.raw.get("can_submit").is_none() {
+            entity.fields.retain(|f| f.name != "can_submit");
         }
         entity
     }
