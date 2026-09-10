@@ -37,8 +37,8 @@ mod tests;
 pub use execute::{Admitted, Posted, execute, post};
 pub use ops::{
     ASSUME_AFTER, Patch, acknowledge, assume_not_posted, attach_identity, commit_matched,
-    commit_posted, create_linked, enrich_readback, for_plan, get, is_superseded, list,
-    mark_posting, owner_status_for, pending, record_attachment_id, recover_active,
+    commit_posted, create_linked, enrich_readback, for_plan, get, identity_user_id, is_superseded,
+    list, mark_posting, owner_status_for, pending, record_attachment_id, recover_active,
     recover_if_owner_absent, recover_owned, require, transition,
 };
 pub use prepare::{

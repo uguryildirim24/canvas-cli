@@ -1084,6 +1084,55 @@ async fn an_assumption_needs_a_readback_that_covered_the_thread() {
     );
 }
 
+/// A digest another person wrote is not this journal's post (M8-b review).
+///
+/// `Attribution::Unproven` says the readback shows "a message whose digest
+/// matches and whose author is this identity". The author half was not
+/// checked, so a classmate who typed the same sentence resolved an unknown
+/// outcome to `matched`, exit 0, with a receipt.
+#[tokio::test]
+async fn a_digest_written_by_somebody_else_resolves_nothing() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_topic(&server, open_topic()).await;
+    mount_reply_post(&server, 500, json!({"errors": [{"message": "internal"}]})).await;
+    let client = test_client(&server.uri());
+
+    let prepared = approved_reply(&client, &open.store, &paths, &doc).await;
+    let unknown = run(&client, &open.store, &paths, &doc, &prepared.plan.plan_id).await;
+    assert_eq!(unknown.state, OpState::OutcomeUnknown);
+
+    // The same sentence is in the thread, under somebody else's name.
+    server.reset().await;
+    mount_get(
+        &server,
+        "/api/v1/courses/5/discussion_topics/55/entries",
+        json!([{
+            "id": 6100,
+            "user_id": 31,
+            "created_at": "2026-09-10T14:03:00Z",
+            "message": "<p>My reply.</p>"
+        }]),
+    )
+    .await;
+    let resolved = reconcile(
+        &test_client(&server.uri()),
+        &open.store,
+        &paths.identity_dir,
+        &unknown.journal_id,
+        false,
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resolved.verdict, Verdict::NotFound);
+    assert_eq!(resolved.row.state, OpState::OutcomeUnknown);
+    assert_eq!(resolved.row.attribution, Attribution::None);
+    assert!(resolved.row.server_match.is_none());
+    assert!(resolved.row.receipt.is_none());
+}
+
 /// `--assume-not-posted` is refused before the wait, and honest after it.
 #[tokio::test]
 async fn assume_not_posted_is_refused_early_and_recorded_late() {

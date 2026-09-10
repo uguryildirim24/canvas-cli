@@ -957,6 +957,15 @@ pub(super) fn identity_block(store: &Store) -> Result<Value, OperationError> {
     })?)
 }
 
+/// The Canvas user id this identity is, when the store records one.
+pub fn identity_user_id(store: &Store) -> Result<Option<String>, OperationError> {
+    Ok(identity_block(store)?
+        .get("user_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned))
+}
+
 /// Store the identity block on a receipt that was built without one.
 pub fn attach_identity(store: &Store, receipt: &mut Value) -> Result<(), OperationError> {
     receipt["identity"] = identity_block(store)?;
