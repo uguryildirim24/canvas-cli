@@ -20,9 +20,14 @@ pub const IPC_PROTOCOL: &str = "bridge-ipc@1";
 
 /// The largest request line the broker reads, in bytes.
 ///
-/// A request carries a consumer name and an attachment id and nothing else,
-/// so this is generous. It is enforced before the line is assembled.
-pub const MAX_REQUEST_BYTES: usize = 8 * 1024;
+/// It is enforced before the line is assembled. Until M7-b a request carried
+/// a consumer name and an attachment id and nothing else; a `note` carries up
+/// to [`note::MAX_NOTE_BYTES`] of text and [`note::MAX_SOURCE_REFS`] refs, and
+/// JSON escaping can double the text, so the line bound has to be the larger
+/// of the two. Sharing one number would make a note at its own limit come
+/// back as `protocol` rather than as the named refusal `note_too_large`, and
+/// a person cannot act on `protocol`.
+pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 
 /// Why content is unavailable (REPORT §3.2 and §3.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

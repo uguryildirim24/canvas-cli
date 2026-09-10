@@ -112,7 +112,7 @@ fn the_panel_builds_no_markup_from_a_string() {
     let panel_dir = root().join("extension/src");
     let html = std::fs::read_to_string(panel_dir.join("panel.html")).expect("the panel ships");
     for span in html.split('"') {
-        if span.ends_with(".js") {
+        if Path::new(span).extension().is_some_and(|e| e == "js") {
             assert!(
                 panel_dir.join(span).is_file(),
                 "{span} is loaded by the panel but does not ship"

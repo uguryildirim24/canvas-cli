@@ -28,8 +28,8 @@ mod record;
 
 pub use execute::{Admission, execute};
 pub use ops::{
-    Awaiting, EXPIRY, approve, awaiting_decision, cancel, decline, expire, identity_generation,
-    invalidate, issue_handle, load, refusal_for, require,
+    Awaiting, EXPIRY, NewPlan, approve, awaiting_decision, cancel, decline, expire,
+    identity_generation, insert, invalidate, issue_handle, load, refusal_for, require,
 };
 pub use prepare::{PrepareRequest, Prepared, prepare};
 pub use record::{Approval, ApprovalChannel, Observations, PlanRow, PlanState, sha256_hex};
