@@ -299,12 +299,6 @@ impl CanvasServer {
         .await;
     }
 
-    /// Accept a text or URL submission `POST` and answer with the attempt.
-    ///
-    /// The answer echoes the body that was sent: `submit` records the digest of
-    /// the body Canvas reports back, and `submission verify` later compares it
-    /// with what it sent, so a canned response would make every verify report
-    /// `unavailable`.
     /// The unread-conversation count (M8-a `inbox_unread`).
     ///
     /// A `watch` tick refreshes it, so the event stream needs it mounted.
@@ -317,6 +311,12 @@ impl CanvasServer {
         .await;
     }
 
+    /// Accept a text or URL submission `POST` and answer with the attempt.
+    ///
+    /// The answer echoes the body that was sent: `submit` records the digest of
+    /// the body Canvas reports back, and `submission verify` later compares it
+    /// with what it sent, so a canned response would make every verify report
+    /// `unavailable`.
     async fn mount_submit(&self) {
         Mock::given(method("POST"))
             .and(path_regex(
