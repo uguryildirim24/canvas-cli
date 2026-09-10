@@ -112,6 +112,133 @@ pub async fn preflight(
     .await
 }
 
+/// Assignment facts pre-flight derives for the plan (steps 1 and 6).
+///
+/// The plan layer needs the same numbers the confirmation prints, so they are
+/// derived once here and shared by `submit` and `canvas-core::plan`.
+#[derive(Debug, Clone, Default)]
+pub struct AssignmentFacts {
+    /// Baseline attempt (step 6).
+    pub baseline_attempt: i64,
+    /// Baseline submission id (step 6).
+    pub baseline_submission_id: Option<i64>,
+    /// Due-at when known.
+    pub due_at: Option<String>,
+    /// Past due; a warning, never a refusal.
+    pub past_due: bool,
+    /// Assignment name when known.
+    pub assignment_name: Option<String>,
+    /// Course code when known.
+    pub course_code: Option<String>,
+}
+
+/// Step 1: fresh `GET` with `include[]=submission&include[]=can_submit`.
+pub async fn fetch_assignment(
+    client: &Client,
+    course_id: i64,
+    assignment_id: i64,
+) -> Result<Assignment, PreflightError> {
+    Ok(get_assignment_for_submit(client, course_id, assignment_id).await?)
+}
+
+/// Step 2: take the admission lock for one assignment.
+pub fn admit(identity_dir: &Path, assignment_id: i64) -> Result<AdmissionLock, PreflightError> {
+    AdmissionLock::try_acquire(identity_dir, assignment_id).map_err(|e| match e {
+        LockError::InProgress => PreflightError::InProgress { journal_id: None },
+        LockError::Io(err) => PreflightError::Io(err),
+    })
+}
+
+/// Steps 3 and 4: group and submission-type rules, then eligibility.
+pub fn check_admissible(
+    assignment: &Assignment,
+    kind: InputKind,
+    now: Timestamp,
+) -> Result<(), PreflightError> {
+    check_group_and_types(assignment, kind)?;
+    check_eligibility(assignment, now)
+}
+
+/// Step 5 tail: every uploaded name must carry an allowed extension.
+pub fn check_extensions(
+    assignment: &Assignment,
+    frozen: &FrozenInput,
+) -> Result<(), PreflightError> {
+    if frozen.kind != InputKind::OnlineUpload {
+        return Ok(());
+    }
+    let Some(extensions) = assignment
+        .allowed_extensions
+        .as_value()
+        .filter(|xs| !xs.is_empty())
+    else {
+        return Ok(());
+    };
+    for file in &frozen.payload.files {
+        let extension = Path::new(&file.name)
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        if !extensions
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(extension))
+        {
+            return Err(PreflightError::Refused(format!(
+                "disallowed extension: {}",
+                file.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Step 6 baseline, plus the names the confirmation prints.
+#[must_use]
+pub fn facts_of(assignment: &Assignment, now: Timestamp) -> AssignmentFacts {
+    AssignmentFacts {
+        baseline_attempt: assignment
+            .submission
+            .as_ref()
+            .and_then(|s| s.attempt.as_value().copied())
+            .unwrap_or(0),
+        baseline_submission_id: assignment.submission.as_ref().and_then(|s| s.id),
+        due_at: assignment.due_at.as_value().map(ToString::to_string),
+        past_due: assignment.due_at.as_value().is_some_and(|due| *due < now),
+        assignment_name: assignment.name.as_value().cloned(),
+        course_code: assignment
+            .course
+            .as_ref()
+            .and_then(|c| c.course_code.clone()),
+    }
+}
+
+/// Copy the identity time zone and the assignment names into a frozen payload.
+pub fn enrich_payload(
+    store: &Store,
+    frozen: &mut FrozenInput,
+    facts: &AssignmentFacts,
+) -> Result<(), PreflightError> {
+    frozen.payload.time_zone = store
+        .call_blocking(|c| {
+            use rusqlite::OptionalExtension;
+            Ok(c.state
+                .query_row(
+                    "SELECT value FROM identity WHERE key='time_zone'",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?)
+        })
+        .map_err(JournalError::from)?;
+    frozen
+        .payload
+        .assignment_name
+        .clone_from(&facts.assignment_name);
+    frozen.payload.course_code.clone_from(&facts.course_code);
+    frozen.payload.due_at.clone_from(&facts.due_at);
+    Ok(())
+}
+
 /// Run the ordered preflight, freezing on a blocking worker only after eligibility.
 #[allow(clippy::too_many_arguments)]
 pub async fn preflight_with_input<F>(
@@ -130,96 +257,68 @@ where
 {
     let _ = identity_key;
     // Step 1: fresh assignment GET.
-    let assignment = get_assignment_for_submit(client, course_id, assignment_id).await?;
+    let assignment = fetch_assignment(client, course_id, assignment_id).await?;
 
     // Step 2: admission lock + owner-absent recovery.
-    let admission =
-        AdmissionLock::try_acquire(identity_dir, assignment_id).map_err(|e| match e {
-            LockError::InProgress => PreflightError::InProgress { journal_id: None },
-            LockError::Io(err) => PreflightError::Io(err),
-        })?;
+    let admission = admit(identity_dir, assignment_id)?;
     let recovered = recover_active(store, identity_dir, assignment_id)?;
 
     // Steps 3–4.
-    check_group_and_types(&assignment, kind)?;
-    check_eligibility(&assignment, now)?;
+    check_admissible(&assignment, kind, now)?;
 
     // Step 5: freeze once under admission, after eligibility.
+    let mut frozen = freeze_on_worker(kind, freeze).await?;
+    check_extensions(&assignment, &frozen)?;
+
+    // Step 6: baseline from the fresh assignment.
+    let facts = facts_of(&assignment, now);
+    enrich_payload(store, &mut frozen, &facts)?;
+
+    Ok(PreflightOutcome {
+        plan: plan_of(course_id, assignment_id, &facts, frozen, recovered),
+        admission,
+    })
+}
+
+/// Step 5: run the freeze closure on a blocking worker and confirm the kind.
+pub(crate) async fn freeze_on_worker<F>(
+    kind: InputKind,
+    freeze: F,
+) -> Result<FrozenInput, PreflightError>
+where
+    F: FnOnce() -> Result<FrozenInput, FreezeError> + Send + 'static,
+{
     let frozen = tokio::task::spawn_blocking(freeze)
         .await
         .map_err(|_| std::io::Error::other("input worker failed"))??;
     if frozen.kind != kind {
         return Err(PreflightError::Validation("input kind changed".into()));
     }
-    if kind == InputKind::OnlineUpload {
-        let extensions = assignment.allowed_extensions.as_value();
-        if let Some(extensions) = extensions.filter(|xs| !xs.is_empty()) {
-            for file in &frozen.payload.files {
-                let extension = std::path::Path::new(&file.name)
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("");
-                if !extensions
-                    .iter()
-                    .any(|allowed| allowed.eq_ignore_ascii_case(extension))
-                {
-                    return Err(PreflightError::Refused(format!(
-                        "disallowed extension: {}",
-                        file.name
-                    )));
-                }
-            }
-        }
+    Ok(frozen)
+}
+
+/// Assemble the confirmation plan from the frozen input and the fresh facts.
+pub(crate) fn plan_of(
+    course_id: i64,
+    assignment_id: i64,
+    facts: &AssignmentFacts,
+    frozen: FrozenInput,
+    recovered: Vec<(String, State)>,
+) -> Plan {
+    Plan {
+        course_id,
+        assignment_id,
+        assignment_name: facts.assignment_name.clone(),
+        course_code: facts.course_code.clone(),
+        due_at: facts.due_at.clone(),
+        past_due: facts.past_due,
+        kind: frozen.kind,
+        estimated_attempt: facts.baseline_attempt + 1,
+        baseline_attempt: facts.baseline_attempt,
+        baseline_submission_id: facts.baseline_submission_id,
+        frozen,
+        recovered,
     }
-    // Step 6: baseline from the fresh assignment.
-    let baseline_attempt = assignment
-        .submission
-        .as_ref()
-        .and_then(|s| s.attempt.as_value().copied())
-        .unwrap_or(0);
-    let baseline_submission_id = assignment.submission.as_ref().and_then(|s| s.id);
-    let due_at = assignment.due_at.as_value().map(ToString::to_string);
-    let past_due = assignment.due_at.as_value().is_some_and(|due| *due < now);
-    let assignment_name = assignment.name.as_value().cloned();
-    let course_code = assignment
-        .course
-        .as_ref()
-        .and_then(|c| c.course_code.clone());
-
-    let mut frozen = frozen;
-    frozen.payload.time_zone = store
-        .call_blocking(|c| {
-            use rusqlite::OptionalExtension;
-            Ok(c.state
-                .query_row(
-                    "SELECT value FROM identity WHERE key='time_zone'",
-                    [],
-                    |r| r.get(0),
-                )
-                .optional()?)
-        })
-        .map_err(JournalError::from)?;
-    frozen.payload.assignment_name.clone_from(&assignment_name);
-    frozen.payload.course_code.clone_from(&course_code);
-    frozen.payload.due_at.clone_from(&due_at);
-
-    Ok(PreflightOutcome {
-        plan: Plan {
-            course_id,
-            assignment_id,
-            assignment_name,
-            course_code,
-            due_at,
-            past_due,
-            kind: frozen.kind,
-            estimated_attempt: baseline_attempt + 1,
-            baseline_attempt,
-            baseline_submission_id,
-            frozen,
-            recovered,
-        },
-        admission,
-    })
 }
 
 /// Step 7: create the journal under the held admission lock; caller releases admission after.
@@ -245,7 +344,8 @@ pub fn create_from_plan(
     })
 }
 
-fn recover_active(
+/// Step 2 recovery: adopt or refuse every active journal for this assignment.
+pub fn recover_active(
     store: &Store,
     identity_dir: &Path,
     assignment_id: i64,

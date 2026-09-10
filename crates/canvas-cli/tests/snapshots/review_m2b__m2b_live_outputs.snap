@@ -18,7 +18,7 @@ expression: snapshot
       "partial": [],
       "profile": null,
       "requests": {
-        "api": 3,
+        "api": 4,
         "cost": null,
         "storage": 0
       },
@@ -87,6 +87,12 @@ expression: snapshot
         "journals": [
           {
             "acknowledged_at": null,
+            "approval": {
+              "at": "<time>",
+              "channel": "yes-flag",
+              "consumer": null,
+              "plan_sha256": "<digest>"
+            },
             "assignment_id": "2",
             "assignment_name": "HW",
             "baseline_attempt": 0,
@@ -98,6 +104,7 @@ expression: snapshot
             "kind": "online_text_entry",
             "not_submitted_evidence": null,
             "owner": "n/a",
+            "plan_id": "<plan>",
             "post_status": 201,
             "posted": {
               "attachments": [],
@@ -159,6 +166,12 @@ expression: snapshot
       "result": {
         "journal": {
           "acknowledged_at": null,
+          "approval": {
+            "at": "<time>",
+            "channel": "yes-flag",
+            "consumer": null,
+            "plan_sha256": "<digest>"
+          },
           "assignment_id": "2",
           "assignment_name": "HW",
           "baseline_attempt": 0,
@@ -170,6 +183,7 @@ expression: snapshot
           "kind": "online_text_entry",
           "not_submitted_evidence": null,
           "owner": "n/a",
+          "plan_id": "<plan>",
           "post_status": 201,
           "posted": {
             "attachments": [],
@@ -203,6 +217,12 @@ expression: snapshot
           "uploaded_file_ids": []
         },
         "receipt": {
+          "approval": {
+            "at": "<time>",
+            "channel": "yes-flag",
+            "consumer": null,
+            "plan_sha256": "<digest>"
+          },
           "assignment_id": "2",
           "assignment_name": "HW",
           "attribution": "observed",
@@ -220,6 +240,7 @@ expression: snapshot
           },
           "journal_id": "<journal>",
           "kind": "online_text_entry",
+          "plan_id": "<plan>",
           "posted": {
             "attachments": [],
             "attempt": 1,
@@ -380,6 +401,12 @@ expression: snapshot
   {
     "command": "receipt@1 export",
     "json": {
+      "approval": {
+        "at": "<time>",
+        "channel": "yes-flag",
+        "consumer": null,
+        "plan_sha256": "<digest>"
+      },
       "assignment_id": "2",
       "assignment_name": "HW",
       "attribution": "observed",
@@ -397,6 +424,7 @@ expression: snapshot
       },
       "journal_id": "<journal>",
       "kind": "online_text_entry",
+      "plan_id": "<plan>",
       "posted": {
         "attachments": [],
         "attempt": 1,

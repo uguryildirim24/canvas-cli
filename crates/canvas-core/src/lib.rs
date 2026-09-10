@@ -30,6 +30,9 @@ pub mod receipts;
 /// Submit, reconcile, and verify orchestration.
 pub mod submit;
 
+/// Operation plans and the approval that admits them.
+pub mod plan;
+
 /// Module-aware file download planning and install.
 pub mod download;
 
