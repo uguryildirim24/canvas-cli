@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, sleep};
 
 /// Lane for admission control.
@@ -67,7 +67,6 @@ pub struct AdmissionPermit {
     route_key: String,
     inner: Arc<Inner>,
     _permit: OwnedSemaphorePermit,
-    _cooldown: Option<OwnedSemaphorePermit>,
 }
 
 impl fmt::Debug for AdmissionPermit {
@@ -128,7 +127,8 @@ struct Inner {
     config: GovernorConfig,
     api: Arc<Semaphore>,
     storage: Arc<Semaphore>,
-    cooldown_gate: Arc<Semaphore>,
+    admission: tokio::sync::Mutex<()>,
+    released: Notify,
     state: Mutex<State>,
     next_issue: AtomicU64,
     api_count: AtomicU64,
@@ -157,6 +157,7 @@ struct Outstanding {
 }
 
 struct AppliedSample {
+    issue: u64,
     remaining: f64,
     completed_at: Instant,
 }
@@ -173,7 +174,8 @@ impl Governor {
             inner: Arc::new(Inner {
                 api: Arc::new(Semaphore::new(api_n)),
                 storage: Arc::new(Semaphore::new(storage_n)),
-                cooldown_gate: Arc::new(Semaphore::new(1)),
+                admission: tokio::sync::Mutex::new(()),
+                released: Notify::new(),
                 config,
                 state: Mutex::new(State {
                     estimate: full,
@@ -198,131 +200,57 @@ impl Governor {
     }
 
     /// Admit a request on `lane` for `route_key` (pre-charges expected cost).
-    #[allow(clippy::too_many_lines)]
     pub async fn admit(&self, lane: Lane, route_key: &str) -> AdmissionPermit {
+        // Wait for the lane before serializing admission so a full API lane
+        // does not occupy the admission lock needed by storage (and vice versa).
+        let sem = match lane {
+            Lane::Api => self.inner.api.clone(),
+            Lane::Storage => self.inner.storage.clone(),
+        };
+        let permit = sem.acquire_owned().await.expect("lane semaphore");
+        let _admission = self.inner.admission.lock().await;
         loop {
-            {
+            let (cooldown, in_flight, wait) = {
                 let mut state = self.inner.state.lock().expect("governor state");
                 Inner::reset_silence_locked(&self.inner.config, &mut state);
                 Inner::grow_locked(&mut state);
-            }
-
-            let (wait_target, in_cooldown) = {
-                let state = self.inner.state.lock().expect("governor state");
-                let in_cd = state.in_cooldown || state.estimate < 150.0;
-                if !in_cd {
-                    (Duration::ZERO, false)
-                } else if state.refill <= 0.0 {
-                    (Duration::from_secs(5), true)
+                state.in_cooldown |= state.estimate < 150.0;
+                let wait = if state.refill > 0.0 {
+                    Duration::from_secs_f64(
+                        ((350.0 - state.estimate).max(0.0) / state.refill).min(5.0),
+                    )
                 } else {
-                    let need = (350.0 - state.estimate).max(0.0);
-                    let secs = need / state.refill;
-                    if secs > 5.0 || need == 0.0 && state.estimate < 350.0 {
-                        // wait>5s → probe; already at/above 350 → admit
-                        if state.estimate >= 350.0 {
-                            (Duration::ZERO, true)
-                        } else if secs > 5.0 {
-                            (Duration::from_secs(5), true)
-                        } else {
-                            (Duration::from_secs_f64(secs), true)
-                        }
-                    } else if state.estimate >= 350.0 {
-                        (Duration::ZERO, true)
-                    } else {
-                        (Duration::from_secs_f64(secs), true)
-                    }
-                }
+                    Duration::from_secs(5)
+                };
+                (state.in_cooldown, state.in_flight, wait)
             };
-
-            if wait_target > Duration::ZERO {
-                sleep(wait_target).await;
-                let mut state = self.inner.state.lock().expect("governor state");
-                Inner::grow_locked(&mut state);
+            if cooldown && in_flight > 0 {
+                // Existing normal admissions must drain before the single probe.
+                // notify_one retains a permit if release races this await.
+                self.inner.released.notified().await;
+                continue;
             }
-
-            let cooldown_permit = if in_cooldown {
-                Some(
-                    self.inner
-                        .cooldown_gate
-                        .clone()
-                        .acquire_owned()
-                        .await
-                        .expect("cooldown semaphore"),
-                )
-            } else {
-                None
-            };
-
-            let sem = match lane {
-                Lane::Api => self.inner.api.clone(),
-                Lane::Storage => self.inner.storage.clone(),
-            };
-            let permit = sem.acquire_owned().await.expect("lane semaphore");
-
-            let issue = {
-                let mut state = self.inner.state.lock().expect("governor state");
-                Inner::reset_silence_locked(&self.inner.config, &mut state);
-                Inner::grow_locked(&mut state);
-
-                let now_cd = state.in_cooldown || state.estimate < 150.0;
-                if now_cd && cooldown_permit.is_none() {
-                    drop(permit);
-                    continue;
-                }
-                if !now_cd {
-                    // Drop unused cooldown permit if we left cooldown while waiting.
-                    drop(cooldown_permit);
-                    let cost = state.route_costs.get(route_key).copied().unwrap_or(1.0);
-                    state.estimate -= cost;
-                    if state.estimate < 150.0 {
-                        state.in_cooldown = true;
-                    }
-                    state.estimate_at = Instant::now();
-                    let issue = self.inner.next_issue.fetch_add(1, Ordering::Relaxed);
-                    state.outstanding.insert(
-                        issue,
-                        Outstanding {
-                            admit_at: Instant::now(),
-                            route_key: route_key.to_owned(),
-                        },
-                    );
-                    state.in_flight += 1;
-                    match lane {
-                        Lane::Api => {
-                            self.inner.api_count.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Lane::Storage => {
-                            self.inner.storage_count.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                    return AdmissionPermit {
-                        issue,
-                        lane,
-                        route_key: route_key.to_owned(),
-                        inner: self.inner.clone(),
-                        _permit: permit,
-                        _cooldown: None,
-                    };
-                }
-
-                let cost = state.route_costs.get(route_key).copied().unwrap_or(1.0);
-                state.estimate -= cost;
-                if state.estimate < 150.0 {
-                    state.in_cooldown = true;
-                }
-                state.estimate_at = Instant::now();
-                let issue = self.inner.next_issue.fetch_add(1, Ordering::Relaxed);
-                state.outstanding.insert(
-                    issue,
-                    Outstanding {
-                        admit_at: Instant::now(),
-                        route_key: route_key.to_owned(),
-                    },
-                );
-                state.in_flight += 1;
-                issue
-            };
-
+            if cooldown {
+                // Serialize the timer as well as the probe: queued callers must
+                // not reuse a timer that elapsed while another request ran.
+                sleep(wait).await;
+            }
+            let mut state = self.inner.state.lock().expect("governor state");
+            Inner::reset_silence_locked(&self.inner.config, &mut state);
+            Inner::grow_locked(&mut state);
+            let cost = state.route_costs.get(route_key).copied().unwrap_or(1.0);
+            state.estimate -= cost;
+            state.in_cooldown |= state.estimate < 150.0;
+            state.estimate_at = Instant::now();
+            let issue = self.inner.next_issue.fetch_add(1, Ordering::Relaxed);
+            state.outstanding.insert(
+                issue,
+                Outstanding {
+                    admit_at: Instant::now(),
+                    route_key: route_key.to_owned(),
+                },
+            );
+            state.in_flight += 1;
             match lane {
                 Lane::Api => {
                     self.inner.api_count.fetch_add(1, Ordering::Relaxed);
@@ -331,26 +259,34 @@ impl Governor {
                     self.inner.storage_count.fetch_add(1, Ordering::Relaxed);
                 }
             }
-
             return AdmissionPermit {
                 issue,
                 lane,
                 route_key: route_key.to_owned(),
                 inner: self.inner.clone(),
                 _permit: permit,
-                _cooldown: cooldown_permit,
             };
         }
     }
 
     /// Apply a rate-limit observation for `issue`.
     pub fn observe(&self, issue: u64, remaining: f64, cost: Option<f64>) {
+        if !remaining.is_finite() || remaining < 0.0 {
+            if let Some(cost) = cost {
+                self.observe_cost_only(issue, cost);
+            }
+            return;
+        }
+        let cost = cost.filter(|c| c.is_finite() && *c >= 0.0);
         let mut state = self.inner.state.lock().expect("governor state");
         Inner::apply_observation(&mut state, issue, remaining, cost);
     }
 
     /// Record cost telemetry without a remaining sample.
     pub fn observe_cost_only(&self, issue: u64, cost: f64) {
+        if !cost.is_finite() || cost < 0.0 {
+            return;
+        }
         let mut state = self.inner.state.lock().expect("governor state");
         state.last_header_at = Some(Instant::now());
         state.cost_sum += cost;
@@ -426,6 +362,10 @@ impl Inner {
             state.estimate_at = Instant::now();
             state.watermark = 0;
             state.in_cooldown = false;
+            state.refill = 0.0;
+            state.last_applied = None;
+            state.last_header_at = None;
+            state.started_at = Instant::now();
         }
     }
 
@@ -443,12 +383,12 @@ impl Inner {
         let now = Instant::now();
         state.last_header_at = Some(now);
 
-        let outstanding = state.outstanding.remove(&issue);
+        let outstanding = state.outstanding.get(&issue);
 
         if let Some(c) = cost {
             state.cost_sum += c;
             state.cost_seen = true;
-            if let Some(ref o) = outstanding {
+            if let Some(o) = outstanding {
                 state.route_costs.insert(o.route_key.clone(), c);
             }
         }
@@ -463,9 +403,8 @@ impl Inner {
 
         if apply {
             if let Some(prev) = &state.last_applied {
-                let non_overlap = outstanding
-                    .as_ref()
-                    .is_none_or(|o| o.admit_at >= prev.completed_at);
+                let non_overlap = !state.outstanding.contains_key(&prev.issue)
+                    && outstanding.is_some_and(|o| o.admit_at >= prev.completed_at);
                 if non_overlap && remaining > prev.remaining {
                     let dt = now
                         .saturating_duration_since(prev.completed_at)
@@ -485,6 +424,7 @@ impl Inner {
                 state.watermark = issue;
             }
             state.last_applied = Some(AppliedSample {
+                issue,
                 remaining,
                 completed_at: now,
             });
@@ -501,6 +441,12 @@ impl Inner {
         let mut state = self.state.lock().expect("governor state");
         state.in_flight = state.in_flight.saturating_sub(1);
         state.outstanding.remove(&issue);
+        if let Some(sample) = state.last_applied.as_mut()
+            && sample.issue == issue
+        {
+            sample.completed_at = Instant::now();
+        }
+        self.released.notify_one();
     }
 }
 
@@ -517,7 +463,10 @@ pub async fn retry_delays(attempt: u32, retry_after: Option<Duration>, jitter: b
     let delay = if jitter {
         let base = Duration::from_secs(base_secs);
         let millis = base.as_secs_f64() * 1000.0;
-        let nanos = Instant::now().elapsed().subsec_nanos();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos();
         let factor = 0.75 + f64::from(nanos % 501) / 1000.0;
         Duration::from_secs_f64((millis * factor) / 1000.0)
     } else {
