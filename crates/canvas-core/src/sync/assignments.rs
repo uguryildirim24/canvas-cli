@@ -273,8 +273,11 @@ fn push_rubric(fields: &mut Vec<FieldWrite>, supplied: &ApiSupplied<Value>) {
 /// One rubric criterion, with the rating scale an agent needs to read a score.
 ///
 /// M8-a adds `long_description`, `criterion_use_range`, and `ratings[]`; the
-/// v1 keys keep their names and types.
-fn criterion_json(c: &Value) -> Value {
+/// v1 keys keep their names and types. The projection is idempotent, so a
+/// reader can run a criterion stored before M8-a back through it and get every
+/// field the schema declares (§7) instead of the three v1 keys.
+#[must_use]
+pub fn criterion_json(c: &Value) -> Value {
     serde_json::json!({
         "id": opt_id(c.get("id")),
         "description": c.get("description").and_then(Value::as_str),
