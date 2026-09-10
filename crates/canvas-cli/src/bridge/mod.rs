@@ -10,3 +10,5 @@ pub mod client;
 pub mod host;
 pub mod manifest;
 pub mod owner;
+
+pub mod release;

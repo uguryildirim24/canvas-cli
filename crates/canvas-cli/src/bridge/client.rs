@@ -152,6 +152,7 @@ mod tests {
             &endpoint,
             Op::Attach {
                 consumer: "cli".to_owned(),
+                attachment_id: None,
             },
         )
         .expect("an answer");

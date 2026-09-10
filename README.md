@@ -201,7 +201,9 @@ canvas here --text --json                   # the context bundle
 ```
 
 [`docs/companion.md`](docs/companion.md) has the install steps, the protocol,
-the zones, and exactly which flows were run in real Chrome on this machine.
+the zones, and an explicit record of what was run here and what was not: the
+broker is tested end to end against a real host process, and no flow was
+exercised in a real Chrome on this machine.
 
 `canvas schema <command>` prints the JSON Schema of any command's envelope and
 `result`, and `canvas schema --list` prints the registry. The MCP tools use the

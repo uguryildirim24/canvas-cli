@@ -142,7 +142,11 @@ pub enum Op {
     AttachmentsList,
     /// Opt one consumer in, and return the opaque attachment id.
     #[serde(rename = "attach")]
-    Attach { consumer: String },
+    Attach {
+        consumer: String,
+        #[serde(default)]
+        attachment_id: Option<String>,
+    },
     /// Read the browser side of the bundle.
     ///
     /// `attachment_id` is the capability. `consumer` names an opted-in
@@ -157,15 +161,22 @@ pub enum Op {
         #[serde(default)]
         include_text: bool,
     },
-    /// Drop the attachment.
+    /// Drop the attachment, or one consumer's share of it.
     ///
     /// `attachment_id` follows the same rule as `here`: it is the capability,
     /// and its absence selects the sole attachment, which REPORT §3.2 permits
     /// the CLI and nothing else.
+    ///
+    /// `consumer` scopes the operation to the caller. A named consumer only
+    /// gives up its own opt-in; the tab stays attached for the person and for
+    /// every other consumer. Ending the attachment itself is `canvas bridge
+    /// detach`, a human act.
     #[serde(rename = "detach")]
     Detach {
         #[serde(default)]
         attachment_id: Option<String>,
+        #[serde(default)]
+        consumer: Option<String>,
     },
     /// Let go of the identity so `identity remove` can take the exclusive
     /// lock, then exit.
@@ -300,6 +311,7 @@ mod tests {
             Op::AttachmentsList,
             Op::Attach {
                 consumer: "mcp:claude-code".to_owned(),
+                attachment_id: None,
             },
             Op::Here {
                 attachment_id: Some("0123456789abcdef0123456789abcdef".to_owned()),
@@ -308,6 +320,11 @@ mod tests {
             },
             Op::Detach {
                 attachment_id: Some("0123456789abcdef0123456789abcdef".to_owned()),
+                consumer: None,
+            },
+            Op::Detach {
+                attachment_id: None,
+                consumer: Some("mcp:claude-code".to_owned()),
             },
         ] {
             let line = serde_json::to_string(&Request::new("1", op.clone())).expect("encode");

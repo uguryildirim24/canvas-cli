@@ -53,7 +53,7 @@ pub async fn handle(globals: &Globals, command: BridgeCmd) -> Handled {
             browser,
         } => install(globals, extension_id, browser.unwrap_or(Browser::Chrome)),
         BridgeCmd::Status => status(globals),
-        BridgeCmd::Detach { attachment_id } => detach(globals, attachment_id),
+        BridgeCmd::Detach { attachment_id } => detach(globals, attachment_id, None),
     }
 }
 
@@ -327,7 +327,19 @@ fn human_status(result: &serde_json::Value) -> String {
 
 // ------------------------------------------------------------------- detach
 
-fn detach(globals: &Globals, attachment_id: Option<String>) -> Handled {
+/// `context.detach`: one consumer gives up its own opt-in.
+///
+/// The tab stays attached for the person and for every other consumer, so an
+/// agent cannot end a session it did not start (REPORT §3.2).
+pub fn detach_consumer(
+    globals: &Globals,
+    attachment_id: Option<String>,
+    consumer: &str,
+) -> Handled {
+    detach(globals, attachment_id, Some(consumer.to_owned()))
+}
+
+fn detach(globals: &Globals, attachment_id: Option<String>, consumer: Option<String>) -> Handled {
     let session = match globals.open_local_session() {
         Ok(session) => session,
         Err(e) => return session_error(e, globals.profile.clone()),
@@ -337,6 +349,8 @@ fn detach(globals: &Globals, attachment_id: Option<String>) -> Handled {
         &endpoint,
         Op::Detach {
             attachment_id: attachment_id.clone(),
+            // `None` is the person: the CLI ends the attachment itself.
+            consumer: consumer.clone(),
         },
     ) {
         Ok(Body::Detached { detached }) => {

@@ -393,15 +393,40 @@ async fn answer(host: &Arc<Host>, request: ipc::Request) -> Body {
         Op::AttachmentsList => Body::Attachments {
             attachments: host.broker.lock().await.list(),
         },
-        Op::Attach { consumer } => match host.broker.lock().await.attach_consumer(&consumer) {
+        Op::Attach {
+            consumer,
+            attachment_id,
+        } => match host
+            .broker
+            .lock()
+            .await
+            .attach_consumer(attachment_id.as_deref(), &consumer)
+        {
             Ok((attachment_id, state)) => Body::Attached {
                 attachment_id,
                 state,
             },
             Err(reason) => Body::Refused { reason },
         },
-        Op::Detach { attachment_id } => {
-            match host.broker.lock().await.detach(attachment_id.as_deref()) {
+        Op::Detach {
+            attachment_id,
+            consumer,
+        } => {
+            let mut broker = host.broker.lock().await;
+            // A named consumer gives up only its own opt-in. Ending the
+            // attachment is a human act, so it stays with the CLI.
+            let ended = match consumer.as_deref() {
+                Some(consumer) => broker.detach_consumer(attachment_id.as_deref(), consumer),
+                None => broker.detach(attachment_id.as_deref()),
+            };
+            let detach_extension = consumer.is_none() && ended.is_ok();
+            drop(broker);
+            if detach_extension {
+                host.send(&HostMessage::Detach {
+                    reason: "user_detached".to_owned(),
+                });
+            }
+            match ended {
                 Ok(()) => Body::Detached { detached: true },
                 Err(reason) => Body::Refused { reason },
             }
@@ -540,6 +565,17 @@ async fn read_bounded_line(
 
 /// Bind the endpoint after the stale one was cleared.
 fn bind(endpoint: &Endpoint) -> io::Result<tokio::net::UnixListener> {
+    if !endpoint.path_fits() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "{} is longer than the {} bytes a Unix socket path may have; \
+                 set CANVAS_DATA_ROOT to a shorter directory",
+                endpoint.socket.display(),
+                canvas_core::bridge::endpoint::MAX_SOCKET_PATH
+            ),
+        ));
+    }
     tokio::net::UnixListener::bind(&endpoint.socket)
 }
 

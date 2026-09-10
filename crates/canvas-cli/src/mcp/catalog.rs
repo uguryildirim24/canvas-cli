@@ -19,15 +19,15 @@ use serde_json::Value;
 
 use crate::cli::AssignmentBucket;
 use crate::commands::{
-    Globals, announcement, announcements, assignment, assignments, calendar, course, courses,
-    download, files, grades, handled::Handled, modules, open, receipts, submission, submit, sync,
-    todo,
+    Globals, announcement, announcements, assignment, assignments, bridge, calendar, course,
+    courses, download, files, grades, handled::Handled, here, modules, open, receipts, submission,
+    submit, sync, todo,
 };
 use crate::output::{
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
-    SCHEMA_CALENDAR, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOWNLOAD, SCHEMA_FILES, SCHEMA_GRADES,
-    SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_PLAN, SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION,
-    SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO,
+    SCHEMA_BRIDGE, SCHEMA_CALENDAR, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOWNLOAD, SCHEMA_FILES,
+    SCHEMA_GRADES, SCHEMA_HERE, SCHEMA_MODULES, SCHEMA_OPEN, SCHEMA_PLAN, SCHEMA_RECEIPTS,
+    SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYNC, SCHEMA_TODO,
 };
 
 /// What a tool does to its environment (§3.5).
@@ -378,6 +378,38 @@ pub struct OpenUrlArgs {
     pub target: String,
 }
 
+/// `context.attach` opts this consumer in. The consumer handle is the
+/// surface's own, set by the adapter, so a model cannot name another.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ContextAttachArgs {
+    /// The attachment to opt into. Omit it when only one tab is attached.
+    #[serde(default)]
+    pub attachment_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ContextHereArgs {
+    /// The attachment to read. Omit it to read the one this consumer holds.
+    #[serde(default)]
+    pub attachment_id: Option<String>,
+    /// Ask for the selected passage and the visible excerpt as well. The
+    /// account is verified again before any text is released, and an opaque
+    /// zone releases none.
+    #[serde(default)]
+    pub include_text: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ContextDetachArgs {
+    /// The attachment to give up. Omit it to give up the one this consumer
+    /// holds.
+    #[serde(default)]
+    pub attachment_id: Option<String>,
+}
+
 // ------------------------------------------------------------------ dispatch
 
 /// Every tool this server exposes, in a stable order.
@@ -633,6 +665,45 @@ pub fn specs() -> &'static [ToolSpec] {
             open_world: false,
             input_schema: schema_of::<OpenUrlArgs>,
         },
+        ToolSpec {
+            name: "context.attach",
+            title: "Attach to the companion",
+            description: "Opt this consumer into the Canvas tab the person attached in the \
+                          browser. It returns the attachment handle and its state, never page \
+                          content, and it attaches nothing on its own: the person clicks first.",
+            schema: SCHEMA_HERE,
+            variant: None,
+            effect: Effect::Organize,
+            idempotent: true,
+            open_world: false,
+            input_schema: schema_of::<ContextAttachArgs>,
+        },
+        ToolSpec {
+            name: "context.here",
+            title: "Where the person is",
+            description: "Read the attached page: the API facts its route resolves to, and, \
+                          separately, one bounded observation of the browser. Assessment, \
+                          external-tool and unrecognized pages carry no content at all. Text is \
+                          released only with include_text, after the account is verified again.",
+            schema: SCHEMA_HERE,
+            variant: None,
+            effect: Effect::Read,
+            idempotent: true,
+            open_world: true,
+            input_schema: schema_of::<ContextHereArgs>,
+        },
+        ToolSpec {
+            name: "context.detach",
+            title: "Give up the attachment",
+            description: "Give up this consumer's share of the attachment. The tab stays \
+                          attached for the person and for every other consumer.",
+            schema: SCHEMA_BRIDGE,
+            variant: Some("detach"),
+            effect: Effect::Organize,
+            idempotent: true,
+            open_world: false,
+            input_schema: schema_of::<ContextDetachArgs>,
+        },
     ]
 }
 
@@ -847,6 +918,25 @@ pub async fn dispatch(
                 .await
                 .into()
         }
+        "context.attach" => {
+            let args: ContextAttachArgs = parse(arguments)?;
+            here::attach(globals, args.attachment_id, consumer).into()
+        }
+        "context.here" => {
+            let args: ContextHereArgs = parse(arguments)?;
+            here::handle(
+                globals,
+                args.attachment_id,
+                Some(consumer.to_owned()),
+                args.include_text,
+            )
+            .await
+            .into()
+        }
+        "context.detach" => {
+            let args: ContextDetachArgs = parse(arguments)?;
+            bridge::detach_consumer(globals, args.attachment_id, consumer).into()
+        }
         other => return Err(format!("unknown tool {other}")),
     })
 }
@@ -902,6 +992,9 @@ mod tests {
             "submission.reconcile",
             "receipts.acknowledge",
             "open.url",
+            "context.attach",
+            "context.here",
+            "context.detach",
         ];
         let names: Vec<&str> = specs().iter().map(|spec| spec.name).collect();
         assert_eq!(names, expected);

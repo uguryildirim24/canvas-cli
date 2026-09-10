@@ -89,6 +89,57 @@ pub async fn handle(
     })
 }
 
+/// `context.attach`: opt one consumer in and hand it the capability.
+///
+/// Attaching returns the handle and the state, never page content. The
+/// bundle is a separate act (`context.here`), so opting in and reading the
+/// page are two decisions, not one (REPORT §3.2 step 4).
+pub fn attach(globals: &Globals, attachment_id: Option<String>, consumer: &str) -> Handled {
+    let session = match globals.open_local_session() {
+        Ok(session) => session,
+        Err(e) => return session_error(e, globals.profile.clone()),
+    };
+    let identity = HereIdentityJson {
+        key: session.identity.key.to_string(),
+        generation: session.identity.generation.to_string(),
+    };
+    let endpoint = Endpoint::for_identity(&session.paths.data_root, &session.identity.key);
+    let consumer = consumer.to_owned();
+    let (attachment_id, state) = match client::call(
+        &endpoint,
+        Op::Attach {
+            consumer: consumer.clone(),
+            attachment_id,
+        },
+    ) {
+        Ok(Body::Attached {
+            attachment_id,
+            state,
+        }) => (attachment_id, state),
+        Ok(_) => return refusal(&session, &identity, Some(consumer), Reason::Protocol),
+        Err(reason) => return refusal(&session, &identity, Some(consumer), reason),
+    };
+    let result = HereResult {
+        attachment: Some(attachment_id),
+        state: state.as_str().to_owned(),
+        consumer: Some(consumer),
+        identity,
+        api: HereApiJson::default(),
+        // Opting in reads nothing. `context.here` is the read.
+        browser: None,
+        reason: None,
+    };
+    let mut envelope = super::emit::base_envelope(SCHEMA_HERE, &session, result);
+    envelope.warnings = Vec::new();
+    Handled::new(envelope, |envelope| {
+        writeln!(
+            io::stdout(),
+            "attached {}",
+            envelope.result.attachment.as_deref().unwrap_or("")
+        )
+    })
+}
+
 /// Resolve the API side through the shared handlers.
 ///
 /// Each handler produces its own §7 envelope, freshness and all, so the

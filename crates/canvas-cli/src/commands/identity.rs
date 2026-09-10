@@ -2,8 +2,10 @@
 
 use serde_json::json;
 
+use canvas_core::bridge::Endpoint;
 use canvas_core::identity::{IdentityKey, IdentityLock, RemovalCallbacks, remove_identity};
 
+use crate::bridge::release;
 use crate::cli::{Globals, IdentityCommand};
 use crate::config::Config;
 use crate::credentials;
@@ -137,6 +139,20 @@ fn remove(
         }
     }
 
+    // SPEC §10: a live broker holds the shared identity lock, so it is asked
+    // to let go before the exclusive lock is taken. The request is
+    // cooperative; a host that keeps holding makes this a busy identity and
+    // nothing is removed.
+    let endpoint = Endpoint::for_identity(&core.data_root, &key);
+    match release::request(&endpoint, "identity remove") {
+        release::Released::NotRunning | release::Released::LetGo => {}
+        release::Released::Busy(message) => {
+            return Err(CliError::local(format!(
+                "{message}; stop it with `canvas bridge detach` or close the browser, then try again"
+            )));
+        }
+    }
+
     let lock = IdentityLock::acquire_exclusive(&core)?;
     let mut profiles_removed = Vec::new();
     let mut default_cleared = false;
@@ -188,6 +204,9 @@ fn remove(
         remove_profiles: &mut remove_profiles,
     };
     remove_identity(&core, lock, &mut callbacks)?;
+    // The endpoint and its ownership lock belong to the identity that is
+    // gone. The broker directory and the root identity lock stay.
+    release::forget_endpoint(&endpoint);
 
     let result = json!({
         "removed": true,
