@@ -19,7 +19,8 @@ use super::course::{refresh_fail, resolve_with_refresh};
 use super::course_load::{
     RefreshFail, cached_outcome, cached_outcome_with_error, outcome_freshness,
 };
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use crate::output::{
     EmbeddedJson, ExternalLinkJson, FileRefJson, FilesListingJson, Outcome, PageDetailJson,
     PageResult, PageSummaryJson, PagesResult, PartialScope, SCHEMA_PAGE, SCHEMA_PAGES,
@@ -27,14 +28,21 @@ use crate::output::{
 };
 use crate::session::{Session, ttl_pages};
 
+/// Run `canvas pages` for the CLI: one envelope, one exit code.
+pub async fn run_list(globals: &Globals, course: String, unpublished: bool) -> ExitCode {
+    handle_list(globals, course, unpublished)
+        .await
+        .emit(globals.json)
+}
+
 /// Run `canvas pages <course> [--unpublished]`.
 ///
 /// The listing is one dataset for the whole course; `--unpublished` widens
 /// what is shown, and never changes what is fetched.
-pub async fn run_list(globals: &Globals, course: String, unpublished: bool) -> ExitCode {
+pub async fn handle_list(globals: &Globals, course: String, unpublished: bool) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let (resolved, mut freshness, _) = match resolve_with_refresh(globals, &session, &course).await
     {
@@ -44,7 +52,7 @@ pub async fn run_list(globals: &Globals, course: String, unpublished: bool) -> E
 
     let outcome = match ensure_pages(globals, &session, resolved.id).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&outcome));
 
@@ -55,7 +63,7 @@ pub async fn run_list(globals: &Globals, course: String, unpublished: bool) -> E
         .await
     {
         Ok(rows) => rows,
-        Err(e) => return local_error(globals, &session, &e),
+        Err(e) => return local_error(&session, &e),
     };
     if !unpublished {
         rows.retain(|row| row.published != Some(false));
@@ -88,16 +96,21 @@ pub async fn run_list(globals: &Globals, course: String, unpublished: bool) -> E
         envelope.exit = 12;
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_page_table(&envelope.result.pages)
     })
 }
 
-/// Run `canvas page <course> <url-slug|id|URL>`.
+/// Run `canvas page` for the CLI: one envelope, one exit code.
 pub async fn run_show(globals: &Globals, course: String, page: String) -> ExitCode {
+    handle_show(globals, course, page).await.emit(globals.json)
+}
+
+/// Run `canvas page <course> <url-slug|id|URL>`.
+pub async fn handle_show(globals: &Globals, course: String, page: String) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let (resolved, mut freshness, _) = match resolve_with_refresh(globals, &session, &course).await
     {
@@ -109,7 +122,6 @@ pub async fn run_show(globals: &Globals, course: String, page: String) -> ExitCo
         Ok(operand) => operand,
         Err(message) => {
             return emit_error(
-                globals.json,
                 "resolution",
                 message,
                 6,
@@ -121,7 +133,7 @@ pub async fn run_show(globals: &Globals, course: String, page: String) -> ExitCo
 
     let outcome = match ensure_page(globals, &session, resolved.id, &operand).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&outcome));
 
@@ -135,7 +147,6 @@ pub async fn run_show(globals: &Globals, course: String, page: String) -> ExitCo
         Ok(Some(row)) => row,
         Ok(None) => {
             return emit_error(
-                globals.json,
                 "resolution",
                 &format!("page {page} not found in course {}", resolved.id),
                 6,
@@ -143,7 +154,7 @@ pub async fn run_show(globals: &Globals, course: String, page: String) -> ExitCo
                 Some(session.identity_ref()),
             );
         }
-        Err(e) => return local_error(globals, &session, &e),
+        Err(e) => return local_error(&session, &e),
     };
 
     let rich = canvas_core::markdown::rich_text_opt(row.body.as_deref())
@@ -181,18 +192,21 @@ pub async fn run_show(globals: &Globals, course: String, page: String) -> ExitCo
         &format!("page:{}", row.id),
     );
 
-    emit(globals.json, &envelope, || {
-        print_page(&envelope.result.page)
-    })
+    Handled::new(envelope, move |envelope| print_page(&envelope.result.page))
+}
+
+/// Run `canvas syllabus` for the CLI: one envelope, one exit code.
+pub async fn run_syllabus(globals: &Globals, course: String) -> ExitCode {
+    handle_syllabus(globals, course).await.emit(globals.json)
 }
 
 /// Run `canvas syllabus <course>`.
 ///
 /// No new request: `course` already carries the syllabus body.
-pub async fn run_syllabus(globals: &Globals, course: String) -> ExitCode {
+pub async fn handle_syllabus(globals: &Globals, course: String) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let (resolved, mut freshness, _) = match resolve_with_refresh(globals, &session, &course).await
     {
@@ -201,7 +215,7 @@ pub async fn run_syllabus(globals: &Globals, course: String) -> ExitCode {
     };
     let detail = match super::course::ensure_detail(globals, &session, resolved.id).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&detail));
 
@@ -214,7 +228,6 @@ pub async fn run_syllabus(globals: &Globals, course: String) -> ExitCode {
         Ok(Some(row)) => row,
         Ok(None) => {
             return emit_error(
-                globals.json,
                 "resolution",
                 &format!("course {} not found", resolved.id),
                 6,
@@ -222,7 +235,7 @@ pub async fn run_syllabus(globals: &Globals, course: String) -> ExitCode {
                 Some(session.identity_ref()),
             );
         }
-        Err(e) => return local_error(globals, &session, &e),
+        Err(e) => return local_error(&session, &e),
     };
 
     // The cache keeps the Markdown and its reference projection, never the
@@ -252,7 +265,7 @@ pub async fn run_syllabus(globals: &Globals, course: String) -> ExitCode {
         &format!("syllabus:course:{}", resolved.id),
     );
 
-    emit(globals.json, &envelope, || print_syllabus(&envelope.result))
+    Handled::new(envelope, move |envelope| print_syllabus(&envelope.result))
 }
 
 /// A body cut at the size bound is a partial answer, never a complete one.
@@ -468,9 +481,8 @@ fn load_page(conns: &StoreConns, scope: &str) -> Result<Option<PageRow>, DbError
         .optional()?)
 }
 
-fn local_error(globals: &Globals, session: &Session, err: &DbError) -> ExitCode {
+fn local_error(session: &Session, err: &DbError) -> Handled {
     emit_error(
-        globals.json,
         "local",
         &err.to_string(),
         13,

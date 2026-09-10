@@ -1,5 +1,6 @@
 //! `canvas assignments` (class C).
-use super::emit::{base_envelope, emit, session_error, sync_error};
+use super::emit::{base_envelope, session_error, sync_error};
+use super::handled::Handled;
 use super::{Globals, assignment_read as read};
 use crate::cli::AssignmentBucket as CliBucket;
 use crate::output::{SCHEMA_ASSIGNMENTS, now_timestamp};
@@ -9,15 +10,27 @@ use serde_json::json;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
+/// Run `canvas assignments` for the CLI: one envelope, one exit code.
 pub async fn run(
     globals: &Globals,
     course: String,
     bucket: Option<CliBucket>,
     search: Option<String>,
 ) -> ExitCode {
+    handle(globals, course, bucket, search)
+        .await
+        .emit(globals.json)
+}
+
+pub async fn handle(
+    globals: &Globals,
+    course: String,
+    bucket: Option<CliBucket>,
+    search: Option<String>,
+) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let (course, mut freshness, _) =
         match super::course::resolve_with_refresh(globals, &session, &course).await {
@@ -26,13 +39,13 @@ pub async fn run(
         };
     let outcome = match read::assignments(&session, globals, course.id).await {
         Ok(o) => o,
-        Err(e) => return sync_error(globals, &session, &e),
+        Err(e) => return sync_error(&session, &e),
     };
     freshness.push(super::course_load::outcome_freshness(&outcome));
     let eligibility =
         match read::refresh_stale_eligibility(&session, globals, vec![course.id], None).await {
             Ok(o) => o,
-            Err(e) => return sync_error(globals, &session, &e),
+            Err(e) => return sync_error(&session, &e),
         };
     freshness.extend(
         eligibility
@@ -57,7 +70,7 @@ pub async fn run(
     }).await;
     let items = match items {
         Ok(i) => i,
-        Err(e) => return sync_error(globals, &session, &e.into()),
+        Err(e) => return sync_error(&session, &e.into()),
     };
     let zone = read::zone(&session);
     let result = json!({"course_id":id.to_string(),"bucket":bucket.as_str(),"assignments":items.iter().map(|i|read::assignment_json(i,&zone)).collect::<Vec<_>>()});
@@ -67,12 +80,9 @@ pub async fn run(
     envelope
         .warnings
         .extend(eligibility.into_iter().filter_map(|o| o.error));
-    emit(globals.json, &envelope, || {
-        writeln!(
-            io::stdout(),
-            "{}",
-            read::human_table(&items, &zone, read::use_color(globals))
-        )
+    let color = read::use_color(globals);
+    Handled::new(envelope, move |_| {
+        writeln!(io::stdout(), "{}", read::human_table(&items, &zone, color))
     })
 }
 

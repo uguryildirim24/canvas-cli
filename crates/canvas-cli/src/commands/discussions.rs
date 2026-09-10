@@ -19,7 +19,8 @@ use super::course::{refresh_fail, resolve_with_refresh};
 use super::course_load::{
     RefreshFail, cached_outcome, cached_outcome_with_error, outcome_freshness,
 };
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use super::pages::{
     embedded_json, external_json, files_json, json_bool, json_f64, json_string, json_u64,
     print_refs, truncation_partial,
@@ -35,23 +36,34 @@ use crate::session::{Session, ttl_discussions};
 /// Replies shown per `--page`.
 const REPLY_PAGE: usize = 100;
 
-/// Run `canvas discussions <course> [--unread] [--announcements yes|no]`.
+/// Run `canvas discussions` for the CLI: one envelope, one exit code.
 pub async fn run_list(
     globals: &Globals,
     course: String,
     unread: bool,
     announcements: Option<String>,
 ) -> ExitCode {
+    handle_list(globals, course, unread, announcements)
+        .await
+        .emit(globals.json)
+}
+
+/// Run `canvas discussions <course> [--unread]`.
+pub async fn handle_list(
+    globals: &Globals,
+    course: String,
+    unread: bool,
+    announcements: Option<String>,
+) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let show_announcements = match announcements.as_deref() {
         None | Some("yes") => true,
         Some("no") => false,
         Some(_) => {
             return emit_error(
-                globals.json,
                 "usage",
                 "--announcements takes yes or no",
                 2,
@@ -68,7 +80,7 @@ pub async fn run_list(
 
     let outcome = match ensure_discussions(globals, &session, resolved.id).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&outcome));
 
@@ -79,7 +91,7 @@ pub async fn run_list(
         .await
     {
         Ok(rows) => rows,
-        Err(e) => return local_error(globals, &session, &e),
+        Err(e) => return local_error(&session, &e),
     };
     let mut items: Vec<DiscussionSummaryJson> = rows.iter().map(TopicRow::summary).collect();
     if !show_announcements {
@@ -121,12 +133,12 @@ pub async fn run_list(
         envelope.exit = 12;
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_topic_table(&envelope.result.discussions)
     })
 }
 
-/// Run `canvas discussion <course> <id|URL> [--replies] [--page N]`.
+/// Run `canvas discussion` for the CLI: one envelope, one exit code.
 pub async fn run_show(
     globals: &Globals,
     course: String,
@@ -134,13 +146,25 @@ pub async fn run_show(
     replies: bool,
     page: Option<u32>,
 ) -> ExitCode {
+    handle_show(globals, course, discussion, replies, page)
+        .await
+        .emit(globals.json)
+}
+
+/// Run `canvas discussion <course> <id|URL> [--replies] [--page N]`.
+pub async fn handle_show(
+    globals: &Globals,
+    course: String,
+    discussion: String,
+    replies: bool,
+    page: Option<u32>,
+) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     if page.is_some() && !replies {
         return emit_error(
-            globals.json,
             "usage",
             "--page needs --replies",
             2,
@@ -150,7 +174,6 @@ pub async fn run_show(
     }
     if page == Some(0) {
         return emit_error(
-            globals.json,
             "usage",
             "--page counts from 1",
             2,
@@ -167,7 +190,6 @@ pub async fn run_show(
         Ok(id) => id,
         Err(message) => {
             return emit_error(
-                globals.json,
                 "resolution",
                 message,
                 6,
@@ -179,7 +201,7 @@ pub async fn run_show(
 
     let outcome = match ensure_discussion(globals, &session, resolved.id, topic_id, replies).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&outcome));
 
@@ -192,7 +214,6 @@ pub async fn run_show(
         Ok(Some(row)) => row,
         Ok(None) => {
             return emit_error(
-                globals.json,
                 "resolution",
                 &format!("discussion {topic_id} not found"),
                 6,
@@ -200,7 +221,7 @@ pub async fn run_show(
                 Some(session.identity_ref()),
             );
         }
-        Err(e) => return local_error(globals, &session, &e),
+        Err(e) => return local_error(&session, &e),
     };
     let entries = if replies {
         match session
@@ -210,7 +231,7 @@ pub async fn run_show(
             .await
         {
             Ok(rows) => rows,
-            Err(e) => return local_error(globals, &session, &e),
+            Err(e) => return local_error(&session, &e),
         }
     } else {
         Vec::new()
@@ -312,7 +333,6 @@ pub async fn run_show(
     // until this user posts, so `--replies` cannot be served at all.
     if replies && coverage.blocked.as_deref() == Some("initial_post_required") {
         return emit_error(
-            globals.json,
             "refused",
             "initial_post_required: post to this discussion before you can read its replies",
             8,
@@ -333,7 +353,7 @@ pub async fn run_show(
         envelope.exit = 12;
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_topic(&envelope.result.discussion)
     })
 }
@@ -593,9 +613,8 @@ fn load_entries(conns: &StoreConns, topic_id: i64) -> Result<Vec<EntryRow>, DbEr
         .collect::<Result<Vec<_>, _>>()?)
 }
 
-fn local_error(globals: &Globals, session: &Session, err: &DbError) -> ExitCode {
+fn local_error(session: &Session, err: &DbError) -> Handled {
     emit_error(
-        globals.json,
         "local",
         &err.to_string(),
         13,

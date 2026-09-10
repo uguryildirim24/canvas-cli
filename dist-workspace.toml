@@ -30,10 +30,13 @@ pr-run-mode = "plan"
 # what `dist plan` warns about, and the warning is expected.
 publish-jobs = []
 install-updater = false
-# `cargo xtask dist-assets` writes these before the archives are built.
+# `cargo xtask dist-assets` writes the first two before the archives are
+# built. `skill` is tracked in the repository: it is the agent-facing
+# documentation `canvas mcp` expects a host to load.
 include = [
     "target/dist-assets/man",
     "target/dist-assets/completions",
+    "skill",
 ]
 # Injects the `dist-assets` step into the generated build job.
 github-build-setup = "build-setup.yml"

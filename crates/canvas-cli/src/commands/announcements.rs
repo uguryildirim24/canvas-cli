@@ -17,7 +17,8 @@ use serde_json::Value;
 
 use super::course_load::{RefreshFail, cached_outcome_with_error, outcome_freshness};
 use super::duration::{duration_in_days, parse_duration};
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use super::{Globals, assignment_read as read};
 use crate::output::{
     AnnouncementJson, AnnouncementsResult, Outcome, PartialScope, SCHEMA_ANNOUNCEMENTS, WindowJson,
@@ -28,20 +29,31 @@ use crate::session::{Session, ttl_announcements, ttl_courses};
 /// Default `--since` window (§12.6).
 const DEFAULT_SINCE_DAYS: u32 = 14;
 
-/// Run `canvas announcements [<course>] [--since DURATION] [--unread]`.
+/// Run `canvas announcements` for the CLI: one envelope, one exit code.
 pub async fn run(
     globals: &Globals,
     course: Option<String>,
     since: Option<String>,
     unread: bool,
 ) -> ExitCode {
+    handle(globals, course, since, unread)
+        .await
+        .emit(globals.json)
+}
+
+/// Run `canvas announcements [<course>] [--since DURATION] [--unread]`.
+pub async fn handle(
+    globals: &Globals,
+    course: Option<String>,
+    since: Option<String>,
+    unread: bool,
+) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let Some((days, cutoff)) = window_span(since.as_deref()) else {
         return emit_error(
-            globals.json,
             "usage",
             "--since takes a duration such as 24h, 7d, or 2w",
             2,
@@ -84,7 +96,7 @@ pub async fn run(
     let context_window = ContextWindow::courses(window.clone(), &course_ids);
     let batch = match ensure_announcements(globals, &session, &context_window).await {
         Ok(o) => o,
-        Err(e) => return super::course::refresh_fail(globals, &session, e),
+        Err(e) => return super::course::refresh_fail(&session, e),
     };
     freshness.push(outcome_freshness(&batch.outcome));
 
@@ -100,7 +112,6 @@ pub async fn run(
         Ok(rows) => rows,
         Err(e) => {
             return emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,
@@ -149,7 +160,7 @@ pub async fn run(
         envelope.exit = 12;
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_table(&envelope.result.announcements, &zone)
     })
 }
@@ -181,7 +192,7 @@ async fn active_course_ids(
     globals: &Globals,
     session: &Session,
     freshness: &mut Vec<crate::output::Freshness>,
-) -> Result<Vec<i64>, ExitCode> {
+) -> Result<Vec<i64>, Handled> {
     let courses = match super::course_load::ensure_courses(
         session,
         CoursesScope::Active,
@@ -193,7 +204,7 @@ async fn active_course_ids(
     .await
     {
         Ok(o) => o,
-        Err(e) => return Err(super::course::refresh_fail(globals, session, e)),
+        Err(e) => return Err(super::course::refresh_fail(session, e)),
     };
     freshness.push(outcome_freshness(&courses));
     session
@@ -208,7 +219,6 @@ async fn active_course_ids(
         .await
         .map_err(|e| {
             emit_error(
-                globals.json,
                 "local",
                 &e.to_string(),
                 13,

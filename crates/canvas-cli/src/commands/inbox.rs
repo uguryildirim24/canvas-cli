@@ -22,7 +22,8 @@ use super::course::refresh_fail;
 use super::course_load::{
     RefreshFail, cached_outcome, cached_outcome_with_error, outcome_freshness,
 };
-use super::emit::{base_envelope, emit, emit_error, session_error};
+use super::emit::{base_envelope, emit_error, session_error};
+use super::handled::Handled;
 use super::pages::{json_string, json_u64};
 use crate::output::{
     ConversationAttachmentJson, ConversationDetailJson, ConversationMessageJson,
@@ -32,11 +33,16 @@ use crate::output::{
 };
 use crate::session::{Session, ttl_inbox};
 
-/// Run `canvas inbox [--scope inbox|unread|sent|archived]`.
+/// Run `canvas inbox` for the CLI: one envelope, one exit code.
 pub async fn run_list(globals: &Globals, scope: Option<String>) -> ExitCode {
+    handle_list(globals, scope).await.emit(globals.json)
+}
+
+/// Run `canvas inbox [--scope inbox|unread|sent|archived]`.
+pub async fn handle_list(globals: &Globals, scope: Option<String>) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let scope = match scope.as_deref() {
         None => InboxScope::Inbox,
@@ -44,7 +50,6 @@ pub async fn run_list(globals: &Globals, scope: Option<String>) -> ExitCode {
             Some(scope) => scope,
             None => {
                 return emit_error(
-                    globals.json,
                     "usage",
                     "--scope takes inbox, unread, sent, or archived",
                     2,
@@ -57,7 +62,7 @@ pub async fn run_list(globals: &Globals, scope: Option<String>) -> ExitCode {
 
     let outcome = match ensure_inbox(globals, &session, scope).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     let freshness = vec![outcome_freshness(&outcome)];
 
@@ -69,7 +74,7 @@ pub async fn run_list(globals: &Globals, scope: Option<String>) -> ExitCode {
         .await
     {
         Ok(rows) => rows,
-        Err(e) => return local_error(globals, &session, &e),
+        Err(e) => return local_error(&session, &e),
     };
 
     let denial = outcome.error.as_deref().and_then(listing_denial_status);
@@ -99,20 +104,24 @@ pub async fn run_list(globals: &Globals, scope: Option<String>) -> ExitCode {
         envelope.exit = 12;
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_inbox(&envelope.result.conversations)
     })
 }
 
-/// Run `canvas inbox show <id>`.
+/// Run `canvas inbox show` for the CLI: one envelope, one exit code.
 pub async fn run_show(globals: &Globals, id: String) -> ExitCode {
+    handle_show(globals, id).await.emit(globals.json)
+}
+
+/// Run `canvas inbox show <id>`.
+pub async fn handle_show(globals: &Globals, id: String) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let Some(id) = id.trim().parse::<i64>().ok().filter(|id| *id > 0) else {
         return emit_error(
-            globals.json,
             "resolution",
             "conversation id must be a positive number",
             6,
@@ -123,7 +132,7 @@ pub async fn run_show(globals: &Globals, id: String) -> ExitCode {
 
     let outcome = match ensure_conversation(globals, &session, id).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     let freshness = vec![outcome_freshness(&outcome)];
 
@@ -136,7 +145,6 @@ pub async fn run_show(globals: &Globals, id: String) -> ExitCode {
         Ok(Some(row)) => row,
         Ok(None) => {
             return emit_error(
-                globals.json,
                 "resolution",
                 &format!("conversation {id} not found"),
                 6,
@@ -144,7 +152,7 @@ pub async fn run_show(globals: &Globals, id: String) -> ExitCode {
                 Some(session.identity_ref()),
             );
         }
-        Err(e) => return local_error(globals, &session, &e),
+        Err(e) => return local_error(&session, &e),
     };
 
     let messages = row.messages();
@@ -188,20 +196,25 @@ pub async fn run_show(globals: &Globals, id: String) -> ExitCode {
         envelope.exit = 12;
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         print_conversation(&envelope.result.conversation)
     })
 }
 
-/// Run `canvas inbox unread-count`.
+/// Run `canvas inbox unread-count` for the CLI: one envelope, one exit code.
 pub async fn run_unread_count(globals: &Globals) -> ExitCode {
+    handle_unread_count(globals).await.emit(globals.json)
+}
+
+/// Run `canvas inbox unread-count`.
+pub async fn handle_unread_count(globals: &Globals) -> Handled {
     let session = match globals.open_session() {
         Ok(s) => s,
-        Err(e) => return session_error(globals.json, e, globals.profile.clone()),
+        Err(e) => return session_error(e, globals.profile.clone()),
     };
     let outcome = match ensure_unread(globals, &session).await {
         Ok(o) => o,
-        Err(e) => return refresh_fail(globals, &session, e),
+        Err(e) => return refresh_fail(&session, e),
     };
     let freshness = vec![outcome_freshness(&outcome)];
 
@@ -212,7 +225,7 @@ pub async fn run_unread_count(globals: &Globals) -> ExitCode {
         .await
     {
         Ok(count) => count,
-        Err(e) => return local_error(globals, &session, &e),
+        Err(e) => return local_error(&session, &e),
     };
 
     let mut envelope = base_envelope(
@@ -230,7 +243,7 @@ pub async fn run_unread_count(globals: &Globals) -> ExitCode {
             .push("served stale inbox_unread cache".into());
     }
 
-    emit(globals.json, &envelope, || {
+    Handled::new(envelope, move |envelope| {
         let shown = envelope
             .result
             .unread_count
@@ -483,9 +496,8 @@ fn load_unread(conns: &StoreConns) -> Result<Option<u64>, DbError> {
     Ok(raw.flatten().and_then(|n| u64::try_from(n).ok()))
 }
 
-fn local_error(globals: &Globals, session: &Session, err: &DbError) -> ExitCode {
+fn local_error(session: &Session, err: &DbError) -> Handled {
     emit_error(
-        globals.json,
         "local",
         &err.to_string(),
         13,

@@ -2,6 +2,7 @@
   "outcome": "ok",
   "state": "submitted",
   "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+  "replayed": false,
   "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
   "attribution": "observed",
   "post_status": 201,
