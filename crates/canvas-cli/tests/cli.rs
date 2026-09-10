@@ -101,22 +101,6 @@ fn assert_stub(args: &[&str]) {
     }
 }
 
-fn assert_peer_stub(args: &[&str]) {
-    let result = Command::cargo_bin("canvas")
-        .unwrap()
-        .args(args)
-        .assert()
-        .code(2);
-    if args.contains(&"--json") {
-        let v: serde_json::Value = serde_json::from_slice(&result.get_output().stdout).unwrap();
-        assert_eq!(v["schema"], "canvas-cli/error@1");
-        assert_eq!(v["result"]["message"], "not implemented");
-        assert_eq!(v["exit"], 2);
-    } else {
-        result.stdout("").stderr("not implemented\n");
-    }
-}
-
 /// M2-b commands are wired: they must not print the Round-3 peer stub.
 fn assert_m2b_callable(args: &[&str]) {
     let output = Command::cargo_bin("canvas")
@@ -441,7 +425,7 @@ fn nested_help_lists_registered_commands() {
 fn every_v1_stub_is_callable() {
     // Implemented by M0-c (auth/identity/config/doctor), M1-b
     // (courses/course/alias/sync/cache), M1-c (todo/assignments/assignment/open),
-    // M3-a (files/modules), and M3-b (download) are covered elsewhere.
+    // M3-a (files/modules), and M3-b (download): covered elsewhere.
     let own_stubs: &[&[&str]] = &[
         &["grades"],
         &["announcements"],
@@ -469,12 +453,6 @@ fn every_v1_stub_is_callable() {
     ];
     for args in m2b {
         assert_m2b_callable(args);
-    }
-
-    // Round-3 peer-lane stubs (exit 2).
-    let peer_stubs: &[&[&str]] = &[&["files", "chem"], &["modules", "chem"]];
-    for args in peer_stubs {
-        assert_peer_stub(args);
     }
 }
 
