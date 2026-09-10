@@ -446,6 +446,7 @@ async fn download_hops_strip_auth_count_requests_and_refuse_downgrade() {
         .unwrap(),
         7
     );
+    assert_eq!(client.telemetry().storage, 2);
     assert_eq!(progress.last(), Some(&7));
     assert_eq!(sink, b"payload");
     canvas.reset().await;
@@ -518,5 +519,23 @@ async fn throttle_403_precedes_denial_and_expiry_honors_retry_after() {
             Err(Error::RateLimited)
         ));
         assert!(sink.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn error_body_failure_does_not_hide_final_denial() {
+    for status in [401, 404] {
+        let response = if status == 401 {
+            b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 100\r\nConnection: close\r\n\r\nx"
+                .as_slice()
+        } else {
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 100\r\nConnection: close\r\n\r\nx"
+                .as_slice()
+        };
+        let server = MockServer::raw(response).await;
+        let client = test_client(&server);
+        assert!(
+            matches!(download::download(&client, server.uri().parse().unwrap(), &mut Vec::new(), None, |_| {}).await, Err(Error::Denied { status: code }) if code == status)
+        );
     }
 }
