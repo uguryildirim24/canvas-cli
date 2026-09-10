@@ -158,9 +158,16 @@ enum Commands {
         yes: bool,
     },
     /// Show or reconcile a submission.
+    #[command(subcommand_negates_reqs = true)]
     Submission {
         #[command(subcommand)]
-        command: SubmissionCommand,
+        command: Option<SubmissionCommand>,
+        /// Course id/code/alias followed by assignment id/name.
+        #[arg(required = true, num_args = 2, value_names = ["COURSE", "ASSIGNMENT"])]
+        target: Vec<String>,
+        /// Include submission history.
+        #[arg(long)]
+        history: bool,
     },
     /// Manage local submission receipts.
     Receipts {
@@ -257,9 +264,13 @@ enum Commands {
         alarm: Option<String>,
     },
     /// Open a Canvas URL in the browser.
+    #[command(subcommand_negates_reqs = true)]
     Open {
         #[command(subcommand)]
-        command: OpenCommand,
+        command: Option<OpenCommand>,
+        /// Course id, code, alias, or a Canvas URL.
+        #[arg(required = true)]
+        target: Option<String>,
     },
     /// Refresh cached datasets.
     Sync {
@@ -352,10 +363,6 @@ enum SubmissionCommand {
         #[arg(long)]
         assume_not_submitted: bool,
     },
-    /// Show a submission: `submission <course> <assignment> [--history]`.
-    #[command(external_subcommand)]
-    #[allow(dead_code)]
-    Show(Vec<String>),
 }
 
 #[derive(Debug, Subcommand)]
@@ -390,10 +397,6 @@ enum OpenCommand {
     File { id: String },
     /// Open an announcement page.
     Announcement { course: String, id: String },
-    /// Open a course or URL: `open <course|url>`.
-    #[command(external_subcommand)]
-    #[allow(dead_code)]
-    Target(Vec<String>),
 }
 
 #[derive(Debug, Subcommand)]
@@ -433,9 +436,41 @@ fn not_implemented() -> ExitCode {
     ExitCode::from(1)
 }
 
+impl Cli {
+    fn validate(&self) -> Result<(), clap::Error> {
+        // Clap checks each command level before propagating global values.
+        // Validate the final values too, so split-level flags still conflict.
+        let conflict = if self.fresh && self.offline {
+            Some("--fresh cannot be used with --offline")
+        } else {
+            match &self.command {
+                Commands::Submission {
+                    command: Some(_),
+                    target,
+                    history,
+                } if !target.is_empty() || *history => Some(
+                    "submission operands and --history cannot be used with verify or reconcile",
+                ),
+                Commands::Open {
+                    command: Some(_),
+                    target: Some(_),
+                } => Some("an open target cannot be used with an open subcommand"),
+                _ => None,
+            }
+        };
+        if let Some(message) = conflict {
+            return Err(Self::command().error(clap::error::ErrorKind::ArgumentConflict, message));
+        }
+        Ok(())
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Err(error) = cli.validate() {
+        error.exit();
+    }
     match cli.command {
         Commands::Version => {
             println!("{}", env!("CARGO_PKG_VERSION"));
@@ -469,5 +504,34 @@ async fn main() -> ExitCode {
         | Commands::Config { .. }
         | Commands::Alias { .. }
         | Commands::Doctor { .. } => not_implemented(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_flags_before_nested_commands_preserve_the_selected_command() {
+        let cli = Cli::try_parse_from(["canvas", "submission", "--fresh", "verify", "receipt-1"])
+            .unwrap();
+        cli.validate().unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Submission {
+                command: Some(SubmissionCommand::Verify { .. }),
+                ..
+            }
+        ));
+
+        let cli = Cli::try_parse_from(["canvas", "open", "--offline", "file", "123"]).unwrap();
+        cli.validate().unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Open {
+                command: Some(OpenCommand::File { .. }),
+                ..
+            }
+        ));
     }
 }
