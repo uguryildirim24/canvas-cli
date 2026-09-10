@@ -1175,7 +1175,7 @@ Built by M8-a (`docs/reviews/code-M8-a.md`) and M8-a2 (`docs/reviews/code-M8-a2.
 | `inbox show <id>` | `GET /conversations/:id?auto_mark_as_read=false` | `conversation` / `conversation:<id>` / `ttl_inbox` |
 | `inbox unread-count` | `GET /conversations/unread_count` | `inbox_unread` / `all` / `ttl_inbox` |
 
-`per_page=100` is appended by the client when a path does not already carry it (§11).
+`per_page=100` is appended by the client to every paginated collection request whose path does not already carry it; a single-object `GET` never gets it (§11).
 
 **Nothing is marked read.** Every conversation request carries `auto_mark_as_read=false`. The materialized `/view` discussion endpoint is never used: it marks entries read as a side effect of reading them. `--unread` filters on the stored `read_state` and `unread_count`; it marks nothing.
 
@@ -1283,7 +1283,7 @@ These eight schemas have no typed arm in the schema generator, so their `canvas 
 
 Toolchain: stable 1.98.x in CI; MSRV 1.88; owner machine 1.97.1.
 
-Every version is pinned with `=`, in the workspace manifest or in the crate that uses it. Direct dependencies the table still omits: `getrandom` 0.4.3, `unicode-normalization` 0.1.25, `httpdate` 1.0.3, `rpassword` 7.4.0, and, for tests and `xtask` only, `tokio-rustls` 0.26.5, `tempfile` 3.23.0, and `url` 2.5.8. No post-v1 package added a dependency after `rmcp` and `schemars`. `uuid` names journal ids, plan ids, approval handles, and identity generations.
+Every version is pinned with `=`, in the workspace manifest or in the crate that uses it. Direct dependencies the table still omits: `getrandom` 0.4.3, `unicode-normalization` 0.1.25, `httpdate` 1.0.3, `rpassword` 7.4.0, `rustix` 1.1.4 (`fs`, `process`; `canvas-cli` under `cfg(unix)` only), and, for tests and `xtask` only, `tokio-rustls` 0.26.5, `tempfile` 3.23.0, and `url` 2.5.8. No post-v1 package added a dependency after `rmcp` and `schemars`. `uuid` names journal ids, plan ids, approval handles, and identity generations.
 
 ## Appendix B. Canvas endpoints used
 
@@ -1304,7 +1304,7 @@ Every version is pinned with `=`, in the workspace manifest or in the crate that
 | announcements | `GET /api/v1/announcements?context_codes[]=course_N…(≤10)&start_date=…&end_date=…&per_page=100`; `GET /api/v1/courses/:cid/discussion_topics/:id` |
 | calendar | `GET /api/v1/calendar_events?type=event&context_codes[]=…(≤10)&start_date=…&end_date=…&per_page=100` |
 
-Added after v1. Every one is a `GET`. `per_page=100` is appended by the client when a path does not already carry it (§11).
+Added after v1. Every one is a `GET`. `per_page=100` is appended by the client to every paginated collection request whose path does not already carry it; a single-object `GET` never gets it (§11).
 
 | Command | Endpoint |
 |---|---|
