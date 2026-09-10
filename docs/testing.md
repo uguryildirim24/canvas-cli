@@ -133,7 +133,7 @@ named here exists.
 | concurrent env-binding writes | `review_selection.rs::concurrent_binding_writes_and_logins_preserve_both_bindings` |
 | class-B command with an unbound env pair and no default profile | `e2e/selection.rs::class_b_command_with_an_unbound_env_pair_and_no_default_profile` |
 | `identity remove <key>` with no default profile | `identity.rs::remove_with_no_default_profile` |
-| IPv6 origin identity key on Windows path rules | `identity.rs::ipv6_origin_key`, `e2e/selection.rs::ipv6_origin_identity_key_obeys_windows_path_rules` |
+| IPv6 origin identity key on Windows path rules | `identity.rs::ipv6_origin_key`, `e2e/selection.rs::ipv6_origin_identity_key_obeys_windows_path_rules`, `e2e/selection.rs::ipv6_origin_identity_key_is_a_real_windows_directory` |
 
 <!-- /spec-16-row-3 -->
 

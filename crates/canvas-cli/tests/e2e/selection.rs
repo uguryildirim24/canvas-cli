@@ -110,6 +110,33 @@ async fn ipv6_origin_identity_key_obeys_windows_path_rules() {
     );
 }
 
+/// The same key, created as a real directory by the Windows path layer.
+///
+/// The rules test above is portable and runs everywhere, which is what keeps a
+/// macOS or Linux developer from writing a key Windows cannot store. This one
+/// is the proof on the platform that enforces them: Windows resolves device
+/// names and trims trailing dots and spaces in the file system itself, so only
+/// Windows can show that the component survives a create and a read back.
+#[cfg(windows)]
+#[test]
+fn ipv6_origin_identity_key_is_a_real_windows_directory() {
+    const ORIGIN: &str = "https://[2001:db8::1]:8443";
+    let key = IdentityKey::compute(ORIGIN, 7);
+    let scratch = canvas_core::test_scratch::Scratch::new("e2e-ipv6-key");
+    let dir = scratch.as_ref().join(key.as_str());
+    std::fs::create_dir_all(&dir).expect("Windows accepts the key as a path component");
+    std::fs::write(dir.join("identity.json"), b"{}").expect("a file inside it");
+    let found: Vec<String> = std::fs::read_dir(scratch.as_ref())
+        .expect("the scratch root")
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        found,
+        vec![key.as_str().to_owned()],
+        "Windows stored the component under the name it was given"
+    );
+}
+
 /// True when the first path component names a Windows character device.
 ///
 /// Windows resolves `CON`, `NUL`, `COM1`… as devices whatever the directory or
