@@ -644,6 +644,89 @@ mod tests {
         assert!(view.periods[0].is_current && !view.periods[1].is_current);
     }
 
+    /// SPEC §7 and Appendix D: every field `grades@1` defines is present,
+    /// with `null` for unknown. This lane owns the registry, so the schema it
+    /// added is held to the same rule the `download@1` test states.
+    #[test]
+    fn grades_optional_fields_are_always_present_and_nullable() {
+        const STATUS_KEYS: [&str; 13] = [
+            "submitted",
+            "graded",
+            "score",
+            "grade",
+            "late",
+            "missing",
+            "excused",
+            "workflow_state",
+            "submitted_at",
+            "submitted_at_local",
+            "attempt",
+            "posted_at",
+            "pending",
+        ];
+        const GRADE_KEYS: [&str; 5] = [
+            "current_score",
+            "current_grade",
+            "final_score",
+            "final_grade",
+            "period",
+        ];
+
+        // A row with nothing known still serializes every listed field.
+        let unknown = SubmissionStatusJson {
+            submitted: None,
+            graded: None,
+            score: None,
+            grade: None,
+            late: None,
+            missing: false,
+            excused: None,
+            workflow_state: None,
+            submitted_at: None,
+            submitted_at_local: None,
+            attempt: None,
+            posted_at: None,
+            pending: false,
+        };
+        let value = serde_json::to_value(&unknown).unwrap();
+        let object = value.as_object().unwrap();
+        assert_eq!(
+            object.keys().map(String::as_str).collect::<HashSet<_>>(),
+            STATUS_KEYS.into_iter().collect::<HashSet<_>>(),
+        );
+        for key in STATUS_KEYS {
+            assert!(
+                key == "missing" || key == "pending" || object[key].is_null(),
+                "{key} must serialize as null",
+            );
+        }
+
+        // The registered fixture carries them too, and round-trips unchanged.
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("schemas/grades.json")).unwrap();
+        for course in fixture["courses"].as_array().unwrap() {
+            assert!(course.get("unavailable_reason").is_some(), "{course}");
+            let keys = course["grades"].as_object().unwrap().keys();
+            assert_eq!(
+                keys.map(String::as_str).collect::<HashSet<_>>(),
+                GRADE_KEYS.into_iter().collect::<HashSet<_>>(),
+            );
+        }
+        for group in fixture["course"]["groups"].as_array().unwrap() {
+            assert!(group.get("subtotal").is_some(), "{group}");
+            for assignment in group["assignments"].as_array().unwrap() {
+                let keys = assignment["status"].as_object().unwrap().keys();
+                assert_eq!(
+                    keys.map(String::as_str).collect::<HashSet<_>>(),
+                    STATUS_KEYS.into_iter().collect::<HashSet<_>>(),
+                    "fixture status {assignment} is missing an Appendix D field",
+                );
+            }
+        }
+        let typed: GradesResult = serde_json::from_value(fixture.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&typed).unwrap(), fixture);
+    }
+
     /// SPEC §7 and Appendix D: a field defined in Appendix D is always
     /// present; `null` means unknown or not applicable. `download@1` carried
     /// `skip_serializing_if` on its four optional fields, which omitted them.

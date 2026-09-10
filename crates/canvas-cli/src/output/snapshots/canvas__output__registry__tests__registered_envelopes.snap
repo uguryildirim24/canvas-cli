@@ -657,7 +657,7 @@ expression: rendered
                   "attempt": null,
                   "excused": null,
                   "grade": null,
-                  "graded": null,
+                  "graded": false,
                   "late": null,
                   "missing": true,
                   "pending": false,

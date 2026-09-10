@@ -85,7 +85,7 @@
             "omit_from_final_grade": false,
             "status": {
               "submitted": false,
-              "graded": null,
+              "graded": false,
               "score": null,
               "grade": null,
               "late": null,
