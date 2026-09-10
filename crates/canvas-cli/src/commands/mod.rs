@@ -1,11 +1,15 @@
-//! M1-b command implementations.
+//! Command modules.
 
 pub mod alias;
+pub mod auth;
 pub mod cache;
+pub mod config_cmd;
 pub mod course;
 pub mod course_load;
 pub mod courses;
+pub mod doctor;
 pub mod emit;
+pub mod identity;
 pub mod sync;
 
 use crate::output::ColorMode;
@@ -24,6 +28,7 @@ pub struct Globals {
 }
 
 impl Globals {
+    /// Open a local-only session (class A/B).
     pub fn open_local_session(&self) -> Result<Session, SessionError> {
         Session::open(self.profile.as_deref(), true)
     }
