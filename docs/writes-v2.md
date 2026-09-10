@@ -11,7 +11,7 @@ the body transforms, the refusal table, the operation journal and its
 states, the recovery table, the ambiguous-outcome rules and
 `--assume-not-posted`, the attribution ladder and the "accepted is not
 delivered" rule, the response allowlist, the exit table, receipts and the
-pending hook, the schemas, the six tools, and the sixth skill workflow.
+pending hook, the schemas, the eight tools, and the sixth skill workflow.
 
 The rest of the surface is elsewhere in the same document: the plan layer
 these kinds share is [§20](SPEC.md#20-operation-plans-and-approval),
