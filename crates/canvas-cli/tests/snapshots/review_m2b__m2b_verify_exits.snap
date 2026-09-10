@@ -1,0 +1,72 @@
+---
+source: crates/canvas-cli/tests/review_m2b.rs
+expression: snapshots
+---
+[
+  {
+    "exit": 10,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "<identity>",
+      "origin": "<origin>",
+      "user_id": "123"
+    },
+    "outcome": "mismatch",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 1,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "attempt": 1,
+      "attribution": "observed",
+      "body": {
+        "actual_sha256": "d67e2e944994496c8d8ec76eed0cf9f09679448d584b532bebf941852a37f5ed",
+        "expected_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+        "status": "mismatch"
+      },
+      "files": [],
+      "outcome": "mismatch",
+      "reason": null,
+      "receipt_id": "<receipt>"
+    },
+    "schema": "canvas-cli/verify@1",
+    "warnings": []
+  },
+  {
+    "exit": 12,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "<identity>",
+      "origin": "<origin>",
+      "user_id": "123"
+    },
+    "outcome": "partial",
+    "partial": [],
+    "profile": null,
+    "requests": {
+      "api": 1,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "attempt": 1,
+      "attribution": "observed",
+      "body": {
+        "actual_sha256": null,
+        "expected_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+        "status": "unavailable"
+      },
+      "files": [],
+      "outcome": "unavailable",
+      "reason": "history entry has no body",
+      "receipt_id": "<receipt>"
+    },
+    "schema": "canvas-cli/verify@1",
+    "warnings": []
+  }
+]

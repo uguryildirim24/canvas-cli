@@ -21,6 +21,9 @@ pub mod journal;
 /// Local receipt export and verification helpers.
 pub mod receipts;
 
+/// Submit, reconcile, and verify orchestration.
+pub mod submit;
+
 /// Module-aware file download planning and install.
 pub mod download;
 
@@ -32,3 +35,7 @@ pub mod markdown;
 
 /// Blocking I/O bridge onto the async runtime.
 pub mod io;
+
+/// Unique, self-cleaning temporary directories for tests.
+#[cfg(test)]
+pub(crate) mod test_scratch;

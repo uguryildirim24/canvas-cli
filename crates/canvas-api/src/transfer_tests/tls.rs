@@ -77,6 +77,9 @@ impl TestServer {
     }
 }
 pub fn test_client(server: &TestServer) -> Client {
+    test_client_with_timeout(server, std::time::Duration::from_secs(30))
+}
+pub fn test_client_with_timeout(server: &TestServer, timeout: std::time::Duration) -> Client {
     let mut client = Client::with_governor(
         server.uri().parse().unwrap(),
         Secret::new("tok"),
@@ -97,10 +100,7 @@ pub fn test_client(server: &TestServer) -> Client {
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(std::time::Duration::from_secs(10))
     };
-    inner.http = builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap();
+    inner.http = builder().timeout(timeout).build().unwrap();
     inner.transfer_http = builder()
         .read_timeout(std::time::Duration::from_secs(60))
         .build()

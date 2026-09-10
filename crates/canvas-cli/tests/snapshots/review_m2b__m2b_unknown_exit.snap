@@ -1,0 +1,47 @@
+---
+source: crates/canvas-cli/tests/review_m2b.rs
+expression: snapshot
+---
+{
+  "exit": 9,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "123"
+  },
+  "outcome": "recovery",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 3,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "attribution": null,
+    "candidates": [],
+    "error": "no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes",
+    "files": [],
+    "journal_id": "<journal>",
+    "outcome": "recovery",
+    "post_status": 400,
+    "posted": null,
+    "receipt_id": null,
+    "response_kind": "canvas-error",
+    "server_match": null,
+    "state": "outcome_unknown",
+    "text": {
+      "input_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      "sent_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+      "transform": "text-to-html"
+    },
+    "url": null
+  },
+  "schema": "canvas-cli/submit@1",
+  "warnings": [
+    "no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes",
+    "assignment is past due"
+  ]
+}
