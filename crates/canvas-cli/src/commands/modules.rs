@@ -55,7 +55,7 @@ pub async fn run(globals: &Globals, course: String, items: bool) -> ExitCode {
             );
         }
     };
-    modules.sort_by(|a, b| a.position.cmp(&b.position).then_with(|| a.id.cmp(&b.id)));
+    modules.sort_by_key(|m| (m.position, m.id.parse::<i64>().unwrap_or_default()));
 
     let result = ModulesResult {
         course_id: resolved.id.to_string(),
