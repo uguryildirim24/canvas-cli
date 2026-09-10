@@ -140,7 +140,8 @@ impl<T> Envelope<T> {
     where
         T: Serialize,
     {
-        serde_json::to_writer(&mut w, self).map_err(std::io::Error::other)?;
+        let bytes = serde_json::to_vec(self).map_err(std::io::Error::other)?;
+        w.write_all(&bytes)?;
         w.write_all(b"\n")?;
         Ok(())
     }

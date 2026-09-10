@@ -460,9 +460,15 @@ enum AliasCommand {
     Remove { name: String },
 }
 
-fn not_implemented() -> ExitCode {
-    eprintln!("not implemented yet");
-    ExitCode::from(1)
+fn not_implemented(json: bool) -> ExitCode {
+    commands::emit::emit_error(
+        json,
+        "not_implemented",
+        "not implemented yet",
+        1,
+        None,
+        None,
+    )
 }
 
 impl Cli {
@@ -545,8 +551,11 @@ async fn main() -> ExitCode {
     };
     match cli.command {
         Commands::Version => {
-            println!("{}", env!("CARGO_PKG_VERSION"));
-            ExitCode::SUCCESS
+            let envelope = output::Envelope::new(output::SCHEMA_VERSION, None, None).with_result(serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "commit": option_env!("CANVAS_COMMIT"), "target": env!("CANVAS_BUILD_TARGET") }));
+            commands::emit::emit(globals.json, &envelope, || {
+                use std::io::Write;
+                writeln!(io::stdout(), "{}", env!("CARGO_PKG_VERSION"))
+            })
         }
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
@@ -595,7 +604,7 @@ async fn main() -> ExitCode {
         | Commands::Calendar { .. }
         | Commands::Open { .. }
         | Commands::Config { .. }
-        | Commands::Doctor { .. } => not_implemented(),
+        | Commands::Doctor { .. } => not_implemented(globals.json),
     }
 }
 

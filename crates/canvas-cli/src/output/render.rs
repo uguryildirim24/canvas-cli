@@ -27,6 +27,12 @@ pub fn new_table() -> Table {
     let mut table = Table::new();
     table.load_style(presets::NOTHING);
     table.set_content_arrangement(ContentArrangement::Dynamic);
+    if let Ok(raw) = std::env::var("COLUMNS")
+        && let Ok(width) = raw.parse::<u16>()
+        && width > 0
+    {
+        table.set_width(width);
+    }
     table
 }
 

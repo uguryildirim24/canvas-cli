@@ -84,13 +84,18 @@ fn fresh_conflicts_with_offline() {
 }
 
 fn assert_stub(args: &[&str]) {
-    Command::cargo_bin("canvas")
+    let result = Command::cargo_bin("canvas")
         .unwrap()
         .args(args)
         .assert()
-        .code(1)
-        .stdout("")
-        .stderr("not implemented yet\n");
+        .code(1);
+    if args.contains(&"--json") {
+        let v: serde_json::Value = serde_json::from_slice(&result.get_output().stdout).unwrap();
+        assert_eq!(v["schema"], "canvas-cli/error@1");
+        assert_eq!(v["result"]["message"], "not implemented yet");
+    } else {
+        result.stdout("").stderr("not implemented yet\n");
+    }
 }
 
 fn assert_usage_error(args: &[&str]) {
@@ -469,4 +474,19 @@ fn completions_support_every_documented_shell() {
         );
     }
     assert_usage_error(&["completions", "unknown-shell"]);
+}
+
+#[test]
+fn version_json_is_a_single_identity_free_envelope() {
+    let result = Command::cargo_bin("canvas")
+        .unwrap()
+        .args(["version", "--json", "--color", "always"])
+        .assert()
+        .success();
+    let v: serde_json::Value = serde_json::from_slice(&result.get_output().stdout).unwrap();
+    assert_eq!(v["schema"], "canvas-cli/version@1");
+    assert_eq!(v["result"]["version"], env!("CARGO_PKG_VERSION"));
+    assert!(v["profile"].is_null());
+    assert!(v["identity"].is_null());
+    assert!(v["result"]["target"].as_str().unwrap().contains('-'));
 }
