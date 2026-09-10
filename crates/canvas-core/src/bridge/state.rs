@@ -454,18 +454,22 @@ impl Broker {
             .map(|current| (current.document_id.clone(), current.navigation_generation))
     }
 
-    /// Resolve a `here` request to the browser section of the bundle.
+    /// Whether this caller may read the attachment at all.
+    ///
+    /// This is the capability check alone, and it is separate from `context`
+    /// so the host can make it **before** it asks the browser for anything: a
+    /// caller that may not read must not be able to cause a page extraction
+    /// or an account probe (REPORT §3.3 step 4).
     ///
     /// `attachment_id` is the capability. `consumer`, which the adapter sets
     /// and a model cannot, selects the attachment that consumer opted into.
     /// With neither — the CLI — the sole attachment is served, which is what
     /// REPORT §3.2 permits the CLI and nothing else.
-    pub fn context(
+    pub fn may_read(
         &self,
         attachment_id: Option<&str>,
         consumer: Option<&str>,
-        include_text: bool,
-    ) -> Result<Context, Reason> {
+    ) -> Result<(), Reason> {
         let current = self.attachment.as_ref().ok_or(Reason::NotAttached)?;
         match (attachment_id, consumer) {
             (Some(id), _) => {
@@ -486,6 +490,22 @@ impl Broker {
             // The CLI, selecting the sole attachment.
             (None, None) => {}
         }
+        Ok(())
+    }
+
+    /// Resolve a `here` request to the browser section of the bundle.
+    ///
+    /// The caller is checked by [`Broker::may_read`] first, so nothing below
+    /// is reached by a caller that holds neither the capability nor an
+    /// opt-in.
+    pub fn context(
+        &self,
+        attachment_id: Option<&str>,
+        consumer: Option<&str>,
+        include_text: bool,
+    ) -> Result<Context, Reason> {
+        self.may_read(attachment_id, consumer)?;
+        let current = self.attachment.as_ref().ok_or(Reason::NotAttached)?;
         match current.state {
             AttachmentState::Paused => return Err(Reason::Paused),
             AttachmentState::Validating => return Err(Reason::Validating),
@@ -982,6 +1002,41 @@ mod tests {
     }
 
     // --------------------------------------------------------- consumers
+
+    /// The capability check stands on its own, so the host can make it before
+    /// it asks the browser for a probe or a page read.
+    #[test]
+    fn an_unentitled_caller_is_refused_before_anything_is_read() {
+        let (mut broker, id) = attached();
+        broker.attach_consumer(None, "mcp:alpha").expect("attach");
+
+        // A consumer that never opted in, and a handle that is not the one.
+        assert_eq!(
+            broker.may_read(None, Some("mcp:beta")),
+            Err(Reason::NotAttached)
+        );
+        assert_eq!(
+            broker.may_read(Some(&new_attachment_id()), None),
+            Err(Reason::NotAttached)
+        );
+        assert_eq!(
+            broker.may_read(Some(&id), Some("mcp:beta")),
+            Err(Reason::NotAttached)
+        );
+
+        // The two callers REPORT §3.2 admits.
+        assert_eq!(broker.may_read(Some(&id), Some("mcp:alpha")), Ok(()));
+        assert_eq!(broker.may_read(None, None), Ok(()));
+
+        // And it stays a capability check, not a state check: a paused
+        // attachment is still this caller's to ask about.
+        broker.pause(PauseCause::Hidden);
+        assert_eq!(broker.may_read(None, Some("mcp:alpha")), Ok(()));
+        assert_eq!(
+            broker.context(None, Some("mcp:alpha"), true),
+            Err(Reason::Paused)
+        );
+    }
 
     /// M7-a acceptance: two consumers, and only the opted-in one sees it.
     #[test]
