@@ -16,7 +16,7 @@ pub use envelope::{
 };
 pub use json_schema::{
     SCHEMA_SCHEMA, command_name, document_for_command, document_for_schema, entry_command,
-    list as schema_list,
+    entry_kind, list as schema_list,
 };
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
@@ -30,20 +30,22 @@ pub use registry::{
     EmbeddedJson, EventJson, ExternalLinkJson, FileEntryJson, FileRefJson, FilesListingJson,
     FilesResult, GradeJson, GradesCourseJson, GradesCourseViewJson, GradesResult,
     GradingPeriodJson, GroupAssignmentJson, GroupRulesJson, GroupSubtotalJson, GroupTopicChildJson,
-    InboxResult, InboxUnreadResult, ModuleEntryJson, ModuleItemJson, ModulesResult, PageDetailJson,
-    PageResult, PageSummaryJson, PagesResult, ParticipantJson, PeriodJson, PlanApprovalJson,
-    PlanFileJson, PlanJson, PlanResult, PlanTextJson, RepliesCoverageJson, SCHEMA_ALIAS,
+    InboxResult, InboxUnreadResult, ModuleEntryJson, ModuleItemJson, ModulesResult,
+    OperationAttachmentJson, OperationMatchJson, OperationReadbackJson, OperationReconcileResult,
+    OperationResponseJson, OperationResult, OperationTargetJson, PageDetailJson, PageResult,
+    PageSummaryJson, PagesResult, ParticipantJson, PeriodJson, PlanApprovalJson, PlanFileJson,
+    PlanJson, PlanOperationJson, PlanResult, PlanTextJson, RepliesCoverageJson, SCHEMA_ALIAS,
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
     SCHEMA_AUTH_LOGIN, SCHEMA_AUTH_LOGOUT, SCHEMA_AUTH_STATUS, SCHEMA_CACHE, SCHEMA_CALENDAR,
     SCHEMA_CONFIG, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DISCUSSION,
     SCHEMA_DISCUSSIONS, SCHEMA_DOCTOR, SCHEMA_DOWNLOAD, SCHEMA_ERROR, SCHEMA_EVENT, SCHEMA_FILES,
     SCHEMA_GRADES, SCHEMA_IDENTITY, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_OPEN,
-    SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_PLAN, SCHEMA_RECEIPT, SCHEMA_RECEIPTS, SCHEMA_RECONCILE,
-    SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_TODO, SCHEMA_VERIFY,
-    SCHEMA_VERSION, SCHEMA_WATCH, SchemaEntry, SubmissionStatusJson, SubmitCandidateJson,
-    SubmitFileJson, SubmitResult, SubmitTextJson, SyllabusResult, SyncDatasetJson, SyncResult,
-    TeacherJson, TermJson, WatchResult, WindowJson, all_schemas, entry_for_command,
-    entry_for_schema, rejects_json,
+    SCHEMA_OPERATION, SCHEMA_OPERATION_RECONCILE, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_PLAN,
+    SCHEMA_RECEIPT, SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT,
+    SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_TODO, SCHEMA_VERIFY, SCHEMA_VERSION, SCHEMA_WATCH,
+    SchemaEntry, SubmissionStatusJson, SubmitCandidateJson, SubmitFileJson, SubmitResult,
+    SubmitTextJson, SyllabusResult, SyncDatasetJson, SyncResult, TeacherJson, TermJson,
+    WatchResult, WindowJson, all_schemas, entry_for_command, entry_for_schema, rejects_json,
 };
 pub use render::{
     StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,

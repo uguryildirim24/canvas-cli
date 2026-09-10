@@ -109,9 +109,14 @@ Every command below runs in this build.
 | `canvas syllabus` | Show the course syllabus as Markdown, with its file links. |
 | `canvas discussions` | List a course's discussion topics. `--unread`. |
 | `canvas discussion` | Show one discussion. `--replies`, `--page`. |
+| `canvas discussion reply` | Reply to a discussion topic. Needs an approval. `--to`, `--text`, `--text-file`, `--yes`. |
 | `canvas inbox` | List conversations. `--scope inbox\|unread\|sent\|archived`. |
 | `canvas inbox show` | Show one conversation and its messages. |
 | `canvas inbox unread-count` | Show the unread conversation count. |
+| `canvas inbox send` | Send a new conversation. Needs an approval. `--to`, `--subject`, `--text`, `--text-file`, `--attach`, `--yes`. |
+| `canvas inbox reply` | Add a message to a conversation. Needs an approval. `--text`, `--text-file`, `--attach`, `--yes`. |
+| `canvas operation status` | Show one write operation and read its thread back. |
+| `canvas operation reconcile` | Resolve a write operation left unfinished. `--assume-not-posted`. |
 | `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. |
 | `canvas open` | Open a course, or any Canvas URL, in the browser. |
 | `canvas open assignment` | Open an assignment page in the browser. |
@@ -190,8 +195,11 @@ setup for Claude Code, Codex, and Cursor. The release archives carry it.
 `docs/agent-hosts.md` records which hosts were actually exercised.
 
 `canvas schema <command>` prints the JSON Schema of any command's envelope and
-`result`, and `canvas schema --list` prints the registry. The MCP tools use the
-same documents as their output schemas.
+`result`, and `canvas schema --list` prints the registry: three tab-separated
+columns, the name, the schema id, and whether that name is a command you can
+run or a document no command prints (`error@1`, `plan@1`, `receipt@1`). Every
+name in the first column resolves. The MCP tools use the same documents as
+their output schemas.
 
 ## Where things live
 

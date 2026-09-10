@@ -10,6 +10,8 @@ Commands (v1):
   identity list|remove
   courses, course, todo, assignments, assignment
   submit, submission, submission verify|reconcile
+  discussion reply, inbox send|reply
+  operation status|reconcile
   receipts list|show|export|acknowledge
   grades, files, download, modules
   announcements, announcement, calendar
@@ -290,12 +292,17 @@ pub enum Commands {
         #[arg(long)]
         unread: bool,
     },
-    /// Show one discussion.
+    /// Show one discussion, or reply to it.
+    #[command(subcommand_negates_reqs = true)]
     Discussion {
+        #[command(subcommand)]
+        command: Option<DiscussionCommand>,
         /// Course id, code, or alias.
-        course: String,
+        #[arg(required = true)]
+        course: Option<String>,
         /// Discussion id, or a Canvas discussion URL.
-        discussion: String,
+        #[arg(required = true)]
+        discussion: Option<String>,
         /// Also read the replies.
         #[arg(long)]
         replies: bool,
@@ -303,13 +310,18 @@ pub enum Commands {
         #[arg(long)]
         page: Option<u32>,
     },
-    /// Read the conversation inbox.
+    /// Read the conversation inbox, or write to it.
     Inbox {
         #[command(subcommand)]
         command: Option<InboxCommand>,
         /// Which list: inbox, unread, sent, or archived.
         #[arg(long)]
         scope: Option<String>,
+    },
+    /// Inspect or resolve one write operation.
+    Operation {
+        #[command(subcommand)]
+        command: OperationCommand,
     },
     /// Show calendar events.
     Calendar {
@@ -505,6 +517,90 @@ pub enum InboxCommand {
     },
     /// Show the unread conversation count.
     UnreadCount,
+    /// Send a new conversation (needs an approval).
+    #[command(group(ArgGroup::new("send_body").args(["text", "text_file"]).required(true)))]
+    Send {
+        /// Canvas user id to send to; repeatable, or comma-separated.
+        #[arg(long = "to", required = true, value_delimiter = ',')]
+        to: Vec<String>,
+        /// Subject line.
+        #[arg(long)]
+        subject: Option<String>,
+        /// The message text, or `-` to read it from stdin.
+        #[arg(long)]
+        text: Option<String>,
+        /// Read the message text from this file.
+        #[arg(long = "text-file")]
+        text_file: Option<PathBuf>,
+        /// File to attach (repeatable).
+        #[arg(long = "attach")]
+        attach: Vec<PathBuf>,
+        /// Skip confirmation.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Add a message to an existing conversation (needs an approval).
+    #[command(group(ArgGroup::new("reply_body").args(["text", "text_file"]).required(true)))]
+    Reply {
+        /// Conversation id.
+        conversation_id: String,
+        /// The message text, or `-` to read it from stdin.
+        #[arg(long)]
+        text: Option<String>,
+        /// Read the message text from this file.
+        #[arg(long = "text-file")]
+        text_file: Option<PathBuf>,
+        /// File to attach (repeatable).
+        #[arg(long = "attach")]
+        attach: Vec<PathBuf>,
+        /// Skip confirmation.
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DiscussionCommand {
+    /// Reply to a discussion topic (needs an approval).
+    #[command(group(ArgGroup::new("reply_body").args(["text", "text_file"]).required(true)))]
+    Reply {
+        /// Course id, code, or alias.
+        course: String,
+        /// Discussion id, or a Canvas discussion URL.
+        discussion: String,
+        /// Reply to this entry instead of the topic.
+        #[arg(long = "to")]
+        to: Option<String>,
+        /// The reply text, or `-` to read it from stdin.
+        #[arg(long)]
+        text: Option<String>,
+        /// Read the reply text from this file.
+        #[arg(long = "text-file")]
+        text_file: Option<PathBuf>,
+        /// File to attach (refused in this version).
+        #[arg(long = "attach")]
+        attach: Vec<PathBuf>,
+        /// Skip confirmation.
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum OperationCommand {
+    /// Show one operation journal, reading the thread back.
+    Status {
+        /// Journal id.
+        journal_id: String,
+    },
+    /// Resolve one operation journal against the thread as it stands.
+    Reconcile {
+        /// Journal id.
+        journal_id: String,
+        /// Assert nothing was posted, after a clean readback and the wait.
+        #[arg(long)]
+        assume_not_posted: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -565,6 +661,15 @@ impl Cli {
                     command: Some(_),
                     target: Some(_),
                 } => Some("an open target cannot be used with an open subcommand"),
+                Commands::Discussion {
+                    command: Some(_),
+                    course,
+                    discussion,
+                    replies,
+                    page,
+                } if course.is_some() || discussion.is_some() || *replies || page.is_some() => {
+                    Some("discussion operands and read flags cannot be used with reply")
+                }
                 _ => None,
             }
         };

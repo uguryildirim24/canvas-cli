@@ -1,0 +1,10 @@
+---
+source: crates/canvas-cli/tests/review_m8b.rs
+expression: "human.replace(&journal_id,\n\"<journal_id>\").replace(&receipt_id, \"<receipt_id>\")"
+---
+discussion_reply posted  journal=<journal_id>
+topic 55 "Week 3 reading"  course 5
+text transform=text-to-html  input_sha256=e6f9bc4f0d241584cdb7bd2f22097572160af71f14ef4fbda3b0aead5ca6d822  sent_sha256=abed0e3cbeb6c8f0e67e79ccabc74d88f6712514e40a30160c4ecb322ad29574
+receipt <receipt_id>  attribution=observed
+canvas id 5003  created 2026-09-09T13:00:00-04:00
+delivery observable

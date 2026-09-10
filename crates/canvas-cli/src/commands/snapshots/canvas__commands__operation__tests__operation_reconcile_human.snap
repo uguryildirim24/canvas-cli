@@ -1,0 +1,8 @@
+---
+source: crates/canvas-cli/src/commands/operation.rs
+expression: "String::from_utf8(out).unwrap()"
+---
+inbox_send posted  journal=01932f4b-1c2d-7e3f-8a90-0123456789ab  verdict=observed
+attribution observed  delivery not_observable  owner absent
+read 3 object(s) at 2026-09-10T14:31:00Z
+the message this journal describes is in the conversation; Canvas accepted it, and delivery is not observable

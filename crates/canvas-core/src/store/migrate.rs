@@ -10,6 +10,7 @@
 //! | `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link |
 //! | `0002_reads` | cache | M8-a | `pages`, `discussion_topics`, `discussion_entries`, `conversations` |
 //! | `0003_events` | state | M6-c | `governor`, `interest`, `observations`, `baselines`, `events` |
+//! | `0004_operations` | state | M8-b | `operation_journal`, and `plans.operation_json` |
 
 use rusqlite::Connection;
 
@@ -18,7 +19,7 @@ use super::db::DbError;
 /// Current cache.sqlite schema version.
 pub const CACHE_USER_VERSION: i32 = 2;
 /// Current state.sqlite schema version.
-pub const STATE_USER_VERSION: i32 = 3;
+pub const STATE_USER_VERSION: i32 = 4;
 
 /// Apply cache migrations from `from` up to [`CACHE_USER_VERSION`].
 pub fn migrate_cache(conn: &Connection, from: i32) -> Result<(), DbError> {
@@ -42,8 +43,74 @@ pub fn migrate_state(conn: &Connection, from: i32) -> Result<(), DbError> {
     if from < 3 {
         conn.execute_batch(STATE_0003)?;
     }
+    if from < 4 {
+        conn.execute_batch(STATE_0004)?;
+    }
     Ok(())
 }
+
+/// The operation journal for discussion and inbox writes (M8-b).
+///
+/// The table is the §12.2 submission journal with the submission target
+/// replaced by an operation target, because the discipline is the same:
+/// admission before the insert, an owner lock for the operation, guarded
+/// `UPDATE … WHERE state = ?` transitions, and an owner-absent recovery table.
+///
+/// `plans` gains one nullable column rather than a rebuilt table. `plans` is
+/// referenced by `approval_handles`, `PRAGMA foreign_keys` is on, and the
+/// pragma cannot be changed inside the transaction a migration runs in, so a
+/// twelve-step rebuild is not available here. `course_id` and `assignment_id`
+/// stay `NOT NULL` and an operation plan stores `0` in the fields that do not
+/// apply to it; `operation_json` is what carries its real target, and
+/// `plan@1` prints `null` for the two that mean nothing.
+const STATE_0004: &str = r"
+CREATE TABLE operation_journal (
+    journal_id TEXT PRIMARY KEY NOT NULL,
+    identity_key TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('discussion_reply','inbox_send','inbox_reply')),
+    course_id INTEGER,
+    topic_id INTEGER,
+    parent_entry_id INTEGER,
+    conversation_id INTEGER,
+    recipients_json TEXT,
+    subject TEXT,
+    input_sha256 TEXT NOT NULL,
+    sent_sha256 TEXT NOT NULL,
+    intended_json TEXT NOT NULL,
+    approval_json TEXT,
+    state TEXT NOT NULL CHECK (state IN
+        ('planned','posting','posted','matched','outcome_unknown','refused','failed')),
+    post_status INTEGER,
+    response_kind TEXT,
+    not_posted_evidence TEXT,
+    attribution TEXT NOT NULL DEFAULT 'none',
+    response_record_json TEXT,
+    readback_json TEXT,
+    server_match_json TEXT,
+    receipt_record_json TEXT,
+    uploaded_file_ids_json TEXT NOT NULL DEFAULT '[]',
+    error_text TEXT,
+    created_at TEXT NOT NULL,
+    planned_at TEXT,
+    posting_at TEXT,
+    posting_started_at TEXT,
+    posted_at TEXT,
+    matched_at TEXT,
+    outcome_unknown_at TEXT,
+    refused_at TEXT,
+    failed_at TEXT,
+    terminal_at TEXT,
+    acknowledged_at TEXT
+);
+
+-- One plan admits at most one operation journal.
+CREATE UNIQUE INDEX operation_journal_plan ON operation_journal(plan_id);
+CREATE INDEX operation_journal_state ON operation_journal(state, created_at);
+CREATE INDEX operation_journal_course ON operation_journal(course_id);
+
+ALTER TABLE plans ADD COLUMN operation_json TEXT;
+";
 
 /// Richer read entities: pages, discussions, and the inbox (M8-a).
 ///

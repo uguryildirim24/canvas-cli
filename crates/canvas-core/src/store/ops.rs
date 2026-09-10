@@ -323,6 +323,71 @@ pub fn bump_epochs(scopes: &[&str], state_tx: &Transaction<'_>) -> Result<(), Db
     Ok(())
 }
 
+/// One row of the pending-operation query: id, state, acknowledgement.
+type PendingRow = (String, String, Option<String>);
+
+/// Which target a read is asking about (§10 pending hook, M8-b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingTarget {
+    /// One discussion topic.
+    Topic(i64),
+    /// One conversation.
+    Conversation(i64),
+    /// The inbox as a whole: any conversation write is pending for it.
+    Inbox,
+}
+
+/// Every unresolved operation journal that touches this target (§10, M8-b).
+///
+/// `planned` and `posting` are always pending, and an `outcome_unknown`
+/// operation is pending until it is acknowledged. A read that names one of
+/// these targets says its answer may be behind.
+///
+/// Unlike a submission, a later write never supersedes an earlier one: a
+/// second reply to a topic is a second post and a second conversation is a
+/// second conversation, so a later success proves nothing about an earlier
+/// unknown outcome. (An `inbox_send` has no target column at all until Canvas
+/// answers, so a superseding rule keyed on the target columns would have let
+/// any accepted send retire any other unresolved send.)
+pub fn pending_operations(
+    state: &Connection,
+    target: PendingTarget,
+) -> Result<Vec<String>, DbError> {
+    // Each clause binds exactly the parameters it names, so the count always
+    // matches what the statement was prepared with.
+    let (clause, args): (&str, Vec<i64>) = match target {
+        PendingTarget::Topic(id) => ("topic_id = ?1", vec![id]),
+        // A send has no conversation id until Canvas answers, so an
+        // unresolved one is pending for every conversation read — including
+        // an `outcome_unknown` one, which is exactly the send that may have
+        // landed in a conversation this journal cannot name.
+        PendingTarget::Conversation(id) => {
+            ("(conversation_id = ?1 OR kind = 'inbox_send')", vec![id])
+        }
+        PendingTarget::Inbox => ("kind IN ('inbox_send','inbox_reply')", Vec::new()),
+    };
+    let sql = format!(
+        "SELECT journal_id, state, acknowledged_at
+         FROM operation_journal
+         WHERE {clause} AND state IN ('planned','posting','outcome_unknown')
+         ORDER BY created_at ASC, journal_id ASC"
+    );
+    let mut stmt = state.prepare(&sql)?;
+    let rows: Vec<PendingRow> = stmt
+        .query_map(rusqlite::params_from_iter(args), |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|(_, row_state, acknowledged_at)| {
+            row_state != "outcome_unknown" || acknowledged_at.is_none()
+        })
+        .map(|(journal_id, _, _)| journal_id)
+        .collect())
+}
+
 /// Pending journal read hook (§10).
 ///
 /// Pending when state is `planned|uploading|uploaded|posting`, or

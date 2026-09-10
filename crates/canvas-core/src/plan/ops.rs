@@ -8,10 +8,10 @@ use jiff::Timestamp;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use uuid::Uuid;
 
+use crate::operations::OperationPlan;
 use crate::store::{DbError, Store};
-use crate::submit::InputKind;
 
-use super::record::{Approval, ApprovalChannel, Observations, PlanRow, PlanState};
+use super::record::{Approval, ApprovalChannel, Observations, PlanKind, PlanRow, PlanState};
 use super::{HandleRefusal, PlanError};
 
 /// How long a prepared plan may wait for approval (REPORT §3.5).
@@ -21,7 +21,7 @@ pub const EXPIRY: jiff::SignedDuration = jiff::SignedDuration::from_mins(15);
 const COLUMNS: &str = "plan_id, identity_key, identity_generation, consumer, course_id,
      assignment_id, kind, payload_json, file_paths_json, input_sha256, sent_sha256,
      baseline_attempt, baseline_submission_id, observations_json, plan_sha256, state,
-     created_at, expires_at, approval_json, journal_id, invalidated_reason";
+     created_at, expires_at, approval_json, journal_id, invalidated_reason, operation_json";
 
 fn row_from(row: &rusqlite::Row<'_>) -> Result<PlanRow, rusqlite::Error> {
     let kind: String = row.get(6)?;
@@ -44,7 +44,7 @@ fn row_from(row: &rusqlite::Row<'_>) -> Result<PlanRow, rusqlite::Error> {
         consumer: row.get(3)?,
         course_id: row.get(4)?,
         assignment_id: row.get(5)?,
-        kind: InputKind::parse_plan_name(&kind).ok_or_else(|| decode("kind"))?,
+        kind: PlanKind::parse(&kind).ok_or_else(|| decode("kind"))?,
         payload: serde_json::from_str(&payload).map_err(|_| decode("payload"))?,
         file_paths: serde_json::from_str(&paths).map_err(|_| decode("file paths"))?,
         input_sha256: row.get(9)?,
@@ -62,6 +62,11 @@ fn row_from(row: &rusqlite::Row<'_>) -> Result<PlanRow, rusqlite::Error> {
             .map_err(|_| decode("approval"))?,
         journal_id: row.get(19)?,
         invalidated_reason: row.get(20)?,
+        operation: row
+            .get::<_, Option<String>>(21)?
+            .map(|raw| serde_json::from_str::<OperationPlan>(&raw))
+            .transpose()
+            .map_err(|_| decode("operation"))?,
     })
 }
 
@@ -72,17 +77,26 @@ pub struct NewPlan {
     pub consumer: Option<String>,
     pub course_id: i64,
     pub assignment_id: i64,
-    pub kind: InputKind,
+    pub kind: PlanKind,
     pub payload: crate::journal::IntendedPayload,
     pub file_paths: Vec<String>,
     pub baseline_attempt: i64,
     pub baseline_submission_id: Option<i64>,
     pub observations: Observations,
+    /// The frozen operation, when this plan is not a submission (M8-b).
+    pub operation: Option<OperationPlan>,
 }
 
 /// Freeze a plan into the `prepared` state and return the stored row.
 pub fn insert(store: &Store, new: NewPlan, now: Timestamp) -> Result<PlanRow, PlanError> {
-    let text = new.payload.text.as_ref();
+    // An operation freezes its body in the operation record; a submission
+    // freezes it in the payload. Either way the two digests on the row are the
+    // digests a person approves.
+    let text = new
+        .operation
+        .as_ref()
+        .map(|op| &op.body)
+        .or(new.payload.text.as_ref());
     let mut row = PlanRow {
         plan_id: Uuid::new_v4().to_string(),
         identity_key: new.identity_key,
@@ -105,6 +119,7 @@ pub fn insert(store: &Store, new: NewPlan, now: Timestamp) -> Result<PlanRow, Pl
         approval: None,
         journal_id: None,
         invalidated_reason: None,
+        operation: new.operation,
     };
     row.plan_sha256 = row.digest();
 
@@ -112,6 +127,11 @@ pub fn insert(store: &Store, new: NewPlan, now: Timestamp) -> Result<PlanRow, Pl
     let payload_json = serde_json::to_string(&stored.payload)?;
     let paths_json = serde_json::to_string(&stored.file_paths)?;
     let observations_json = serde_json::to_string(&stored.observations)?;
+    let operation_json = stored
+        .operation
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
     store.call_blocking(move |conns| {
         let tx = conns
             .state
@@ -128,8 +148,8 @@ pub fn insert(store: &Store, new: NewPlan, now: Timestamp) -> Result<PlanRow, Pl
                 plan_id, identity_key, identity_generation, consumer, course_id,
                 assignment_id, kind, payload_json, file_paths_json, input_sha256,
                 sent_sha256, baseline_attempt, baseline_submission_id, observations_json,
-                plan_sha256, state, created_at, expires_at
-             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'prepared',?16,?17)",
+                plan_sha256, state, created_at, expires_at, operation_json
+             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'prepared',?16,?17,?18)",
             params![
                 stored.plan_id,
                 stored.identity_key,
@@ -137,7 +157,7 @@ pub fn insert(store: &Store, new: NewPlan, now: Timestamp) -> Result<PlanRow, Pl
                 stored.consumer,
                 stored.course_id,
                 stored.assignment_id,
-                stored.kind.plan_name(),
+                stored.kind.as_str(),
                 payload_json,
                 paths_json,
                 stored.input_sha256,
@@ -148,12 +168,62 @@ pub fn insert(store: &Store, new: NewPlan, now: Timestamp) -> Result<PlanRow, Pl
                 stored.plan_sha256,
                 stored.created_at,
                 stored.expires_at,
+                operation_json,
             ],
         )?;
         tx.commit()?;
         Ok(())
     })?;
     Ok(row)
+}
+
+/// What [`insert_operation`] needs (M8-b).
+///
+/// An operation names no assignment and, for the two inbox operations, no
+/// course either. The two submission columns stay `NOT NULL` in storage and
+/// hold `0`; `operation` is what carries the real target, and `plan@1` prints
+/// `null` for the fields that mean nothing here.
+pub struct NewOperationPlan {
+    /// Identity key the plan is bound to.
+    pub identity_key: String,
+    /// Consumer that asked, when one did.
+    pub consumer: Option<String>,
+    /// Which operation.
+    pub kind: PlanKind,
+    /// Course id, or `0` when the operation names no course.
+    pub course_id: i64,
+    /// The frozen operation.
+    pub operation: OperationPlan,
+}
+
+/// Freeze an operation into a `prepared` plan.
+///
+/// The same storage, the same digest, the same fifteen-minute admission window
+/// and the same handle machinery a submission plan uses. Only the frozen half
+/// differs.
+pub fn insert_operation(
+    store: &Store,
+    new: NewOperationPlan,
+    now: Timestamp,
+) -> Result<PlanRow, PlanError> {
+    insert(
+        store,
+        NewPlan {
+            identity_key: new.identity_key,
+            identity_generation: identity_generation(store)?,
+            consumer: new.consumer,
+            course_id: new.course_id,
+            assignment_id: 0,
+            kind: new.kind,
+            payload: crate::journal::IntendedPayload::default(),
+            file_paths: Vec::new(),
+            baseline_attempt: 0,
+            baseline_submission_id: None,
+            observations: Observations::default(),
+            operation: Some(new.operation),
+        },
+        now,
+    )
 }
 
 /// Read one plan.

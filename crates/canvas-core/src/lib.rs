@@ -31,6 +31,7 @@ pub mod receipts;
 pub mod submit;
 
 /// Operation plans and the approval that admits them.
+pub mod operations;
 pub mod plan;
 
 /// Module-aware file download planning and install.

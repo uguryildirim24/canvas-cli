@@ -1,6 +1,6 @@
 ---
 name: canvas-cli
-description: Read a student's Canvas LMS work — deadlines, assignments, grades, files, course pages, the syllabus, announcements, discussions, and the Canvas inbox — and submit work with a recorded human approval. Use it when the user asks what is due, what is missing, what an assignment asks for, what a grade is, what a course page or the syllabus says, whether anyone has written to them, or asks to hand something in.
+description: Read a student's Canvas LMS work — deadlines, assignments, grades, files, course pages, the syllabus, announcements, discussions, and the Canvas inbox — and submit work, reply to a discussion, or write to the Canvas inbox with a recorded human approval. Use it when the user asks what is due, what is missing, what an assignment asks for, what a grade is, what a course page or the syllabus says, whether anyone has written to them, or asks to hand something in, answer a discussion, or send a message.
 ---
 
 # Canvas CLI
@@ -89,6 +89,7 @@ Never ask the user to paste a token into the conversation.
 | Organize the week | [organize-the-week.md](organize-the-week.md) |
 | Read an assignment | [read-an-assignment.md](read-an-assignment.md) |
 | Prepare and submit, with approval | [prepare-and-submit.md](prepare-and-submit.md) |
+| Reply and message, with approval | [reply-and-message-with-approval.md](reply-and-message-with-approval.md) |
 | Reconcile an unknown outcome | [reconcile-an-unknown-outcome.md](reconcile-an-unknown-outcome.md) |
 | Download course files | [download-course-files.md](download-course-files.md) |
 

@@ -38,6 +38,7 @@ expression: value
       "journal_id": "00000000-0000-4000-8000-00000000000j",
       "kind": "online_text_entry",
       "not_submitted_evidence": null,
+      "operation": null,
       "owner": "n/a",
       "plan_id": "<id>",
       "post_status": 200,
@@ -96,6 +97,7 @@ expression: value
       },
       "journal_id": "00000000-0000-4000-8000-00000000000j",
       "kind": "online_text_entry",
+      "operation": null,
       "plan_id": "<id>",
       "posted": {
         "attachments": [],

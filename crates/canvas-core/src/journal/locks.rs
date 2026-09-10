@@ -100,14 +100,47 @@ fn validate_id(id: &str) -> Result<(), LockError> {
     Ok(())
 }
 
+/// Reject a lock name that could name anything but a lock file.
+///
+/// Admission names are built from ids, so the alphabet is deliberately narrow:
+/// letters, digits, and `-`. Nothing here can climb out of `journals/`.
+fn validate_lock_name(name: &str) -> Result<(), LockError> {
+    if name.is_empty()
+        || name.len() > 120
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput).into());
+    }
+    Ok(())
+}
+
 impl AdmissionLock {
     pub(crate) fn matches(&self, identity_dir: &Path, assignment: i64) -> bool {
         self.path == journals_dir(identity_dir).join(format!("assignment-{assignment}.lock"))
     }
 
+    /// Whether this lock is the named admission lock (M8-b).
+    #[must_use]
+    pub fn matches_named(&self, identity_dir: &Path, name: &str) -> bool {
+        self.path == journals_dir(identity_dir).join(format!("{name}.lock"))
+    }
+
     /// Non-blocking exclusive acquire. `Err(InProgress)` if held.
     pub fn try_acquire(identity_dir: &Path, assignment_id: i64) -> Result<Self, LockError> {
-        let path = journals_dir(identity_dir).join(format!("assignment-{assignment_id}.lock"));
+        Self::try_acquire_named(identity_dir, &format!("assignment-{assignment_id}"))
+    }
+
+    /// Non-blocking exclusive acquire of a named admission lock (M8-b).
+    ///
+    /// The submission journal admits one operation per assignment, so its lock
+    /// is named after the assignment. An operation journal admits one operation
+    /// per target, and a target is a topic, a conversation, or one new
+    /// conversation, so the name comes from the caller.
+    pub fn try_acquire_named(identity_dir: &Path, name: &str) -> Result<Self, LockError> {
+        validate_lock_name(name)?;
+        let path = journals_dir(identity_dir).join(format!("{name}.lock"));
         let file = ensure_lock_file(&path)?;
         #[cfg(test)]
         super::crash_tests::checkpoint("admission_file_created", "");
