@@ -366,3 +366,44 @@ pub fn record_submission_state(
     )?;
     Ok(())
 }
+
+/// Record an operation-journal transition inside the operation's transaction.
+///
+/// The same rule as [`record_submission_state`]: the row and its event land
+/// together or not at all. The scope names the target the operation writes to,
+/// so a reader can tell a reply to one topic from a reply to another without
+/// reading a body.
+pub fn record_operation_state(
+    tx: &Transaction<'_>,
+    journal_id: &str,
+    scope: &str,
+    from: Option<&str>,
+    to: &str,
+) -> Result<(), DbError> {
+    let who = identity(tx)?;
+    let field = |state: Option<&str>| {
+        let mut map = Map::new();
+        map.insert(
+            "state".to_owned(),
+            state.map_or(Value::Null, |s| Value::String(s.to_owned())),
+        );
+        Value::Object(map)
+    };
+    let event = PendingEvent {
+        kind: EventKind::OperationState,
+        entity_key: Some(journal_id.to_owned()),
+        before: field(from),
+        after: field(Some(to)),
+    };
+    let observed_at = Timestamp::now().to_string();
+    insert(
+        tx,
+        &who,
+        &format!("operation:{journal_id}:{to}"),
+        &observed_at,
+        "operation_journal",
+        scope,
+        &event,
+    )?;
+    Ok(())
+}

@@ -30,6 +30,8 @@ expression: "normalized(count, &server.uri())"
     "storage": 0
   },
   "result": {
+    "pending": false,
+    "pending_journals": [],
     "unread_count": 2
   },
   "schema": "canvas-cli/inbox_unread@1",

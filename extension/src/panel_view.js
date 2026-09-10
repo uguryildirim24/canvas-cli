@@ -70,7 +70,9 @@ globalThis.canvasCli.journalView = function journalView(journal) {
     done: known.done,
     running: known.running,
     kind: String((journal && journal.kind) || ""),
-    assignment: journal && journal.assignment_name ? journal.assignment_name : `assignment ${(journal && journal.assignment_id) || "?"}`,
+    // An operation need not name an assignment at all, so the kind is the
+    // fallback rather than an invented "assignment ?".
+    assignment: label(journal),
     updated_at: String((journal && journal.updated_at) || ""),
     // A receipt exists, or it does not. "observed" and "unknown" are
     // different rows and the panel never merges them.
@@ -78,6 +80,20 @@ globalThis.canvasCli.journalView = function journalView(journal) {
     notes,
   };
 };
+
+/** What to call one journal row on screen. */
+function label(journal) {
+  if (journal && journal.assignment_name) {
+    return String(journal.assignment_name);
+  }
+  if (journal && journal.assignment_id) {
+    return `assignment ${journal.assignment_id}`;
+  }
+  if (journal && journal.course_id) {
+    return `course ${journal.course_id}`;
+  }
+  return String((journal && journal.kind) || "this operation");
+}
 
 /** How a follow reads: the acknowledgement first, the load outcome after. */
 globalThis.canvasCli.followView = function followView(follow) {

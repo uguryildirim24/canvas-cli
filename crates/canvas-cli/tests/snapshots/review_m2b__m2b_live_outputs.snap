@@ -66,7 +66,7 @@ expression: snapshot
   },
   {
     "command": "list",
-    "human": "<journal>  submitted  owner=n/a  superseded=false  acknowledged=false\n",
+    "human": "<journal>  online_text_entry  submitted  owner=n/a  superseded=false  acknowledged=false\n",
     "json": {
       "exit": 0,
       "freshness": [],
@@ -104,6 +104,7 @@ expression: snapshot
             "journal_id": "<journal>",
             "kind": "online_text_entry",
             "not_submitted_evidence": null,
+            "operation": null,
             "owner": "n/a",
             "plan_id": "<plan>",
             "post_status": 201,
@@ -183,6 +184,7 @@ expression: snapshot
           "journal_id": "<journal>",
           "kind": "online_text_entry",
           "not_submitted_evidence": null,
+          "operation": null,
           "owner": "n/a",
           "plan_id": "<plan>",
           "post_status": 201,
@@ -241,6 +243,7 @@ expression: snapshot
           },
           "journal_id": "<journal>",
           "kind": "online_text_entry",
+          "operation": null,
           "plan_id": "<plan>",
           "posted": {
             "attachments": [],
@@ -425,6 +428,7 @@ expression: snapshot
       },
       "journal_id": "<journal>",
       "kind": "online_text_entry",
+      "operation": null,
       "plan_id": "<plan>",
       "posted": {
         "attachments": [],

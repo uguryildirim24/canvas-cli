@@ -72,6 +72,23 @@ test("acknowledged and superseded are said, not folded into the state", () => {
   assert.equal(view.notes.length, 2);
 });
 
+test("a row that names no assignment is not called one", () => {
+  const operation = journalView({
+    journal_id: "j-op",
+    state: "outcome_unknown",
+    course_id: null,
+    assignment_id: null,
+    assignment_name: null,
+    kind: "inbox_send",
+    updated_at: "2026-09-10T16:04:40Z",
+    receipt_id: null,
+    superseded: false,
+    acknowledged: false,
+  });
+  assert.equal(operation.assignment, "inbox_send");
+  assert.equal(operation.done, false);
+});
+
 test("a follow separates the acknowledgement from the load outcome", () => {
   const dispatched = followView({
     request_id: "r",

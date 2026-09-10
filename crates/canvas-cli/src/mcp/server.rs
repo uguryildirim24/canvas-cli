@@ -48,10 +48,6 @@ const APPROVAL_KEY: &str = "approval";
 /// The consumer id recorded when a host does not name itself.
 const ANONYMOUS_CONSUMER: &str = "mcp";
 
-/// The one tool that can return `input_required`, and so the only tool whose
-/// retry may carry a `requestState`.
-const APPROVAL_TOOL: &str = "submission.execute";
-
 /// How long a host may cache the shape of this server, in milliseconds.
 ///
 /// The catalog and the resource list are fixed when the binary is built, and
@@ -196,7 +192,11 @@ fn declares_form_elicitation(capabilities: Option<&ClientCapabilities>) -> bool 
 /// by a tool argument.
 fn ask_approval(pending: &Pending) -> Result<InputRequiredResult, ErrorData> {
     let schema = ElicitationSchema::builder()
-        .title("Approve this submission")
+        .title(if pending.plan.operation.is_some() {
+            "Approve this write"
+        } else {
+            "Approve this submission"
+        })
         .description("Echo the approval handle from `requestState` to approve.")
         .required_string_property("handle", |handle| {
             handle
@@ -242,12 +242,32 @@ fn approval_message(pending: &Pending) -> String {
     if let Some(url) = &plan.url {
         let _ = write!(message, "\n  url {url}");
     }
+    if let Some(operation) = &plan.operation {
+        // The exact bytes and the exact attachments, so the approval names
+        // what is sent rather than the intention behind it.
+        let _ = write!(
+            message,
+            "\n  text sent_sha256 {}",
+            operation.text.sent_sha256
+        );
+        for attachment in &operation.attachments {
+            let _ = write!(
+                message,
+                "\n  {} ({} bytes, sha256 {})",
+                attachment.name, attachment.size, attachment.sha256
+            );
+        }
+    }
     let _ = write!(
         message,
         "\n  plan {}  digest {}  expires {}",
         plan.plan_id, plan.plan_sha256, plan.expires_at
     );
-    message.push_str("\nAccept to submit. Decline or cancel and the plan is invalidated.");
+    message.push_str(if plan.operation.is_some() {
+        "\nAccept to send. Decline or cancel and the plan is invalidated."
+    } else {
+        "\nAccept to submit. Decline or cancel and the plan is invalidated."
+    });
     message
 }
 
@@ -342,14 +362,14 @@ impl ServerHandler for CanvasServer {
         }
         let consumer = consumer_of(&context);
         if let Some(state) = request.request_state.as_deref() {
-            // Only one tool ever asks for a decision, so only that tool can be
-            // the second half of a round trip. A retry that names any other
-            // tool is a host bug or a replayed state, and answering it would
-            // record an approval against a call that never asked for one.
-            if name != APPROVAL_TOOL {
+            // Only a tool that asks for a decision can be the second half of
+            // a round trip. A retry that names any other tool is a host bug or
+            // a replayed state, and answering it would record an approval
+            // against a call that never asked for one.
+            if !catalog::asks_for_approval(&name) {
                 return Err(ErrorData::invalid_params(
                     format!(
-                        "{name} never asks for an approval: `requestState` belongs to {APPROVAL_TOOL}"
+                        "{name} never asks for an approval: `requestState` belongs to an execute tool"
                     ),
                     Some(serde_json::json!({ "tool": name })),
                 ));

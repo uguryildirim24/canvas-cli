@@ -274,10 +274,21 @@ pub async fn handle_show(
         replies_coverage: coverage.clone(),
     };
 
+    // §10: a reply this CLI started and did not resolve makes the thread
+    // uncertain, whatever the cache says.
+    let pending = super::inbox::pending_operations(
+        &session,
+        canvas_core::store::PendingTarget::Topic(topic_id),
+    )
+    .await;
     let mut envelope = base_envelope(
         SCHEMA_DISCUSSION,
         &session,
-        DiscussionResult { discussion: detail },
+        DiscussionResult {
+            discussion: detail,
+            pending: !pending.is_empty(),
+            pending_journals: pending,
+        },
     );
     envelope.freshness = freshness;
     envelope.requests = session.requests();
@@ -392,7 +403,7 @@ fn id_string(raw: Option<&Value>) -> Option<String> {
 }
 
 /// The topic id: a bare number, or a Canvas discussion URL for this course.
-fn topic_id_of(raw: &str, origin: &str, course_id: i64) -> Result<i64, &'static str> {
+pub(super) fn topic_id_of(raw: &str, origin: &str, course_id: i64) -> Result<i64, &'static str> {
     let trimmed = raw.trim();
     if let Ok(id) = trimmed.parse::<i64>() {
         if id > 0 {

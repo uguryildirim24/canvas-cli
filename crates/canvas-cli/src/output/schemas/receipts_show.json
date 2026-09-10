@@ -52,7 +52,8 @@
       "at": "2026-09-09T16:04:52Z",
       "consumer": null,
       "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    }
+    },
+    "operation": null
   },
   "receipt": {
     "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
@@ -125,6 +126,7 @@
       "at": "2026-09-09T16:04:52Z",
       "consumer": null,
       "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    }
+    },
+    "operation": null
   }
 }

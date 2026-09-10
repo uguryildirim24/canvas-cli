@@ -1249,6 +1249,10 @@ These eight schemas have no typed arm in the schema generator, so their `canvas 
 ## 25. Discussion and inbox writes
 
 *Reserved for M8-b (per-operation prepare, execute, status, and reconcile for conversation and discussion writes, on the §20 plan layer). The package is in flight and no part of it is on `main`. This section is written when it merges.*
+37. **`operation status --offline` (§5 class table, raised by the M8-b code review 2026-09-10).** The write commands are class D, and a class-D command with `--offline` exits 2 before any I/O, as `operation reconcile` does; `operation status` instead returns the stored journal (an honest local answer). Same tension as item 8. Either add an explicit exception to §5 or make `status` exit 2 and point at `receipts show` (class B). Current code kept.
+38. **`operation.status` keeps `readOnlyHint: true` while it records a readback (REPORT §3.2, same review).** It moves no journal state but writes `readback_json` and can move `attribution` from `accepted` to `observed`, like every cache-backed read that writes `cache.sqlite`. Another instance of item 21. Annotation kept, description corrected.
+39. **No `in_progress` refusal for a live operation target (§12.2 step 2 as the model, same review).** The operation admission lock is released once the row is published, so a second separately approved write to the same topic or conversation is admitted while the first is still `posting`; one plan still admits one journal (plan-state guard plus the unique `plan_id` index, race-tested). Reviewer's reading: a second reply is a second post, not a replacement. Record the rule in §25 or require the §12.2 refusal.
+40. **`superseded` is always `false` for an operation journal (Appendix D `Journal`, same review).** A reply or message is never superseded; the column stays because `receipts list` prints one table for both journal kinds. A real superseding rule for writes would need its own definition.
 
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 

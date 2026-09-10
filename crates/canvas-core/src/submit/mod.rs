@@ -8,8 +8,8 @@ mod verify;
 
 pub use execute::{ExecuteError, ExecuteOutcome, execute, post_and_finish};
 pub use freeze::{
-    FreezeError, FrozenInput, InputKind, TextSource, freeze_files, freeze_html, freeze_text,
-    freeze_url, validate_comment,
+    FreezeError, FrozenInput, InputKind, MAX_TEXT_BYTES, TextSource, freeze_files, freeze_html,
+    freeze_text, freeze_url, text_to_html, validate_comment,
 };
 pub use preflight::{
     AssignmentFacts, Plan, PreflightError, PreflightOutcome, admit, check_admissible,

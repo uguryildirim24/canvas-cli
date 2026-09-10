@@ -21,6 +21,8 @@ pub enum EventKind {
     MissingNew,
     /// A submission journal changed state (§12.2).
     SubmissionState,
+    /// An operation journal changed state (M8-b, §12.2 discipline).
+    OperationState,
     /// The unread-conversation count changed (M8-a `inbox_unread`).
     InboxUnreadCount,
     /// A person approved a plan (REPORT §3.5). Ids only, never a payload.
@@ -47,6 +49,7 @@ impl EventKind {
             Self::AnnouncementNew => "announcement.new",
             Self::MissingNew => "missing.new",
             Self::SubmissionState => "submission.state",
+            Self::OperationState => "operation.state",
             Self::InboxUnreadCount => "inbox.unread_count",
             Self::PlanApproved => "plan.approved",
             Self::PlanDeclined => "plan.declined",
@@ -74,6 +77,7 @@ impl EventKind {
             Self::AnnouncementNew,
             Self::MissingNew,
             Self::SubmissionState,
+            Self::OperationState,
             Self::InboxUnreadCount,
             Self::PlanApproved,
             Self::PlanDeclined,
@@ -94,6 +98,7 @@ impl EventKind {
             Self::AnnouncementNew => "announcements",
             Self::MissingNew => "missing",
             Self::SubmissionState => "submission",
+            Self::OperationState => "operation",
             Self::InboxUnreadCount => "inbox",
             Self::PlanApproved | Self::PlanDeclined | Self::PlanCancelled => "plan",
             Self::ResyncRequired => "resync",

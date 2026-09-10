@@ -1,0 +1,71 @@
+---
+source: crates/canvas-cli/tests/review_m8b.rs
+expression: "normalized(out, &server.uri())"
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "<generated_at>",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 4,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "acknowledged_at": null,
+    "attachments": [],
+    "attribution": "accepted",
+    "delivery": "observable",
+    "error": null,
+    "journal_id": "<journal_id>",
+    "kind": "discussion_reply",
+    "not_posted_evidence": null,
+    "outcome": "ok",
+    "plan_id": "<plan_id>",
+    "post_status": 200,
+    "readback": null,
+    "receipt_id": "<receipt_id>",
+    "replayed": false,
+    "response": {
+      "attachment_ids": [],
+      "body_sha256": "abed0e3cbeb6c8f0e67e79ccabc74d88f6712514e40a30160c4ecb322ad29574",
+      "conversation_id": null,
+      "created_at": "2026-09-09T17:00:00Z",
+      "created_at_local": "2026-09-09T13:00:00-04:00",
+      "id": "5003",
+      "response_sha256": "4013bde71ff999efa5d3151fae55e3a19d9a7212fc0320c8dc0efdef6eb3eddb",
+      "user_id": "123"
+    },
+    "response_kind": null,
+    "server_match": null,
+    "state": "posted",
+    "subject": null,
+    "target": {
+      "conversation_id": null,
+      "conversation_subject": null,
+      "course_code": null,
+      "course_id": "5",
+      "kind": "discussion_reply",
+      "parent_entry_id": null,
+      "recipient_names": [],
+      "recipients": [],
+      "topic_id": "55",
+      "topic_title": "Week 3 reading"
+    },
+    "text": {
+      "input_sha256": "e6f9bc4f0d241584cdb7bd2f22097572160af71f14ef4fbda3b0aead5ca6d822",
+      "sent_sha256": "abed0e3cbeb6c8f0e67e79ccabc74d88f6712514e40a30160c4ecb322ad29574",
+      "transform": "text-to-html"
+    }
+  },
+  "schema": "canvas-cli/operation@1",
+  "warnings": []
+}
