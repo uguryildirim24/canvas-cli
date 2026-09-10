@@ -165,16 +165,30 @@ async fn run(
             persist_identity(store, journal_id)?;
             verdict = Verdict::Matched;
         } else if assume_not_posted {
-            match ops::assume_not_posted(store, &owner, journal_id, false, now) {
-                Ok(()) => verdict = Verdict::AssumedNotPosted,
-                Err(OperationError::StateConflict) => {
-                    warning = Some(
-                        "nothing can be assumed yet: an operation must be thirty minutes old \
-                         and unseen before it is recorded as never posted"
-                            .to_owned(),
-                    );
+            // A readback that did not cover the whole thread cannot prove
+            // absence, so it cannot support the assertion that nothing was
+            // posted either (`docs/writes-v2.md` choice 8). The exposed case
+            // is an `inbox_send` Canvas never named a conversation for: there
+            // is no thread to read at all, and asserting "never sent" there
+            // invites a resend that would be a second message.
+            if readback.complete {
+                match ops::assume_not_posted(store, &owner, journal_id, false, now) {
+                    Ok(()) => verdict = Verdict::AssumedNotPosted,
+                    Err(OperationError::StateConflict) => {
+                        warning = Some(
+                            "nothing can be assumed yet: an operation must be thirty minutes \
+                             old and unseen before it is recorded as never posted"
+                                .to_owned(),
+                        );
+                    }
+                    Err(other) => return Err(other),
                 }
-                Err(other) => return Err(other),
+            } else {
+                warning = Some(
+                    "nothing can be assumed: the readback did not cover the thread, so it is \
+                     no evidence that the write is absent"
+                        .to_owned(),
+                );
             }
         } else {
             warning = Some(
