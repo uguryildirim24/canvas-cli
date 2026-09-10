@@ -57,7 +57,7 @@ pub struct ExecuteOutcome {
     pub warning: Option<String>,
 }
 
-/// Run uploads → POST → commit / outcome_unknown → optional reconcile → readback → export.
+/// Run uploads → POST → commit / `outcome_unknown` → optional reconcile → readback → export.
 pub async fn execute(
     client: &Client,
     store: &Store,
@@ -99,6 +99,19 @@ pub async fn execute(
         }
     }
 
+    post_and_finish(client, store, paths, owner, journal_id, frozen).await
+}
+
+/// Steps 9–12 from an `uploaded` journal (also used by tests that seed uploads).
+#[allow(clippy::too_many_lines)]
+pub async fn post_and_finish(
+    client: &Client,
+    store: &Store,
+    paths: &Paths,
+    owner: &OwnerLock,
+    journal_id: &str,
+    frozen: &FrozenInput,
+) -> Result<ExecuteOutcome, ExecuteError> {
     // Step 9: posting + POST
     mark_posting(store, owner, journal_id)?;
     let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
@@ -116,7 +129,7 @@ pub async fn execute(
         && let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes)
         && value
             .get("attempt")
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .is_some_and(|a| a >= 1)
         && let Ok(posted) = allowlist_from_json(Evidence::PostResponse, &value, Some(bytes))
     {
@@ -195,13 +208,10 @@ pub async fn execute(
     let mut reconcile = None;
     if status.is_some() {
         let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
-        if let Ok(history) =
-            get_submission_history(client, row.course_id, row.assignment_id).await
+        if let Ok(history) = get_submission_history(client, row.course_id, row.assignment_id).await
         {
             let now = Timestamp::now();
-            if let Ok(result) =
-                reconcile_history(store, owner, paths, &row, &history, now)
-            {
+            if let Ok(result) = reconcile_history(store, owner, paths, &row, &history, now) {
                 reconcile = Some(result);
             }
         }
@@ -254,7 +264,7 @@ async fn upload_all(
     let mut next = 0usize;
     let total = frozen.file_paths.len();
 
-    while next < total || set.len() > 0 {
+    while next < total || !set.is_empty() {
         while set.len() < 2 && next < total {
             let idx = next;
             next += 1;
@@ -268,14 +278,9 @@ async fn upload_all(
             let client = client.clone();
             set.spawn(async move {
                 let bytes = std::fs::read(&path).map_err(ExecuteError::Io)?;
-                let result = upload_submission_file(
-                    &client,
-                    course_id,
-                    assignment_id,
-                    &meta,
-                    &bytes[..],
-                )
-                .await?;
+                let result =
+                    upload_submission_file(&client, course_id, assignment_id, &meta, &bytes[..])
+                        .await?;
                 let got = hex_sha256_bytes(&result.sha256);
                 if got != expected {
                     return Err(ExecuteError::Refused(

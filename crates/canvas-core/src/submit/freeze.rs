@@ -59,7 +59,7 @@ pub enum FreezeError {
     Io(#[from] std::io::Error),
 }
 
-/// Validate an optional comment against the Canvas 65_535 character limit.
+/// Validate an optional comment against the Canvas `65_535` character limit.
 pub fn validate_comment(comment: Option<&str>) -> Result<Option<String>, FreezeError> {
     match comment {
         None => Ok(None),
@@ -71,12 +71,11 @@ pub fn validate_comment(comment: Option<&str>) -> Result<Option<String>, FreezeE
 }
 
 /// Freeze one or more local files (read once, sha256, size).
-pub fn freeze_files(
-    paths: &[PathBuf],
-    comment: Option<&str>,
-) -> Result<FrozenInput, FreezeError> {
+pub fn freeze_files(paths: &[PathBuf], comment: Option<&str>) -> Result<FrozenInput, FreezeError> {
     if paths.is_empty() {
-        return Err(FreezeError::Validation("at least one --file is required".into()));
+        return Err(FreezeError::Validation(
+            "at least one --file is required".into(),
+        ));
     }
     let comment = validate_comment(comment)?;
     let mut files = Vec::with_capacity(paths.len());
@@ -86,7 +85,9 @@ pub fn freeze_files(
         let name = path
             .file_name()
             .and_then(|n| n.to_str())
-            .ok_or_else(|| FreezeError::Validation(format!("invalid file name: {}", path.display())))?
+            .ok_or_else(|| {
+                FreezeError::Validation(format!("invalid file name: {}", path.display()))
+            })?
             .to_owned();
         files.push(IntendedFile {
             name,
@@ -109,7 +110,7 @@ pub fn freeze_files(
 
 /// Freeze `--text` input: CRLF→LF, reject empty, HTML transform, digests.
 pub fn freeze_text(
-    source: TextSource<'_>,
+    source: &TextSource<'_>,
     comment: Option<&str>,
 ) -> Result<FrozenInput, FreezeError> {
     let comment = validate_comment(comment)?;
@@ -138,10 +139,7 @@ pub fn freeze_text(
 }
 
 /// Freeze `--html` input verbatim.
-pub fn freeze_html(
-    path: &Path,
-    comment: Option<&str>,
-) -> Result<FrozenInput, FreezeError> {
+pub fn freeze_html(path: &Path, comment: Option<&str>) -> Result<FrozenInput, FreezeError> {
     let comment = validate_comment(comment)?;
     let bytes = std::fs::read(path)?;
     if bytes.len() > MAX_TEXT_BYTES {
@@ -153,9 +151,8 @@ pub fn freeze_html(
         return Err(FreezeError::Validation("html input is empty".into()));
     }
     let digest = hex_sha256(&bytes);
-    let outbound = String::from_utf8(bytes).map_err(|_| {
-        FreezeError::Validation("html input is not valid UTF-8".into())
-    })?;
+    let outbound = String::from_utf8(bytes)
+        .map_err(|_| FreezeError::Validation("html input is not valid UTF-8".into()))?;
     Ok(FrozenInput {
         kind: InputKind::OnlineHtml,
         payload: IntendedPayload {
@@ -207,7 +204,7 @@ pub enum TextSource<'a> {
     Bytes(&'a [u8]),
 }
 
-fn read_text_source(source: TextSource<'_>) -> Result<String, FreezeError> {
+fn read_text_source(source: &TextSource<'_>) -> Result<String, FreezeError> {
     let bytes = match source {
         TextSource::Path(path) => std::fs::read(path)?,
         TextSource::Bytes(b) => b.to_vec(),
@@ -286,18 +283,15 @@ mod tests {
     #[test]
     fn text_transform_and_empty() {
         assert!(matches!(
-            freeze_text(TextSource::Bytes(b""), None),
+            freeze_text(&TextSource::Bytes(b""), None),
             Err(FreezeError::Validation(_))
         ));
-        let frozen = freeze_text(TextSource::Bytes(b"a\r\n\r\nb\nc"), None).unwrap();
+        let frozen = freeze_text(&TextSource::Bytes(b"a\r\n\r\nb\nc"), None).unwrap();
         let text = frozen.payload.text.unwrap();
         assert_eq!(text.transform, "text-to-html");
         assert_eq!(text.outbound_bytes, "<p>a</p><p>b<br>c</p>");
         assert_eq!(text.input_sha256, hex_sha256(b"a\n\nb\nc"));
-        assert_eq!(
-            text.sent_sha256,
-            hex_sha256(text.outbound_bytes.as_bytes())
-        );
+        assert_eq!(text.sent_sha256, hex_sha256(text.outbound_bytes.as_bytes()));
     }
 
     #[test]

@@ -87,7 +87,7 @@ pub async fn verify(
     identity_key: &str,
     receipt: &ReceiptDocument,
 ) -> Result<VerifyResult, VerifyError> {
-    if let Err(result) = validate_local(store, identity_key, receipt) {
+    if let Some(result) = validate_local(store, identity_key, receipt) {
         return Ok(result);
     }
 
@@ -164,7 +164,7 @@ fn validate_local(
     store: &Store,
     identity_key: &str,
     receipt: &ReceiptDocument,
-) -> Result<(), VerifyResult> {
+) -> Option<VerifyResult> {
     let refused = |reason: &str| VerifyResult {
         outcome: VerifyOutcome::Refused,
         receipt_id: receipt.receipt_id.clone(),
@@ -175,13 +175,13 @@ fn validate_local(
         reason: Some(reason.into()),
     };
     if receipt.identity.key != identity_key {
-        return Err(refused("identity mismatch"));
+        return Some(refused("identity mismatch"));
     }
     if receipt.posted.attempt.is_none() {
-        return Err(refused("posted.attempt missing"));
+        return Some(refused("posted.attempt missing"));
     }
     if receipt.kind == "online_url" {
-        return Err(refused("URL receipts cannot be verified"));
+        return Some(refused("URL receipts cannot be verified"));
     }
     if receipt.kind == "online_upload" {
         let file_ids: BTreeSet<_> = receipt
@@ -196,7 +196,7 @@ fn validate_local(
             .map(|a| a.id.clone())
             .collect();
         if file_ids.is_empty() || file_ids != posted_ids {
-            return Err(refused(
+            return Some(refused(
                 "file id sets on receipt files and posted.attachments must match and be non-empty",
             ));
         }
@@ -208,15 +208,16 @@ fn validate_local(
                     .map(|id| id.to_string())
                     .collect();
             if uploaded != file_ids {
-                return Err(refused(
+                return Some(refused(
                     "journal uploaded file ids do not match receipt file ids",
                 ));
             }
         }
     }
-    Ok(())
+    None
 }
 
+#[allow(clippy::too_many_lines)]
 async fn verify_files(
     client: &Client,
     identity_dir: &Path,
@@ -303,35 +304,35 @@ async fn verify_files(
         let contained = contain::walk_parent(&root, &rel)?;
         let mut part = contain::open_contained_file(&contained, true)?;
         let mut sink = Vec::new();
-        match canvas_api::download::download(client, url, &mut sink, attachment.size, |_| {}).await
+        if let Ok(()) =
+            canvas_api::download::download(client, url, &mut sink, attachment.size, |_| {})
+                .await
+                .map(|_| ())
         {
-            Ok(_) => {
-                let actual_hash = hex_sha256(&sink);
-                part.write_all(&sink)?;
-                let status = if actual_hash == file.sha256 {
-                    "ok"
-                } else {
-                    mismatch = true;
-                    "mismatch"
-                };
-                rows.push(VerifyFileRow {
-                    canvas_file_id: fid.clone(),
-                    name: Some(file.name.clone()),
-                    expected_sha256: Some(file.sha256.clone()),
-                    actual_sha256: Some(actual_hash),
-                    status: status.into(),
-                });
-            }
-            Err(_) => {
-                unavailable = true;
-                rows.push(VerifyFileRow {
-                    canvas_file_id: fid.clone(),
-                    name: Some(file.name.clone()),
-                    expected_sha256: Some(file.sha256.clone()),
-                    actual_sha256: None,
-                    status: "unavailable".into(),
-                });
-            }
+            let actual_hash = hex_sha256(&sink);
+            part.write_all(&sink)?;
+            let status = if actual_hash == file.sha256 {
+                "ok"
+            } else {
+                mismatch = true;
+                "mismatch"
+            };
+            rows.push(VerifyFileRow {
+                canvas_file_id: fid.clone(),
+                name: Some(file.name.clone()),
+                expected_sha256: Some(file.sha256.clone()),
+                actual_sha256: Some(actual_hash),
+                status: status.into(),
+            });
+        } else {
+            unavailable = true;
+            rows.push(VerifyFileRow {
+                canvas_file_id: fid.clone(),
+                name: Some(file.name.clone()),
+                expected_sha256: Some(file.sha256.clone()),
+                actual_sha256: None,
+                status: "unavailable".into(),
+            });
         }
     }
 

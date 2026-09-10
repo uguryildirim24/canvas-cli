@@ -41,27 +41,27 @@ impl SubmissionBody {
                     "submission_type": "online_upload",
                     "file_ids": file_ids,
                 });
-                wrap_comment(submission, comment)
+                wrap_comment(&submission, comment.as_ref())
             }
             Self::OnlineTextEntry { body, comment } => {
                 let submission = json!({
                     "submission_type": "online_text_entry",
                     "body": body,
                 });
-                wrap_comment(submission, comment)
+                wrap_comment(&submission, comment.as_ref())
             }
             Self::OnlineUrl { url, comment } => {
                 let submission = json!({
                     "submission_type": "online_url",
                     "url": url,
                 });
-                wrap_comment(submission, comment)
+                wrap_comment(&submission, comment.as_ref())
             }
         }
     }
 }
 
-fn wrap_comment(submission: serde_json::Value, comment: &Option<String>) -> serde_json::Value {
+fn wrap_comment(submission: &serde_json::Value, comment: Option<&String>) -> serde_json::Value {
     match comment {
         Some(text) if !text.is_empty() => json!({
             "submission": submission,
@@ -99,7 +99,9 @@ pub fn is_canvas_error_body(bytes: &[u8]) -> bool {
     let Some(obj) = value.as_object() else {
         return false;
     };
-    if obj.contains_key("errors") || obj.contains_key("error") || obj.contains_key("error_report_id")
+    if obj.contains_key("errors")
+        || obj.contains_key("error")
+        || obj.contains_key("error_report_id")
     {
         return true;
     }
@@ -151,8 +153,7 @@ pub async fn get_submission_history(
     course_id: i64,
     assignment_id: i64,
 ) -> Result<crate::models::Submission, Error> {
-    let path =
-        format!("/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/self");
+    let path = format!("/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/self");
     let mut url = client.api_url(&path)?;
     url.query_pairs_mut()
         .append_pair("include[]", "submission_history");

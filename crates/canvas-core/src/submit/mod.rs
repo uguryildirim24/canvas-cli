@@ -6,22 +6,21 @@ mod preflight;
 mod reconcile;
 mod verify;
 
-pub use execute::{ExecuteOutcome, execute};
+pub use execute::{ExecuteOutcome, execute, post_and_finish};
 pub use freeze::{
     FreezeError, FrozenInput, InputKind, TextSource, freeze_files, freeze_html, freeze_text,
     freeze_url, validate_comment,
 };
-pub use preflight::{
-    Plan, PreflightError, PreflightOutcome, create_from_plan, preflight,
-};
-pub use reconcile::{
-    ReconcileOutcome, ReconcileResult, reconcile, reconcile_history,
-};
-pub use verify::{VerifyOutcome, VerifyResult, verify};
+pub use preflight::{Plan, PreflightError, PreflightOutcome, create_from_plan, preflight};
+pub use reconcile::{ReconcileOutcome, ReconcileResult, reconcile, reconcile_history};
+pub use verify::{VerifyOutcome, VerifyResult, load_receipt_for_verify, verify};
 
 use thiserror::Error;
 
 use crate::journal::JournalError;
+
+#[cfg(test)]
+mod tests;
 
 /// Unified submit-domain error for callers that do not need finer mapping.
 #[derive(Debug, Error)]
@@ -79,12 +78,13 @@ impl From<PreflightError> for SubmitError {
             PreflightError::Validation(s) => Self::Validation(s),
             PreflightError::Journal(e) => Self::Journal(e),
             PreflightError::Freeze(e) => e.into(),
-            PreflightError::Io(e) => Self::Io(e),
+            PreflightError::Io(e) | PreflightError::Lock(crate::journal::LockError::Io(e)) => {
+                Self::Io(e)
+            }
             PreflightError::Json(e) => Self::Json(e),
             PreflightError::Lock(crate::journal::LockError::InProgress) => {
                 Self::InProgress { journal_id: None }
             }
-            PreflightError::Lock(crate::journal::LockError::Io(e)) => Self::Io(e),
         }
     }
 }

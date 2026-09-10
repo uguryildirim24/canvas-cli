@@ -87,6 +87,7 @@ pub struct PreflightOutcome {
 /// Run preflight steps 1–6 and build the plan. Does not create the journal.
 ///
 /// Caller must confirm, then call [`create_from_plan`], then drop `admission`.
+#[allow(clippy::too_many_arguments)]
 pub async fn preflight(
     client: &Client,
     store: &Store,
@@ -102,12 +103,11 @@ pub async fn preflight(
     let assignment = get_assignment_for_submit(client, course_id, assignment_id).await?;
 
     // Step 2: admission lock + owner-absent recovery.
-    let admission = AdmissionLock::try_acquire(identity_dir, assignment_id).map_err(|e| {
-        match e {
+    let admission =
+        AdmissionLock::try_acquire(identity_dir, assignment_id).map_err(|e| match e {
             LockError::InProgress => PreflightError::InProgress { journal_id: None },
             LockError::Io(err) => PreflightError::Io(err),
-        }
-    })?;
+        })?;
     let recovered = recover_active(store, identity_dir, assignment_id)?;
 
     // Steps 3–4.
@@ -121,14 +121,8 @@ pub async fn preflight(
         .and_then(|s| s.attempt.as_value().copied())
         .unwrap_or(0);
     let baseline_submission_id = assignment.submission.as_ref().and_then(|s| s.id);
-    let due_at = assignment
-        .due_at
-        .as_value()
-        .map(ToString::to_string);
-    let past_due = assignment
-        .due_at
-        .as_value()
-        .is_some_and(|due| *due < now);
+    let due_at = assignment.due_at.as_value().map(ToString::to_string);
+    let past_due = assignment.due_at.as_value().is_some_and(|due| *due < now);
     let assignment_name = assignment.name.as_value().cloned();
     let course_code = assignment
         .course
@@ -136,9 +130,9 @@ pub async fn preflight(
         .and_then(|c| c.course_code.clone());
 
     let mut frozen = frozen;
-    frozen.payload.assignment_name = assignment_name.clone();
-    frozen.payload.course_code = course_code.clone();
-    frozen.payload.due_at = due_at.clone();
+    frozen.payload.assignment_name.clone_from(&assignment_name);
+    frozen.payload.course_code.clone_from(&course_code);
+    frozen.payload.due_at.clone_from(&due_at);
 
     Ok(PreflightOutcome {
         plan: Plan {
@@ -208,20 +202,21 @@ fn recover_active(
 }
 
 fn active_journal_ids(store: &Store, assignment_id: i64) -> Result<Vec<String>, JournalError> {
-    store.call_blocking(move |conns| {
-        let mut stmt = conns.state.prepare(
-            "SELECT journal_id FROM submission_journal
+    store
+        .call_blocking(move |conns| {
+            let mut stmt = conns.state.prepare(
+                "SELECT journal_id FROM submission_journal
              WHERE assignment_id = ?1
                AND state IN ('planned','uploading','uploaded','posting')",
-        )?;
-        let rows = stmt.query_map([assignment_id], |r| r.get(0))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row?);
-        }
-        Ok(out)
-    })
-    .map_err(JournalError::from)
+            )?;
+            let rows = stmt.query_map([assignment_id], |r| r.get(0))?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row?);
+            }
+            Ok(out)
+        })
+        .map_err(JournalError::from)
 }
 
 fn check_group_and_types(assignment: &Assignment, kind: InputKind) -> Result<(), PreflightError> {
@@ -272,7 +267,9 @@ fn check_eligibility(assignment: &Assignment, now: Timestamp) -> Result<(), Pref
     if let Some(lock_at) = assignment.lock_at.as_value()
         && *lock_at < now
     {
-        return Err(PreflightError::Refused("assignment lock_at is in the past".into()));
+        return Err(PreflightError::Refused(
+            "assignment lock_at is in the past".into(),
+        ));
     }
     if let Some(unlock_at) = assignment.unlock_at.as_value()
         && *unlock_at > now
@@ -296,9 +293,7 @@ fn check_eligibility(assignment: &Assignment, now: Timestamp) -> Result<(), Pref
             .and_then(|s| s.extra_attempts)
             .unwrap_or(0);
         if used >= allowed + extra {
-            return Err(PreflightError::Refused(
-                "no attempts remaining".into(),
-            ));
+            return Err(PreflightError::Refused("no attempts remaining".into()));
         }
     }
     Ok(())
