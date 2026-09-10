@@ -308,9 +308,9 @@ mod tests {
             description: Some("note; with, special\\chars".into()),
             alarm: None,
         };
-        let ics = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap())
-            .unwrap()
-            .text;
+        let document = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap()).unwrap();
+        assert_eq!(document.warnings.len(), 1);
+        let ics = document.text;
         assert!(ics.contains("DTSTART;VALUE=DATE:20260308"));
         assert!(!ics.lines().any(|l| l.starts_with("DTEND")));
         assert!(ics.contains("DESCRIPTION:note\\; with\\, special\\\\chars"));
@@ -334,14 +334,38 @@ mod tests {
             description: None,
             alarm: Some("PT24H".into()),
         };
-        let ics = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap())
-            .unwrap()
-            .text;
+        let ics = write_ics(
+            std::slice::from_ref(&item),
+            "2026-01-01T00:00:00Z".parse().unwrap(),
+        )
+        .unwrap()
+        .text;
         assert!(ics.contains("DTSTAMP:20260101T000000Z\r\n"));
         assert!(ics.contains("DTSTART:20260909T235900Z\r\n"));
         assert!(ics.contains("BEGIN:VALARM"));
         assert!(ics.contains("TRIGGER:-PT24H"));
         assert!(ics.contains("SUMMARY:[CS] HW"));
+        let stamp = "2026-01-01T00:00:00Z".parse().unwrap();
+        let mut invalid = item.clone();
+        invalid.due_at = None;
+        assert!(matches!(
+            write_ics(&[invalid], stamp),
+            Err(IcsError::MissingStart(9))
+        ));
+        let mut invalid = item.clone();
+        invalid.url = Some("https://example.test/\r\nBEGIN:VEVENT".into());
+        assert!(matches!(
+            write_ics(&[invalid], stamp),
+            Err(IcsError::InvalidValue(9))
+        ));
+        let mut timed = item;
+        timed.is_deadline = false;
+        timed.start_at = Some("2026-09-09T12:00:00-04:00".parse().unwrap());
+        timed.end_at = Some("2026-09-09T13:00:00-04:00".parse().unwrap());
+        let timed = write_ics(&[timed], stamp).unwrap().text;
+        assert!(timed.contains("DTSTART:20260909T160000Z\r\n"));
+        assert!(timed.contains("DTEND:20260909T170000Z\r\n"));
+        assert!(!timed.contains("VALARM"));
     }
 }
 
