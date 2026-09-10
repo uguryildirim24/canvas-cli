@@ -19,7 +19,7 @@ use std::process::Stdio;
 
 use canvas_core::journal::IntendedPayload;
 use canvas_core::plan::PlanKind;
-use canvas_core::plan::{NewPlan, PlanRow, PlanState, insert, issue_handle, load};
+use canvas_core::plan::{ApprovalChannel, NewPlan, PlanRow, PlanState, insert, issue_handle, load};
 use canvas_core::store::OpenIdentity;
 use canvas_core::submit::InputKind;
 use serde_json::{Value, json};
@@ -476,6 +476,51 @@ fn the_panel_can_approve_decline_and_cancel_an_exact_plan() {
 /// The socket has no approval operation at all, so a page that reached a
 /// consumer has nothing to send. The native path exists, and each field it
 /// carries is checked against what the host stored.
+/// A plan can have more than one live handle, and the panel draws a row for
+/// each. The decision the person makes on the second row must work.
+///
+/// Every `issue_handle` makes another handle, and two consumers can each ask
+/// for a decision on the same plan. Selecting the stored row by plan id alone
+/// and then comparing the handle would refuse a real handle the panel itself
+/// had shown, and the person would press approve and see nothing happen.
+#[test]
+fn a_second_live_handle_on_one_plan_is_a_decision_the_person_can_make() {
+    let f = Fixture::new();
+    let mut host = attached(&f);
+    let (plan_id, first, digest) = prepared(&f, Some("mcp:claude-code"));
+
+    // A second consumer asks for a decision on the same prepared plan.
+    let second = {
+        let paths = canvas_core::identity::Paths::for_identity(f.data_root(), &f.doc.key);
+        let open = OpenIdentity::open(&paths, &f.doc).expect("open");
+        issue_handle(&open.store, &plan_id, Some("mcp:codex")).expect("a second handle")
+    };
+    assert_ne!(first, second);
+
+    // The panel draws both rows, each with its own handle and consumer.
+    host.send(&json!({ "type": "panel_hello", "protocol": "bridge-native@1" }));
+    let panel = panel_of(&mut host);
+    let rows = panel["approvals"].as_array().expect("approvals").clone();
+    assert_eq!(rows.len(), 2, "{panel}");
+    let handles: Vec<&str> = rows.iter().map(|r| r["handle"].as_str().unwrap()).collect();
+    assert!(handles.contains(&first.as_str()) && handles.contains(&second.as_str()));
+
+    // The person presses approve on the row carrying the second handle.
+    host.send(&json!({
+        "type": "decision", "plan_id": plan_id, "handle": second,
+        "plan_sha256": digest, "decision": "approve",
+    }));
+    wait_for("the approval", || {
+        plan_state(&f, &plan_id) == PlanState::Approved
+    });
+    // And it was recorded against that handle's consumer, not the other's.
+    let approval = plan_row(&f, &plan_id).approval.expect("approval");
+    assert_eq!(approval.consumer.as_deref(), Some("mcp:codex"));
+    assert_eq!(approval.channel, ApprovalChannel::Panel);
+
+    host.stop();
+}
+
 #[test]
 fn no_forged_approval_moves_a_plan() {
     let f = Fixture::new();

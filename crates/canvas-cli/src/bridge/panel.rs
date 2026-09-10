@@ -120,10 +120,17 @@ pub fn apply_decision(
     // The handle must be one this host issued for this plan and still unspent.
     // Reading it from `awaiting_decision` rather than from the message is the
     // point: the panel's echo selects a row, it does not supply one.
+    //
+    // A plan can have more than one live handle — every `issue_handle` makes
+    // another, and two consumers can each ask for a decision on the same
+    // plan — so the row is selected by the handle, not by the plan id alone.
+    // Selecting by id and then comparing would refuse the person's own
+    // second row, whose handle is real and which the panel drew.
     let waiting = canvas_core::plan::awaiting_decision(store, now)
         .map_err(|_| DecisionRefusal::Refused)?
         .into_iter()
-        .find(|entry| entry.plan.plan_id == plan_id);
+        .filter(|entry| entry.plan.plan_id == plan_id)
+        .find(|entry| constant_time_eq(entry.handle.as_bytes(), handle.as_bytes()));
     let Some(entry) = waiting else {
         // Say which of the two it was, without saying anything about a
         // handle that was never shown to this panel.
@@ -133,9 +140,6 @@ pub fn apply_decision(
             _ => DecisionRefusal::UnknownPlan,
         });
     };
-    if !constant_time_eq(entry.handle.as_bytes(), handle.as_bytes()) {
-        return Err(DecisionRefusal::BadHandle);
-    }
     if entry.plan.plan_sha256 != plan_sha256 {
         return Err(DecisionRefusal::DigestMismatch);
     }
