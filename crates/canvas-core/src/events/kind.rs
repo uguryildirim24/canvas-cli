@@ -21,7 +21,7 @@ pub enum EventKind {
     MissingNew,
     /// A submission journal changed state (§12.2).
     SubmissionState,
-    /// Registered for M8-a; this package writes no producer for it.
+    /// The unread-conversation count changed (M8-a `inbox_unread`).
     InboxUnreadCount,
     /// A person approved a plan (REPORT §3.5). Ids only, never a payload.
     PlanApproved,

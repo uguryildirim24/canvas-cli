@@ -24,7 +24,7 @@ use canvas_core::events::{CursorCheck, EventRecord, check_cursor, expire, read_a
 use canvas_core::sync::{
     ContextWindow, CoursesScope, PeriodKey, PlannerWindow, RefreshOutcome, SyncError,
     refresh_announcements, refresh_assignments, refresh_courses, refresh_enrollment_grades,
-    refresh_missing, refresh_planner,
+    refresh_inbox_unread, refresh_missing, refresh_planner,
 };
 use jiff::tz::TimeZone;
 
@@ -36,7 +36,8 @@ use crate::output::{
     EventJson, SCHEMA_EVENT, SCHEMA_WATCH, SyncDatasetJson, WatchResult, now_timestamp,
 };
 use crate::session::{
-    Session, ttl_announcements, ttl_assignments, ttl_courses, ttl_grades, ttl_missing, ttl_planner,
+    Session, ttl_announcements, ttl_assignments, ttl_courses, ttl_grades, ttl_inbox, ttl_missing,
+    ttl_planner,
 };
 
 /// How long a tick waits before the next one, unless `--once` ends the run.
@@ -449,6 +450,22 @@ async fn refresh_due(
     )
     .await?;
     if let Some(outcome) = announcements {
+        record(summary, &outcome);
+    }
+
+    // The unread count is last. It is the cheapest dataset and the least
+    // urgent one, so a slow inbox never delays the coursework a deadline
+    // depends on, and a failing one backs off on its own (M8-a `inbox_unread`,
+    // REPORT §3.6 `inbox.unread_count`).
+    if let Some(outcome) = attempt(
+        session,
+        summary,
+        backoff,
+        ("inbox_unread", "all"),
+        refresh_inbox_unread(client, store, ttl_inbox(), now, false, false),
+    )
+    .await?
+    {
         record(summary, &outcome);
     }
     Ok(())
