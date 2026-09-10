@@ -84,7 +84,7 @@ Markdown plus a `BodyRefs` projection. The projection holds no HTML.
 | Single item denied | exit 8, `code: refused` |
 | Not found | exit 6 through the resolver path |
 | Cross-origin URL operand | exit 6, `code: resolution` |
-| `require_initial_post` gate with `--replies` | exit 8, `code: denied`, message starting `initial_post_required` |
+| `require_initial_post` gate with `--replies` | exit 8, `code: refused`, message starting `initial_post_required` |
 | A reply page failed after earlier pages were stored | `replies_coverage.complete = false`, `blocked: page_failed`, `partial[]` row `discussion_entries:topic:<id>`, exit 12 |
 | A body cut at 64 KiB | `truncated: true`, `partial[]`, exit 12 |
 | `--offline` with no complete coverage | exit 7 (§7) |
