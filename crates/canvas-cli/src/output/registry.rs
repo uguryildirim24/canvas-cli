@@ -442,14 +442,14 @@ pub struct ModulesResult {
 pub struct DownloadFileJson {
     pub id: String,
     pub path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `null` unless `action` is `"moved"` (SPEC Appendix D: always present).
     pub previous_path: Option<String>,
     pub action: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `null` when Canvas did not supply a size (SPEC Appendix D: always present).
     pub size: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `null` when the file needed no diagnostic (SPEC Appendix D: always present).
     pub error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `null` unless `--verify` checked this file (SPEC Appendix D: always present).
     pub verify: Option<String>,
 }
 
@@ -487,6 +487,8 @@ pub struct DownloadResult {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::output::envelope::{Envelope, IdentityRef};
 
@@ -576,6 +578,66 @@ mod tests {
             serde_json::from_str(include_str!("schemas/download.json")).unwrap();
         assert!(!download.dest.is_empty());
         assert_eq!(download.courses[0].files[0].action, "downloaded");
+    }
+
+    /// SPEC §7 and Appendix D: a field defined in Appendix D is always
+    /// present; `null` means unknown or not applicable. `download@1` carried
+    /// `skip_serializing_if` on its four optional fields, which omitted them.
+    #[test]
+    fn download_optional_fields_are_always_present_and_nullable() {
+        const FILE_KEYS: [&str; 7] = [
+            "id",
+            "path",
+            "previous_path",
+            "action",
+            "size",
+            "error",
+            "verify",
+        ];
+
+        // A row with nothing supplied still serializes every listed field.
+        let empty = DownloadFileJson {
+            id: "50".into(),
+            path: "CS-101-101/files/lec.pdf".into(),
+            previous_path: None,
+            action: "planned".into(),
+            size: None,
+            error: None,
+            verify: None,
+        };
+        let value = serde_json::to_value(&empty).unwrap();
+        let object = value.as_object().unwrap();
+        assert_eq!(
+            object.keys().map(String::as_str).collect::<HashSet<_>>(),
+            FILE_KEYS.into_iter().collect::<HashSet<_>>(),
+        );
+        for key in ["previous_path", "size", "error", "verify"] {
+            assert!(object[key].is_null(), "{key} must serialize as null");
+        }
+
+        // The registered fixture carries them too, and round-trips unchanged.
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("schemas/download.json")).unwrap();
+        for course in fixture["courses"].as_array().unwrap() {
+            for file in course["files"].as_array().unwrap() {
+                let keys = file.as_object().unwrap().keys();
+                assert_eq!(
+                    keys.map(String::as_str).collect::<HashSet<_>>(),
+                    FILE_KEYS.into_iter().collect::<HashSet<_>>(),
+                    "fixture row {file} is missing an Appendix D field",
+                );
+            }
+        }
+        let typed: DownloadResult = serde_json::from_value(fixture.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&typed).unwrap(), fixture);
+
+        // The fixture exercises both a populated and an absent optional set.
+        let rows = &typed.courses[0].files;
+        assert_eq!(
+            rows[1].previous_path.as_deref(),
+            Some("CS-101-101/files/notes.pdf")
+        );
+        assert!(rows[1].size.is_none() && rows[1].verify.is_none());
     }
 
     #[test]
