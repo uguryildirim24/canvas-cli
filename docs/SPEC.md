@@ -755,6 +755,122 @@ An owner adds the interface (enum variant, schema entry, migration) that the oth
 32. **Equal navigation generation with a different document id (REPORT §3.3 step 6, same review).** `Broker::update` refuses a lower generation; a message with an equal generation but another document id is accepted as a new document. The shipped extension increments the generation on every committed navigation, so the case is unreachable from it. Decide whether such a message is stale (refuse) or a legitimate same-document replacement (accept).
 33. **`schema@1` is per-form (§7 versus `canvas schema`, raised by the M8-a3 code review 2026-09-10).** `canvas schema event` now describes the `--jsonl` line (`line`) and drops `envelope`, `result`, `error`, while every other page keeps them; the contract id stays `schema@1`. §7's bump rule governs envelopes and `canvas schema` is raw output (item 20). Reviewer's reading applied: per-form by design, because the old page described a wrapper that never exists. Decide whether that stands or the page becomes `schema@2`.
 
+## 20. Operation plans and approval
+
+Built by M6-a (`docs/reviews/code-M6-a.md`) from `docs/agent-ux/REPORT.md` §3.5. A **plan** is the frozen description of one remote write, held between the moment the content is fixed and the moment a person approves it. Approval names exact bytes, not an intention.
+
+```text
+prepare  →  issue_handle  →  approve  →  execute  →  journal (§12.2)
+```
+
+`plan::execute` is the only route from a plan to a submission journal. From the journal insert onward §12.2 is unchanged.
+
+### Tables
+
+Migration `0002_plans` on `state.sqlite` (§10).
+
+| Table | Columns |
+|---|---|
+| `plans` | `plan_id` (PK), `identity_key`, `identity_generation`, `consumer`, `course_id`, `assignment_id`, `kind`, `payload_json`, `file_paths_json`, `input_sha256`, `sent_sha256`, `baseline_attempt`, `baseline_submission_id`, `observations_json`, `plan_sha256`, `state`, `created_at`, `expires_at`, `approval_json`, `journal_id`, `invalidated_reason`; index on `(assignment_id, state)` |
+| `approval_handles` | `handle` (PK), `plan_id` → `plans`, `consumer`, `expires_at`, `used_at`; index on `plan_id` |
+| `submission_journal` | gains `plan_id` and `approval_json`, plus the partial unique index `submission_journal_plan ON submission_journal(plan_id) WHERE plan_id IS NOT NULL` |
+
+SQLite keeps `NULL` values distinct in a unique index, so a journal written before plans existed never collides. Such a journal exposes `plan_id` and `approval` as `null`, per Appendix D's nullable convention.
+
+### Plan states
+
+| State | Meaning | Reached from |
+|---|---|---|
+| `prepared` | frozen and stored; no approval yet | `prepare` |
+| `approved` | a person approved this exact plan | `prepared` |
+| `executed` | linked to a journal; says nothing about the submission's outcome | `approved` |
+| `expired` | the admission deadline passed before execute | `prepared`, `approved` |
+| `invalidated` | a meaningful fact changed, or the plan was declined or cancelled | `prepared`, `approved`, `expired` |
+
+Every transition is one `BEGIN IMMEDIATE` with a `WHERE … state IN (…)` guard, the discipline §12.2 sets for the journal. An `executed` plan is history: no statement rewrites it. A transition that matches zero rows is a lost expected-state guard and exits 13.
+
+### Admission expiry
+
+`expires_at = created_at + 15 minutes`. Expiry gates **first admission only**: a status read or a replay of a plan that is already `executed` is answered with its journal and is never turned into an expired plan. Loading a plan does not expire it.
+
+### The approval record
+
+```text
+approval {
+  channel: "tty" | "elicitation" | "panel" | "yes-flag",
+  at: ts,
+  consumer?: string,
+  plan_sha256
+}
+```
+
+`approval` is `null` before approval. `yes-flag` records an explicit CLI `--yes` and never claims an interactive decision. The audit is copied into the journal in the admission transaction and is preserved in receipt exports (Appendix D `Journal`, `receipt@1`, `plan@1`).
+
+### The handle binding
+
+`issue_handle` mints a random handle against a `prepared` plan and binds it to that plan, that consumer, and a deadline. `approve` spends the handle with `UPDATE approval_handles SET used_at = ? WHERE handle = ? AND used_at IS NULL` inside the same immediate transaction that sets the plan to `approved`, so a handle is single-use. Echoing a digest, a handle, or a boolean in an ordinary tool argument is not approval.
+
+Each rejection is its own refusal, so no answer says whether another handle would have worked: `unknown_handle`, `handle_for_another_plan`, `handle_already_used`, `wrong_consumer`, `handle_expired`, `plan_digest_mismatch`.
+
+### What `plan_sha256` covers
+
+The digest is taken over the canonical JSON of: identity key and generation, consumer, course id, assignment id, kind, each file's name, size, and `sha256`, the text `input_sha256`, `transform`, and `sent_sha256`, the URL, a digest of the comment, the baseline attempt and submission id, every observation below, and `created_at`/`expires_at`. Object keys are sorted, so the digest does not depend on struct declaration order.
+
+It deliberately excludes the outbound bytes and the local file paths. The bytes are pinned by `sent_sha256` and the files by their `sha256`, which §12.2 step 8 re-verifies against the streamed upload. Approving a digest therefore approves exact content, never a path that could later name other bytes.
+
+### Revalidated observations
+
+`observations_json` freezes the facts execute compares: `can_submit`, `allowed_attempts`, `extra_attempts`, `group_category_id`, `submission_types`, `allowed_extensions`, `locked_for_user`, `due_at`, `lock_at`, `unlock_at`. The two list fields are sorted, so a reordered Canvas response is not a change.
+
+### Prepare
+
+`prepare` runs §12.2 pre-flight step 1, freezes the payload, and stores a `prepared` plan. It takes the admission lock for its own pre-flight only and releases it before returning: **no lock is held while a person considers a plan.** Preparing uploads nothing and posts nothing.
+
+### Execute
+
+In order:
+
+1. A plan already `executed` returns its journal at once (`replayed`). Expiry is never evaluated for it.
+2. Refuse an expired, invalidated, or unapproved plan, and a plan whose stored document no longer matches `plan_sha256`, before any network call.
+3. Refuse a plan that belongs to another identity, or to another identity generation.
+4. Register foreground interest (§22) and re-read the assignment (pre-flight step 1 again).
+5. Take assignment admission. When another process holds it, wait up to 5 seconds for **this plan's own** concurrent execute to publish its journal, then return that journal; anything else is the ordinary `in_progress` refusal. (§19 item 16.)
+6. Re-read the plan under admission and re-check steps 2 and 3, so a decline that landed during the read names itself.
+7. Compare every frozen observation against the fresh read. The first difference invalidates the plan and needs a fresh plan and a fresh approval.
+8. Run §12.2 steps 3–4 (eligibility, group, kinds), then compare the baseline attempt and submission id, then the allowed extensions, then re-hash every frozen file from disk.
+9. One state transaction consumes the approval, inserts the journal with `plan_id` and the approval audit, and marks the plan `executed`. Two guards make it exactly one journal per plan: the partial unique index, and `UPDATE plans … WHERE plan_id = ? AND state = 'approved'`.
+10. Uploads begin only after that transaction commits.
+
+A concurrent execute, a restarted host, and a replayed acceptance all return the existing journal. None of them creates a second attempt.
+
+### The human `submit`
+
+`canvas submit` keeps its v1 contract: confirmations on stderr, one `submit@1` envelope on stdout, and the §14 exit codes. It now runs on top of the plan layer — freeze, prompt, approve, execute — and pays one extra pre-flight `GET` for the revalidation read. An answered prompt records `tty`; `--yes` records `yes-flag`; a declined or unanswerable prompt cancels the plan, so it can never be executed later. The plan phase is a preview and an internal contract; it is not a second envelope.
+
+`canvas submit` refuses a plan that already admitted a journal with exit 8. `submission.execute` replays it instead (below).
+
+### `plan@1`
+
+Appendix D. `submission.prepare` and the human `submit` plan phase produce it. `comment_chars` replaces the comment text, and the outbound bytes and local paths never appear.
+
+### Exit mappings
+
+These extend §14. No new exit code is added.
+
+| Condition | Envelope | Exit |
+|---|---|---|
+| Plan expired | `outcome: refused`, `code: refused`, `details.reason: "expired"` | 8 |
+| Plan invalidated, declined, cancelled, missing, or a changed observation | `details.reason: "invalidated"` | 8 |
+| No recorded human approval, or a rejected handle | `details.reason: "approval_required"` | 8 |
+| Another submit holds the assignment | `code: refused`, message `in_progress` (with the journal id when one is known) | 8 |
+| Local lock timeout or database failure | `code: local` | 13 |
+
+Every one of these is decided before any upload and before the submission `POST`.
+
+### `replayed` (§19 item 17)
+
+`submit@1` carries `replayed: bool`. `submission.execute` on a plan that is already `executed` returns that journal's own `submit@1` envelope — its own `outcome`, `state`, and `exit` — with `replayed: true`. A replayed acceptance, a second execute in flight, and a lost response all arrive there. The human `submit` never reaches that path and always reports `false`. The field is additive, so `submit@1` keeps `@1`.
+
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
 | Crate | Version | Role |
