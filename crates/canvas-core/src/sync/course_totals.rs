@@ -248,7 +248,7 @@ pub fn upsert_course_totals(
         .filter(|f| applied.fields.contains(&f.name))
         .cloned()
         .collect();
-    merge_period_meta(tx, course_id, mode, &winning)?;
+    merge_period_meta(tx, course_id, mode, fetched_at, &winning)?;
     let ts = fetched_at.to_string();
     if applied.core {
         tx.execute(
@@ -275,6 +275,7 @@ fn merge_period_meta(
     tx: &Transaction<'_>,
     course_id: i64,
     mode: &str,
+    fetched_at: Timestamp,
     fields: &[FieldWrite],
 ) -> Result<(), IngestError> {
     let mut data = load_data_json(tx, course_id, mode)?;
@@ -284,6 +285,19 @@ fn merge_period_meta(
     for field in fields {
         match field.name {
             "period_id" | "period_title" => {
+                let new_value = field
+                    .value
+                    .clone()
+                    .map_or(serde_json::Value::Null, serde_json::Value::String);
+                if mode == "current"
+                    && field.name == "period_id"
+                    && obj.get("period_id") != Some(&new_value)
+                {
+                    obj.insert(
+                        "period_changed_at".into(),
+                        serde_json::Value::String(fetched_at.to_string()),
+                    );
+                }
                 obj.insert(
                     field.name.to_owned(),
                     match &field.value {

@@ -323,3 +323,32 @@ fn profile_errors_are_identity_free_and_corrupt_config_is_local() {
         .unwrap();
     assert_eq!(output.status.code(), Some(13));
 }
+
+#[tokio::test]
+async fn a_new_current_period_cannot_relabel_old_scores() {
+    let server = MockServer::start().await;
+    let f = Fixture::new(&server.uri(), true);
+    Mock::given(path("/api/v1/courses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([course(1, "A")])))
+        .mount(&server)
+        .await;
+    assert_eq!(
+        f.run(&["courses"], 0).await["result"]["courses"][0]["grades"]["current_score"],
+        80.0
+    );
+    server.reset().await;
+    Mock::given(path("/api/v1/courses")).respond_with(ResponseTemplate::new(200).set_body_json(json!([{"id":1,"enrollments":[{"type":"student","current_grading_period_id":9,"current_grading_period_title":"Q2"}]}]))).expect(1).mount(&server).await;
+    let mut cmd = f.command();
+    cmd.env("CANVAS_NOW", "2026-09-09T17:06:12Z")
+        .args(["courses", "--fresh", "--json"]);
+    let output = tokio::task::spawn_blocking(move || cmd.output().unwrap())
+        .await
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let grades = &value["result"]["courses"][0]["grades"];
+    assert_eq!(grades["period"]["id"], "9");
+    assert_eq!(grades["period"]["title"], "Q2");
+    assert!(grades["current_score"].is_null());
+    assert!(grades["final_score"].is_null());
+}

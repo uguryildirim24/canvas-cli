@@ -264,7 +264,9 @@ pub fn load_courses_for_scope(conns: &StoreConns, scope: &str) -> Result<Vec<Cou
     let rows = stmt
         .query_map([scope], read_course_columns)?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows.into_iter().map(map_sql_row).collect())
+    rows.into_iter()
+        .map(|row| bind_period_scores(conns, map_sql_row(row)))
+        .collect()
 }
 
 /// Load one course by id (no membership requirement).
@@ -280,7 +282,8 @@ pub fn load_course_by_id(conns: &StoreConns, id: i64) -> Result<Option<CourseRow
         .cache
         .query_row(&sql, [id], read_course_columns)
         .optional()?;
-    Ok(row.map(map_sql_row))
+    row.map(|row| bind_period_scores(conns, map_sql_row(row)))
+        .transpose()
 }
 
 fn period_meta(totals_raw: Option<&str>) -> (Option<String>, Option<String>) {
@@ -466,4 +469,40 @@ pub fn grade_freshness(
         Ok(Freshness { dataset: "course_totals".into(), scope: format!("course:{}",row.id), source: FreshnessSource::Cache,
             fetched_at: log.as_ref().map(|l| l.fetched_at.to_string()), complete: log.as_ref().is_some_and(|l| l.complete), count: log.as_ref().and_then(|l| u64_count(l.count)), stale: offline || !hit || !fields_fresh })
     }).collect()
+}
+
+/// A current-period label cannot make scores observed for an earlier period applicable.
+fn bind_period_scores(conns: &StoreConns, mut row: CourseRow) -> Result<CourseRow, DbError> {
+    if row.period_mode != "current" {
+        return Ok(row);
+    }
+    let changed: Option<String> = conns.cache.query_row("SELECT json_extract(data_json,'$.period_changed_at') FROM course_totals WHERE course_id=?1 AND mode='current'", [row.id], |r|r.get(0)).optional()?.flatten();
+    let Some(changed) = changed else {
+        return Ok(row);
+    };
+    let changed: Timestamp = changed
+        .parse()
+        .map_err(|_| DbError::Message("invalid period transition timestamp".into()))?;
+    let key = format!("{}|current", row.id);
+    for name in [
+        "current_score",
+        "final_score",
+        "current_grade",
+        "final_grade",
+    ] {
+        let observed: Option<String> = conns.cache.query_row("SELECT observed_at FROM field_obs WHERE entity_kind='course_totals' AND entity_key=?1 AND field=?2", rusqlite::params![key,name], |r|r.get(0)).optional()?;
+        let belongs = observed
+            .as_deref()
+            .and_then(|v| v.parse::<Timestamp>().ok())
+            .is_some_and(|at| at >= changed);
+        if !belongs {
+            match name {
+                "current_score" => row.current_score = None,
+                "final_score" => row.final_score = None,
+                "current_grade" => row.current_grade = None,
+                _ => row.final_grade = None,
+            }
+        }
+    }
+    Ok(row)
 }
