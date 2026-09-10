@@ -63,6 +63,12 @@ pub struct ToolSpec {
     pub description: &'static str,
     /// The `canvas-cli/<name>@<n>` schema of the result it returns.
     pub schema: &'static str,
+    /// Which result shape of that schema, when it has more than one.
+    ///
+    /// `receipts@1` covers a listing, one journal, and an acknowledgement,
+    /// and they are different documents. The variant picks the registry entry
+    /// that describes what this tool actually returns.
+    pub variant: Option<&'static str>,
     pub effect: Effect,
     pub idempotent: bool,
     pub open_world: bool,
@@ -79,7 +85,7 @@ impl ToolSpec {
             Arc::new((self.input_schema)()),
         )
         .with_title(self.title)
-        .with_raw_output_schema(Arc::new(output_schema(self.schema)))
+        .with_raw_output_schema(Arc::new(output_schema(self.schema, self.variant)))
         .with_annotations(self.effect.annotations(
             self.title,
             self.idempotent,
@@ -93,8 +99,8 @@ impl ToolSpec {
 /// Both shapes are admitted, because a domain failure keeps the envelope
 /// (§3.2). The document comes from `canvas schema <command>`, so a tool and
 /// the CLI cannot describe their output differently.
-fn output_schema(schema_id: &str) -> JsonObject {
-    crate::output::document_for_schema(schema_id)
+fn output_schema(schema_id: &str, variant: Option<&str>) -> JsonObject {
+    crate::output::document_for_schema(schema_id, variant)
         .and_then(|mut document| document.get_mut("envelope").map(std::mem::take))
         .and_then(|envelope| match envelope {
             Value::Object(object) => Some(object),
@@ -383,6 +389,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "List courses",
             description: "List the courses of the bound identity, with the grades Canvas reports.",
             schema: SCHEMA_COURSES,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -393,6 +400,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Show one course",
             description: "Show one course: term, teachers, syllabus, and reported scores.",
             schema: SCHEMA_COURSE,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -403,6 +411,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "List what is due",
             description: "What is due and what Canvas reports as missing, in one merged list.",
             schema: SCHEMA_TODO,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -413,6 +422,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "List assignments",
             description: "List a course's assignments with your submission state.",
             schema: SCHEMA_ASSIGNMENTS,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -423,6 +433,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Show one assignment",
             description: "Show one assignment: prompt as Markdown, dates, rubric, and submission.",
             schema: SCHEMA_ASSIGNMENT,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -433,6 +444,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Show grades",
             description: "Scores as Canvas reports them, per course or for one course's groups.",
             schema: SCHEMA_GRADES,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -443,6 +455,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "List course files",
             description: "List a course's files, flat or grouped by folder.",
             schema: SCHEMA_FILES,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -453,6 +466,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "List modules",
             description: "List a course's modules, with their items when asked.",
             schema: SCHEMA_MODULES,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -463,6 +477,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "List announcements",
             description: "Recent announcements across courses. Reading never marks one read.",
             schema: SCHEMA_ANNOUNCEMENTS,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -473,6 +488,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Show one announcement",
             description: "Show one announcement's message as Markdown. It stays unread.",
             schema: SCHEMA_ANNOUNCEMENT,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -483,6 +499,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "List calendar items",
             description: "Deadlines and calendar events in one window, in the identity time zone.",
             schema: SCHEMA_CALENDAR,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -493,6 +510,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Show a submission",
             description: "Your submission for one assignment, with its attempts when asked.",
             schema: SCHEMA_SUBMISSION,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -503,6 +521,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "List receipts",
             description: "Local submission receipts and unresolved journals. Local only.",
             schema: SCHEMA_RECEIPTS,
+            variant: Some("list"),
             effect: Effect::Read,
             idempotent: true,
             open_world: false,
@@ -513,6 +532,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Show one receipt",
             description: "One receipt or journal in full, as the local record holds it.",
             schema: SCHEMA_RECEIPTS,
+            variant: Some("show"),
             effect: Effect::Read,
             idempotent: true,
             open_world: false,
@@ -523,6 +543,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Refresh the cache",
             description: "Refresh the cached datasets. It writes the cache, never Canvas.",
             schema: SCHEMA_SYNC,
+            variant: None,
             effect: Effect::Organize,
             idempotent: true,
             open_world: true,
@@ -533,6 +554,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Plan a download",
             description: "What a download would transfer, per file. It writes nothing.",
             schema: SCHEMA_DOWNLOAD,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: true,
@@ -544,6 +566,7 @@ pub fn specs() -> &'static [ToolSpec] {
             description: "Download course files into the configured destination. \
                           It never overwrites a file it does not own.",
             schema: SCHEMA_DOWNLOAD,
+            variant: None,
             effect: Effect::Organize,
             idempotent: false,
             open_world: true,
@@ -555,6 +578,7 @@ pub fn specs() -> &'static [ToolSpec] {
             description: "Freeze a submission as a plan and return it. Nothing is sent: the plan \
                           needs a recorded human approval, and `submission.execute` asks for it.",
             schema: SCHEMA_PLAN,
+            variant: None,
             effect: Effect::Organize,
             // Each call freezes a new plan.
             idempotent: false,
@@ -567,6 +591,7 @@ pub fn specs() -> &'static [ToolSpec] {
             description: "Submit an approved plan to Canvas. On a plan that is not approved yet \
                           this asks a person first and dispatches nothing.",
             schema: SCHEMA_SUBMIT,
+            variant: None,
             effect: Effect::RemoteWrite,
             // A plan admits at most one journal, so a second call returns the
             // journal the first one created (SPEC §19 item 17).
@@ -580,6 +605,7 @@ pub fn specs() -> &'static [ToolSpec] {
             description: "Resolve a journal an interrupted submit left behind. \
                           Ordinary reconciliation never posts to Canvas.",
             schema: SCHEMA_RECONCILE,
+            variant: None,
             effect: Effect::Retire,
             idempotent: true,
             open_world: true,
@@ -590,6 +616,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Acknowledge an unknown outcome",
             description: "Accept a journal whose outcome stays unknown. Local, and final.",
             schema: SCHEMA_RECEIPTS,
+            variant: Some("acknowledge"),
             effect: Effect::Retire,
             idempotent: true,
             open_world: false,
@@ -600,6 +627,7 @@ pub fn specs() -> &'static [ToolSpec] {
             title: "Resolve a Canvas URL",
             description: "Resolve a target to its canonical Canvas URL. It never opens a browser.",
             schema: SCHEMA_OPEN,
+            variant: None,
             effect: Effect::Read,
             idempotent: true,
             open_world: false,
@@ -1012,6 +1040,38 @@ mod tests {
                 spec.name
             );
         }
+    }
+
+    /// A tool's output schema must describe the result that tool returns.
+    ///
+    /// `receipts@1` covers three different documents, so a tool that names the
+    /// schema alone would advertise the listing's shape for every one of them
+    /// and a host that validates `structuredContent` would reject a valid
+    /// answer.
+    #[test]
+    fn every_tool_output_schema_is_the_shape_that_tool_returns() {
+        for spec in specs() {
+            assert!(
+                crate::output::entry_for_schema(spec.schema, spec.variant).is_some(),
+                "{} names no registered result shape",
+                spec.name
+            );
+        }
+        let required = |name: &str| -> Vec<String> {
+            let spec = spec(name).expect(name);
+            output_schema(spec.schema, spec.variant)["oneOf"][0]["properties"]["result"]["required"]
+                .as_array()
+                .expect("required")
+                .iter()
+                .map(|value| value.as_str().unwrap_or_default().to_owned())
+                .collect()
+        };
+        assert_eq!(required("receipts.list"), ["journals"]);
+        assert_eq!(required("receipts.show"), ["journal", "receipt"]);
+        assert_eq!(
+            required("receipts.acknowledge"),
+            ["acknowledged_at", "journal_id"]
+        );
     }
 
     #[test]
