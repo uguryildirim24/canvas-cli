@@ -13,13 +13,13 @@ use uuid::Uuid;
 use crate::identity::Paths;
 use crate::journal::{
     Evidence, JournalError, JournalRow, OwnerLock, ReceiptRecord, ResponseKind, State,
-    TransitionPatch, allowlist_from_json, append_uploaded_file_id, commit_success, enrich_readback,
-    get_journal, mark_posting, transition,
+    TransitionPatch, allowlist_from_json, append_uploaded_file_id, commit_success,
+    enrich_readback_full, get_journal, mark_posting, transition,
 };
 use crate::receipts::export;
 use crate::store::Store;
 use crate::submit::freeze::{FrozenInput, InputKind};
-use crate::submit::reconcile::{ReconcileResult, readback_from_entry, reconcile_history};
+use crate::submit::reconcile::{ReconcileResult, history_entry_json, reconcile_history};
 
 /// Execute-phase errors.
 #[derive(Debug, Error)]
@@ -113,9 +113,9 @@ pub async fn post_and_finish(
     frozen: &FrozenInput,
 ) -> Result<ExecuteOutcome, ExecuteError> {
     // Step 9: posting + POST
-    mark_posting(store, owner, journal_id)?;
     let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
     let body = build_post_body(&row, frozen)?;
+    mark_posting(store, owner, journal_id)?;
     let post_result = post_submission(client, row.course_id, row.assignment_id, &body).await;
 
     let (status, bytes, transport_err) = match post_result {
@@ -154,12 +154,16 @@ pub async fn post_and_finish(
                         .iter()
                         .find(|e| e.attempt.as_value().copied() == Some(attempt))
                     {
-                        let readback = readback_from_entry(entry);
-                        if let Err(e) =
-                            enrich_readback(store, owner, journal_id, attempt, &readback)
-                        {
+                        let record = allowlist_from_json(
+                            Evidence::HistoryFiles,
+                            &history_entry_json(entry),
+                            None,
+                        )?;
+                        if let Err(e) = enrich_readback_full(store, owner, journal_id, &record) {
                             warning = Some(format!("readback enrichment failed: {e}"));
                         }
+                    } else {
+                        warning = Some("readback has no entry for posted attempt".into());
                     }
                 }
                 Err(e) => warning = Some(format!("readback fetch failed: {e}")),
@@ -211,9 +215,19 @@ pub async fn post_and_finish(
         if let Ok(history) = get_submission_history(client, row.course_id, row.assignment_id).await
         {
             let now = Timestamp::now();
-            if let Ok(result) = reconcile_history(store, owner, paths, &row, &history, now) {
-                reconcile = Some(result);
-            }
+            reconcile = Some(
+                reconcile_history(store, owner, paths, &row, &history, now).map_err(
+                    |e| match e {
+                        super::reconcile::ReconcileError::Journal(e) => ExecuteError::Journal(e),
+                        super::reconcile::ReconcileError::Json(e) => ExecuteError::Json(e),
+                        super::reconcile::ReconcileError::Io(e) => ExecuteError::Io(e),
+                        super::reconcile::ReconcileError::Lock(e) => {
+                            ExecuteError::Journal(e.into())
+                        }
+                        super::reconcile::ReconcileError::Network(e) => ExecuteError::Network(e),
+                    },
+                )?,
+            );
         }
     }
 
@@ -277,10 +291,14 @@ async fn upload_all(
             let expected = frozen.payload.files[idx].sha256.clone();
             let client = client.clone();
             set.spawn(async move {
-                let bytes = std::fs::read(&path).map_err(ExecuteError::Io)?;
+                let file = tokio::fs::File::open(&path).await?;
+                if file.metadata().await?.len() != meta.size {
+                    return Err(ExecuteError::Refused(
+                        "file size differs from frozen input".into(),
+                    ));
+                }
                 let result =
-                    upload_submission_file(&client, course_id, assignment_id, &meta, &bytes[..])
-                        .await?;
+                    upload_submission_file(&client, course_id, assignment_id, &meta, file).await?;
                 let got = hex_sha256_bytes(&result.sha256);
                 if got != expected {
                     return Err(ExecuteError::Refused(
@@ -300,7 +318,7 @@ async fn upload_all(
                 } else {
                     State::UploadIncomplete
                 };
-                let _ = transition(
+                transition(
                     store,
                     owner,
                     journal_id,
@@ -310,11 +328,13 @@ async fn upload_all(
                         error_text: Some(e.to_string()),
                         ..TransitionPatch::default()
                     },
-                );
+                )?;
+                set.abort_all();
+                while set.join_next().await.is_some() {}
                 return Err(e);
             }
             Some(Err(e)) => {
-                let _ = transition(
+                transition(
                     store,
                     owner,
                     journal_id,
@@ -324,7 +344,9 @@ async fn upload_all(
                         error_text: Some(e.to_string()),
                         ..TransitionPatch::default()
                     },
-                );
+                )?;
+                set.abort_all();
+                while set.join_next().await.is_some() {}
                 return Err(ExecuteError::Refused(format!("upload task failed: {e}")));
             }
             None => break,
