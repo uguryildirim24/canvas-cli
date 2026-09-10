@@ -94,7 +94,7 @@ extension origin in that position and runs `bridge host`.
 | Key | Default | What it does |
 |---|---|---|
 | `bridge.extension_id` | none | The only extension the broker will serve. |
-| `bridge.pause_hidden_after` | `10m` | How long a hidden tab keeps sharing. |
+| `bridge.pause_hidden_after` | `10m` | How long a hidden tab keeps sharing. `<n>h`, `<n>m`, or `<n>s`. |
 
 ```
 canvas config set bridge.extension_id abcdefghijklmnopabcdefghijklmnop
@@ -151,6 +151,13 @@ For the three opaque zones the bundle carries no route ids, no URL, no
 title, and no text, and `content_reason` says `zone_opaque`. Sharing also
 pauses when the tab enters an assessment.
 
+Both ends classify. The extension classifies from the document it can see;
+the host classifies again from the sanitized URL it was sent, and takes the
+stricter reading, so the extension cannot talk the host into a more
+permissive zone. An opaque page sends no URL at all, so the host has no path
+of its own to read: an already-opaque classification stands as it is, and
+anything else reads `unknown`.
+
 An unrecognized frame makes the whole page `unknown`. That is deliberate:
 the safe reading of a frame nobody recognizes is that it might be an
 assessment.
@@ -196,7 +203,7 @@ arrives.
 |---|---|
 | `attachments.list` | Anyone. It carries no attachment id and no page content. |
 | `attach` | A consumer, naming itself. It receives the attachment id. |
-| `here` | A consumer that attached, or the CLI when there is one attachment. |
+| `here` | A consumer that attached, or the CLI when there is one attachment. The caller is checked before the browser is asked for anything. |
 | `detach` | A named consumer gives up its own share; the CLI ends the attachment. |
 | `release` | `identity remove`, before it takes the exclusive lock. |
 
@@ -255,9 +262,12 @@ account.
    stolen id.
 6. **`context.detach` gives up only the caller's share.** Ending the
    attachment for everyone is `canvas bridge detach`, a human act.
-7. **Reading the `/context/<handle>` resource attaches nobody.** Until that
-   consumer calls `context.attach`, the resource answers `not_attached`, and
-   a subscription never opts anybody in.
+7. **Reading the `/context/<handle>` resource attaches nobody, and reads
+   nobody else.** Until that consumer calls `context.attach`, the resource
+   answers `not_attached`, and a subscription never opts anybody in. The
+   handle in the URI must be the reading session's own: naming another
+   consumer's handle reads exactly what an unattached consumer reads, so the
+   resource never reports whether that other handle attached at all.
 8. **`context.attach` returns the handle and the state, never the page.**
    Opting in and reading are two decisions.
 9. **Browser context is never cacheable.** `ttl_ms` is `0` and the bundle
@@ -292,13 +302,16 @@ that was not executed.
   a second host reporting the first; `identity remove` completing after the
   cooperative release, with the ownership lock gone and the root identity
   lock untouched; and an assertion over every byte that crossed either pipe
-  that no token, cookie name, or planted secret appears on it.
+  that no token or cookie name appears on it, with a capability parameter
+  and a planted secret put on a URL the companion reports, so the assertion
+  has something to catch.
 - **Two consumers, over a real `canvas mcp`.** Two server instances under
   different host names attach and read through `context.attach`,
   `context.here`, `context.detach` and the `canvas://…/context/<handle>`
   resource. Only the consumer that attached reads the bundle; a stolen
-  attachment id does not serve the other one; and a consumer letting go
-  leaves the tab attached for the person.
+  attachment id does not serve the other one; reading the other consumer's
+  resource by name does not either; and a consumer letting go leaves the tab
+  attached for the person.
 - **The companion's own logic, under Node.** `cd extension && npm test`
   runs the route classifier, the zone classifier, the sanitizer, and the
   byte bounds against fixture HTML with planted secrets. No dependency is
