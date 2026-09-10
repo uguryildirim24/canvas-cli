@@ -775,7 +775,7 @@ Single-invocation rule: exactly one JSON envelope (§7). Aborts use the `error` 
 | `group_write` | the discussion topic is a group topic (§25) |
 | `locked` | the discussion topic is locked or closed for comments (§25) |
 | `initial_post_required` | the topic gates its replies and this identity has not posted (§25) |
-| `unresolved` | a `--to` entry outside the topic, or a recipient id Canvas does not return (§25) |
+| `unresolved` | a `--to` entry outside the topic, a recipient id Canvas does not return, or an unreadable attachment path (§25) |
 | `empty_body` | the body is empty or only whitespace (§25) |
 | `denied` | a `401`/`403` on the course, topic, or conversation at prepare (§25) |
 | `unsupported` | an attachment on a discussion reply, a body over 1 MiB, or more than 10 attachments (§25) |
@@ -1661,7 +1661,7 @@ Every one is exit 8 with `result.details.reason`, and every one happens **before
 | `group_write` | the topic has a `group_category_id`, or a non-empty `group_topic_children` |
 | `locked` | the topic is `locked` or `locked_for_user` |
 | `initial_post_required` | `require_initial_post` is set and this identity has not posted |
-| `unresolved` | a `--to` entry outside the topic, or a recipient id Canvas does not return |
+| `unresolved` | a `--to` entry outside the topic, a recipient id Canvas does not return, or an attachment path that cannot be read as a regular file |
 | `empty_body` | the body is empty or only whitespace |
 | `denied` | a `401`/`403` on the course, topic, or conversation |
 | `unsupported` | an attachment on a discussion reply, a body over 1 MiB, or more than 10 attachments |
