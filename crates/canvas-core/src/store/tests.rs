@@ -203,7 +203,7 @@ fn epoch_abort_at_commit() {
                 let tx = conns
                     .state
                     .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-                bump_epochs(&["course:1"], &tx)?;
+                bump_epochs(&["fake:course:1"], &tx)?;
                 tx.commit()?;
 
                 let err = ds
