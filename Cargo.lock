@@ -294,6 +294,7 @@ dependencies = [
  "htmd",
  "jiff",
  "markup5ever_rcdom",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
