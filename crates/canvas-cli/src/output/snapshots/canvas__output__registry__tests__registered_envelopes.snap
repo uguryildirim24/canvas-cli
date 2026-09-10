@@ -129,16 +129,61 @@ expression: rendered
     },
     "result": {
       "counts": {
-        "due_today": 0,
-        "due_week": 0,
+        "due_today": 1,
+        "due_week": 1,
         "hidden": 0,
         "missing": 0
       },
-      "items": [],
+      "items": [
+        {
+          "assignment_id": "2",
+          "availability": {
+            "external": null,
+            "lock_at": null,
+            "lock_at_local": null,
+            "lock_explanation": null,
+            "locked": null,
+            "submittable": null,
+            "unlock_at": null,
+            "unlock_at_local": null
+          },
+          "course_code": "CHEM",
+          "course_id": "1",
+          "dismissed": false,
+          "due_at": "2026-09-10T03:59:00Z",
+          "due_at_local": "2026-09-09T23:59:00-04:00",
+          "html_url": null,
+          "id": "2",
+          "key": "assignment:2",
+          "kind": "assignment",
+          "marked_complete": false,
+          "parent_assignment_id": null,
+          "points_possible": null,
+          "raw_type": "assignment",
+          "scheduled_at": "2026-09-10T03:59:00Z",
+          "scheduled_at_local": "2026-09-09T23:59:00-04:00",
+          "status": {
+            "attempt": null,
+            "excused": null,
+            "grade": null,
+            "graded": false,
+            "late": null,
+            "missing": false,
+            "pending": false,
+            "posted_at": null,
+            "score": null,
+            "submitted": false,
+            "submitted_at": null,
+            "submitted_at_local": null,
+            "workflow_state": null
+          },
+          "title": "Homework 2"
+        }
+      ],
       "window": {
-        "days": 7,
-        "end": "2026-09-16",
-        "start": "2026-09-09"
+        "days": 14,
+        "end": "2026-09-21",
+        "start": "2026-09-08"
       }
     },
     "schema": "canvas-cli/todo@1",
@@ -162,9 +207,94 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "assignments": [],
-      "bucket": "open",
-      "course_id": "101"
+      "assignments": [
+        {
+          "allowed_attempts": 3,
+          "allowed_extensions": [
+            "pdf"
+          ],
+          "availability": {
+            "external": false,
+            "lock_at": null,
+            "lock_at_local": null,
+            "lock_explanation": null,
+            "locked": false,
+            "submittable": false,
+            "unlock_at": null,
+            "unlock_at_local": null
+          },
+          "course_id": "1",
+          "due_at": "2026-09-10T03:59:00Z",
+          "due_at_local": "2026-09-09T23:59:00-04:00",
+          "group_assignment": false,
+          "html_url": "https://canvas.test/courses/1/assignments/2",
+          "id": "2",
+          "name": "Homework 2",
+          "points_possible": 10.0,
+          "status": {
+            "attempt": 0,
+            "excused": false,
+            "grade": null,
+            "graded": false,
+            "late": false,
+            "missing": false,
+            "pending": false,
+            "posted_at": null,
+            "score": null,
+            "submitted": false,
+            "submitted_at": null,
+            "submitted_at_local": null,
+            "workflow_state": "unsubmitted"
+          },
+          "submission_types": [
+            "online_upload"
+          ]
+        },
+        {
+          "allowed_attempts": 3,
+          "allowed_extensions": [
+            "pdf"
+          ],
+          "availability": {
+            "external": false,
+            "lock_at": null,
+            "lock_at_local": null,
+            "lock_explanation": null,
+            "locked": false,
+            "submittable": null,
+            "unlock_at": null,
+            "unlock_at_local": null
+          },
+          "course_id": "1",
+          "due_at": null,
+          "due_at_local": null,
+          "group_assignment": false,
+          "html_url": null,
+          "id": "3",
+          "name": "Homework 3",
+          "points_possible": 10.0,
+          "status": {
+            "attempt": 0,
+            "excused": false,
+            "grade": null,
+            "graded": false,
+            "late": false,
+            "missing": false,
+            "pending": false,
+            "posted_at": null,
+            "score": null,
+            "submitted": false,
+            "submitted_at": null,
+            "submitted_at_local": null,
+            "workflow_state": "unsubmitted"
+          },
+          "submission_types": [
+            "online_upload"
+          ]
+        }
+      ],
+      "bucket": "all",
+      "course_id": "1"
     },
     "schema": "canvas-cli/assignments@1",
     "warnings": []
@@ -188,36 +318,44 @@ expression: rendered
     },
     "result": {
       "assignment": {
-        "allowed_attempts": null,
-        "allowed_extensions": [],
+        "allowed_attempts": 3,
+        "allowed_extensions": [
+          "pdf"
+        ],
         "availability": {
           "external": false,
           "lock_at": null,
           "lock_at_local": null,
           "lock_explanation": null,
-          "locked": null,
-          "submittable": true,
+          "locked": false,
+          "submittable": false,
           "unlock_at": null,
           "unlock_at_local": null
         },
-        "can_submit": true,
-        "comments_count": 0,
-        "course_id": "101",
-        "description_markdown": null,
-        "due_at": null,
-        "due_at_local": null,
+        "can_submit": false,
+        "comments_count": null,
+        "course_id": "1",
+        "description_markdown": "Explain **chemistry**.",
+        "due_at": "2026-09-10T03:59:00Z",
+        "due_at_local": "2026-09-09T23:59:00-04:00",
         "external_tool_name": null,
         "extra_attempts": null,
         "group_assignment": false,
-        "html_url": "https://example.instructure.com/courses/101/assignments/1",
-        "id": "1",
-        "name": "HW1",
-        "points_possible": 10,
-        "rubric": [],
+        "html_url": "https://canvas.test/courses/1/assignments/2",
+        "id": "2",
+        "name": "Homework 2",
+        "points_possible": 10.0,
+        "rubric": [
+          {
+            "description": "Reasoning",
+            "id": "c1",
+            "points": 10.0
+          }
+        ],
         "rubric_assessed": false,
         "rubric_assessment": [],
         "status": {
-          "attempt": null,
+          "attempt": 0,
           "excused": false,
           "grade": null,
           "graded": false,
@@ -229,7 +367,7 @@ expression: rendered
           "submitted": false,
           "submitted_at": null,
           "submitted_at_local": null,
-          "workflow_state": null
+          "workflow_state": "unsubmitted"
         },
         "submission_types": [
           "online_upload"
@@ -606,9 +744,21 @@ expression: rendered
           "files": [
             {
               "action": "downloaded",
+              "error": null,
               "id": "50",
               "path": "CS-101-101/files/Slides/lec.pdf",
-              "size": 10
+              "previous_path": null,
+              "size": 10,
+              "verify": "ok"
+            },
+            {
+              "action": "moved",
+              "error": null,
+              "id": "51",
+              "path": "CS-101-101/files/Slides/notes.pdf",
+              "previous_path": "CS-101-101/files/notes.pdf",
+              "size": null,
+              "verify": null
             }
           ]
         }
@@ -621,7 +771,7 @@ expression: rendered
         "failed": 0,
         "locked": 0,
         "modified": 0,
-        "moved": 0,
+        "moved": 1,
         "planned": 0,
         "skipped": 0,
         "skipped_external": 0,

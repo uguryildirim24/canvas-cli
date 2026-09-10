@@ -121,6 +121,9 @@ pub fn resolve_course(
         }));
     }
 
+    if input.contains("://") {
+        return Err(ResolveError::NotFound { candidates: vec![] });
+    }
     resolve_course_substring(conns, input, class)
 }
 
@@ -158,6 +161,9 @@ pub fn resolve_assignment(
         ));
     }
 
+    if input.contains("://") {
+        return Err(ResolveError::AssignmentNotFound { candidates: vec![] });
+    }
     require_complete(conns, "assignments", &format!("course:{course_id}"), class)?;
     let rows = membership_assignments(conns, course_id)?;
     let needle = input.to_lowercase();
@@ -440,8 +446,11 @@ fn load_assignment(
     Ok(row)
 }
 
-/// Parse and canonicalize URL origins before inspecting path segments.
-fn canvas_url(input: &str, identity_origin: &str) -> Result<Option<reqwest::Url>, ResolveError> {
+/// Parse and validate a browser URL against the identity origin, rejecting userinfo.
+pub fn canvas_url(
+    input: &str,
+    identity_origin: &str,
+) -> Result<Option<reqwest::Url>, ResolveError> {
     let Ok(url) = reqwest::Url::parse(input) else {
         return Ok(None);
     };
@@ -860,6 +869,36 @@ mod tests {
                             url_course: 9,
                             arg_course: 5
                         })
+                    ));
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+    #[test]
+    fn malformed_target_urls_never_request_name_datasets() {
+        let (_dir, open) = setup();
+        open.store
+            .call_blocking(|conns| {
+                for class in [CommandClass::B, CommandClass::C, CommandClass::D] {
+                    assert!(matches!(
+                        resolve_assignment(
+                            conns,
+                            1,
+                            "https://courses.example.test/courses/1/files/2",
+                            ORIGIN,
+                            class
+                        ),
+                        Err(ResolveError::AssignmentNotFound { .. })
+                    ));
+                    assert!(matches!(
+                        resolve_course(
+                            conns,
+                            "https://courses.example.test/files/2",
+                            ORIGIN,
+                            class
+                        ),
+                        Err(ResolveError::NotFound { .. })
                     ));
                 }
                 Ok(())

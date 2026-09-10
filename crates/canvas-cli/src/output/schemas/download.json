@@ -9,8 +9,20 @@
         {
           "id": "50",
           "path": "CS-101-101/files/Slides/lec.pdf",
+          "previous_path": null,
           "action": "downloaded",
-          "size": 10
+          "size": 10,
+          "error": null,
+          "verify": "ok"
+        },
+        {
+          "id": "51",
+          "path": "CS-101-101/files/Slides/notes.pdf",
+          "previous_path": "CS-101-101/files/notes.pdf",
+          "action": "moved",
+          "size": null,
+          "error": null,
+          "verify": null
         }
       ]
     }
@@ -18,7 +30,7 @@
   "totals": {
     "planned": 0,
     "downloaded": 1,
-    "moved": 0,
+    "moved": 1,
     "skipped": 0,
     "unmanaged": 0,
     "modified": 0,

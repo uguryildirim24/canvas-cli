@@ -1,0 +1,111 @@
+---
+source: crates/canvas-cli/tests/review_m1c.rs
+expression: normalized(out)
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "active",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "planner",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "window:2026-09-08..2026-09-21",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 0,
+      "dataset": "missing",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "all",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 3,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "counts": {
+      "due_today": 1,
+      "due_week": 1,
+      "hidden": 0,
+      "missing": 0
+    },
+    "items": [
+      {
+        "assignment_id": "2",
+        "availability": {
+          "external": null,
+          "lock_at": null,
+          "lock_at_local": null,
+          "lock_explanation": null,
+          "locked": null,
+          "submittable": null,
+          "unlock_at": null,
+          "unlock_at_local": null
+        },
+        "course_code": "CHEM",
+        "course_id": "1",
+        "dismissed": false,
+        "due_at": "2026-09-10T03:59:00Z",
+        "due_at_local": "2026-09-09T23:59:00-04:00",
+        "html_url": null,
+        "id": "2",
+        "key": "assignment:2",
+        "kind": "assignment",
+        "marked_complete": false,
+        "parent_assignment_id": null,
+        "points_possible": null,
+        "raw_type": "assignment",
+        "scheduled_at": "2026-09-10T03:59:00Z",
+        "scheduled_at_local": "2026-09-09T23:59:00-04:00",
+        "status": {
+          "attempt": null,
+          "excused": null,
+          "grade": null,
+          "graded": false,
+          "late": null,
+          "missing": false,
+          "pending": false,
+          "posted_at": null,
+          "score": null,
+          "submitted": false,
+          "submitted_at": null,
+          "submitted_at_local": null,
+          "workflow_state": null
+        },
+        "title": "Homework 2"
+      }
+    ],
+    "window": {
+      "days": 14,
+      "end": "2026-09-21",
+      "start": "2026-09-08"
+    }
+  },
+  "schema": "canvas-cli/todo@1",
+  "warnings": []
+}
