@@ -17,7 +17,7 @@ use crate::submit::preflight::{create_from_plan, preflight};
 use crate::submit::reconcile::{ReconcileOutcome, reconcile};
 use crate::submit::{InputKind, execute, post_and_finish};
 
-fn setup_identity() -> (tempfile::TempDir, Paths, OpenIdentity, IdentityDocument) {
+pub(super) fn setup_identity() -> (tempfile::TempDir, Paths, OpenIdentity, IdentityDocument) {
     let dir = tempfile::TempDir::new().unwrap();
     let doc = IdentityDocument::new("https://canvas.example", 7, "2026-01-01T00:00:00Z");
     let paths = Paths::for_identity(dir.path(), &doc.key);
@@ -28,7 +28,7 @@ fn setup_identity() -> (tempfile::TempDir, Paths, OpenIdentity, IdentityDocument
     (dir, paths, open, doc)
 }
 
-fn test_client(server: &MockServer) -> Client {
+pub(super) fn test_client(server: &MockServer) -> Client {
     let origin = server.uri().parse().expect("mock uri");
     Client::with_governor(
         origin,
