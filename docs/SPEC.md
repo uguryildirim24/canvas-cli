@@ -1734,7 +1734,7 @@ A digest match is `unproven` and never `observed`: two people can write the same
 
 `delivery` is a separate field, and it is about what Canvas can report at all: `observable` for a discussion reply, `not_observable` for both inbox writes. **A conversation Canvas accepted is not delivered mail.** The human line says "accepted by Canvas". Nothing in either output mode prints "delivered", "received", or "has read", and a test asserts it.
 
-**The response record.** Only an allowlist of the Canvas answer is stored, and the body never is: `id`, `conversation_id`, `created_at`, `created_at_local`, `user_id`, `body_sha256` (of the body Canvas echoed), `attachment_ids`, and `response_sha256` (of the raw HTTP response). A readback stores the same fields plus `scanned` and `complete`.
+**The response record.** Only an allowlist of the Canvas answer is stored, and the body never is: `id`, `conversation_id`, `created_at`, `created_at_local`, `user_id`, `body_sha256` (of the body Canvas echoed), `attachment_ids`, and `response_sha256` (of the raw HTTP response). A readback stores six of those eight — `id`, `created_at`, `created_at_local`, `user_id`, `body_sha256`, and `attachment_ids` — with `read_at`, `scanned`, and `complete` beside them. It holds no `conversation_id` and no `response_sha256`, because a readback reads a thread rather than an answer to a request.
 
 ### 25.7 Exits
 
