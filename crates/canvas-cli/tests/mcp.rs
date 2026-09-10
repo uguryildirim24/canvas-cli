@@ -1769,3 +1769,42 @@ async fn replacing_the_identity_stops_the_instance() {
         "§10: a replaced identity stops the instance with `identity changed`"
     );
 }
+
+/// A live subscription holds the identity store open for the whole stream.
+/// That must not keep a replaced identity's instance alive: one instance
+/// serves one generation, and it stops when that generation is gone (§10).
+#[tokio::test]
+async fn a_live_subscription_does_not_keep_a_replaced_identity_alive() {
+    let server = MockServer::start().await;
+    let f = primed(&server).await;
+    let mut mcp = f.mcp(&["--offline"]);
+    mcp.discover();
+    let prefix = prefix(&f);
+    let todo = format!("{prefix}todo");
+    mcp.send(
+        "subscriptions/listen",
+        json!({ "notifications": { "resourceSubscriptions": [&todo] }}),
+    );
+    mcp.wait_for("notifications/subscriptions/acknowledged");
+    // The stream is established and reading the log.
+    f.event("missing.new", "missing", "self", "500");
+    assert_eq!(mcp.updates(1), vec![todo]);
+
+    let replaced = IdentityDocument::new(server.uri(), 123, "2026-02-02T00:00:00Z");
+    assert_ne!(replaced.generation, f.doc.generation);
+    replaced.write(&f.identity_json()).unwrap();
+
+    let mut exit = None;
+    for _ in 0..100 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if let Some(status) = mcp.child.try_wait().unwrap() {
+            exit = status.code();
+            break;
+        }
+    }
+    assert_eq!(
+        exit,
+        Some(13),
+        "a subscribed host must not outlive the generation it is bound to"
+    );
+}
