@@ -122,8 +122,14 @@ failed`.
 The discipline is SPEC §12.2's, with the submission target replaced by an
 operation target:
 
-* the admission lock is held before the insert, so one target admits one
-  operation at a time;
+* the admission lock is held across the insert, so two executes never publish
+  a journal for one target at the same moment. It is released once the row
+  exists, so — unlike a submission, where §12.2 step 2 refuses `in_progress`
+  while a live journal holds the assignment — a second **separately approved**
+  write to the same topic or conversation is admitted while the first is still
+  `posting`. That is deliberate: a second reply is a second post, not a
+  replacement. Two executes of the *same* plan are still exactly one journal,
+  by the plan-state guard and the unique index on `plan_id`;
 * an owner lock is held for the whole operation;
 * every transition is a guarded `UPDATE … WHERE state = ?`, so a lost race
   changes nothing;
