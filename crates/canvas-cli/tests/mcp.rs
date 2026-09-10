@@ -573,6 +573,30 @@ async fn an_approval_cannot_be_asserted_by_an_argument() {
     assert_eq!(envelope["outcome"], "refused", "{envelope}");
     assert_eq!(envelope["exit"], 8);
     assert_eq!(posts(&server).await, 0, "a forged state sent something");
+
+    // Only `submission.execute` ever asks for a decision, so a retry that
+    // names another tool records nothing: that call never asked for one.
+    let state = ask(&mut mcp, &plan);
+    for other in ["todo.list", "receipts.acknowledge", "sync.run"] {
+        let misrouted = mcp.retry(
+            other,
+            &state,
+            &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
+        );
+        assert_eq!(misrouted["error"]["code"], -32602, "{misrouted}");
+        assert_eq!(posts(&server).await, 0, "{other} sent something");
+    }
+    // The plan is untouched, so the tool that did ask can still be answered.
+    let accepted = mcp.retry(
+        "submission.execute",
+        &state,
+        &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
+    );
+    assert_eq!(
+        accepted["result"]["structuredContent"]["outcome"], "ok",
+        "{accepted}"
+    );
+    assert_eq!(posts(&server).await, 1);
     mcp.stop();
 }
 
