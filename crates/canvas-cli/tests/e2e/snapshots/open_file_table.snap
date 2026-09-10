@@ -1,0 +1,8 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+file <origin>/files/501 launched=false
+--- stderr ---
