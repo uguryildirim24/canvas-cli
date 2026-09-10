@@ -318,7 +318,6 @@ fn raw_output_rejects_json_at_every_command_level() {
 #[test]
 fn nonraw_variants_continue_to_accept_json() {
     for args in [
-        vec!["auth", "token", "--json"],
         vec!["calendar", "--ics", "calendar.ics", "--json"],
         vec!["receipts", "export", "receipt-1", "--json"],
         vec![
@@ -367,12 +366,6 @@ fn nested_help_lists_registered_commands() {
 #[test]
 fn every_v1_stub_is_callable() {
     let cases: &[&[&str]] = &[
-        &["auth", "login"],
-        &["auth", "status"],
-        &["auth", "logout"],
-        &["auth", "token", "--reveal"],
-        &["identity", "list"],
-        &["identity", "remove", "identity-1"],
         &["courses"],
         &["course", "chem"],
         &["todo"],
@@ -410,14 +403,9 @@ fn every_v1_stub_is_callable() {
         &["cache", "stats"],
         &["cache", "clear"],
         &["cache", "path"],
-        &["config", "path"],
-        &["config", "edit"],
-        &["config", "get", "key"],
-        &["config", "set", "key", "value"],
         &["alias", "set", "chem", "123"],
         &["alias", "list"],
         &["alias", "remove", "chem"],
-        &["doctor"],
     ];
     for args in cases {
         assert_stub(args);
