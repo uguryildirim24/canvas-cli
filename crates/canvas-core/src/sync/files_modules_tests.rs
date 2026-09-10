@@ -661,3 +661,113 @@ fn observed_files_and_folders_preserve_normalization_and_all_nulls() {
         );
     }
 }
+
+#[tokio::test]
+async fn listing_denials_are_cached_and_survive_failed_retry() {
+    for status in [403, 404] {
+        let server = MockServer::start().await;
+        let (_dir, open) = setup();
+        let api = client(&server);
+        Mock::given(path("/api/v1/courses/5/files"))
+            .respond_with(ResponseTemplate::new(status))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let first = refresh_files(
+            &api,
+            &open.store,
+            5,
+            default_ttl_files(),
+            ts(100),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.error, Some(format!("unavailable:{status}")));
+        let cached = refresh_files(
+            &api,
+            &open.store,
+            5,
+            default_ttl_files(),
+            ts(200),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(cached.requests, 0);
+        assert_eq!(cached.freshness.source, FreshnessSource::Cache);
+        assert_eq!(cached.error, first.error);
+        server.reset().await;
+        Mock::given(path("/api/v1/courses/5/files"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not JSON"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let failed = refresh_files(
+            &api,
+            &open.store,
+            5,
+            default_ttl_files(),
+            ts(300),
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(failed.freshness.stale);
+        assert_eq!(failed.error, first.error);
+        let offline = refresh_files(
+            &api,
+            &open.store,
+            5,
+            default_ttl_files(),
+            ts(400),
+            false,
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(offline.error, first.error);
+        assert_eq!(offline.requests, 0);
+    }
+}
+
+#[tokio::test]
+async fn listing_throttle_is_not_persisted_as_denial() {
+    let server = MockServer::start().await;
+    let (_dir, open) = setup();
+    Mock::given(path("/api/v1/courses/5/folders"))
+        .respond_with(
+            ResponseTemplate::new(403)
+                .insert_header("Retry-After", "0")
+                .set_body_string("Rate Limit Exceeded"),
+        )
+        .expect(5)
+        .mount(&server)
+        .await;
+    let err = refresh_folders(
+        &client(&server),
+        &open.store,
+        5,
+        default_ttl_files(),
+        ts(100),
+        true,
+        false,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.classification().1, 5);
+    open.store
+        .call_blocking(|conns| {
+            let count: i64 = conns.cache.query_row(
+                "SELECT count(*) FROM fetch_log WHERE dataset='folders'",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(count, 0);
+            Ok(())
+        })
+        .unwrap();
+}

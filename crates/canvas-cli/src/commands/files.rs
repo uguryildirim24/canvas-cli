@@ -105,18 +105,24 @@ pub async fn run(
                 .push(format!("served stale {} cache", outcome.freshness.dataset));
         }
     }
-    if let Some(status) = denial {
-        let message =
-            format!("Files listing unavailable (HTTP {status}); showing files linked from modules");
-        envelope.partial.push(PartialScope {
-            scope: format!("files:course:{}", resolved.id),
-            http_status: Some(status),
-            message: message.clone(),
-        });
-        envelope.warnings.push(message);
-        envelope.outcome = Outcome::Partial;
-        // Listing denial still completes the command with module-linked files.
-        envelope.exit = 0;
+    for outcome in [&folders_out, &files_out] {
+        if let Some(status) = outcome.error.as_deref().and_then(listing_denial_status) {
+            let message = if outcome.freshness.dataset == "files" {
+                format!(
+                    "Files listing unavailable (HTTP {status}); showing files linked from modules"
+                )
+            } else {
+                format!("Folders listing unavailable (HTTP {status}); folder paths unavailable")
+            };
+            envelope.partial.push(PartialScope {
+                scope: format!("{}:course:{}", outcome.freshness.dataset, resolved.id),
+                http_status: Some(status),
+                message: message.clone(),
+            });
+            envelope.warnings.push(message);
+            envelope.outcome = Outcome::Partial;
+            envelope.exit = 12;
+        }
     }
 
     emit(globals.json, &envelope, || {

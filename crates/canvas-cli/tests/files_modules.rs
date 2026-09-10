@@ -219,7 +219,7 @@ fn modules_auth_without_identity_is_exit_3() {
 }
 
 #[test]
-fn files_offline_denial_json_exit_0_with_partial() {
+fn files_offline_denial_json_exit_12_with_partial() {
     let (dir, key) = prepare_seeded_denial();
     let output = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
@@ -233,18 +233,19 @@ fn files_offline_denial_json_exit_0_with_partial() {
         .unwrap();
     assert_eq!(
         output.status.code(),
-        Some(0),
+        Some(12),
         "stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["schema"], "canvas-cli/files@1");
-    assert_eq!(value["exit"], 0);
+    assert_eq!(value["exit"], 12);
     assert_eq!(value["result"]["listing"]["available"], false);
     assert_eq!(value["result"]["listing"]["http_status"], 403);
     assert_eq!(value["result"]["files"][0]["source"], "module");
     assert_eq!(value["result"]["files"][0]["name"], "notes.pdf");
-    let partial = &value["partial"][0];
+    assert_eq!(value["partial"].as_array().unwrap().len(), 2);
+    let partial = &value["partial"][1];
     assert_eq!(partial["http_status"], 403);
     assert!(
         partial["message"]

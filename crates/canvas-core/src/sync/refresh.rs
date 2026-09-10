@@ -497,7 +497,21 @@ async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'static>(
     lookup: LookupResult,
     err: SyncError,
 ) -> Result<RefreshOutcome, SyncError> {
-    let message = sanitize_error(&err);
+    // A failed retry changes freshness, not the availability of the retained listing.
+    let denial = match &lookup {
+        LookupResult::Hit(row) | LookupResult::Stale(row)
+            if matches!(dataset.name(), "files" | "folders")
+                && row
+                    .error
+                    .as_deref()
+                    .and_then(listing_denial_status)
+                    .is_some() =>
+        {
+            row.error.clone()
+        }
+        _ => None,
+    };
+    let message = denial.unwrap_or_else(|| sanitize_error(&err));
     let dataset_fail = dataset.clone();
     let fail_msg = message.clone();
     store
