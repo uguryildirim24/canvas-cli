@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{host_from_server, mock_users_self, TestHome};
+use common::{TestHome, host_from_server, mock_users_self};
 use predicates::prelude::*;
 use wiremock::MockServer;
 

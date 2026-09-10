@@ -58,8 +58,8 @@ pub fn canonicalize_origin(raw: &str) -> Result<String, CliError> {
 
 /// Parse a stored origin into a [`Url`] suitable for [`canvas_api::Client`].
 pub fn origin_url(origin: &str) -> Result<Url, CliError> {
-    let mut url =
-        Url::parse(origin).map_err(|e| CliError::usage(format!("invalid origin `{origin}`: {e}")))?;
+    let mut url = Url::parse(origin)
+        .map_err(|e| CliError::usage(format!("invalid origin `{origin}`: {e}")))?;
     if url.path().is_empty() {
         url.set_path("/");
     }

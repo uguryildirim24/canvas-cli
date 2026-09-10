@@ -3,7 +3,7 @@
 #![allow(dead_code)] // M1-b will extend the builder; keep the full surface.
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Identity reference embedded in the envelope.
 #[derive(Debug, Clone, Serialize)]

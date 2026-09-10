@@ -1,5 +1,18 @@
 //! `canvas` command-line entry point.
 
+#![allow(
+    clippy::too_many_lines,
+    clippy::struct_excessive_bools,
+    clippy::assigning_clones,
+    clippy::struct_field_names,
+    clippy::derivable_impls,
+    clippy::needless_pass_by_value,
+    clippy::format_collect,
+    clippy::match_same_arms,
+    clippy::collapsible_if,
+    clippy::unused_async
+)]
+
 mod cli;
 mod commands;
 mod config;

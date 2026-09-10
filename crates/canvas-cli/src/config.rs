@@ -8,8 +8,8 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use figment::providers::{Env, Format, Serialized, Toml};
 use figment::Figment;
+use figment::providers::{Env, Format, Serialized, Toml};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -259,10 +259,7 @@ fn validate_key(key: &str) -> Result<(), CliError> {
         let field = parts.next().unwrap_or("");
         if parts.next().is_none()
             && !name.is_empty()
-            && matches!(
-                field,
-                "origin" | "user_id" | "key" | "name" | "time_zone"
-            )
+            && matches!(field, "origin" | "user_id" | "key" | "name" | "time_zone")
         {
             return Ok(());
         }
@@ -410,7 +407,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
             .truncate(true)
             .open(&tmp)
             .map_err(|e| CliError::local(e.to_string()))?;
-        f.write_all(bytes).map_err(|e| CliError::local(e.to_string()))?;
+        f.write_all(bytes)
+            .map_err(|e| CliError::local(e.to_string()))?;
         f.sync_all().map_err(|e| CliError::local(e.to_string()))?;
     }
     fs::rename(&tmp, path).map_err(|e| CliError::local(e.to_string()))?;

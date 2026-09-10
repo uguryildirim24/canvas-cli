@@ -63,10 +63,7 @@ pub fn select(
     }
 
     let profile_env = std::env::var("CANVAS_PROFILE").ok();
-    let profile_input = input
-        .profile_flag
-        .map(str::to_owned)
-        .or(profile_env);
+    let profile_input = input.profile_flag.map(str::to_owned).or(profile_env);
     let host = std::env::var("CANVAS_HOST").ok().filter(|s| !s.is_empty());
     let token = std::env::var("CANVAS_TOKEN").ok().filter(|s| !s.is_empty());
 
@@ -86,9 +83,14 @@ pub fn select(
     }
 
     match (host.as_deref(), token.as_deref()) {
-        (Some(_), Some(token)) => {
-            select_env_pair(class, paths, config, host.as_deref().unwrap(), token, input.offline)
-        }
+        (Some(_), Some(token)) => select_env_pair(
+            class,
+            paths,
+            config,
+            host.as_deref().unwrap(),
+            token,
+            input.offline,
+        ),
         (None, Some(_token)) => {
             // Token alone applies to the selected or default profile.
             select_default(paths, config)
@@ -121,9 +123,7 @@ fn selected_from_profile(
     let core_paths = CorePaths::for_identity(&paths.data_dir, &key);
     let identity = IdentityDocument::read(&core_paths.identity_json())?;
     if identity.origin != profile.origin || identity.user_id != profile.user_id {
-        return Err(CliError::local(
-            "profile does not match identity.json",
-        ));
+        return Err(CliError::local("profile does not match identity.json"));
     }
     Ok(Selected {
         profile_name: Some(name.to_owned()),
@@ -185,9 +185,7 @@ pub fn bind_env_identity(
     let key = IdentityKey::compute(origin, user_id);
     let core_paths = CorePaths::for_identity(&paths.data_dir, &key);
     let identity = IdentityDocument::read(&core_paths.identity_json()).map_err(|_| {
-        CliError::auth(
-            "env token validates but no local identity exists; run auth login".to_owned(),
-        )
+        CliError::auth("env token validates but no local identity exists; run auth login")
     })?;
     write_env_binding(paths, origin, token, &key)?;
     Ok(Selected {
@@ -260,8 +258,9 @@ fn load_bindings(paths: &CliPaths) -> Result<BindingsFile, CliError> {
     let path = paths.env_bindings_file();
     match fs::read_to_string(&path) {
         Ok(raw) if raw.trim().is_empty() => Ok(BindingsFile::default()),
-        Ok(raw) => toml::from_str(&raw)
-            .map_err(|e| CliError::local(format!("env-bindings.toml: {e}"))),
+        Ok(raw) => {
+            toml::from_str(&raw).map_err(|e| CliError::local(format!("env-bindings.toml: {e}")))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BindingsFile::default()),
         Err(e) => Err(CliError::local(e.to_string())),
     }
@@ -298,8 +297,7 @@ fn with_bindings_lock(
                 .mode(0o600)
                 .open(&tmp)
                 .map_err(|e| CliError::local(e.to_string()))?;
-            let raw = toml::to_string_pretty(&file)
-                .map_err(|e| CliError::local(e.to_string()))?;
+            let raw = toml::to_string_pretty(&file).map_err(|e| CliError::local(e.to_string()))?;
             out.write_all(raw.as_bytes())
                 .map_err(|e| CliError::local(e.to_string()))?;
             out.sync_all().map_err(|e| CliError::local(e.to_string()))?;
@@ -311,8 +309,7 @@ fn with_bindings_lock(
                 .create_new(true)
                 .open(&tmp)
                 .map_err(|e| CliError::local(e.to_string()))?;
-            let raw = toml::to_string_pretty(&file)
-                .map_err(|e| CliError::local(e.to_string()))?;
+            let raw = toml::to_string_pretty(&file).map_err(|e| CliError::local(e.to_string()))?;
             out.write_all(raw.as_bytes())
                 .map_err(|e| CliError::local(e.to_string()))?;
             out.sync_all().map_err(|e| CliError::local(e.to_string()))?;
@@ -340,7 +337,9 @@ pub fn list_identities(paths: &CliPaths) -> Result<Vec<IdentityDocument>, CliErr
     };
     for entry in entries {
         let entry = entry.map_err(|e| CliError::local(e.to_string()))?;
-        let meta = entry.metadata().map_err(|e| CliError::local(e.to_string()))?;
+        let meta = entry
+            .metadata()
+            .map_err(|e| CliError::local(e.to_string()))?;
         if !meta.is_dir() {
             continue;
         }
@@ -350,10 +349,7 @@ pub fn list_identities(paths: &CliPaths) -> Result<Vec<IdentityDocument>, CliErr
         }
         match IdentityDocument::read(&json) {
             Ok(doc) => out.push(doc),
-            Err(e) => eprintln!(
-                "warning: skipping {}: {e}",
-                entry.path().display()
-            ),
+            Err(e) => eprintln!("warning: skipping {}: {e}", entry.path().display()),
         }
     }
     out.sort_by(|a, b| a.key.as_str().cmp(b.key.as_str()));

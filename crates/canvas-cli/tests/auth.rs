@@ -5,7 +5,7 @@ mod common;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use common::{host_from_server, mock_users_self, TestHome};
+use common::{TestHome, host_from_server, mock_users_self};
 use predicates::prelude::*;
 use wiremock::MockServer;
 
@@ -63,12 +63,20 @@ async fn replace_rebinds_profile_second_user_refused() {
         .write_stdin("tok-2")
         .assert()
         .code(3)
-        .stderr(predicate::str::contains("different identity").or(predicate::str::contains(
-            "identity mismatch",
-        )));
+        .stderr(
+            predicate::str::contains("different identity")
+                .or(predicate::str::contains("identity mismatch")),
+        );
 
     home.cmd()
-        .args(["auth", "login", "--host", &host2, "--token-stdin", "--replace"])
+        .args([
+            "auth",
+            "login",
+            "--host",
+            &host2,
+            "--token-stdin",
+            "--replace",
+        ])
         .write_stdin("tok-2")
         .assert()
         .success();
@@ -213,9 +221,10 @@ async fn logout_two_deletion_failures_leave_flags() {
         .args(["auth", "status", "--json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"token_source\": null").or(
-            predicate::str::contains("pending"),
-        ));
+        .stdout(
+            predicate::str::contains("\"token_source\": null")
+                .or(predicate::str::contains("pending")),
+        );
 }
 
 #[tokio::test]

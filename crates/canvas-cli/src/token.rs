@@ -62,9 +62,9 @@ pub fn resolve_token(
     }
     let expected = row.token_sha256.as_deref().unwrap();
     let token = credentials::read_token(paths, key, row.active_source).map_err(|e| match e {
-        CredError::NotFound => CliError::auth(
-            "stored token does not match the recorded one; run auth login",
-        ),
+        CredError::NotFound => {
+            CliError::auth("stored token does not match the recorded one; run auth login")
+        }
         other => CliError::from(other),
     })?;
     if credentials::token_sha256(&token) != expected {
@@ -85,7 +85,7 @@ pub async fn validate_users_self(origin: &str, token: &str) -> Result<User, CliE
     let url = origin_url(origin)?;
     let client = Client::new(url, Secret::new(token), USER_AGENT)
         .map_err(|e| CliError::usage(format!("invalid origin for API client: {e}")))?;
-        match client.get::<User>("/api/v1/users/self").await {
+    match client.get::<User>("/api/v1/users/self").await {
         Ok(user) => Ok(user),
         Err(ApiError::Unauthorized) => Err(CliError::auth("token rejected")),
         Err(ApiError::Network) => Err(CliError::network("network failure talking to Canvas")),

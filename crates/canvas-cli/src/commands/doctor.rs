@@ -1,6 +1,6 @@
 //! `doctor` command.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::cli::Globals;
 use crate::config::Config;
@@ -63,10 +63,7 @@ pub async fn run(globals: &Globals, network: bool) -> Result<(), CliError> {
                 &mut checks,
                 "profile_identity",
                 "ok",
-                &format!(
-                    "profile {:?} → {}",
-                    sel.profile_name, sel.identity.key
-                ),
+                &format!("profile {:?} → {}", sel.profile_name, sel.identity.key),
             );
 
             match token::open_store(&sel) {
@@ -179,7 +176,12 @@ pub async fn run(globals: &Globals, network: bool) -> Result<(), CliError> {
         "keyring unavailable; file fallback may be used"
     };
     push_check(&mut checks, "credential_backend", "ok", backend);
-    push_check(&mut checks, "identity_lock", "ok", "lock protocol available");
+    push_check(
+        &mut checks,
+        "identity_lock",
+        "ok",
+        "lock protocol available",
+    );
 
     if !network || globals.offline {
         push_check(
@@ -203,13 +205,12 @@ pub async fn run(globals: &Globals, network: bool) -> Result<(), CliError> {
     };
 
     if globals.json {
-        let env = Envelope::new(
-            "canvas-cli/doctor@1",
-            profile.as_deref(),
-            identity,
-        )
-        .with_result(result)
-        .with_outcome(if fail { "partial" } else { "ok" }, if fail { 12 } else { 0 });
+        let env = Envelope::new("canvas-cli/doctor@1", profile.as_deref(), identity)
+            .with_result(result)
+            .with_outcome(
+                if fail { "partial" } else { "ok" },
+                if fail { 12 } else { 0 },
+            );
         env.print_json();
     } else {
         print_human([format!("identity selected: {identity_selected}")]);
