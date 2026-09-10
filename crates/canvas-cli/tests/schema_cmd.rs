@@ -12,34 +12,75 @@ fn the_list_names_every_registered_schema() {
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let mut seen = std::collections::BTreeSet::new();
     for line in stdout.lines() {
-        let (command, id) = line.split_once('\t').expect("tab-separated");
+        let mut columns = line.split('\t');
+        let (Some(name), Some(id), Some(kind), None) = (
+            columns.next(),
+            columns.next(),
+            columns.next(),
+            columns.next(),
+        ) else {
+            panic!("{line} is not three tab-separated columns");
+        };
         assert!(id.starts_with("canvas-cli/"), "{line}");
         assert!(id.ends_with("@1"), "{line}");
-        let base = id["canvas-cli/".len()..id.len() - 2].replace('_', " ");
-        // A schema with several result shapes lists one row per shape, named
-        // after the subcommand that prints it: `receipts show`, not a second
-        // indistinguishable `receipts`.
         assert!(
-            command == base
-                || command
-                    .strip_prefix(&base)
-                    .is_some_and(|v| v.starts_with(' ')),
-            "{line} does not name {base}"
+            kind == "command" || kind == "document",
+            "{line} has an unknown kind"
         );
-        // Every row must name a different command, or a caller cannot ask for
+        // Every row must name a different thing, or a caller cannot ask for
         // the shape it wants.
-        assert!(seen.insert(command.to_owned()), "{command} is listed twice");
+        assert!(seen.insert(name.to_owned()), "{name} is listed twice");
+        // And every name the listing prints must answer for itself.
+        canvas().args(["schema", name]).assert().success();
     }
     for expected in [
-        "todo\tcanvas-cli/todo@1",
-        "calendar\tcanvas-cli/calendar@1",
-        "error\tcanvas-cli/error@1",
-        "auth status\tcanvas-cli/auth_status@1",
-        "receipts list\tcanvas-cli/receipts@1",
-        "receipts show\tcanvas-cli/receipts@1",
-        "receipts acknowledge\tcanvas-cli/receipts@1",
+        "todo\tcanvas-cli/todo@1\tcommand",
+        "calendar\tcanvas-cli/calendar@1\tcommand",
+        "auth status\tcanvas-cli/auth_status@1\tcommand",
+        "receipts list\tcanvas-cli/receipts@1\tcommand",
+        "receipts show\tcanvas-cli/receipts@1\tcommand",
+        "receipts acknowledge\tcanvas-cli/receipts@1\tcommand",
+        // A command name cannot be derived from a schema id: these four were
+        // listed as `conversation`, `inbox unread`, `reconcile`, and `verify`.
+        "inbox show\tcanvas-cli/conversation@1\tcommand",
+        "inbox unread-count\tcanvas-cli/inbox_unread@1\tcommand",
+        "submission reconcile\tcanvas-cli/reconcile@1\tcommand",
+        "submission verify\tcanvas-cli/verify@1\tcommand",
+        // A document is not a command, and the listing says which it is.
+        "error\tcanvas-cli/error@1\tdocument",
+        "plan\tcanvas-cli/plan@1\tdocument",
+        "receipt\tcanvas-cli/receipt@1\tdocument",
     ] {
         assert!(stdout.contains(expected), "missing {expected}: {stdout}");
+    }
+    // Nothing is listed under a name that is not a command anyone can run.
+    for phantom in [
+        "\nconversation\t",
+        "\ninbox unread\t",
+        "\nreconcile\t",
+        "\nverify\t",
+    ] {
+        assert!(
+            !format!("\n{stdout}").contains(phantom),
+            "{phantom:?} is still listed: {stdout}"
+        );
+    }
+}
+
+/// The schema id keeps naming its own document, so a caller that learned the
+/// old name still gets an answer.
+#[test]
+fn a_schema_id_still_resolves_to_its_entry() {
+    for (alias, schema) in [
+        ("conversation", "canvas-cli/conversation@1"),
+        ("inbox_unread", "canvas-cli/inbox_unread@1"),
+        ("reconcile", "canvas-cli/reconcile@1"),
+        ("verify", "canvas-cli/verify@1"),
+    ] {
+        let assert = canvas().args(["schema", alias]).assert().success();
+        let document: serde_json::Value =
+            serde_json::from_slice(&assert.get_output().stdout).expect("one JSON document");
+        assert_eq!(document["schema"], schema, "{alias}");
     }
 }
 

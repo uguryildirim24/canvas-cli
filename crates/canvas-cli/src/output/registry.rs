@@ -48,6 +48,18 @@ pub const SCHEMA_ERROR: &str = "canvas-cli/error@1";
 #[derive(Debug, Clone, Copy)]
 pub struct SchemaEntry {
     pub id: &'static str,
+    /// The command whose `--json` envelope this entry describes, as a person
+    /// types it: `inbox show`, `submission reconcile`, `receipts export`.
+    ///
+    /// A command name cannot be derived from a schema id. `conversation@1` is
+    /// printed by `inbox show` and `inbox_unread@1` by `inbox unread-count`,
+    /// and deriving the name gave `conversation` and `inbox unread`, which are
+    /// not commands anyone can run.
+    ///
+    /// `None` marks a document no command prints: `plan@1` is the agent
+    /// surface's prepare result, `receipt@1` is the exported receipt file, and
+    /// `error@1` is the branch any command takes when it aborts.
+    pub command: Option<&'static str>,
     /// Which Appendix D `result` shape this fixture is.
     ///
     /// `None` for a schema with one shape. A schema whose Appendix D row lists
@@ -64,236 +76,283 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
     &[
         SchemaEntry {
             id: SCHEMA_COURSES,
+            command: Some("courses"),
             variant: None,
             fixture: include_str!("schemas/courses.json"),
         },
         SchemaEntry {
             id: SCHEMA_COURSE,
+            command: Some("course"),
             variant: None,
             fixture: include_str!("schemas/course.json"),
         },
         SchemaEntry {
             id: SCHEMA_TODO,
+            command: Some("todo"),
             variant: None,
             fixture: include_str!("schemas/todo.json"),
         },
         SchemaEntry {
             id: SCHEMA_ASSIGNMENTS,
+            command: Some("assignments"),
             variant: None,
             fixture: include_str!("schemas/assignments.json"),
         },
         SchemaEntry {
             id: SCHEMA_ASSIGNMENT,
+            command: Some("assignment"),
             variant: None,
             fixture: include_str!("schemas/assignment.json"),
         },
         SchemaEntry {
             id: SCHEMA_SUBMIT,
+            command: Some("submit"),
             variant: None,
             fixture: include_str!("schemas/submit.json"),
         },
         SchemaEntry {
             id: SCHEMA_PLAN,
+            command: None,
             variant: None,
             fixture: include_str!("schemas/plan.json"),
         },
         SchemaEntry {
             id: SCHEMA_SUBMISSION,
+            command: Some("submission"),
             variant: None,
             fixture: include_str!("schemas/submission.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECEIPT,
+            command: None,
             variant: None,
             fixture: include_str!("schemas/receipt.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECEIPTS,
+            command: Some("receipts list"),
             variant: Some("list"),
             fixture: include_str!("schemas/receipts.json"),
         },
         SchemaEntry {
             id: SCHEMA_VERIFY,
+            command: Some("submission verify"),
             variant: None,
             fixture: include_str!("schemas/verify.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECONCILE,
+            command: Some("submission reconcile"),
             variant: None,
             fixture: include_str!("schemas/reconcile.json"),
         },
         SchemaEntry {
             id: SCHEMA_GRADES,
+            command: Some("grades"),
             variant: None,
             fixture: include_str!("schemas/grades.json"),
         },
         SchemaEntry {
             id: SCHEMA_FILES,
+            command: Some("files"),
             variant: None,
             fixture: include_str!("schemas/files.json"),
         },
         SchemaEntry {
             id: SCHEMA_MODULES,
+            command: Some("modules"),
             variant: None,
             fixture: include_str!("schemas/modules.json"),
         },
         SchemaEntry {
             id: SCHEMA_DOWNLOAD,
+            command: Some("download"),
             variant: None,
             fixture: include_str!("schemas/download.json"),
         },
         SchemaEntry {
             id: SCHEMA_ANNOUNCEMENTS,
+            command: Some("announcements"),
             variant: None,
             fixture: include_str!("schemas/announcements.json"),
         },
         SchemaEntry {
             id: SCHEMA_ANNOUNCEMENT,
+            command: Some("announcement"),
             variant: None,
             fixture: include_str!("schemas/announcement.json"),
         },
         SchemaEntry {
             id: SCHEMA_CALENDAR,
+            command: Some("calendar"),
             variant: None,
             fixture: include_str!("schemas/calendar.json"),
         },
         SchemaEntry {
             id: SCHEMA_OPEN,
+            command: Some("open"),
             variant: None,
             fixture: include_str!("schemas/open.json"),
         },
         SchemaEntry {
             id: SCHEMA_SYNC,
+            command: Some("sync"),
             variant: None,
             fixture: include_str!("schemas/sync.json"),
         },
         SchemaEntry {
             id: SCHEMA_CACHE,
+            command: Some("cache stats"),
             variant: Some("stats"),
             fixture: include_str!("schemas/cache_stats.json"),
         },
         SchemaEntry {
             id: SCHEMA_ALIAS,
+            command: Some("alias list"),
             variant: None,
             fixture: include_str!("schemas/alias.json"),
         },
         SchemaEntry {
             id: SCHEMA_AUTH_STATUS,
+            command: Some("auth status"),
             variant: None,
             fixture: include_str!("schemas/auth_status.json"),
         },
         SchemaEntry {
             id: SCHEMA_AUTH_LOGIN,
+            command: Some("auth login"),
             variant: None,
             fixture: include_str!("schemas/auth_login.json"),
         },
         SchemaEntry {
             id: SCHEMA_AUTH_LOGOUT,
+            command: Some("auth logout"),
             variant: None,
             fixture: include_str!("schemas/auth_logout.json"),
         },
         SchemaEntry {
             id: SCHEMA_IDENTITY,
+            command: Some("identity list"),
             variant: Some("list"),
             fixture: include_str!("schemas/identity.json"),
         },
         SchemaEntry {
             id: SCHEMA_CONFIG,
+            command: Some("config get"),
             variant: Some("get"),
             fixture: include_str!("schemas/config.json"),
         },
         SchemaEntry {
             id: SCHEMA_DOCTOR,
+            command: Some("doctor"),
             variant: None,
             fixture: include_str!("schemas/doctor.json"),
         },
         SchemaEntry {
             id: SCHEMA_PAGES,
+            command: Some("pages"),
             variant: None,
             fixture: include_str!("schemas/pages.json"),
         },
         SchemaEntry {
             id: SCHEMA_PAGE,
+            command: Some("page"),
             variant: None,
             fixture: include_str!("schemas/page.json"),
         },
         SchemaEntry {
             id: SCHEMA_SYLLABUS,
+            command: Some("syllabus"),
             variant: None,
             fixture: include_str!("schemas/syllabus.json"),
         },
         SchemaEntry {
             id: SCHEMA_DISCUSSIONS,
+            command: Some("discussions"),
             variant: None,
             fixture: include_str!("schemas/discussions.json"),
         },
         SchemaEntry {
             id: SCHEMA_DISCUSSION,
+            command: Some("discussion"),
             variant: None,
             fixture: include_str!("schemas/discussion.json"),
         },
         SchemaEntry {
             id: SCHEMA_INBOX,
+            command: Some("inbox"),
             variant: None,
             fixture: include_str!("schemas/inbox.json"),
         },
         SchemaEntry {
             id: SCHEMA_CONVERSATION,
+            command: Some("inbox show"),
             variant: None,
             fixture: include_str!("schemas/conversation.json"),
         },
         SchemaEntry {
             id: SCHEMA_INBOX_UNREAD,
+            command: Some("inbox unread-count"),
             variant: None,
             fixture: include_str!("schemas/inbox_unread.json"),
         },
         SchemaEntry {
             id: SCHEMA_VERSION,
+            command: Some("version"),
             variant: None,
             fixture: include_str!("schemas/version.json"),
         },
         SchemaEntry {
             id: SCHEMA_ERROR,
+            command: None,
             variant: None,
             fixture: include_str!("schemas/error.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECEIPTS,
+            command: Some("receipts show"),
             variant: Some("show"),
             fixture: include_str!("schemas/receipts_show.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECEIPTS,
+            command: Some("receipts export"),
             variant: Some("export"),
             fixture: include_str!("schemas/receipts_export.json"),
         },
         SchemaEntry {
             id: SCHEMA_RECEIPTS,
+            command: Some("receipts acknowledge"),
             variant: Some("acknowledge"),
             fixture: include_str!("schemas/receipts_acknowledge.json"),
         },
         SchemaEntry {
             id: SCHEMA_CACHE,
+            command: Some("cache clear"),
             variant: Some("clear"),
             fixture: include_str!("schemas/cache_clear.json"),
         },
         SchemaEntry {
             id: SCHEMA_CACHE,
+            command: Some("cache path"),
             variant: Some("path"),
             fixture: include_str!("schemas/cache_path.json"),
         },
         SchemaEntry {
             id: SCHEMA_CONFIG,
+            command: Some("config set"),
             variant: Some("set"),
             fixture: include_str!("schemas/config_set.json"),
         },
         SchemaEntry {
             id: SCHEMA_CONFIG,
+            command: Some("config path"),
             variant: Some("path"),
             fixture: include_str!("schemas/config_path.json"),
         },
         SchemaEntry {
             id: SCHEMA_IDENTITY,
+            command: Some("identity remove"),
             variant: Some("remove"),
             fixture: include_str!("schemas/identity_remove.json"),
         },

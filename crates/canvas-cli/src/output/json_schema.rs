@@ -170,14 +170,27 @@ pub fn document_for_schema(schema_id: &str, variant: Option<&str>) -> Option<Val
     registry::entry_for_schema(schema_id, variant).map(document)
 }
 
-/// The full command name of one entry: the command, plus its variant when the
-/// schema has more than one result shape.
+/// The name of one entry: the command that prints it, as a person types it.
+///
+/// The entry carries the command, because it cannot be derived from the schema
+/// id — `conversation@1` is printed by `inbox show`. A document no command
+/// prints falls back to the schema's own short name, so `canvas schema error`
+/// still resolves.
 #[must_use]
 pub fn entry_command(entry: &SchemaEntry) -> String {
-    let command = command_name(entry.id);
-    match entry.variant {
-        Some(variant) => format!("{command} {variant}"),
-        None => command,
+    match entry.command {
+        Some(command) => command.to_owned(),
+        None => command_name(entry.id),
+    }
+}
+
+/// Whether this entry describes a command's output or a standalone document.
+#[must_use]
+pub fn entry_kind(entry: &SchemaEntry) -> &'static str {
+    if entry.command.is_some() {
+        "command"
+    } else {
+        "document"
     }
 }
 
@@ -194,11 +207,22 @@ pub fn command_name(schema_id: &str) -> String {
 }
 
 /// `canvas schema --list`: every registered schema, one per line.
+///
+/// Three tab-separated columns: the name, the schema id, and whether the name
+/// is a command a person can run or a document no command prints. Every name
+/// in the first column resolves with `canvas schema <name>`.
 #[must_use]
 pub fn list() -> String {
     let mut lines: Vec<String> = registry::all_schemas()
         .iter()
-        .map(|entry| format!("{}\t{}", entry_command(entry), entry.id))
+        .map(|entry| {
+            format!(
+                "{}\t{}\t{}",
+                entry_command(entry),
+                entry.id,
+                entry_kind(entry)
+            )
+        })
         .collect();
     lines.sort();
     lines.push(String::new());
@@ -270,8 +294,49 @@ mod tests {
             registry::all_schemas().len(),
             "list={list}"
         );
-        assert!(list.contains("todo\tcanvas-cli/todo@1"));
+        assert!(list.contains("todo\tcanvas-cli/todo@1\tcommand"));
         assert!(list.ends_with('\n'));
+    }
+
+    /// Every name the listing prints must resolve, and every command it calls
+    /// a command must be one the binary actually has.
+    ///
+    /// Deriving the name from the schema id listed `conversation` and
+    /// `inbox unread` as commands and left `inbox show` and
+    /// `inbox unread-count` unreachable.
+    #[test]
+    fn every_listed_name_resolves_to_its_own_entry() {
+        for entry in registry::all_schemas() {
+            let name = entry_command(entry);
+            let found = registry::entry_for_command(&name)
+                .unwrap_or_else(|| panic!("{name} does not resolve"));
+            assert_eq!(found.id, entry.id, "{name} resolves to another schema");
+            assert_eq!(
+                found.variant, entry.variant,
+                "{name} resolves to another shape"
+            );
+        }
+    }
+
+    #[test]
+    fn the_commands_the_listing_names_are_the_commands_the_binary_has() {
+        use clap::CommandFactory;
+        let cli = crate::cli::Cli::command();
+        let path_exists = |path: &str| {
+            let mut node = &cli;
+            for part in path.split(' ') {
+                match node.get_subcommands().find(|sub| sub.get_name() == part) {
+                    Some(sub) => node = sub,
+                    None => return false,
+                }
+            }
+            true
+        };
+        for entry in registry::all_schemas() {
+            if let Some(command) = entry.command {
+                assert!(path_exists(command), "`canvas {command}` is not a command");
+            }
+        }
     }
 
     #[test]
