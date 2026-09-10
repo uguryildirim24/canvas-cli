@@ -1433,7 +1433,7 @@ mod tests {
 // --- M8-a richer reads (Appendix D v2, `docs/reads-v2.md`) ---
 
 /// One piece of content the Markdown cannot carry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EmbeddedJson {
     /// `iframe`, `lti`, `video`, `audio`, or `unknown`.
     pub kind: String,
@@ -1443,7 +1443,7 @@ pub struct EmbeddedJson {
 }
 
 /// One same-origin Canvas file a body refers to.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FileRefJson {
     pub file_id: String,
     pub name: Option<String>,
@@ -1451,13 +1451,13 @@ pub struct FileRefJson {
 }
 
 /// One reference that leaves the Canvas origin; never fetched.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ExternalLinkJson {
     pub url: String,
 }
 
 /// Listing row for `pages`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageSummaryJson {
     pub id: String,
     pub title: Option<String>,
@@ -1467,7 +1467,7 @@ pub struct PageSummaryJson {
     pub front_page: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PagesResult {
     pub course_id: String,
     pub listing: FilesListingJson,
@@ -1475,7 +1475,7 @@ pub struct PagesResult {
 }
 
 /// One page body with everything the Markdown could not show.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageDetailJson {
     pub id: String,
     pub course_id: String,
@@ -1494,12 +1494,12 @@ pub struct PageDetailJson {
     pub external_links: Vec<ExternalLinkJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageResult {
     pub page: PageDetailJson,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SyllabusResult {
     pub course_id: String,
     pub syllabus_markdown: Option<String>,
@@ -1511,14 +1511,14 @@ pub struct SyllabusResult {
 }
 
 /// One child topic of a group discussion.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GroupTopicChildJson {
     pub id: Option<String>,
     pub group_id: Option<String>,
 }
 
 /// Listing row for `discussions`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DiscussionSummaryJson {
     pub id: String,
     pub course_id: Option<String>,
@@ -1539,7 +1539,7 @@ pub struct DiscussionSummaryJson {
     pub html_url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DiscussionsResult {
     pub course_id: String,
     pub listing: FilesListingJson,
@@ -1547,7 +1547,7 @@ pub struct DiscussionsResult {
 }
 
 /// One reply, top level or nested.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DiscussionReplyJson {
     pub id: String,
     pub parent_id: Option<String>,
@@ -1561,7 +1561,7 @@ pub struct DiscussionReplyJson {
 }
 
 /// How much of a reply set this answer covers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepliesCoverageJson {
     pub pages_fetched: u32,
     pub complete: bool,
@@ -1569,7 +1569,7 @@ pub struct RepliesCoverageJson {
     pub blocked: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DiscussionDetailJson {
     pub id: String,
     pub course_id: Option<String>,
@@ -1612,20 +1612,20 @@ pub struct DiscussionDetailJson {
     pub replies_coverage: RepliesCoverageJson,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DiscussionResult {
     pub discussion: DiscussionDetailJson,
 }
 
 /// One conversation participant.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ParticipantJson {
     pub id: Option<String>,
     pub name: Option<String>,
 }
 
 /// One attachment on a conversation message.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConversationAttachmentJson {
     pub file_id: Option<String>,
     pub name: Option<String>,
@@ -1633,7 +1633,7 @@ pub struct ConversationAttachmentJson {
 }
 
 /// Listing row for `inbox`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConversationSummaryJson {
     pub id: String,
     pub subject: Option<String>,
@@ -1645,7 +1645,7 @@ pub struct ConversationSummaryJson {
     pub participants: Vec<ParticipantJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct InboxResult {
     pub scope: String,
     pub listing: FilesListingJson,
@@ -1653,7 +1653,7 @@ pub struct InboxResult {
 }
 
 /// One message inside a conversation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConversationMessageJson {
     pub id: Option<String>,
     pub author_id: Option<String>,
@@ -1664,7 +1664,7 @@ pub struct ConversationMessageJson {
     pub attachments: Vec<ConversationAttachmentJson>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConversationDetailJson {
     pub id: String,
     pub subject: Option<String>,
@@ -1677,12 +1677,12 @@ pub struct ConversationDetailJson {
     pub messages_complete: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConversationResult {
     pub conversation: ConversationDetailJson,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct InboxUnreadResult {
     /// `null` when Canvas did not report a count.
     pub unread_count: Option<u64>,
