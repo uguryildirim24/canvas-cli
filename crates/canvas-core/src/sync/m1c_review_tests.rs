@@ -228,3 +228,33 @@ fn planner_partial_flags_null_and_newest_missing_fields_share_observations() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn optional_nested_metadata_keeps_three_state_presence() {
+    let omitted: Observed<Assignment> =
+        serde_json::from_value(json!({"id":2,"external_tool_tag_attributes":{"new_tab":true}}))
+            .unwrap();
+    assert!(
+        !omitted
+            .entity(Some(1))
+            .fields
+            .iter()
+            .any(|f| f.name == "external_tool_name")
+    );
+    let null: Observed<Assignment> =
+        serde_json::from_value(json!({"id":2,"external_tool_tag_attributes":null})).unwrap();
+    assert!(
+        null.entity(Some(1))
+            .fields
+            .iter()
+            .any(|f| f.name == "external_tool_name" && f.value.is_none())
+    );
+    let null = super::submission::observed_submission(&json!({"id":3,"user_id":null}), 2).unwrap();
+    assert!(
+        null.fields
+            .iter()
+            .any(|f| f.name == "user_id" && f.value.is_none())
+    );
+    let absent = super::submission::observed_submission(&json!({"id":3}), 2).unwrap();
+    assert!(!absent.fields.iter().any(|f| f.name == "user_id"));
+}
