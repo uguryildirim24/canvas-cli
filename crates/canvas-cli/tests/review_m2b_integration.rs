@@ -131,7 +131,7 @@ fn submission_body() -> Value {
         "body": null, "url": null,
         "attachments": [{"id": 55001, "display_name": "essay.pdf", "size": 24576, "content_type": "application/pdf"}],
         "submission_comments": [{"id": 9, "comment": "Nice work.", "author_name": "Prof. Ada", "created_at": "2026-09-09T16:40:00Z"}],
-        "rubric_assessment": {"c1": {"points": 8.5, "comments": "Clear reasoning."}},
+        "rubric_assessment": {"c1": {"points": 8.5, "comments": "Clear reasoning.", "rating_id": "_5721"}},
         "submission_history": [
             {"id": 55, "attempt": 2, "submitted_at": "2026-09-09T16:05:00Z", "workflow_state": "graded", "score": 8.5,
              "attachments": [{"id": 55001, "display_name": "essay.pdf", "size": 24576, "content_type": "application/pdf"}]},

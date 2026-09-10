@@ -634,7 +634,7 @@ pub async fn refresh_assignment_groups(
 
 /// Listing refresh with denial classification for folders/files.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-async fn refresh_listing_with_denial<D, F, Fut>(
+pub(super) async fn refresh_listing_with_denial<D, F, Fut>(
     client: &Client,
     store: &Store,
     dataset: &D,
@@ -815,12 +815,14 @@ pub(super) async fn mark_stale_or_serve<D: Dataset + Clone + Send + Sync + 'stat
     // A failed retry changes freshness, not the availability of the retained listing.
     let denial = match &lookup {
         LookupResult::Hit(row) | LookupResult::Stale(row)
-            if matches!(dataset.name(), "files" | "folders")
-                && row
-                    .error
-                    .as_deref()
-                    .and_then(listing_denial_status)
-                    .is_some() =>
+            if matches!(
+                dataset.name(),
+                "files" | "folders" | "pages" | "discussions" | "inbox"
+            ) && row
+                .error
+                .as_deref()
+                .and_then(listing_denial_status)
+                .is_some() =>
         {
             row.error.clone()
         }

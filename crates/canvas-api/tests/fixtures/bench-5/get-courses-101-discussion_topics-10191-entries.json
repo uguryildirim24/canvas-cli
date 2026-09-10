@@ -1,0 +1,45 @@
+{
+  "method": "GET",
+  "path": "/api/v1/courses/101/discussion_topics/10191/entries",
+  "query": [],
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "created_at": "2026-01-02T13:00:00Z",
+      "has_more_replies": false,
+      "id": 101911,
+      "message": "<p>Reply 1.</p>",
+      "parent_id": null,
+      "read_state": "unread",
+      "recent_replies": [],
+      "updated_at": "2026-01-02T13:00:00Z",
+      "user_id": 2001,
+      "user_name": "Student 1"
+    },
+    {
+      "created_at": "2026-01-02T14:00:00Z",
+      "has_more_replies": false,
+      "id": 101912,
+      "message": "<p>Reply 2.</p>",
+      "parent_id": null,
+      "read_state": "unread",
+      "recent_replies": [],
+      "updated_at": "2026-01-02T14:00:00Z",
+      "user_id": 2002,
+      "user_name": "Student 2"
+    },
+    {
+      "created_at": "2026-01-02T15:00:00Z",
+      "has_more_replies": false,
+      "id": 101913,
+      "message": "<p>Reply 3.</p>",
+      "parent_id": null,
+      "read_state": "unread",
+      "recent_replies": [],
+      "updated_at": "2026-01-02T15:00:00Z",
+      "user_id": 2003,
+      "user_name": "Student 3"
+    }
+  ]
+}

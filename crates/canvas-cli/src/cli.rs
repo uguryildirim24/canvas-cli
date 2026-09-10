@@ -262,6 +262,55 @@ pub enum Commands {
         /// Announcement id when `target` is a course.
         id: Option<String>,
     },
+    /// List course pages.
+    Pages {
+        /// Course id, code, or alias.
+        course: String,
+        /// Also show unpublished pages.
+        #[arg(long)]
+        unpublished: bool,
+    },
+    /// Show one course page.
+    Page {
+        /// Course id, code, or alias.
+        course: String,
+        /// Page slug, page id, or a Canvas page URL.
+        page: String,
+    },
+    /// Show the course syllabus.
+    Syllabus {
+        /// Course id, code, or alias.
+        course: String,
+    },
+    /// List course discussions.
+    Discussions {
+        /// Course id, code, or alias.
+        course: String,
+        /// Unread only.
+        #[arg(long)]
+        unread: bool,
+    },
+    /// Show one discussion.
+    Discussion {
+        /// Course id, code, or alias.
+        course: String,
+        /// Discussion id, or a Canvas discussion URL.
+        discussion: String,
+        /// Also read the replies.
+        #[arg(long)]
+        replies: bool,
+        /// Which page of replies to show (100 per page); needs --replies.
+        #[arg(long)]
+        page: Option<u32>,
+    },
+    /// Read the conversation inbox.
+    Inbox {
+        #[command(subcommand)]
+        command: Option<InboxCommand>,
+        /// Which list: inbox, unread, sent, or archived.
+        #[arg(long)]
+        scope: Option<String>,
+    },
     /// Show calendar events.
     Calendar {
         /// Window in days.
@@ -424,6 +473,17 @@ pub enum OpenCommand {
     File { id: String },
     /// Open an announcement page.
     Announcement { course: String, id: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum InboxCommand {
+    /// Show one conversation and its messages.
+    Show {
+        /// Conversation id.
+        id: String,
+    },
+    /// Show the unread conversation count.
+    UnreadCount,
 }
 
 #[derive(Debug, Subcommand)]
