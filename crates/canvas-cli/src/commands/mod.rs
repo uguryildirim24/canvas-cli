@@ -8,6 +8,7 @@ pub mod course;
 pub mod course_load;
 pub mod courses;
 pub mod doctor;
+pub mod download;
 pub mod emit;
 pub mod files;
 pub mod identity;

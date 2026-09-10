@@ -16,7 +16,8 @@ pub use envelope::{
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
     AliasJson, AliasResult, CacheClearResult, CachePathResult, CacheStatsResult, CacheTableJson,
-    CourseDetailJson, CourseJson, CourseResult, CoursesResult, FileEntryJson, FilesListingJson,
+    CourseDetailJson, CourseJson, CourseResult, CoursesResult, DownloadCourseJson,
+    DownloadFileJson, DownloadResult, DownloadTotalsJson, FileEntryJson, FilesListingJson,
     FilesResult, GradeJson, ModuleEntryJson, ModuleItemJson, ModulesResult, PeriodJson,
     SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
     SCHEMA_AUTH_LOGIN, SCHEMA_AUTH_LOGOUT, SCHEMA_AUTH_STATUS, SCHEMA_CACHE, SCHEMA_CALENDAR,

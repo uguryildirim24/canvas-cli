@@ -599,12 +599,25 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "courses": [],
+      "courses": [
+        {
+          "course_code": "CS-101",
+          "course_id": "101",
+          "files": [
+            {
+              "action": "downloaded",
+              "id": "50",
+              "path": "CS-101-101/files/Slides/lec.pdf",
+              "size": 10
+            }
+          ]
+        }
+      ],
       "dest": "/tmp/out",
-      "dry_run": true,
+      "dry_run": false,
       "totals": {
-        "bytes": 0,
-        "downloaded": 0,
+        "bytes": 10,
+        "downloaded": 1,
         "failed": 0,
         "locked": 0,
         "modified": 0,

@@ -87,6 +87,9 @@ pub fn outcome_is_partial(actions: &[Action]) -> bool {
 /// Transport error.
 #[derive(Debug, Error)]
 pub enum TransferError {
+    /// Preserve API classification without persisting response bodies or URLs.
+    #[error(transparent)]
+    Api(#[from] canvas_api::Error),
     /// Size mismatch or incomplete body.
     #[error("transfer size mismatch")]
     SizeMismatch,

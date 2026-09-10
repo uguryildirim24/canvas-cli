@@ -1,1 +1,33 @@
-{ "dest": "/tmp/out", "dry_run": true, "courses": [], "totals": { "planned": 0, "downloaded": 0, "moved": 0, "skipped": 0, "unmanaged": 0, "modified": 0, "locked": 0, "unavailable": 0, "skipped_external": 0, "unsafe_path": 0, "unresolved_move": 0, "failed": 0, "bytes": 0 } }
+{
+  "dest": "/tmp/out",
+  "dry_run": false,
+  "courses": [
+    {
+      "course_id": "101",
+      "course_code": "CS-101",
+      "files": [
+        {
+          "id": "50",
+          "path": "CS-101-101/files/Slides/lec.pdf",
+          "action": "downloaded",
+          "size": 10
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "planned": 0,
+    "downloaded": 1,
+    "moved": 0,
+    "skipped": 0,
+    "unmanaged": 0,
+    "modified": 0,
+    "locked": 0,
+    "unavailable": 0,
+    "skipped_external": 0,
+    "unsafe_path": 0,
+    "unresolved_move": 0,
+    "failed": 0,
+    "bytes": 10
+  }
+}
