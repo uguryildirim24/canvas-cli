@@ -82,6 +82,34 @@ const TARGETS: [Target; 3] = [
     },
 ];
 
+/// What the served fixture set actually holds.
+///
+/// The report must describe the set it served, not the set it expected. SPEC
+/// §13 fixes the shape at five courses; a set with another count still
+/// benchmarks, but the number it was measured against has to be on the page.
+struct SetShape {
+    courses: usize,
+    extra_pages: usize,
+}
+
+impl SetShape {
+    fn of(entries: &[(String, Recorded)]) -> Self {
+        let courses = entries
+            .iter()
+            .find(|(_, r)| r.path == "/api/v1/courses" && r.page.unwrap_or(1) == 1)
+            .and_then(|(_, r)| r.body.as_array())
+            .map_or(0, Vec::len);
+        let extra_pages = entries
+            .iter()
+            .filter(|(_, r)| r.page.is_some_and(|p| p > 1))
+            .count();
+        Self {
+            courses,
+            extra_pages,
+        }
+    }
+}
+
 /// One measured metric under one load condition.
 struct Measured {
     label: &'static str,
@@ -121,6 +149,13 @@ pub fn run(options: &Options) -> Result<bool> {
         );
     }
     let entries = load_set(&set_dir)?;
+    let shape = SetShape::of(&entries);
+    if shape.courses != 5 {
+        eprintln!(
+            "warning: {} holds {} courses; SPEC section 13 measures a 5-course set",
+            options.fixture, shape.courses
+        );
+    }
     let manifest = load_manifest(&set_dir)?;
     let shift = manifest
         .as_ref()
@@ -162,7 +197,7 @@ pub fn run(options: &Options) -> Result<bool> {
         anyhow::Ok(outcome?)
     })?;
 
-    let passed = report(&root, options, &measurements)?;
+    let passed = report(&root, options, &shape, &measurements)?;
     Ok(passed || options.no_fail)
 }
 
@@ -634,7 +669,12 @@ fn copy_dir(from: &Path, to: &Path) -> Result<()> {
 // ---------------------------------------------------------------- reporting
 
 /// Print the table and write `docs/bench.md`. Returns false on a missed target.
-fn report(root: &Path, options: &Options, measurements: &[Measured]) -> Result<bool> {
+fn report(
+    root: &Path,
+    options: &Options,
+    shape: &SetShape,
+    measurements: &[Measured],
+) -> Result<bool> {
     let mut passed = true;
     println!(
         "{:<28} {:<10} {:>9} {:>9} {:>12} {:>7}",
@@ -661,7 +701,7 @@ fn report(root: &Path, options: &Options, measurements: &[Measured]) -> Result<b
     if let Some(parent) = doc.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&doc, document(options, measurements, passed)?)?;
+    std::fs::write(&doc, document(options, shape, measurements, passed)?)?;
     println!("\nwrote {}", doc.display());
     if !passed {
         eprintln!("a SPEC section 13 target was missed");
@@ -713,7 +753,12 @@ fn machine() -> String {
 }
 
 #[allow(clippy::too_many_lines)]
-fn document(options: &Options, measurements: &[Measured], passed: bool) -> Result<String> {
+fn document(
+    options: &Options,
+    shape: &SetShape,
+    measurements: &[Measured],
+    passed: bool,
+) -> Result<String> {
     use std::fmt::Write as _;
     let mut out = String::new();
     writeln!(out, "# Benchmarks\n")?;
@@ -728,6 +773,7 @@ fn document(options: &Options, measurements: &[Measured], passed: bool) -> Resul
     writeln!(out, "| Commit | `{}` |", commit(&workspace_root()?))?;
     writeln!(out, "| Machine | {} |", machine())?;
     writeln!(out, "| Fixture set | `{}` |", options.fixture)?;
+    writeln!(out, "| Courses in set | {} |", shape.courses)?;
     writeln!(out, "| Runs per metric | {} |", options.runs)?;
     writeln!(
         out,
@@ -770,10 +816,17 @@ fn document(options: &Options, measurements: &[Measured], passed: bool) -> Resul
     writeln!(out, "\n## Method\n")?;
     writeln!(
         out,
-        "- `wiremock` serves the `{}` fixture set: five courses, their \
+        "- `wiremock` serves the `{}` fixture set: {} courses, their \
          assignments, files, folders, modules, and grading periods, plus the \
-         planner and missing-submission lists.",
-        options.fixture
+         planner and missing-submission lists.{}",
+        options.fixture,
+        shape.courses,
+        if shape.courses == 5 {
+            ""
+        } else {
+            " SPEC §13 fixes the shape at five courses; this set does not \
+             match it, so the numbers are not comparable with a 5-course run."
+        }
     )?;
     writeln!(
         out,
@@ -826,6 +879,17 @@ fn document(options: &Options, measurements: &[Measured], passed: bool) -> Resul
          download that loads the server alongside them is a debug build with \
          `CANVAS_TEST_ALLOW_HTTP=1`."
     )?;
+    if shape.extra_pages > 0 {
+        writeln!(
+            out,
+            "- **Only the first page of each endpoint is served.** A recorded \
+             `Link` header points at the host it was recorded from, so replaying \
+             it would send the client off-origin; the header is dropped. This \
+             set holds {} page(s) beyond the first, and those were not served, \
+             so the workload is smaller than the set.",
+            shape.extra_pages
+        )?;
+    }
     writeln!(
         out,
         "- **The numbers are local.** They measure this machine with a local \
@@ -839,6 +903,52 @@ fn document(options: &Options, measurements: &[Measured], passed: bool) -> Resul
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_document_describes_the_set_it_actually_served() {
+        let options = Options {
+            fixture: "recorded-3".to_owned(),
+            runs: 3,
+            no_fail: false,
+            doc: None,
+        };
+        let shape = SetShape {
+            courses: 3,
+            extra_pages: 2,
+        };
+        let doc = document(&options, &shape, &[], true).unwrap();
+        assert!(doc.contains("Courses in set | 3"), "{doc}");
+        assert!(doc.contains("fixture set: 3 courses"), "{doc}");
+        assert!(doc.contains("not comparable with a 5-course run"), "{doc}");
+        assert!(doc.contains("Only the first page"), "{doc}");
+    }
+
+    #[test]
+    fn the_shape_is_read_from_the_set() {
+        let make = |path: &str, page: Option<u32>, body: Value| {
+            (
+                path.to_owned(),
+                Recorded {
+                    method: "GET".into(),
+                    path: path.into(),
+                    query: vec![],
+                    status: 200,
+                    headers: BTreeMap::new(),
+                    body,
+                    page,
+                },
+            )
+        };
+        let entries = vec![
+            make("/api/v1/courses", Some(1), json!([{"id": 1}, {"id": 2}])),
+            make("/api/v1/courses", Some(2), json!([{"id": 3}])),
+            make("/api/v1/users/self", None, json!({"id": 9})),
+        ];
+        let shape = SetShape::of(&entries);
+        // The count comes from the first page, not from every page summed.
+        assert_eq!(shape.courses, 2);
+        assert_eq!(shape.extra_pages, 1);
+    }
 
     #[test]
     fn percentiles_use_the_nearest_rank() {
@@ -901,9 +1011,16 @@ mod tests {
             target_p50: None,
             target_p95: 250.0,
         }];
-        let doc = document(&options, &measurements, true).unwrap();
+        let shape = SetShape {
+            courses: 5,
+            extra_pages: 0,
+        };
+        let doc = document(&options, &shape, &measurements, true).unwrap();
         assert!(doc.contains("# Benchmarks"));
         assert!(doc.contains("bench-5"));
+        assert!(doc.contains("Courses in set | 5"));
+        assert!(doc.contains("fixture set: 5 courses"), "{doc}");
+        assert!(!doc.contains("Only the first page"), "{doc}");
         assert!(doc.contains("Runs per metric | 3"));
         assert!(doc.contains("Cold start is a lower bound"));
         assert!(doc.contains("debug build"));
