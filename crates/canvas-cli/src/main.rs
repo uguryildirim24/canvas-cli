@@ -242,10 +242,9 @@ async fn main() -> ExitCode {
                         },
                         None => {
                             let course = target.first().cloned().unwrap_or_default();
-                            let assignment = target.get(1).cloned().unwrap_or_default();
                             commands::submission::SubmissionCmd::Show {
                                 course,
-                                assignment,
+                                assignment: target.get(1).cloned(),
                                 history,
                             }
                         }

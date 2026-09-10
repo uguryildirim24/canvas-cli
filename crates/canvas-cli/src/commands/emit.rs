@@ -163,12 +163,6 @@ pub fn require_client<'a>(
     }
 }
 
-/// Parse a numeric Canvas id; non-numeric ids need M1-c resolution for some commands.
-pub fn parse_numeric_id(raw: &str, label: &str) -> Result<i64, String> {
-    raw.parse::<i64>()
-        .map_err(|_| format!("{label} resolution needs M1-c; use a numeric id for now"))
-}
-
 /// Keep API variants, status, and invocation telemetry on every abort.
 pub fn sync_error(
     globals: &super::Globals,
