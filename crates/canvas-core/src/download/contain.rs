@@ -1,0 +1,242 @@
+//! Capability-scoped containment (§12.3).
+
+use std::io;
+use std::path::{Component, Path};
+
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::fs::{Dir, File, OpenOptions};
+use thiserror::Error;
+
+/// Containment failure.
+#[derive(Debug, Error)]
+pub enum ContainError {
+    /// Symlink, reparse point, `..`, or absolute path.
+    #[error("unsafe_path")]
+    UnsafePath,
+    /// Underlying I/O error.
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+/// Parent directory handle plus final file name after a contained walk.
+#[derive(Debug)]
+pub struct ContainedPath {
+    /// Retained parent `Dir` (no-follow).
+    pub parent: Dir,
+    /// Final path component (file or dir name).
+    pub name: String,
+    /// Intermediate directory handles (excluding root and parent), oldest first.
+    pub intermediates: Vec<Dir>,
+}
+
+/// Walk `rel` under `root`, creating missing directories, refusing symlinks/`..`/absolute.
+pub fn walk_parent(root: &Dir, rel: &str) -> Result<ContainedPath, ContainError> {
+    let components = normalize_rel_components(rel)?;
+    if components.is_empty() {
+        return Err(ContainError::UnsafePath);
+    }
+    let (dirs, name) = components.split_at(components.len() - 1);
+    let name = name[0].clone();
+
+    let mut current = root.try_clone()?;
+    let mut intermediates = Vec::new();
+    for comp in dirs {
+        current = open_or_create_dir(&current, comp)?;
+        intermediates.push(current.try_clone()?);
+    }
+
+    // Inspect final entry if present (no-follow).
+    match current.symlink_metadata(&name) {
+        Ok(meta) if meta.file_type().is_symlink() => return Err(ContainError::UnsafePath),
+        Ok(_) | Err(_) => {}
+    }
+
+    Ok(ContainedPath {
+        parent: current,
+        name,
+        intermediates,
+    })
+}
+
+/// Open the final file with `FollowSymlinks::No` and keep the descriptor.
+pub fn open_contained_file(contained: &ContainedPath, write: bool) -> Result<File, ContainError> {
+    // Re-check immediately before open (TOCTOU: symlink swapped between inspect and open).
+    match contained.parent.symlink_metadata(&contained.name) {
+        Ok(meta) if meta.file_type().is_symlink() => return Err(ContainError::UnsafePath),
+        Ok(meta) if !meta.is_file() => return Err(ContainError::UnsafePath),
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            if !write {
+                return Err(e.into());
+            }
+        }
+        Err(e) => return Err(e.into()),
+    }
+
+    let mut opts = OpenOptions::new();
+    opts.read(true).follow(FollowSymlinks::No);
+    if write {
+        opts.write(true).create(true);
+    }
+    match contained.parent.open_with(&contained.name, &opts) {
+        Ok(f) => Ok(f),
+        Err(e) if e.kind() == io::ErrorKind::NotFound && write => {
+            // create_new style for first install uses separate temp; for direct open allow create.
+            let mut opts = OpenOptions::new();
+            opts.write(true)
+                .create_new(true)
+                .read(true)
+                .follow(FollowSymlinks::No);
+            Ok(contained.parent.open_with(&contained.name, &opts)?)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Create a temp part file `.<name>.<random>.part` with `create_new` in the parent.
+pub fn create_part_file(
+    parent: &Dir,
+    final_name: &str,
+    random: &str,
+) -> Result<(File, String), ContainError> {
+    let part_name = format!(".{final_name}.{random}.part");
+    let mut opts = OpenOptions::new();
+    opts.write(true)
+        .create_new(true)
+        .read(true)
+        .follow(FollowSymlinks::No);
+    let file = parent.open_with(&part_name, &opts)?;
+    Ok((file, part_name))
+}
+
+/// Rename part → final within the same parent handle.
+pub fn install_rename(parent: &Dir, part_name: &str, final_name: &str) -> Result<(), ContainError> {
+    // Refuse if final is currently a symlink.
+    if let Ok(meta) = parent.symlink_metadata(final_name)
+        && meta.file_type().is_symlink()
+    {
+        return Err(ContainError::UnsafePath);
+    }
+    parent.rename(part_name, parent, final_name)?;
+    Ok(())
+}
+
+fn open_or_create_dir(parent: &Dir, name: &str) -> Result<Dir, ContainError> {
+    match parent.symlink_metadata(name) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(ContainError::UnsafePath),
+        Ok(meta) if meta.is_dir() => Ok(parent.open_dir_nofollow(name)?),
+        Ok(_) => Err(ContainError::UnsafePath),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            parent.create_dir(name)?;
+            // Re-open nofollow; if a symlink appeared, fail.
+            match parent.open_dir_nofollow(name) {
+                Ok(d) => Ok(d),
+                Err(_) => Err(ContainError::UnsafePath),
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn normalize_rel_components(rel: &str) -> Result<Vec<String>, ContainError> {
+    if rel.is_empty() {
+        return Err(ContainError::UnsafePath);
+    }
+    let path = Path::new(rel);
+    if path.is_absolute() {
+        return Err(ContainError::UnsafePath);
+    }
+    let mut out = Vec::new();
+    for comp in path.components() {
+        match comp {
+            Component::Normal(s) => {
+                let s = s.to_string_lossy();
+                if s == ".." || s == "." {
+                    return Err(ContainError::UnsafePath);
+                }
+                out.push(s.into_owned());
+            }
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(ContainError::UnsafePath);
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(ContainError::UnsafePath);
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cap_std::ambient_authority;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn scratch() -> (std::path::PathBuf, Dir) {
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("canvas-core-contain-{nanos}-{n}"));
+        std::fs::create_dir_all(&path).unwrap();
+        let dir = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
+        (path, dir)
+    }
+
+    #[test]
+    fn rejects_dotdot_and_absolute() {
+        let (_p, root) = scratch();
+        assert!(matches!(
+            walk_parent(&root, "../x"),
+            Err(ContainError::UnsafePath)
+        ));
+        #[cfg(unix)]
+        assert!(matches!(
+            walk_parent(&root, "/abs"),
+            Err(ContainError::UnsafePath)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_parent() {
+        let (path, root) = scratch();
+        std::fs::create_dir(path.join("real")).unwrap();
+        std::os::unix::fs::symlink("real", path.join("link")).unwrap();
+        assert!(matches!(
+            walk_parent(&root, "link/file.txt"),
+            Err(ContainError::UnsafePath)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_final() {
+        let (path, root) = scratch();
+        std::fs::write(path.join("target.txt"), b"x").unwrap();
+        root.symlink("target.txt", "link.txt").unwrap();
+        assert!(matches!(
+            walk_parent(&root, "link.txt"),
+            Err(ContainError::UnsafePath)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_swapped_between_inspect_and_open() {
+        let (path, root) = scratch();
+        std::fs::write(path.join("ok.txt"), b"data").unwrap();
+        let contained = walk_parent(&root, "ok.txt").unwrap();
+        std::fs::remove_file(path.join("ok.txt")).unwrap();
+        std::os::unix::fs::symlink("elsewhere", path.join("ok.txt")).unwrap();
+        assert!(matches!(
+            open_contained_file(&contained, false),
+            Err(ContainError::UnsafePath)
+        ));
+    }
+}
