@@ -1,0 +1,6 @@
+# Injected into the `dist` build job by `github-build-setup` in
+# dist-workspace.toml. The man pages and completions listed under `include`
+# are generated, not committed, so they have to exist before dist assembles
+# the archives.
+- name: Generate man pages and completions
+  run: cargo run -p xtask -- dist-assets --out target/dist-assets
