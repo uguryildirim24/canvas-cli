@@ -149,18 +149,6 @@ pub fn folder_to_entity(folder: &Folder, course_id: i64) -> EntityIngest {
         FieldGroup::Detail,
         folder.updated_at,
     );
-    push_opt_str(
-        &mut fields,
-        "files_url",
-        FieldGroup::Detail,
-        folder.files_url.as_ref().map(reqwest::Url::as_str),
-    );
-    push_opt_str(
-        &mut fields,
-        "folders_url",
-        FieldGroup::Detail,
-        folder.folders_url.as_ref().map(reqwest::Url::as_str),
-    );
     EntityIngest {
         entity_key: folder.id.to_string(),
         fields,
@@ -250,8 +238,7 @@ fn split_folder_fields(
                 column_fields.push(field.clone());
             }
             "hidden" | "locked" | "locked_for_user" | "context_id" | "context_type"
-            | "files_count" | "folders_count" | "position" | "updated_at" | "files_url"
-            | "folders_url" => {
+            | "files_count" | "folders_count" | "position" | "updated_at" => {
                 extra.insert(
                     field.name.to_owned(),
                     match &field.value {

@@ -247,8 +247,6 @@ impl Observed<Folder> {
             ("folders_count", FieldGroup::Detail),
             ("position", FieldGroup::Detail),
             ("updated_at", FieldGroup::Detail),
-            ("files_url", FieldGroup::Detail),
-            ("folders_url", FieldGroup::Detail),
         ] {
             if self.raw.get(name).is_some_and(Value::is_null) {
                 observe(&mut entity.fields, &self.raw, name, group);
@@ -274,8 +272,6 @@ impl Observed<File> {
             ("unlock_at", FieldGroup::Status),
             ("lock_at", FieldGroup::Status),
             ("updated_at", FieldGroup::Detail),
-            ("url", FieldGroup::Detail),
-            ("thumbnail_url", FieldGroup::Detail),
         ] {
             if self.raw.get(name).is_some_and(Value::is_null) {
                 observe(&mut entity.fields, &self.raw, name, group);

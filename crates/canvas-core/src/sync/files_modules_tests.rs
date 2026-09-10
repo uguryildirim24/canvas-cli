@@ -626,7 +626,7 @@ fn observed_module_item_nulls_clear_values_and_absence_keeps_clocks() {
 fn observed_files_and_folders_preserve_normalization_and_all_nulls() {
     use super::wire::Observed;
     let file: Observed<File> = serde_json::from_value(
-        json!({"id":1,"updated_at":"2026-09-01T08:00:00-04:00","thumbnail_url":null}),
+        json!({"id":1,"updated_at":"2026-09-01T08:00:00-04:00","lock_explanation":null}),
     )
     .unwrap();
     let entity = file.entity(5);
@@ -644,7 +644,7 @@ fn observed_files_and_folders_preserve_normalization_and_all_nulls() {
         entity
             .fields
             .iter()
-            .find(|f| f.name == "thumbnail_url")
+            .find(|f| f.name == "lock_explanation")
             .unwrap()
             .value,
         None
@@ -770,4 +770,44 @@ async fn listing_throttle_is_not_persisted_as_denial() {
             Ok(())
         })
         .unwrap();
+}
+
+#[test]
+fn discovery_never_persists_capability_urls_or_untracked_response_fields() {
+    use super::wire::Observed;
+    let (_dir, open) = setup();
+    open.store.call_blocking(|conns| {
+        let file: Observed<File> = serde_json::from_value(json!({
+            "id":1,"display_name":"notes.pdf",
+            "url":"https://cdn.example.org/file?verifier=private-capability",
+            "thumbnail_url":"https://cdn.example.org/thumb?X-Amz-Signature=private-signature",
+            "unexpected":{"raw_body":"private-response"}
+        })).unwrap();
+        let folder: Observed<Folder> = serde_json::from_value(json!({
+            "id":2,"name":"Slides",
+            "files_url":"https://example.org/files?access_token=private-token",
+            "folders_url":"https://example.org/folders?sig=private-sig"
+        })).unwrap();
+        let module: Observed<Module> = serde_json::from_value(json!({"id":8,"items":[{
+            "id":80,"type":"File","content_id":1,
+            "html_url":"https://user:private-password@example.org/courses/5/modules/items/80?token=private-query#private-fragment",
+            "content_details":{"lock_info":{"secret":"private-lock-info"}}
+        }]})).unwrap();
+        let items: Vec<_> = module.inline_items().unwrap().into_iter().map(|i| i.entity(5,8,None)).collect();
+        for (dataset, entity) in [
+            (&FilesDataset::with_default_ttl(5) as &dyn Dataset, file.entity(5)),
+            (&FoldersDataset::with_default_ttl(5) as &dyn Dataset, folder.entity(5)),
+            (&ModulesDataset::with_default_ttl(5) as &dyn Dataset, module.entity(5,true,&items)),
+        ] {
+            dataset.ingest(&[crate::store::IngestPage{fetched_at:ts(100),entities:vec![entity]}], &ingest_ok(0), conns).unwrap();
+        }
+        let mut stmt = conns.cache.prepare("SELECT data_json FROM files UNION ALL SELECT data_json FROM folders UNION ALL SELECT data_json FROM modules UNION ALL SELECT data_json FROM module_items")?;
+        for raw in stmt.query_map([], |r| r.get::<_,String>(0))? {
+            assert!(!raw?.contains("private-"));
+        }
+        let raw: String = conns.cache.query_row("SELECT data_json FROM module_items WHERE id=80", [], |r| r.get(0))?;
+        let data: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(data["html_url"], "https://example.org/courses/5/modules/items/80");
+        Ok(())
+    }).unwrap();
 }

@@ -226,7 +226,18 @@ pub fn module_item_to_entity(
         FieldGroup::Core,
         item.item_type.as_deref(),
     );
-    push_api_to_string(&mut fields, "html_url", FieldGroup::Core, &item.html_url);
+    let html_url = match &item.html_url {
+        canvas_api::Supplied::Value(url) => {
+            let mut url = url.clone();
+            url.set_query(None);
+            url.set_fragment(None);
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            canvas_api::Supplied::Value(url)
+        }
+        other => other.clone(),
+    };
+    push_api_to_string(&mut fields, "html_url", FieldGroup::Core, &html_url);
     push_opt_bool(
         &mut fields,
         "completed",
