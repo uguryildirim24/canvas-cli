@@ -190,6 +190,12 @@ impl Sanitizer {
 }
 
 /// The pseudonym forms, each its own fixed point.
+///
+/// A form has to be one no real value would take. Recognizing a pseudonym by
+/// its shape is what makes a second pass a no-op without a manifest, but the
+/// same rule passes a real value straight through when it happens to match.
+/// `example.invalid` is reserved (RFC 2606) and `login-N` and `opaque-N` are
+/// not shapes Canvas issues.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Shape {
     Name,
@@ -213,7 +219,7 @@ impl Shape {
                 .and_then(|rest| rest.strip_suffix("@example.invalid"))
                 .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())),
             Self::Login => value
-                .strip_prefix("user")
+                .strip_prefix("login-")
                 .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())),
             Self::FileName => {
                 let stem = value.split('.').next().unwrap_or_default();
@@ -230,7 +236,7 @@ impl Shape {
         match self {
             Self::Name => format!("Name {n}"),
             Self::Email => format!("user{n}@example.invalid"),
-            Self::Login => format!("user{n}"),
+            Self::Login => format!("login-{n}"),
             // A test that classifies by extension needs the extension kept.
             Self::FileName => match real.rsplit_once('.') {
                 Some((_, ext)) if !ext.is_empty() && ext.len() <= 8 => format!("file-{n}.{ext}"),
@@ -712,7 +718,7 @@ mod tests {
         );
         // Keys are visited in sorted order: avatar_url, login_id, name,
         // primary_email, sortable_name, url.
-        assert_eq!(out["login_id"], json!("user1"));
+        assert_eq!(out["login_id"], json!("login-1"));
         assert_eq!(out["name"], json!("Name 2"));
         assert_eq!(out["primary_email"], json!("user3@example.invalid"));
         assert_eq!(out["sortable_name"], json!("Name 4"));
@@ -785,6 +791,16 @@ mod tests {
             out.contains('[') && out.contains("](") && out.contains(')'),
             "{out}"
         );
+    }
+
+    #[test]
+    fn a_login_that_looks_like_a_pseudonym_is_still_replaced() {
+        let mut s = state();
+        // `user1` is a login a university really issues. Under the old shape
+        // it was mistaken for a pseudonym and copied through.
+        let out = sanitize_value(None, &json!({"login_id": "user1"}), &mut s);
+        assert_eq!(out["login_id"], json!("login-1"));
+        assert_eq!(sanitize_value(None, &out, &mut s), out);
     }
 
     #[test]
