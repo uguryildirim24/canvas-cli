@@ -645,6 +645,44 @@ mod seams {
         drop(permit);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn a_quiet_process_cannot_reset_a_shared_row_another_one_keeps_fresh() {
+        let shared = Arc::new(MemoryState::default());
+        let seams = Seams {
+            permits: None,
+            state: Some(shared.clone()),
+        };
+        let governor = Governor::with_seams(config(), &seams);
+        // This process has seen no header of its own for well past the silence
+        // window: `watch` between two polls looks exactly like this.
+        tokio::time::advance(std::time::Duration::from_secs(120)).await;
+        // Another process is live and has just published a low estimate and a
+        // cooldown. The silence window belongs to the row, not to this process.
+        *shared.row.lock().expect("row") = Some(GovernorSnapshot {
+            estimate: 40.0,
+            watermark: 12,
+            cooldown_until: Some(canvas_api::governor::unix_millis() + 5_000),
+            refill: 0.0,
+            updated_at: canvas_api::governor::unix_millis(),
+        });
+        // Admission must see the shared cooldown, not a full bucket: with no
+        // refill the §11 probe wait is five seconds before a single request.
+        let started = tokio::time::Instant::now();
+        let permit = governor.admit(Lane::Api, "GET /a").await;
+        assert!(
+            started.elapsed() >= std::time::Duration::from_secs(5),
+            "a quiet process admitted through a shared cooldown after {:?}",
+            started.elapsed()
+        );
+        assert!(
+            governor.estimate() < 100.0,
+            "a quiet process invented a full bucket: {}",
+            governor.estimate()
+        );
+        assert_eq!(governor.watermark(), 12);
+        drop(permit);
+    }
+
     #[tokio::test]
     async fn a_stale_shared_row_resets_exactly_as_the_silence_rule_says() {
         let shared = Arc::new(MemoryState::default());
