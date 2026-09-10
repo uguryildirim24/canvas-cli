@@ -130,7 +130,7 @@ async fn reconcile_cmd(globals: &Globals, journal_id: &str, assume_not_submitted
         &session.paths,
         journal_id,
         assume_not_submitted,
-        Timestamp::now(),
+        crate::output::now_timestamp(),
     )
     .await
     {

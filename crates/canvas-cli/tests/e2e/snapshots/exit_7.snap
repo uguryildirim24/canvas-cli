@@ -1,0 +1,31 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 7,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "error",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "code": "offline",
+    "details": {},
+    "http_status": null,
+    "message": "offline and no complete courses cache coverage",
+    "server_errors": []
+  },
+  "schema": "canvas-cli/error@1",
+  "warnings": []
+}

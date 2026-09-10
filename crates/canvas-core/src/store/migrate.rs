@@ -1,4 +1,13 @@
-//! Schema migrations. Owner of the migration list for M1-a: `0001_initial`.
+//! Schema migrations.
+//!
+//! Each migration is a numbered batch. A database records how far it has come
+//! in `PRAGMA user_version`, and the opener passes that number in, so a batch
+//! runs once and only on a database that has not seen it.
+//!
+//! | # | Database | Package | Adds |
+//! |---|---|---|---|
+//! | `0001_initial` | both | M1-a | the v1 cache and state schema |
+//! | `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link |
 
 use rusqlite::Connection;
 
@@ -7,19 +16,24 @@ use super::db::DbError;
 /// Current cache.sqlite schema version.
 pub const CACHE_USER_VERSION: i32 = 1;
 /// Current state.sqlite schema version.
-pub const STATE_USER_VERSION: i32 = 1;
+pub const STATE_USER_VERSION: i32 = 2;
 
-/// Apply cache migrations up to [`CACHE_USER_VERSION`].
-pub fn migrate_cache(conn: &Connection) -> Result<(), DbError> {
-    // 0001_initial
-    conn.execute_batch(CACHE_0001)?;
+/// Apply cache migrations from `from` up to [`CACHE_USER_VERSION`].
+pub fn migrate_cache(conn: &Connection, from: i32) -> Result<(), DbError> {
+    if from < 1 {
+        conn.execute_batch(CACHE_0001)?;
+    }
     Ok(())
 }
 
-/// Apply state migrations up to [`STATE_USER_VERSION`].
-pub fn migrate_state(conn: &Connection) -> Result<(), DbError> {
-    // 0001_initial
-    conn.execute_batch(STATE_0001)?;
+/// Apply state migrations from `from` up to [`STATE_USER_VERSION`].
+pub fn migrate_state(conn: &Connection, from: i32) -> Result<(), DbError> {
+    if from < 1 {
+        conn.execute_batch(STATE_0001)?;
+    }
+    if from < 2 {
+        conn.execute_batch(STATE_0002)?;
+    }
     Ok(())
 }
 
@@ -361,3 +375,142 @@ CREATE TABLE destinations (
     created_at TEXT NOT NULL
 );
 ";
+
+/// Operation plans and the approval record (M6-a; REPORT §3.5).
+///
+/// `plan_sha256` covers the canonical plan document, so an approval names
+/// exact bytes. The journal link is unique: one plan can admit at most one
+/// journal, whatever else races. Legacy journal rows keep `plan_id` and
+/// `approval_json` null, which Appendix D's nullable convention exposes as
+/// `null` rather than invented approval evidence.
+const STATE_0002: &str = r"
+CREATE TABLE plans (
+    plan_id TEXT PRIMARY KEY NOT NULL,
+    identity_key TEXT NOT NULL,
+    identity_generation TEXT NOT NULL,
+    consumer TEXT,
+    course_id INTEGER NOT NULL,
+    assignment_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    file_paths_json TEXT NOT NULL DEFAULT '[]',
+    input_sha256 TEXT,
+    sent_sha256 TEXT,
+    baseline_attempt INTEGER,
+    baseline_submission_id INTEGER,
+    observations_json TEXT NOT NULL,
+    plan_sha256 TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('prepared','approved','executed','expired','invalidated')),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    approval_json TEXT,
+    journal_id TEXT,
+    invalidated_reason TEXT
+);
+
+CREATE INDEX plans_assignment ON plans(assignment_id, state);
+
+CREATE TABLE approval_handles (
+    handle TEXT PRIMARY KEY NOT NULL,
+    plan_id TEXT NOT NULL REFERENCES plans(plan_id),
+    consumer TEXT,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+
+CREATE INDEX approval_handles_plan ON approval_handles(plan_id);
+
+ALTER TABLE submission_journal ADD COLUMN plan_id TEXT;
+ALTER TABLE submission_journal ADD COLUMN approval_json TEXT;
+
+CREATE UNIQUE INDEX submission_journal_plan
+ON submission_journal(plan_id)
+WHERE plan_id IS NOT NULL;
+";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a database at exactly the schema version `version` describes.
+    fn at_version(version: i32) -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(STATE_0001).unwrap();
+        conn.pragma_update(None, "user_version", version).unwrap();
+        conn
+    }
+
+    #[test]
+    fn a_v1_state_database_gains_the_plan_tables_and_keeps_its_journals() {
+        let conn = at_version(1);
+        conn.execute(
+            "INSERT INTO submission_journal
+                (journal_id, identity_key, course_id, assignment_id, kind, state, created_at)
+             VALUES ('legacy','k',1,2,'online_text_entry','submitted','2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        // The batch runs once, from the version the database has reached.
+        migrate_state(&conn, 1).unwrap();
+
+        // A journal written before plans exposes null, never invented evidence.
+        let (plan_id, approval): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT plan_id, approval_json FROM submission_journal WHERE journal_id = 'legacy'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(plan_id, None);
+        assert_eq!(approval, None);
+
+        // The new tables and the one-journal-per-plan guard are present.
+        for (kind, name) in [
+            ("table", "plans"),
+            ("table", "approval_handles"),
+            ("index", "submission_journal_plan"),
+        ] {
+            let found: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE type = ?1 AND name = ?2",
+                    rusqlite::params![kind, name],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(found, 1, "{kind} {name} is missing");
+        }
+    }
+
+    #[test]
+    fn the_journal_plan_link_admits_one_journal_per_plan() {
+        let conn = at_version(1);
+        migrate_state(&conn, 1).unwrap();
+        let insert = |journal_id: &str, plan: Option<&str>| {
+            conn.execute(
+                "INSERT INTO submission_journal
+                    (journal_id, identity_key, course_id, assignment_id, kind, state, created_at, plan_id)
+                 VALUES (?1,'k',1,2,'online_text_entry','submitted','2026-01-01T00:00:00Z',?2)",
+                rusqlite::params![journal_id, plan],
+            )
+        };
+        insert("a", Some("plan-1")).unwrap();
+        insert("b", Some("plan-1")).unwrap_err();
+        // Null plan ids stay distinct, so legacy rows never collide.
+        insert("c", None).unwrap();
+        insert("d", None).unwrap();
+    }
+
+    #[test]
+    fn a_database_already_at_the_current_version_runs_no_batch() {
+        // Re-running `0001` would fail on the tables it already created, so a
+        // successful call is the proof that the gating works.
+        let conn = at_version(1);
+        migrate_state(&conn, 1).unwrap();
+        migrate_state(&conn, STATE_USER_VERSION).unwrap();
+
+        let cache = Connection::open_in_memory().unwrap();
+        cache.execute_batch(CACHE_0001).unwrap();
+        migrate_cache(&cache, CACHE_USER_VERSION).unwrap();
+    }
+}

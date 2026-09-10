@@ -1,0 +1,14 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+CHEM301  Chemistry 301
+term: Fall 2026
+grade: A-
+<origin>/courses/100
+teacher: 
+
+Hi
+--- stderr ---

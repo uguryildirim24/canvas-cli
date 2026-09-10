@@ -1,0 +1,20 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+identity selected: true
+[ok] config: config parsed
+[ok] profile_identity: <origin> / 1
+[ok] credential_row: active_source=file cleanup_keyring=false cleanup_file=false
+[ok] stray_credentials: none
+[ok] databases: cache schema=1, state schema=2
+[warn] credential_backend: keyring unavailable
+[ok] identity_lock: shared identity lock held; generation verified
+[skipped] owner_absent_journals: recovery hook reserved for M2-a
+[ok] network_users_self: id matches
+[warn] network_rate_limit: header absent or invalid
+[ok] network_clock_skew: clock skew seconds=<n>
+--- stderr ---
+using token from env

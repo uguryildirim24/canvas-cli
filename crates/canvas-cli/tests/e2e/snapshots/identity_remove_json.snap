@@ -1,0 +1,26 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": null,
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "default_profile_cleared": false,
+    "key": "<identity>",
+    "profiles_removed": [],
+    "removed": true
+  },
+  "schema": "canvas-cli/identity@1",
+  "warnings": []
+}
