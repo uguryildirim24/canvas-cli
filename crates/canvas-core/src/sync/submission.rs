@@ -495,5 +495,13 @@ pub(super) fn observed_submission(
             });
         }
     }
+    if raw.get("user_id").is_some_and(Value::is_null) {
+        entity.fields.retain(|f| f.name != "user_id");
+        entity.fields.push(FieldWrite {
+            name: "user_id",
+            group: FieldGroup::Core,
+            value: None,
+        });
+    }
     Ok(entity)
 }

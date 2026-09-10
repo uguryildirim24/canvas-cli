@@ -241,7 +241,9 @@ impl Observed<Assignment> {
             }
         }
         // Canvas exposes the tool's display name separately from capability URLs.
-        if let Some(tool) = self.raw.get("external_tool_tag_attributes") {
+        if let Some(tool) = self.raw.get("external_tool_tag_attributes")
+            && (tool.is_null() || tool.get("name").is_some())
+        {
             observe(
                 &mut entity.fields,
                 &json!({"external_tool_name": tool.get("name")}),
