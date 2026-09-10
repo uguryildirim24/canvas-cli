@@ -1,6 +1,7 @@
 //! Dataset refresh and sync (SPEC §10).
 
 mod assignment_detail;
+mod assignment_groups;
 mod assignments;
 mod course;
 mod course_totals;
@@ -27,6 +28,10 @@ mod review_tests;
 #[cfg(test)]
 mod tests;
 
+pub use assignment_groups::{
+    AssignmentGroupsDataset, assignment_group_to_entity, assignment_groups_path,
+    assignment_groups_to_ingest_page,
+};
 pub use assignments::{
     AssignmentsDataset, assignment_detail_path, assignment_to_entity, assignments_path,
     assignments_to_ingest_page, default_ttl_assignments, upsert_assignment,
@@ -64,9 +69,10 @@ pub use planner::{
     planner_to_ingest_page,
 };
 pub use refresh::{
-    DenialAction, classify_listing_denial, listing_denial_status, refresh_assignments,
-    refresh_courses, refresh_enrollment_grades, refresh_files, refresh_folders,
-    refresh_grading_periods, refresh_missing, refresh_modules, refresh_planner, refresh_submission,
+    DenialAction, classify_listing_denial, listing_denial_status, refresh_assignment_groups,
+    refresh_assignments, refresh_courses, refresh_enrollment_grades, refresh_files,
+    refresh_folders, refresh_grading_periods, refresh_missing, refresh_modules, refresh_planner,
+    refresh_submission,
 };
 pub use submission::{
     SubmissionDataset, submission_path, submission_to_entity, submission_to_ingest_page,
