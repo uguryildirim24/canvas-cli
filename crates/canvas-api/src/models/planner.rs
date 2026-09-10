@@ -1,7 +1,7 @@
 //! Planner items.
 
 use jiff::Timestamp;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::serde_util::{deserialize_opt_id, deserialize_opt_timestamp};
@@ -38,7 +38,7 @@ pub struct Plannable {
 }
 
 /// Planner override flags.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(default)]
 pub struct PlannerOverride {
     #[serde(default, deserialize_with = "deserialize_opt_id")]

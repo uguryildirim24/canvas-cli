@@ -1,1 +1,26 @@
-{ "course_id": "101", "modules": [] }
+{
+  "course_id": "101",
+  "modules": [
+    {
+      "id": "8",
+      "name": "Week 1",
+      "position": 1,
+      "state": "unlocked",
+      "items_count": 1,
+      "items_complete": true,
+      "items": [
+        {
+          "id": "80",
+          "type": "File",
+          "content_id": "50",
+          "title": "slides",
+          "position": 1,
+          "locked": false,
+          "lock_explanation": null,
+          "completed": null,
+          "html_url": null
+        }
+      ]
+    }
+  ]
+}

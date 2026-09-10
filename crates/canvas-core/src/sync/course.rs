@@ -70,10 +70,28 @@ pub async fn refresh_course(
     offline: bool,
 ) -> Result<RefreshOutcome, SyncError> {
     let dataset = CourseDetailDataset::new(id, ttl);
-    refresh_dataset(client, store, &dataset, now, fresh, offline, || async {
-        let path = format!("/api/v1/courses/{id}?include[]=term&include[]=syllabus_body&include[]=teachers&include[]=total_scores&include[]=current_grading_period_scores");
-        let course: Observed<Course> = client.get(&path).await?;
-        if course.model.id != id { return Err(canvas_api::Error::Decode.into()) }
-        Ok(FetchBundle { pages: vec![IngestPage { fetched_at: now, entities: vec![course.entity("").await?] }] })
-    }).await
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let path = format!("/api/v1/courses/{id}?include[]=term&include[]=syllabus_body&include[]=teachers&include[]=total_scores&include[]=current_grading_period_scores");
+            let course: Observed<Course> = client.get(&path).await?;
+            if course.model.id != id {
+                return Err(canvas_api::Error::Decode.into());
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: vec![course.entity("").await?],
+                }],
+            })
+        },
+    )
+    .await
 }

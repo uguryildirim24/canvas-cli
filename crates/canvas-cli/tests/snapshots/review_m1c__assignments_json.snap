@@ -1,0 +1,124 @@
+---
+source: crates/canvas-cli/tests/review_m1c.rs
+expression: normalized(list)
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "assignments",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:1",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "assignments": [
+      {
+        "allowed_attempts": 3,
+        "allowed_extensions": [
+          "pdf"
+        ],
+        "availability": {
+          "external": false,
+          "lock_at": null,
+          "lock_at_local": null,
+          "lock_explanation": null,
+          "locked": false,
+          "submittable": false,
+          "unlock_at": null,
+          "unlock_at_local": null
+        },
+        "course_id": "1",
+        "due_at": "2026-09-10T03:59:00Z",
+        "due_at_local": "2026-09-09T23:59:00-04:00",
+        "group_assignment": false,
+        "html_url": "https://canvas.test/courses/1/assignments/2",
+        "id": "2",
+        "name": "Homework 2",
+        "points_possible": 10.0,
+        "status": {
+          "attempt": 0,
+          "excused": false,
+          "grade": null,
+          "graded": false,
+          "late": false,
+          "missing": false,
+          "pending": false,
+          "posted_at": null,
+          "score": null,
+          "submitted": false,
+          "submitted_at": null,
+          "submitted_at_local": null,
+          "workflow_state": "unsubmitted"
+        },
+        "submission_types": [
+          "online_upload"
+        ]
+      },
+      {
+        "allowed_attempts": 3,
+        "allowed_extensions": [
+          "pdf"
+        ],
+        "availability": {
+          "external": false,
+          "lock_at": null,
+          "lock_at_local": null,
+          "lock_explanation": null,
+          "locked": false,
+          "submittable": null,
+          "unlock_at": null,
+          "unlock_at_local": null
+        },
+        "course_id": "1",
+        "due_at": null,
+        "due_at_local": null,
+        "group_assignment": false,
+        "html_url": null,
+        "id": "3",
+        "name": "Homework 3",
+        "points_possible": 10.0,
+        "status": {
+          "attempt": 0,
+          "excused": false,
+          "grade": null,
+          "graded": false,
+          "late": false,
+          "missing": false,
+          "pending": false,
+          "posted_at": null,
+          "score": null,
+          "submitted": false,
+          "submitted_at": null,
+          "submitted_at_local": null,
+          "workflow_state": "unsubmitted"
+        },
+        "submission_types": [
+          "online_upload"
+        ]
+      }
+    ],
+    "bucket": "all",
+    "course_id": "1"
+  },
+  "schema": "canvas-cli/assignments@1",
+  "warnings": []
+}

@@ -1,0 +1,92 @@
+---
+source: crates/canvas-cli/tests/review_m1c.rs
+expression: normalized(detail)
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "assignment",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "assignment:2",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "fixture",
+    "origin": "https://canvas.test",
+    "user_id": "123"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "assignment": {
+      "allowed_attempts": 3,
+      "allowed_extensions": [
+        "pdf"
+      ],
+      "availability": {
+        "external": false,
+        "lock_at": null,
+        "lock_at_local": null,
+        "lock_explanation": null,
+        "locked": false,
+        "submittable": false,
+        "unlock_at": null,
+        "unlock_at_local": null
+      },
+      "can_submit": false,
+      "comments_count": null,
+      "course_id": "1",
+      "description_markdown": "Explain **chemistry**.",
+      "due_at": "2026-09-10T03:59:00Z",
+      "due_at_local": "2026-09-09T23:59:00-04:00",
+      "external_tool_name": null,
+      "extra_attempts": null,
+      "group_assignment": false,
+      "html_url": "https://canvas.test/courses/1/assignments/2",
+      "id": "2",
+      "name": "Homework 2",
+      "points_possible": 10.0,
+      "rubric": [
+        {
+          "description": "Reasoning",
+          "id": "c1",
+          "points": 10.0
+        }
+      ],
+      "rubric_assessed": false,
+      "rubric_assessment": [],
+      "status": {
+        "attempt": 0,
+        "excused": false,
+        "grade": null,
+        "graded": false,
+        "late": false,
+        "missing": false,
+        "pending": false,
+        "posted_at": null,
+        "score": null,
+        "submitted": false,
+        "submitted_at": null,
+        "submitted_at_local": null,
+        "workflow_state": "unsubmitted"
+      },
+      "submission_types": [
+        "online_upload"
+      ]
+    }
+  },
+  "schema": "canvas-cli/assignment@1",
+  "warnings": []
+}

@@ -130,16 +130,61 @@ expression: rendered
     },
     "result": {
       "counts": {
-        "due_today": 0,
-        "due_week": 0,
+        "due_today": 1,
+        "due_week": 1,
         "hidden": 0,
         "missing": 0
       },
-      "items": [],
+      "items": [
+        {
+          "assignment_id": "2",
+          "availability": {
+            "external": null,
+            "lock_at": null,
+            "lock_at_local": null,
+            "lock_explanation": null,
+            "locked": null,
+            "submittable": null,
+            "unlock_at": null,
+            "unlock_at_local": null
+          },
+          "course_code": "CHEM",
+          "course_id": "1",
+          "dismissed": false,
+          "due_at": "2026-09-10T03:59:00Z",
+          "due_at_local": "2026-09-09T23:59:00-04:00",
+          "html_url": null,
+          "id": "2",
+          "key": "assignment:2",
+          "kind": "assignment",
+          "marked_complete": false,
+          "parent_assignment_id": null,
+          "points_possible": null,
+          "raw_type": "assignment",
+          "scheduled_at": "2026-09-10T03:59:00Z",
+          "scheduled_at_local": "2026-09-09T23:59:00-04:00",
+          "status": {
+            "attempt": null,
+            "excused": null,
+            "grade": null,
+            "graded": false,
+            "late": null,
+            "missing": false,
+            "pending": false,
+            "posted_at": null,
+            "score": null,
+            "submitted": false,
+            "submitted_at": null,
+            "submitted_at_local": null,
+            "workflow_state": null
+          },
+          "title": "Homework 2"
+        }
+      ],
       "window": {
-        "days": 7,
-        "end": "2026-09-16",
-        "start": "2026-09-09"
+        "days": 14,
+        "end": "2026-09-21",
+        "start": "2026-09-08"
       }
     },
     "schema": "canvas-cli/todo@1",
@@ -163,9 +208,94 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "assignments": [],
-      "bucket": "open",
-      "course_id": "101"
+      "assignments": [
+        {
+          "allowed_attempts": 3,
+          "allowed_extensions": [
+            "pdf"
+          ],
+          "availability": {
+            "external": false,
+            "lock_at": null,
+            "lock_at_local": null,
+            "lock_explanation": null,
+            "locked": false,
+            "submittable": false,
+            "unlock_at": null,
+            "unlock_at_local": null
+          },
+          "course_id": "1",
+          "due_at": "2026-09-10T03:59:00Z",
+          "due_at_local": "2026-09-09T23:59:00-04:00",
+          "group_assignment": false,
+          "html_url": "https://canvas.test/courses/1/assignments/2",
+          "id": "2",
+          "name": "Homework 2",
+          "points_possible": 10.0,
+          "status": {
+            "attempt": 0,
+            "excused": false,
+            "grade": null,
+            "graded": false,
+            "late": false,
+            "missing": false,
+            "pending": false,
+            "posted_at": null,
+            "score": null,
+            "submitted": false,
+            "submitted_at": null,
+            "submitted_at_local": null,
+            "workflow_state": "unsubmitted"
+          },
+          "submission_types": [
+            "online_upload"
+          ]
+        },
+        {
+          "allowed_attempts": 3,
+          "allowed_extensions": [
+            "pdf"
+          ],
+          "availability": {
+            "external": false,
+            "lock_at": null,
+            "lock_at_local": null,
+            "lock_explanation": null,
+            "locked": false,
+            "submittable": null,
+            "unlock_at": null,
+            "unlock_at_local": null
+          },
+          "course_id": "1",
+          "due_at": null,
+          "due_at_local": null,
+          "group_assignment": false,
+          "html_url": null,
+          "id": "3",
+          "name": "Homework 3",
+          "points_possible": 10.0,
+          "status": {
+            "attempt": 0,
+            "excused": false,
+            "grade": null,
+            "graded": false,
+            "late": false,
+            "missing": false,
+            "pending": false,
+            "posted_at": null,
+            "score": null,
+            "submitted": false,
+            "submitted_at": null,
+            "submitted_at_local": null,
+            "workflow_state": "unsubmitted"
+          },
+          "submission_types": [
+            "online_upload"
+          ]
+        }
+      ],
+      "bucket": "all",
+      "course_id": "1"
     },
     "schema": "canvas-cli/assignments@1",
     "warnings": []
@@ -189,36 +319,44 @@ expression: rendered
     },
     "result": {
       "assignment": {
-        "allowed_attempts": null,
-        "allowed_extensions": [],
+        "allowed_attempts": 3,
+        "allowed_extensions": [
+          "pdf"
+        ],
         "availability": {
           "external": false,
           "lock_at": null,
           "lock_at_local": null,
           "lock_explanation": null,
-          "locked": null,
-          "submittable": true,
+          "locked": false,
+          "submittable": false,
           "unlock_at": null,
           "unlock_at_local": null
         },
-        "can_submit": true,
-        "comments_count": 0,
-        "course_id": "101",
-        "description_markdown": null,
-        "due_at": null,
-        "due_at_local": null,
+        "can_submit": false,
+        "comments_count": null,
+        "course_id": "1",
+        "description_markdown": "Explain **chemistry**.",
+        "due_at": "2026-09-10T03:59:00Z",
+        "due_at_local": "2026-09-09T23:59:00-04:00",
         "external_tool_name": null,
         "extra_attempts": null,
         "group_assignment": false,
-        "html_url": "https://example.instructure.com/courses/101/assignments/1",
-        "id": "1",
-        "name": "HW1",
-        "points_possible": 10,
-        "rubric": [],
+        "html_url": "https://canvas.test/courses/1/assignments/2",
+        "id": "2",
+        "name": "Homework 2",
+        "points_possible": 10.0,
+        "rubric": [
+          {
+            "description": "Reasoning",
+            "id": "c1",
+            "points": 10.0
+          }
+        ],
         "rubric_assessed": false,
         "rubric_assessment": [],
         "status": {
-          "attempt": null,
+          "attempt": 0,
           "excused": false,
           "grade": null,
           "graded": false,
@@ -230,7 +368,7 @@ expression: rendered
           "submitted": false,
           "submitted_at": null,
           "submitted_at_local": null,
-          "workflow_state": null
+          "workflow_state": "unsubmitted"
         },
         "submission_types": [
           "online_upload"
@@ -678,7 +816,22 @@ expression: rendered
     },
     "result": {
       "course_id": "101",
-      "files": [],
+      "files": [
+        {
+          "folder_id": "2",
+          "folder_path": "Slides",
+          "hidden": false,
+          "id": "50",
+          "lock_explanation": null,
+          "locked": false,
+          "module_id": null,
+          "module_position": null,
+          "name": "lec.pdf",
+          "size": 10,
+          "source": "listing",
+          "updated_at": "2026-09-01T12:00:00Z"
+        }
+      ],
       "listing": {
         "available": true,
         "http_status": null
@@ -706,7 +859,29 @@ expression: rendered
     },
     "result": {
       "course_id": "101",
-      "modules": []
+      "modules": [
+        {
+          "id": "8",
+          "items": [
+            {
+              "completed": null,
+              "content_id": "50",
+              "html_url": null,
+              "id": "80",
+              "lock_explanation": null,
+              "locked": false,
+              "position": 1,
+              "title": "slides",
+              "type": "File"
+            }
+          ],
+          "items_complete": true,
+          "items_count": 1,
+          "name": "Week 1",
+          "position": 1,
+          "state": "unlocked"
+        }
+      ]
     },
     "schema": "canvas-cli/modules@1",
     "warnings": []
@@ -729,12 +904,25 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "courses": [],
+      "courses": [
+        {
+          "course_code": "CS-101",
+          "course_id": "101",
+          "files": [
+            {
+              "action": "downloaded",
+              "id": "50",
+              "path": "CS-101-101/files/Slides/lec.pdf",
+              "size": 10
+            }
+          ]
+        }
+      ],
       "dest": "/tmp/out",
-      "dry_run": true,
+      "dry_run": false,
       "totals": {
-        "bytes": 0,
-        "downloaded": 0,
+        "bytes": 10,
+        "downloaded": 1,
         "failed": 0,
         "locked": 0,
         "modified": 0,
