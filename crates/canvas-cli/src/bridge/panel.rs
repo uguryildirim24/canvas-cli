@@ -17,7 +17,7 @@
 //!   `bridge-ipc@1` has no approval message, so no socket client — and no
 //!   page script that could reach one — has this path available.
 
-use canvas_core::bridge::wire::{PanelJournal, PanelPlan, PanelPlanFile, PanelState};
+use canvas_core::bridge::wire::{PanelApi, PanelJournal, PanelPlan, PanelPlanFile, PanelState};
 use canvas_core::events::{CursorCheck, check_cursor, high_water};
 use canvas_core::plan::{ApprovalChannel, PlanState};
 use canvas_core::receipts::{ListFilter, list_journals};
@@ -280,6 +280,54 @@ pub fn cursor(session: &Session, since: i64) -> (i64, bool) {
         .unwrap_or((since, false))
 }
 
+/// The API side of the panel, read from the local cache and nowhere else.
+///
+/// Each handler produces its own §7 envelope with its own freshness, exactly
+/// as `here@1` carries them, so a row the cache has not refreshed is shown as
+/// stale rather than refreshed behind the person's back.
+///
+/// `offline` is not a preference here. The panel is drawn whenever the log
+/// moves or the person opens it, and a surface that fetched on every redraw
+/// would make the browser the reason Canvas is called (REPORT §3.2).
+pub async fn api(
+    globals: &crate::commands::Globals,
+    browser: Option<&canvas_core::bridge::ipc::Context>,
+) -> PanelApi {
+    let mut api = PanelApi::default();
+    let Some(course_id) = browser.and_then(|c| c.course_id.clone()) else {
+        return api;
+    };
+    let local = crate::commands::Globals {
+        json: true,
+        offline: true,
+        fresh: false,
+        quiet: true,
+        ..globals.clone()
+    };
+    api.course = Some(
+        crate::commands::course::handle(&local, course_id.clone())
+            .await
+            .envelope()
+            .to_value(),
+    );
+    if let Some(assignment_id) = browser.and_then(|c| c.assignment_id.clone()) {
+        api.assignment = Some(
+            crate::commands::assignment::handle(&local, course_id, Some(assignment_id))
+                .await
+                .envelope()
+                .to_value(),
+        );
+    } else if let Some(topic_id) = browser.and_then(|c| c.topic_id.clone()) {
+        api.announcement = Some(
+            crate::commands::announcement::handle(&local, course_id, Some(topic_id))
+                .await
+                .envelope()
+                .to_value(),
+        );
+    }
+    api
+}
+
 /// Assemble everything the panel displays.
 pub fn state(
     session: &Session,
@@ -303,6 +351,8 @@ pub fn state(
             quiz_id: browser.and_then(|c| c.quiz_id.clone()),
             page_url: browser.and_then(|c| c.page_url.clone()),
         },
+        // Filled by `api()`, which is async and runs off this thread.
+        api: PanelApi::default(),
         url: browser.and_then(|c| c.url.clone()),
         title: browser.and_then(|c| c.title.clone()),
         observed_at: browser.map(|c| c.observed_at.clone()),

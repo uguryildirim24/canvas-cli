@@ -56,6 +56,9 @@ function draw() {
   if (model.approvals.length > 0) {
     root.append(section("Waiting for you", ...model.approvals.map(approval)));
   }
+  if (model.api.length > 0) {
+    root.append(section("This page, from the API", ...model.api.map(fact)));
+  }
   if (model.follow !== null) {
     root.append(section("Navigation", follow(model.follow)));
   }
@@ -142,6 +145,30 @@ function decide(plan, decision) {
       decision,
     })
     .catch(() => {});
+}
+
+/** One API envelope: what it names, and how old the row behind it is. */
+function fact(row) {
+  const box = el("article", "class", `fact ${row.kind}`);
+  box.append(el("h3", null, null, text(row.title || row.kind)));
+  box.append(el("p", "class", "quiet", text(`${row.kind} · ${row.outcome}`)));
+  for (const freshness of row.freshness) {
+    // Each envelope keeps its own freshness. The panel prints it and never
+    // refreshes anything to make it look better.
+    box.append(
+      el(
+        "p",
+        "class",
+        "quiet",
+        text(
+          `${freshness.dataset}: ${freshness.state}${
+            freshness.fetched_at === null ? "" : ` · ${freshness.fetched_at}`
+          }`
+        )
+      )
+    );
+  }
+  return box;
 }
 
 function follow(status) {

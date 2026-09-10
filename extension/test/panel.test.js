@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { companion, fixture } from "./load.js";
 
-const { attachmentView, followView, journalView, panelView } = companion;
+const { apiView, attachmentView, followView, journalView, panelView } = companion;
 
 const ORIGIN = "https://lasell.instructure.com";
 
@@ -104,6 +104,34 @@ test("the attachment header names the state the host sent", () => {
   assert.equal(attachmentView(null).state, "not_attached");
 });
 
+test("the API side keeps each envelope's own freshness", () => {
+  const rows = apiView({
+    course: {
+      outcome: "ok",
+      freshness: [{ dataset: "courses", state: "stale", fetched_at: "2026-09-01T00:00:00Z" }],
+      result: { course: { name: "Intro to Computing", code: "CS-101" } },
+    },
+    assignment: {
+      outcome: "unavailable",
+      freshness: [],
+      result: { assignment: null },
+    },
+    announcement: null,
+  });
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0], {
+    kind: "course",
+    title: "Intro to Computing",
+    outcome: "ok",
+    freshness: [{ dataset: "courses", state: "stale", fetched_at: "2026-09-01T00:00:00Z" }],
+  });
+  // An envelope that names nothing says so; it does not borrow a name from
+  // the browser observation beside it.
+  assert.equal(rows[1].title, null);
+  assert.equal(rows[1].outcome, "unavailable");
+  assert.deepEqual(apiView(null), []);
+});
+
 test("the whole panel renders notes through the sanitizer", () => {
   const state = {
     attachment_state: "attached",
@@ -115,6 +143,7 @@ test("the whole panel renders notes through the sanitizer", () => {
     observed_at: "2026-09-10T16:04:40Z",
     journals: [journal("matched")],
     approvals: [],
+    api: { course: null, assignment: null, announcement: null },
     notes: [
       {
         note_id: "n1",

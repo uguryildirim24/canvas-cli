@@ -296,7 +296,10 @@ pub enum ExtensionMessage {
 }
 
 /// Host → extension.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Not `Eq`: [`PanelState`] carries whole §7 envelopes as JSON, and a JSON
+/// document has no total equality to offer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HostMessage {
     /// The host accepted the port and named the identity it owns.
@@ -342,7 +345,7 @@ pub enum HostMessage {
 ///
 /// The panel never reads Canvas and never opens a database. Every field here
 /// comes from the host, which is the only side that holds the identity.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PanelState {
     /// `attached`, `validating`, `paused`, or `not_attached`.
     pub attachment_state: String,
@@ -354,6 +357,14 @@ pub struct PanelState {
     pub zone: Option<Zone>,
     /// The route the host derived, as API facts and nothing more.
     pub route: Route,
+    /// The whole §7 envelopes for what the route resolves to, each with its
+    /// own freshness, exactly as `here@1` carries them.
+    ///
+    /// They are read from the local cache and nothing else: the panel must
+    /// never be the reason a Canvas request happens, and a stale row is shown
+    /// as stale rather than refreshed behind the person's back. No page text
+    /// is here — metadata only (REPORT §3.3).
+    pub api: PanelApi,
     /// The sanitized URL, absent in an opaque zone.
     pub url: Option<String>,
     /// The page title, absent in an opaque zone.
@@ -374,6 +385,15 @@ pub struct PanelState {
     pub cursor: i64,
     /// The log could not be replayed from the panel's position: start again.
     pub resync_required: bool,
+}
+
+/// The API side of the panel: whole envelopes, never merged with the browser
+/// observation beside them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PanelApi {
+    pub course: Option<serde_json::Value>,
+    pub assignment: Option<serde_json::Value>,
+    pub announcement: Option<serde_json::Value>,
 }
 
 /// One journal row, exactly as SPEC §12.2 names it.
