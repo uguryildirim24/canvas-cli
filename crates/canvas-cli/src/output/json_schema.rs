@@ -12,11 +12,14 @@ use serde_json::{Map, Value, json};
 use crate::output::envelope::{Envelope, ErrorResult};
 use crate::output::registry::{
     self, AliasResult, AnnouncementResult, AnnouncementsResult, CacheStatsResult, CalendarResult,
-    CourseResult, CoursesResult, DownloadResult, FilesResult, GradesResult, ModulesResult,
-    PlanResult, SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_CACHE,
-    SCHEMA_CALENDAR, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DOWNLOAD, SCHEMA_ERROR, SCHEMA_FILES,
-    SCHEMA_GRADES, SCHEMA_MODULES, SCHEMA_PLAN, SCHEMA_SUBMIT, SCHEMA_SYNC, SchemaEntry,
-    SubmitResult, SyncResult,
+    ConversationResult, CourseResult, CoursesResult, DiscussionResult, DiscussionsResult,
+    DownloadResult, FilesResult, GradesResult, InboxResult, InboxUnreadResult, ModulesResult,
+    PageResult, PagesResult, PlanResult, SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS,
+    SCHEMA_CACHE, SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES,
+    SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_ERROR, SCHEMA_FILES,
+    SCHEMA_GRADES, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_PAGE, SCHEMA_PAGES,
+    SCHEMA_PLAN, SCHEMA_SUBMIT, SCHEMA_SYLLABUS, SCHEMA_SYNC, SchemaEntry, SubmitResult,
+    SyllabusResult, SyncResult,
 };
 
 /// The contract version of the document `canvas schema` prints.
@@ -79,22 +82,33 @@ fn schema_of_fixture(fixture: &str) -> Value {
 
 /// The schema of one command's `result`, from its type when it has one.
 fn result_schema(entry: &SchemaEntry) -> (Value, &'static str) {
-    let typed = match entry.id {
-        SCHEMA_COURSES => Some(schema_of::<CoursesResult>()),
-        SCHEMA_COURSE => Some(schema_of::<CourseResult>()),
-        SCHEMA_ALIAS => Some(schema_of::<AliasResult>()),
-        SCHEMA_SYNC => Some(schema_of::<SyncResult>()),
-        SCHEMA_CACHE => Some(schema_of::<CacheStatsResult>()),
-        SCHEMA_SUBMIT => Some(schema_of::<SubmitResult>()),
-        SCHEMA_PLAN => Some(schema_of::<PlanResult>()),
-        SCHEMA_FILES => Some(schema_of::<FilesResult>()),
-        SCHEMA_MODULES => Some(schema_of::<ModulesResult>()),
-        SCHEMA_GRADES => Some(schema_of::<GradesResult>()),
-        SCHEMA_DOWNLOAD => Some(schema_of::<DownloadResult>()),
-        SCHEMA_ANNOUNCEMENTS => Some(schema_of::<AnnouncementsResult>()),
-        SCHEMA_ANNOUNCEMENT => Some(schema_of::<AnnouncementResult>()),
-        SCHEMA_CALENDAR => Some(schema_of::<CalendarResult>()),
-        SCHEMA_ERROR => Some(schema_of::<ErrorResult>()),
+    // The variant is part of the key: `cache@1` covers three different result
+    // shapes and only `stats` is `CacheStatsResult`, so matching on the id
+    // alone advertised the stats shape for `cache clear` and `cache path`.
+    let typed = match (entry.id, entry.variant) {
+        (SCHEMA_COURSES, _) => Some(schema_of::<CoursesResult>()),
+        (SCHEMA_COURSE, _) => Some(schema_of::<CourseResult>()),
+        (SCHEMA_ALIAS, _) => Some(schema_of::<AliasResult>()),
+        (SCHEMA_SYNC, _) => Some(schema_of::<SyncResult>()),
+        (SCHEMA_CACHE, Some("stats")) => Some(schema_of::<CacheStatsResult>()),
+        (SCHEMA_SUBMIT, _) => Some(schema_of::<SubmitResult>()),
+        (SCHEMA_PLAN, _) => Some(schema_of::<PlanResult>()),
+        (SCHEMA_FILES, _) => Some(schema_of::<FilesResult>()),
+        (SCHEMA_MODULES, _) => Some(schema_of::<ModulesResult>()),
+        (SCHEMA_GRADES, _) => Some(schema_of::<GradesResult>()),
+        (SCHEMA_DOWNLOAD, _) => Some(schema_of::<DownloadResult>()),
+        (SCHEMA_ANNOUNCEMENTS, _) => Some(schema_of::<AnnouncementsResult>()),
+        (SCHEMA_ANNOUNCEMENT, _) => Some(schema_of::<AnnouncementResult>()),
+        (SCHEMA_CALENDAR, _) => Some(schema_of::<CalendarResult>()),
+        (SCHEMA_PAGES, _) => Some(schema_of::<PagesResult>()),
+        (SCHEMA_PAGE, _) => Some(schema_of::<PageResult>()),
+        (SCHEMA_SYLLABUS, _) => Some(schema_of::<SyllabusResult>()),
+        (SCHEMA_DISCUSSIONS, _) => Some(schema_of::<DiscussionsResult>()),
+        (SCHEMA_DISCUSSION, _) => Some(schema_of::<DiscussionResult>()),
+        (SCHEMA_INBOX, _) => Some(schema_of::<InboxResult>()),
+        (SCHEMA_CONVERSATION, _) => Some(schema_of::<ConversationResult>()),
+        (SCHEMA_INBOX_UNREAD, _) => Some(schema_of::<InboxUnreadResult>()),
+        (SCHEMA_ERROR, _) => Some(schema_of::<ErrorResult>()),
         _ => None,
     };
     match typed {
@@ -336,6 +350,161 @@ mod tests {
             if let Some(command) = entry.command {
                 assert!(path_exists(command), "`canvas {command}` is not a command");
             }
+        }
+    }
+
+    /// Every registry fixture must satisfy the document that describes it.
+    ///
+    /// A fixture is the example Appendix D publishes and the shape the MCP
+    /// `outputSchema` advertises, so a fixture the document rejects means a
+    /// host validating a legitimate answer would reject it too. This is the
+    /// defect `docs/reviews/code-M8-a2.md` found on the eight M8-a schemas:
+    /// their documents were inferred from the fixture and declared every
+    /// nullable field non-nullable.
+    #[test]
+    fn every_fixture_satisfies_its_own_schema() {
+        for entry in registry::all_schemas() {
+            let value: Value = serde_json::from_str(entry.fixture)
+                .unwrap_or_else(|e| panic!("{} fixture is not JSON: {e}", entry.id));
+            let (schema, source) = result_schema(entry);
+            let mut failures = Vec::new();
+            check(&schema, &value, "result", &mut failures);
+            assert!(
+                failures.is_empty(),
+                "{} ({source}) rejects its own fixture:\n  {}",
+                entry.id,
+                failures.join("\n  ")
+            );
+        }
+    }
+
+    /// The same check, run against a value the schema must refuse, so the
+    /// checker above cannot pass by accepting everything.
+    #[test]
+    fn the_checker_refuses_a_value_the_schema_forbids() {
+        let entry = registry::all_schemas()
+            .iter()
+            .find(|entry| entry.id == SCHEMA_COURSES)
+            .expect("courses is registered");
+        let (schema, _) = result_schema(entry);
+        let mut failures = Vec::new();
+        check(
+            &schema,
+            &json!({ "courses": "not an array" }),
+            "result",
+            &mut failures,
+        );
+        assert!(!failures.is_empty(), "a string passed for an array");
+
+        let mut failures = Vec::new();
+        check(&schema, &json!({}), "result", &mut failures);
+        assert!(!failures.is_empty(), "a missing required property passed");
+    }
+
+    /// Validate `value` against the subset of JSON Schema `schema_of` emits.
+    ///
+    /// The generator inlines every subschema and uses only `type` (one name or
+    /// a union), `properties`, `required`, `items`, `enum`, `const`, and the
+    /// `oneOf`/`anyOf` unions an enum produces. A dependency that implements
+    /// the whole dialect would buy nothing here and would need an Appendix A
+    /// row; this covers exactly what the generator writes.
+    fn check(schema: &Value, value: &Value, path: &str, failures: &mut Vec<String>) {
+        let Some(object) = schema.as_object() else {
+            // `true` admits anything; `false` admits nothing.
+            if schema.as_bool() == Some(false) {
+                failures.push(format!("{path}: schema admits nothing"));
+            }
+            return;
+        };
+        if let Some(constant) = object.get("const")
+            && constant != value
+        {
+            failures.push(format!("{path}: {value} is not {constant}"));
+            return;
+        }
+        if let Some(allowed) = object.get("enum").and_then(Value::as_array)
+            && !allowed.contains(value)
+        {
+            failures.push(format!("{path}: {value} is not one of {allowed:?}"));
+            return;
+        }
+        for key in ["oneOf", "anyOf"] {
+            if let Some(branches) = object.get(key).and_then(Value::as_array) {
+                let ok = branches.iter().any(|branch| {
+                    let mut ignored = Vec::new();
+                    check(branch, value, path, &mut ignored);
+                    ignored.is_empty()
+                });
+                if !ok {
+                    failures.push(format!("{path}: {value} matches no {key} branch"));
+                }
+                return;
+            }
+        }
+        if let Some(declared) = object.get("type") {
+            let names: Vec<&str> = match declared {
+                Value::String(name) => vec![name.as_str()],
+                Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
+                _ => Vec::new(),
+            };
+            if !names.is_empty() && !names.iter().any(|name| matches_type(name, value)) {
+                failures.push(format!("{path}: {} is not {names:?}", kind_of(value)));
+                return;
+            }
+        }
+        // `properties` and `required` say nothing about a value that is not an
+        // object. A nullable object is `["object", "null"]` with the required
+        // list of its object branch, and `null` satisfies it.
+        if let Some(map) = value.as_object()
+            && let Some(properties) = object.get("properties").and_then(Value::as_object)
+        {
+            for name in object
+                .get("required")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                if !map.contains_key(name) {
+                    failures.push(format!("{path}.{name} is required and absent"));
+                }
+            }
+            for (name, item) in map {
+                if let Some(property) = properties.get(name) {
+                    check(property, item, &format!("{path}.{name}"), failures);
+                }
+            }
+        }
+        if let Some(items) = object.get("items")
+            && let Some(array) = value.as_array()
+        {
+            for (index, item) in array.iter().enumerate() {
+                check(items, item, &format!("{path}[{index}]"), failures);
+            }
+        }
+    }
+
+    fn matches_type(name: &str, value: &Value) -> bool {
+        match name {
+            "null" => value.is_null(),
+            "boolean" => value.is_boolean(),
+            "string" => value.is_string(),
+            "array" => value.is_array(),
+            "object" => value.is_object(),
+            "number" => value.is_number(),
+            "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
+            _ => true,
+        }
+    }
+
+    fn kind_of(value: &Value) -> &'static str {
+        match value {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
         }
     }
 
