@@ -329,6 +329,15 @@ async fn announcement_accepts_a_url_and_refuses_a_bare_id() {
         "{bare}"
     );
 
+    let not_a_number = f.run(&["announcement", "1", "lab"], 6).await;
+    assert!(
+        not_a_number["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("must be a positive number"),
+        "{not_a_number}"
+    );
+
     let url = format!("{}/courses/1/discussion_topics/9001", server.uri());
     let out = f.run(&["announcement", &url], 0).await;
     assert_eq!(out["requests"]["api"], 1);
@@ -603,7 +612,12 @@ async fn ics_streams_raw_text_that_follows_rfc_5545() {
     assert_eq!(written["schema"], "canvas-cli/calendar@1");
     assert_eq!(std::fs::read_to_string(&out).unwrap(), plain);
 
-    // An unparseable alarm is a usage error (§14).
+    // An unparseable alarm, and an RFC duration of zero, are usage errors.
+    f.run(
+        &["calendar", "--days", "60", "--offline", "--alarm", "PT0S"],
+        2,
+    )
+    .await;
     f.run(
         &["calendar", "--days", "60", "--offline", "--alarm", "soon"],
         2,
