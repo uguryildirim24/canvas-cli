@@ -93,20 +93,23 @@ pub struct JournalSummary {
     /// Acknowledge timestamp when set.
     #[serde(default)]
     pub acknowledged_at: Option<String>,
-    /// Course id (string).
-    pub course_id: String,
+    /// Course id (string). `null` on an operation with no course.
+    #[serde(default)]
+    pub course_id: Option<String>,
     /// Course code from frozen intent.
     #[serde(default)]
     pub course_code: Option<String>,
-    /// Assignment id (string).
-    pub assignment_id: String,
+    /// Assignment id (string). `null` on an operation journal.
+    #[serde(default)]
+    pub assignment_id: Option<String>,
     /// Assignment name from frozen intent.
     #[serde(default)]
     pub assignment_name: Option<String>,
-    /// Submission kind.
+    /// Submission kind, or the operation kind on an operation journal.
     pub kind: String,
-    /// Baseline attempt.
-    pub baseline_attempt: i64,
+    /// Baseline attempt. `null` on an operation journal.
+    #[serde(default)]
+    pub baseline_attempt: Option<i64>,
     /// Row creation time.
     pub created_at: String,
     /// Latest journal timestamp.
@@ -143,6 +146,9 @@ pub struct JournalSummary {
     /// The approval audit copied in at admission; `null` for legacy rows.
     #[serde(default)]
     pub approval: Option<crate::plan::Approval>,
+    /// The operation this journal records; `null` for a submission (M8-b).
+    #[serde(default)]
+    pub operation: Option<crate::operations::OperationReceipt>,
 }
 
 /// Result of `receipts show`.
@@ -184,6 +190,9 @@ pub fn rebuild_from_journal(
     store: &Store,
     journal_id: &str,
 ) -> Result<ReceiptDocument, ReceiptError> {
+    if let Some(row) = operation_by_id(store, journal_id)? {
+        return operation_receipt(store, &row)?.ok_or(ReceiptError::Refused);
+    }
     let row = get_journal(store, journal_id)?.ok_or(ReceiptError::NotFound)?;
     if !matches!(row.state, State::Submitted | State::Matched) {
         return Err(ReceiptError::Refused);
@@ -292,11 +301,41 @@ pub fn list_journals(
     for jid in rows {
         out.push(summarize(store, identity_dir, &jid)?);
     }
+
+    // Operation journals are listed beside submission journals, in the same
+    // shape, and the `kind` column is what tells them apart. The course filter
+    // still applies; a journal with no course is kept only when no course was
+    // asked for.
+    let state = filter.state.map(|s| s.as_str().to_owned());
+    for row in crate::operations::list(store, None).map_err(|_| ReceiptError::StateConflict)? {
+        if state
+            .as_deref()
+            .is_some_and(|want| want != row.state.as_str())
+        {
+            continue;
+        }
+        if let Some(course) = filter.course_id
+            && row.intended.target.course_id() != Some(course)
+        {
+            continue;
+        }
+        out.push(summarize_operation(store, identity_dir, &row)?);
+    }
+    out.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| a.journal_id.cmp(&b.journal_id))
+    });
     Ok(out)
 }
 
 /// Show a journal by journal id or receipt id. Class B: never lock, never transition.
 pub fn show(store: &Store, identity_dir: &Path, id: &str) -> Result<ShowResult, ReceiptError> {
+    if let Some(row) = operation_by_id(store, id)? {
+        let journal = summarize_operation(store, identity_dir, &row)?;
+        let receipt = operation_receipt(store, &row)?;
+        return Ok(ShowResult { journal, receipt });
+    }
     let jid = resolve_journal_id(store, id)?;
     let journal = summarize(store, identity_dir, &jid)?;
     let receipt = if matches!(
@@ -312,6 +351,14 @@ pub fn show(store: &Store, identity_dir: &Path, id: &str) -> Result<ShowResult, 
 
 /// Acknowledge an `outcome_unknown` journal (pending hook). Delegates to the journal.
 pub fn acknowledge(store: &Store, journal_id: &str) -> Result<AcknowledgeResult, ReceiptError> {
+    if operation_by_id(store, journal_id)?.is_some() {
+        let acknowledged_at = crate::operations::acknowledge(store, journal_id)
+            .map_err(|_| ReceiptError::StateConflict)?;
+        return Ok(AcknowledgeResult {
+            journal_id: journal_id.to_string(),
+            acknowledged_at,
+        });
+    }
     journal_acknowledge(store, journal_id)?;
     let row = get_journal(store, journal_id)?.ok_or(ReceiptError::NotFound)?;
     let acknowledged_at = row.acknowledged_at.ok_or(ReceiptError::StateConflict)?;
@@ -319,6 +366,45 @@ pub fn acknowledge(store: &Store, journal_id: &str) -> Result<AcknowledgeResult,
         journal_id: journal_id.to_string(),
         acknowledged_at,
     })
+}
+
+/// One operation journal by journal id or by receipt id (M8-b).
+fn operation_by_id(
+    store: &Store,
+    id: &str,
+) -> Result<Option<crate::operations::OperationRow>, ReceiptError> {
+    let by_journal = crate::operations::get(store, id).map_err(|_| ReceiptError::StateConflict)?;
+    if by_journal.is_some() {
+        return Ok(by_journal);
+    }
+    let all = crate::operations::list(store, None).map_err(|_| ReceiptError::StateConflict)?;
+    Ok(all
+        .into_iter()
+        .find(|row| row.receipt_id().as_deref() == Some(id)))
+}
+
+/// The receipt document of an operation journal, when it has one.
+fn operation_receipt(
+    store: &Store,
+    row: &crate::operations::OperationRow,
+) -> Result<Option<ReceiptDocument>, ReceiptError> {
+    if !row.state.is_done() {
+        return Ok(None);
+    }
+    let mut doc = match &row.receipt {
+        Some(stored) => serde_json::from_value::<ReceiptDocument>(stored.clone())?,
+        None => crate::operations::receipt::build(row, row.journal_id.clone()),
+    };
+    // A receipt rebuilt outside the commit transaction still names the
+    // identity it belongs to.
+    if doc.identity.origin.is_empty() {
+        let mut value = serde_json::to_value(&doc)?;
+        crate::operations::attach_identity(store, &mut value)
+            .map_err(|_| ReceiptError::StateConflict)?;
+        doc = serde_json::from_value(value)?;
+    }
+    doc.recompute_server_body_sha256();
+    Ok(Some(doc))
 }
 
 fn resolve_journal_id(store: &Store, id: &str) -> Result<String, ReceiptError> {
@@ -394,12 +480,12 @@ fn summarize(
         owner,
         superseded,
         acknowledged_at: row.acknowledged_at.clone(),
-        course_id: row.course_id.to_string(),
+        course_id: Some(row.course_id.to_string()),
         course_code: intent.course_code,
-        assignment_id: row.assignment_id.to_string(),
+        assignment_id: Some(row.assignment_id.to_string()),
         assignment_name: intent.assignment_name,
         kind: row.kind.clone(),
-        baseline_attempt: row.baseline_attempt.unwrap_or(0),
+        baseline_attempt: Some(row.baseline_attempt.unwrap_or(0)),
         created_at: row.created_at.clone(),
         updated_at: updated_at(&row),
         uploaded_file_ids,
@@ -417,6 +503,54 @@ fn summarize(
             .as_deref()
             .map(serde_json::from_str)
             .transpose()?,
+        // A submission journal records no operation (M8-b).
+        operation: None,
+    })
+}
+
+/// Summarize one operation journal in the same `Journal` shape (M8-b).
+///
+/// The submission-only fields are `null` rather than invented, and the
+/// operation block carries the target, the digests, and the attribution.
+fn summarize_operation(
+    store: &Store,
+    identity_dir: &Path,
+    row: &crate::operations::OperationRow,
+) -> Result<JournalSummary, ReceiptError> {
+    let owner = crate::operations::owner_status_for(identity_dir, &row.journal_id, row.state)
+        .map_err(JournalError::from)?;
+    let superseded = crate::operations::is_superseded(store, &row.journal_id)
+        .map_err(|_| ReceiptError::StateConflict)?;
+    Ok(JournalSummary {
+        journal_id: row.journal_id.clone(),
+        state: row.state.as_str().to_string(),
+        owner: owner.as_str().to_string(),
+        superseded,
+        acknowledged_at: row.acknowledged_at.clone(),
+        course_id: row.intended.target.course_id().map(|id| id.to_string()),
+        course_code: row.intended.labels.course_code.clone(),
+        assignment_id: None,
+        assignment_name: None,
+        kind: row.kind.as_str().to_string(),
+        baseline_attempt: None,
+        created_at: row.created_at.clone(),
+        updated_at: row
+            .terminal_at
+            .clone()
+            .or_else(|| row.posting_started_at.clone())
+            .unwrap_or_else(|| row.created_at.clone()),
+        uploaded_file_ids: row.uploaded_file_ids.clone(),
+        post_status: row.post_status,
+        response_kind: row.response_kind.clone(),
+        not_submitted_evidence: row.not_posted_evidence.map(|e| e.as_str().to_string()),
+        posted: None,
+        readback: None,
+        server_match: None,
+        receipt_id: row.receipt_id(),
+        error: row.error_text.clone(),
+        plan_id: Some(row.plan_id.clone()),
+        approval: row.approval.clone(),
+        operation: Some(crate::operations::receipt::operation_block(row)),
     })
 }
 
@@ -496,14 +630,14 @@ fn rebuild_from_row(store: &Store, row: &JournalRow) -> Result<ReceiptDocument, 
         receipt_id,
         journal_id: row.journal_id.clone(),
         identity,
-        course_id: row.course_id.to_string(),
+        course_id: Some(row.course_id.to_string()),
         course_code: intent.course_code,
-        assignment_id: row.assignment_id.to_string(),
+        assignment_id: Some(row.assignment_id.to_string()),
         assignment_name: intent.assignment_name,
         kind: row.kind.clone(),
-        baseline_attempt: row.baseline_attempt.unwrap_or(0),
+        baseline_attempt: Some(row.baseline_attempt.unwrap_or(0)),
         attribution,
-        posted,
+        posted: Some(posted),
         readback,
         files,
         text,
@@ -517,6 +651,8 @@ fn rebuild_from_row(store: &Store, row: &JournalRow) -> Result<ReceiptDocument, 
             .as_deref()
             .map(serde_json::from_str)
             .transpose()?,
+        // A submission receipt carries no operation block (M8-b).
+        operation: None,
     };
     doc.recompute_server_body_sha256();
     Ok(doc)
@@ -770,8 +906,8 @@ mod tests {
         let doc = rebuild_from_journal(&store, &jid).unwrap();
         assert_eq!(doc.receipt_id, receipt_id);
         assert_eq!(doc.journal_id, jid);
-        assert_eq!(doc.course_id, "1");
-        assert_eq!(doc.assignment_id, "42");
+        assert_eq!(doc.course_id.as_deref(), Some("1"));
+        assert_eq!(doc.assignment_id.as_deref(), Some("42"));
         assert_eq!(doc.course_code.as_deref(), Some("CHEM301"));
         assert_eq!(doc.files[0].name, "a.pdf");
         assert_eq!(doc.attribution, "observed");

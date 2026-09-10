@@ -1032,6 +1032,9 @@ fn build_receipt(
         "files": files, "text": text, "url": intent.get("url").and_then(Value::as_str),
         "due_at": intent.get("due_at").and_then(Value::as_str), "cli_version": env!("CARGO_PKG_VERSION"),
         "plan_id": plan_id, "approval": approval,
+        // A submission journal records no operation (M8-b); the field is
+        // present and null, as Appendix D's nullable convention requires.
+        "operation": Value::Null,
     }).to_string())
 }
 

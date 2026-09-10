@@ -149,8 +149,9 @@ async fn commit_then_error_matches_and_gateway_can_commit_later() {
         }
         let receipt = rebuild_from_journal(&open.store, &jid).unwrap();
         assert_eq!(receipt.attribution, "unproven");
-        assert_eq!(receipt.posted.evidence, Evidence::HistoryFiles);
-        assert_eq!(receipt.posted.response_sha256, None);
+        let posted = receipt.posted.clone().expect("a submission receipt posts");
+        assert_eq!(posted.evidence, Evidence::HistoryFiles);
+        assert_eq!(posted.response_sha256, None);
     }
 }
 #[tokio::test]
@@ -319,9 +320,9 @@ async fn verify_binding_precedes_all_network_and_ignores_stale_exports() {
             0 => bad.identity.user_id = "99".into(),
             1 => bad.journal_id = "missing".into(),
             2 => bad.files[0].canvas_file_id = None,
-            3 => bad.posted.attempt = None,
-            4 => bad.posted.attachments.clear(),
-            _ => bad.course_id = "99".into(),
+            3 => bad.posted.as_mut().expect("posted").attempt = None,
+            4 => bad.posted.as_mut().expect("posted").attachments.clear(),
+            _ => bad.course_id = Some("99".into()),
         }
         assert_eq!(
             verify(&client, &open.store, &paths, doc.key.as_str(), &bad)

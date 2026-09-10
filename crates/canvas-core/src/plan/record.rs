@@ -6,6 +6,70 @@ use sha2::{Digest, Sha256};
 use crate::journal::IntendedPayload;
 use crate::submit::InputKind;
 
+/// What a plan will send.
+///
+/// A plan freezes one remote write, and after M8-b a remote write is either a
+/// submission attempt or an operation: a discussion reply, a new conversation,
+/// or a reply to one. The two halves share the plan layer exactly — the same
+/// admission window, the same handle, the same approval audit — and differ
+/// only in the target they name and the journal they admit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanKind {
+    /// A submission attempt on one assignment (M6-a).
+    Submission(InputKind),
+    /// A reply to a discussion topic or to one entry in it (M8-b).
+    DiscussionReply,
+    /// A new conversation to named recipients (M8-b).
+    InboxSend,
+    /// A message added to an existing conversation (M8-b).
+    InboxReply,
+}
+
+impl PlanKind {
+    /// Stored name. Submission kinds keep the names M6-a stored.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Submission(kind) => kind.plan_name(),
+            Self::DiscussionReply => "discussion_reply",
+            Self::InboxSend => "inbox_send",
+            Self::InboxReply => "inbox_reply",
+        }
+    }
+
+    /// Parse a stored name.
+    #[must_use]
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "discussion_reply" => Some(Self::DiscussionReply),
+            "inbox_send" => Some(Self::InboxSend),
+            "inbox_reply" => Some(Self::InboxReply),
+            other => InputKind::parse_plan_name(other).map(Self::Submission),
+        }
+    }
+
+    /// The submission kind, when this plan is a submission.
+    #[must_use]
+    pub const fn submission(self) -> Option<InputKind> {
+        match self {
+            Self::Submission(kind) => Some(kind),
+            _ => None,
+        }
+    }
+
+    /// Whether this plan admits an operation journal rather than a submission one.
+    #[must_use]
+    pub const fn is_operation(self) -> bool {
+        !matches!(self, Self::Submission(_))
+    }
+}
+
+impl std::fmt::Display for PlanKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Lifecycle of a plan. `executed` means journal-linked, not successful.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -242,12 +306,12 @@ pub struct PlanRow {
     pub identity_generation: String,
     /// Consumer that asked for the plan, when one did.
     pub consumer: Option<String>,
-    /// Course id.
+    /// Course id. `0` on an operation plan that names no course.
     pub course_id: i64,
-    /// Assignment id.
+    /// Assignment id. `0` on an operation plan: it targets no assignment.
     pub assignment_id: i64,
-    /// Submission kind.
-    pub kind: InputKind,
+    /// What this plan will send.
+    pub kind: PlanKind,
     /// Frozen payload, including the outbound bytes.
     pub payload: IntendedPayload,
     /// Absolute paths of the frozen files, in payload order.
@@ -276,6 +340,8 @@ pub struct PlanRow {
     pub journal_id: Option<String>,
     /// Why the plan was invalidated.
     pub invalidated_reason: Option<String>,
+    /// The frozen operation, when [`Self::kind`] is not a submission (M8-b).
+    pub operation: Option<crate::operations::OperationPlan>,
 }
 
 impl PlanRow {
@@ -313,6 +379,7 @@ struct CanonicalPlan<'a> {
     course_id: i64,
     assignment_id: i64,
     kind: &'a str,
+    operation: Option<&'a crate::operations::OperationPlan>,
     files: Vec<CanonicalFile<'a>>,
     text: Option<CanonicalText<'a>>,
     url: Option<&'a str>,
@@ -346,7 +413,8 @@ impl<'a> CanonicalPlan<'a> {
             consumer: row.consumer.as_deref(),
             course_id: row.course_id,
             assignment_id: row.assignment_id,
-            kind: row.kind.plan_name(),
+            kind: row.kind.as_str(),
+            operation: row.operation.as_ref(),
             files: row
                 .payload
                 .files
@@ -404,7 +472,7 @@ mod tests {
             consumer: None,
             course_id: 1,
             assignment_id: 2,
-            kind: InputKind::OnlineTextEntry,
+            kind: PlanKind::Submission(InputKind::OnlineTextEntry),
             payload: IntendedPayload {
                 text: Some(IntendedText {
                     input_sha256: "aaa".into(),
@@ -431,6 +499,7 @@ mod tests {
             approval: None,
             journal_id: None,
             invalidated_reason: None,
+            operation: None,
         }
     }
 
@@ -474,7 +543,7 @@ mod tests {
     #[test]
     fn a_file_hash_change_changes_the_digest() {
         let mut files = row();
-        files.kind = InputKind::OnlineUpload;
+        files.kind = PlanKind::Submission(InputKind::OnlineUpload);
         files.payload.text = None;
         files.payload.files = vec![IntendedFile {
             name: "ps3.pdf".into(),

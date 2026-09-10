@@ -94,13 +94,17 @@ pub async fn verify(
 
     let course_id: i64 = receipt
         .course_id
+        .as_deref()
+        .unwrap_or_default()
         .parse()
         .map_err(|_| VerifyError::Receipt(ReceiptError::Refused))?;
     let assignment_id: i64 = receipt
         .assignment_id
+        .as_deref()
+        .unwrap_or_default()
         .parse()
         .map_err(|_| VerifyError::Receipt(ReceiptError::Refused))?;
-    let attempt = receipt.posted.attempt.ok_or(ReceiptError::Refused)?;
+    let attempt = posted_attempt(receipt).ok_or(ReceiptError::Refused)?;
 
     let history = get_submission_history(client, course_id, assignment_id).await?;
     let entry = history
@@ -138,6 +142,15 @@ pub async fn verify(
     })
 }
 
+/// The attempt a submission receipt posted.
+///
+/// `receipt@1` carries `posted: null` on an operation receipt (M8-b), and an
+/// operation is never verifiable as a submission, so an absent record reads
+/// here as an absent attempt and every caller refuses it.
+fn posted_attempt(receipt: &ReceiptDocument) -> Option<i64> {
+    receipt.posted.as_ref()?.attempt
+}
+
 /// Load a receipt by receipt id (export file or journal rebuild).
 pub fn load_receipt_for_verify(
     store: &Store,
@@ -161,7 +174,7 @@ pub fn validate_local(
     let refused = |reason: &str| VerifyResult {
         outcome: VerifyOutcome::Refused,
         receipt_id: receipt.receipt_id.clone(),
-        attempt: receipt.posted.attempt,
+        attempt: posted_attempt(receipt),
         attribution: Some(receipt.attribution.clone()),
         files: Vec::new(),
         body: None,
@@ -178,17 +191,25 @@ pub fn validate_local(
         || receipt.course_id != authoritative.course_id
         || receipt.assignment_id != authoritative.assignment_id
         || receipt.kind != authoritative.kind
-        || receipt.posted.attempt != authoritative.posted.attempt
+        || posted_attempt(receipt) != posted_attempt(&authoritative)
     {
         return Some(refused("receipt binding does not match journal"));
     }
-    if receipt.posted.attempt.is_none_or(|a| a < 1) {
+    if posted_attempt(receipt).is_none_or(|a| a < 1) {
         return Some(refused("posted.attempt missing or invalid"));
     }
     if !matches!(receipt.kind.as_str(), "online_upload" | "online_text_entry") {
         return Some(refused("URL receipts cannot be verified"));
     }
-    if receipt.course_id.parse::<i64>().is_err() || receipt.assignment_id.parse::<i64>().is_err() {
+    if receipt
+        .course_id
+        .as_deref()
+        .is_none_or(|id| id.parse::<i64>().is_err())
+        || receipt
+            .assignment_id
+            .as_deref()
+            .is_none_or(|id| id.parse::<i64>().is_err())
+    {
         return Some(refused("invalid course or assignment id"));
     }
     if receipt.kind == "online_upload" {
@@ -199,8 +220,8 @@ pub fn validate_local(
             .collect();
         let posted_ids: BTreeSet<_> = receipt
             .posted
-            .attachments
             .iter()
+            .flat_map(|p| p.attachments.iter())
             .map(|a| a.id.clone())
             .collect();
         if file_ids.is_empty()
@@ -350,7 +371,7 @@ async fn verify_files(
     Ok(VerifyResult {
         outcome,
         receipt_id: receipt.receipt_id.clone(),
-        attempt: receipt.posted.attempt,
+        attempt: posted_attempt(receipt),
         attribution: Some(receipt.attribution.clone()),
         files: rows,
         body: None,
@@ -444,7 +465,7 @@ fn verify_text(
         return VerifyResult {
             outcome: VerifyOutcome::Unavailable,
             receipt_id: receipt.receipt_id.clone(),
-            attempt: receipt.posted.attempt,
+            attempt: posted_attempt(receipt),
             attribution: Some(receipt.attribution.clone()),
             files: Vec::new(),
             body: Some(VerifyBodyRow {
@@ -459,7 +480,7 @@ fn verify_text(
         return VerifyResult {
             outcome: VerifyOutcome::Unavailable,
             receipt_id: receipt.receipt_id.clone(),
-            attempt: receipt.posted.attempt,
+            attempt: posted_attempt(receipt),
             attribution: Some(receipt.attribution.clone()),
             files: Vec::new(),
             body: Some(VerifyBodyRow {
@@ -475,7 +496,7 @@ fn verify_text(
         VerifyResult {
             outcome: VerifyOutcome::VerifiedBody,
             receipt_id: receipt.receipt_id.clone(),
-            attempt: receipt.posted.attempt,
+            attempt: posted_attempt(receipt),
             attribution: Some(receipt.attribution.clone()),
             files: Vec::new(),
             body: Some(VerifyBodyRow {
@@ -489,7 +510,7 @@ fn verify_text(
         VerifyResult {
             outcome: VerifyOutcome::Mismatch,
             receipt_id: receipt.receipt_id.clone(),
-            attempt: receipt.posted.attempt,
+            attempt: posted_attempt(receipt),
             attribution: Some(receipt.attribution.clone()),
             files: Vec::new(),
             body: Some(VerifyBodyRow {

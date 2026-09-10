@@ -28,11 +28,13 @@ mod record;
 
 pub use execute::{Admission, execute};
 pub use ops::{
-    EXPIRY, approve, cancel, decline, expire, identity_generation, invalidate, issue_handle, load,
-    refusal_for, require,
+    EXPIRY, NewOperationPlan, approve, cancel, decline, expire, guard_admission,
+    identity_generation, insert_operation, invalidate, issue_handle, load, refusal_for, require,
 };
 pub use prepare::{PrepareRequest, Prepared, prepare};
-pub use record::{Approval, ApprovalChannel, Observations, PlanRow, PlanState, sha256_hex};
+pub use record::{
+    Approval, ApprovalChannel, Observations, PlanKind, PlanRow, PlanState, sha256_hex,
+};
 
 use thiserror::Error;
 

@@ -323,6 +323,96 @@ pub fn bump_epochs(scopes: &[&str], state_tx: &Transaction<'_>) -> Result<(), Db
     Ok(())
 }
 
+/// One row of the pending-operation query.
+type PendingRow = (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+);
+
+/// Which target a read is asking about (§10 pending hook, M8-b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingTarget {
+    /// One discussion topic.
+    Topic(i64),
+    /// One conversation.
+    Conversation(i64),
+    /// The inbox as a whole: any conversation write is pending for it.
+    Inbox,
+}
+
+/// Every unresolved operation journal that touches this target (§10, M8-b).
+///
+/// The same rule the submission hook uses: `planned` and `posting` are always
+/// pending, and an `outcome_unknown` operation is pending until it is
+/// acknowledged or a later confirmed operation on the same target supersedes
+/// it. A read that names one of these targets says its answer may be behind.
+pub fn pending_operations(
+    state: &Connection,
+    target: PendingTarget,
+) -> Result<Vec<String>, DbError> {
+    let (clause, topic, conversation): (&str, Option<i64>, Option<i64>) = match target {
+        PendingTarget::Topic(id) => ("topic_id = ?1", Some(id), None),
+        PendingTarget::Conversation(id) => (
+            "(conversation_id = ?2 OR (kind = 'inbox_send' AND state IN ('planned','posting')))",
+            None,
+            Some(id),
+        ),
+        PendingTarget::Inbox => ("kind IN ('inbox_send','inbox_reply')", None, None),
+    };
+    let sql = format!(
+        "SELECT journal_id, state, created_at, acknowledged_at, topic_id, conversation_id
+         FROM operation_journal
+         WHERE {clause} AND state IN ('planned','posting','outcome_unknown')
+         ORDER BY created_at ASC, journal_id ASC"
+    );
+    let mut stmt = state.prepare(&sql)?;
+    let rows: Vec<PendingRow> = stmt
+        .query_map(params![topic, conversation], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut pending = Vec::new();
+    for (journal_id, row_state, created_at, acknowledged_at, topic_id, conversation_id) in rows {
+        if row_state != "outcome_unknown" {
+            pending.push(journal_id);
+            continue;
+        }
+        if acknowledged_at.is_some() {
+            continue;
+        }
+        let created = parse_ts(&created_at)?;
+        let mut later = state.prepare(
+            "SELECT created_at FROM operation_journal
+             WHERE state IN ('posted','matched')
+               AND topic_id IS ?1 AND conversation_id IS ?2",
+        )?;
+        let superseded = later
+            .query_map(params![topic_id, conversation_id], |r| {
+                r.get::<_, String>(0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter_map(|at| parse_ts(&at).ok())
+            .any(|at| at > created);
+        if !superseded {
+            pending.push(journal_id);
+        }
+    }
+    Ok(pending)
+}
+
 /// Pending journal read hook (§10).
 ///
 /// Pending when state is `planned|uploading|uploaded|posting`, or
