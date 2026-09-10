@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::output::envelope::{Freshness, FreshnessSource};
+use crate::output::envelope::{Freshness, FreshnessSource, IdentityRef};
 
 pub const SCHEMA_COURSES: &str = "canvas-cli/courses@1";
 pub const SCHEMA_COURSE: &str = "canvas-cli/course@1";
@@ -24,6 +24,8 @@ pub const SCHEMA_ANNOUNCEMENT: &str = "canvas-cli/announcement@1";
 pub const SCHEMA_CALENDAR: &str = "canvas-cli/calendar@1";
 pub const SCHEMA_OPEN: &str = "canvas-cli/open@1";
 pub const SCHEMA_SYNC: &str = "canvas-cli/sync@1";
+pub const SCHEMA_WATCH: &str = "canvas-cli/watch@1";
+pub const SCHEMA_EVENT: &str = "canvas-cli/event@1";
 pub const SCHEMA_CACHE: &str = "canvas-cli/cache@1";
 pub const SCHEMA_ALIAS: &str = "canvas-cli/alias@1";
 pub const SCHEMA_AUTH_STATUS: &str = "canvas-cli/auth_status@1";
@@ -300,6 +302,16 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
             fixture: include_str!("schemas/identity_remove.json"),
         },
         SchemaEntry {
+            id: SCHEMA_WATCH,
+            variant: None,
+            fixture: include_str!("schemas/watch.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_EVENT,
+            variant: None,
+            fixture: include_str!("schemas/event.json"),
+        },
+        SchemaEntry {
             id: SCHEMA_HERE,
             variant: None,
             fixture: include_str!("schemas/here.json"),
@@ -365,8 +377,11 @@ fn normalize_command(name: &str) -> String {
 }
 
 /// Raw-output commands reject `--json` (SPEC §7):
-/// `completions`, `auth token --reveal`, `config edit`,
+/// `completions`, `notify`, `auth token --reveal`, `config edit`,
 /// `calendar --ics -`, and `receipts export --out -`.
+///
+/// `watch` also rejects `--json`, for the other §7 reason: its stream is its
+/// own contract, and `--jsonl` is the machine-readable form.
 ///
 /// Pass `true` when the selected command is one of those raw-output forms.
 #[must_use]
@@ -489,6 +504,46 @@ impl SyncDatasetJson {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SyncResult {
+    pub datasets: Vec<SyncDatasetJson>,
+}
+
+/// One `canvas-cli/event@1` line document (REPORT §3.6).
+///
+/// A stream line is self-describing: it names its own schema, so a consumer
+/// that reads `canvas watch --jsonl` needs no envelope around it. §7 is
+/// unchanged — this is the streaming contract, not a `--json` invocation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EventJson {
+    pub schema: String,
+    pub cursor: String,
+    pub kind: String,
+    pub observed_at: String,
+    pub observed_at_local: Option<String>,
+    pub identity: IdentityRef,
+    pub generation: String,
+    pub dataset: String,
+    pub scope: String,
+    pub entity_key: Option<String>,
+    pub before: serde_json::Value,
+    pub after: serde_json::Value,
+}
+
+/// The `canvas watch --once` summary (`canvas-cli/watch@1`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WatchResult {
+    /// The `--since` cursor the run replayed from, or null.
+    pub since: Option<String>,
+    /// The last cursor the run emitted, or null when it emitted nothing.
+    pub cursor: Option<String>,
+    /// Events written to the stream, replayed and new.
+    pub events: u64,
+    /// Ticks the run completed.
+    pub ticks: u64,
+    /// Whether the run emitted `resync_required` and closed.
+    pub resync_required: bool,
+    /// Why the last tick admitted no polling request, or null.
+    pub skipped: Option<String>,
+    /// Dataset coverage after the run, in `sync@1` rows.
     pub datasets: Vec<SyncDatasetJson>,
 }
 
@@ -995,6 +1050,15 @@ mod tests {
                     serde_json::from_str(entry.fixture).unwrap_or_else(|e| {
                         panic!("fixture for {} is not JSON: {e}", entry.id);
                     });
+                // A stream document is a whole line, not a `result` payload:
+                // `canvas watch --jsonl` writes it as it stands (REPORT §3.6).
+                if entry.id == SCHEMA_EVENT {
+                    assert_eq!(result["schema"], entry.id);
+                    let _: EventJson = serde_json::from_value(result.clone())
+                        .expect("the event@1 fixture parses as its document type");
+                    rendered.push(result);
+                    continue;
+                }
                 let local = matches!(
                     entry.id,
                     SCHEMA_CONFIG | SCHEMA_IDENTITY | SCHEMA_VERSION | SCHEMA_DOCTOR | SCHEMA_ERROR

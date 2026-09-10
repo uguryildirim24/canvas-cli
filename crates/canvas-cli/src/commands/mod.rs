@@ -28,6 +28,7 @@ pub mod here;
 pub mod identity;
 pub mod inbox;
 pub mod modules;
+pub mod notify;
 pub mod open;
 pub mod pages;
 pub mod receipts;
@@ -37,6 +38,7 @@ pub mod submit;
 pub mod sync;
 pub mod todo;
 pub mod version;
+pub mod watch;
 
 use crate::output::ColorMode;
 use crate::session::{Session, SessionError};

@@ -10,6 +10,7 @@ use canvas_api::models::{
 use futures_util::StreamExt;
 use jiff::{Span, Timestamp};
 
+use crate::coord::RefreshAdmission;
 use crate::store::{
     Dataset, DbError, FetchLogRow, IngestOpts, IngestPage, LookupResult, Store, WindowQuery,
     lookup_dataset,
@@ -503,6 +504,94 @@ pub(super) struct FetchBundle {
     pub pages: Vec<IngestPage>,
 }
 
+/// What the single-flight lock allows this refresh to do.
+enum Admitted {
+    /// Hold the lock and fetch.
+    Fetch(crate::coord::RefreshGuard),
+    /// Another process covered it, or the wait ran out: this is the answer.
+    Served(Result<RefreshOutcome, SyncError>),
+}
+
+/// Take the single-flight lock for one dataset scope (REPORT §3.6).
+///
+/// A caller that never waited fetches. A caller that waited re-reads the cache
+/// first: the process it waited for has usually just written the coverage it
+/// wanted, and repeating that fetch would spend a request for nothing. Even
+/// `--fresh` is satisfied by a row another process wrote *during* the wait —
+/// that row came off the network no earlier than one of our own would have. A
+/// waiter that times out serves what the cache holds, with honest §7 metadata,
+/// or reports the local lock timeout (§14 exit 13) when nothing usable exists.
+async fn admit_refresh<D: Dataset + Clone + Send + Sync + 'static>(
+    store: &Store,
+    dataset: &D,
+    now: Timestamp,
+    fresh: bool,
+    window_lookup: Option<(Timestamp, Timestamp, String)>,
+) -> Result<Admitted, SyncError> {
+    let admission = store
+        .coordinator()
+        .acquire_refresh(dataset.name(), dataset.scope_key())
+        .await
+        .map_err(DbError::from)?;
+    let guard = match admission {
+        RefreshAdmission::Fetch(guard) => return Ok(Admitted::Fetch(guard)),
+        RefreshAdmission::Waited(guard) => guard,
+        RefreshAdmission::TimedOut => {
+            let lookup = relookup(store, dataset, now, window_lookup).await?;
+            return Ok(Admitted::Served(match complete_row(lookup) {
+                Some(row) => Ok(cache_outcome(&row, true, 0, row.error.clone())),
+                None => Err(SyncError::Db(DbError::Message(format!(
+                    "another process is still refreshing {}:{}",
+                    dataset.name(),
+                    dataset.scope_key()
+                )))),
+            }));
+        }
+    };
+    let lookup = relookup(store, dataset, now, window_lookup).await?;
+    let covered = match &lookup {
+        LookupResult::Hit(row) if !fresh => Some(row.clone()),
+        // The waiter serves the holder's row only when that row belongs to
+        // this invocation's window. `now` is the caller's clock, the same one
+        // the holder stamped `fetched_at` with, so a frozen test clock and a
+        // real one compare the same way.
+        LookupResult::Hit(row) | LookupResult::Stale(row)
+            if fresh && row.complete && !row.stale && row.fetched_at >= now =>
+        {
+            Some(row.clone())
+        }
+        _ => None,
+    };
+    match covered {
+        Some(row) => {
+            let error = row.error.clone();
+            Ok(Admitted::Served(Ok(cache_outcome(&row, false, 0, error))))
+        }
+        None => Ok(Admitted::Fetch(guard)),
+    }
+}
+
+async fn relookup<D: Dataset + Clone + Send + Sync + 'static>(
+    store: &Store,
+    dataset: &D,
+    now: Timestamp,
+    window_lookup: Option<(Timestamp, Timestamp, String)>,
+) -> Result<LookupResult, SyncError> {
+    let dataset = dataset.clone();
+    Ok(store
+        .call(move |conns| {
+            let window = window_lookup
+                .as_ref()
+                .map(|(start, end, contexts)| WindowQuery {
+                    start: *start,
+                    end: *end,
+                    contexts: contexts.as_str(),
+                });
+            lookup_dataset(conns, &dataset, now, window)
+        })
+        .await?)
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) async fn refresh_dataset<D, F, Fut>(
     client: &Client,
@@ -548,6 +637,13 @@ where
         return offline_outcome(lookup);
     }
 
+    // Single-flight: one process fetches this dataset scope, the others read
+    // what it wrote (REPORT §3.6).
+    let single_flight = match admit_refresh(store, dataset, now, fresh, window_lookup).await? {
+        Admitted::Fetch(guard) => guard,
+        Admitted::Served(outcome) => return outcome,
+    };
+
     let epoch_seen = store
         .call({
             let dataset = dataset.clone();
@@ -556,7 +652,11 @@ where
         .await?;
 
     let before = client.telemetry().api;
-    match fetch().await {
+    let fetched = fetch().await;
+    // The lock covers the cache commit as well as the fetch. A waiter is
+    // released only once the row it will serve exists, so it never re-reads an
+    // empty cache and fetches the same scope again.
+    let outcome = match fetched {
         Ok(bundle) => {
             ingest_success(
                 client,
@@ -572,6 +672,7 @@ where
         }
         Err(err) => {
             if matches!(err, SyncError::Api(canvas_api::Error::Unauthorized)) {
+                drop(single_flight);
                 return Err(err);
             }
             mark_stale_or_serve(
@@ -586,7 +687,9 @@ where
             )
             .await
         }
-    }
+    };
+    drop(single_flight);
+    outcome
 }
 
 /// Refresh `assignment_groups` for one course under one grading period.
@@ -669,6 +772,11 @@ where
         };
     }
 
+    let single_flight = match admit_refresh(store, dataset, now, fresh, None).await? {
+        Admitted::Fetch(guard) => guard,
+        Admitted::Served(outcome) => return outcome,
+    };
+
     let epoch_seen = store
         .call({
             let dataset = dataset.clone();
@@ -677,72 +785,79 @@ where
         .await?;
 
     let before = client.telemetry().api;
-    match fetch().await {
-        Ok(bundle) => {
-            ingest_success(
-                client, store, dataset, now, before, epoch_seen, bundle, None,
-            )
-            .await
-        }
-        Err(err) => {
-            let SyncError::Api(ref api_err) = err else {
-                return mark_stale_or_serve(
-                    client, store, dataset, before, epoch_seen, lookup, err, None,
+    let fetched = fetch().await;
+    // The lock covers the cache commit too; see `refresh_dataset`.
+    let outcome = async {
+        match fetched {
+            Ok(bundle) => {
+                ingest_success(
+                    client, store, dataset, now, before, epoch_seen, bundle, None,
                 )
-                .await;
-            };
-            match classify_listing_denial(api_err) {
-                DenialAction::Auth | DenialAction::Throttle => Err(err),
-                DenialAction::RecordDenial { status } => {
-                    let denial = format!("unavailable:{status}");
-                    let requests = u32::try_from(client.telemetry().api.saturating_sub(before))
-                        .unwrap_or(u32::MAX);
-                    let dataset_for_ingest = dataset.clone();
-                    let denial_for_ingest = denial.clone();
-                    store
-                        .call(move |conns| {
-                            dataset_for_ingest
-                                .ingest(
-                                    &[IngestPage {
-                                        fetched_at: now,
-                                        entities: Vec::new(),
-                                    }],
-                                    &IngestOpts {
-                                        epoch_seen,
-                                        complete: true,
-                                        stale: false,
-                                        error: Some(denial_for_ingest.as_str()),
-                                        window: None,
-                                        contexts: None,
-                                    },
-                                    conns,
-                                )
-                                .map_err(|e| ingest_err(&e))
-                        })
-                        .await?;
-                    Ok(RefreshOutcome {
-                        freshness: FreshnessInfo {
-                            dataset: dataset.name().to_owned(),
-                            scope: dataset.scope_key().to_owned(),
-                            source: FreshnessSource::Network,
-                            fetched_at: now,
-                            complete: true,
-                            count: 0,
-                            stale: false,
-                        },
-                        requests,
-                        error: Some(denial),
-                    })
-                }
-                DenialAction::Propagate => {
-                    mark_stale_or_serve(
+                .await
+            }
+            Err(err) => {
+                let SyncError::Api(ref api_err) = err else {
+                    return mark_stale_or_serve(
                         client, store, dataset, before, epoch_seen, lookup, err, None,
                     )
-                    .await
+                    .await;
+                };
+                match classify_listing_denial(api_err) {
+                    DenialAction::Auth | DenialAction::Throttle => Err(err),
+                    DenialAction::RecordDenial { status } => {
+                        let denial = format!("unavailable:{status}");
+                        let requests = u32::try_from(client.telemetry().api.saturating_sub(before))
+                            .unwrap_or(u32::MAX);
+                        let dataset_for_ingest = dataset.clone();
+                        let denial_for_ingest = denial.clone();
+                        store
+                            .call(move |conns| {
+                                dataset_for_ingest
+                                    .ingest(
+                                        &[IngestPage {
+                                            fetched_at: now,
+                                            entities: Vec::new(),
+                                        }],
+                                        &IngestOpts {
+                                            epoch_seen,
+                                            complete: true,
+                                            stale: false,
+                                            error: Some(denial_for_ingest.as_str()),
+                                            window: None,
+                                            contexts: None,
+                                        },
+                                        conns,
+                                    )
+                                    .map_err(|e| ingest_err(&e))
+                            })
+                            .await?;
+                        Ok(RefreshOutcome {
+                            freshness: FreshnessInfo {
+                                dataset: dataset.name().to_owned(),
+                                scope: dataset.scope_key().to_owned(),
+                                source: FreshnessSource::Network,
+                                fetched_at: now,
+                                complete: true,
+                                count: 0,
+                                stale: false,
+                            },
+                            requests,
+                            error: Some(denial),
+                        })
+                    }
+                    DenialAction::Propagate => {
+                        mark_stale_or_serve(
+                            client, store, dataset, before, epoch_seen, lookup, err, None,
+                        )
+                        .await
+                    }
                 }
             }
         }
     }
+    .await;
+    drop(single_flight);
+    outcome
 }
 
 pub(super) async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
@@ -786,6 +901,10 @@ pub(super) async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
                 .map_err(|e| ingest_err(&e))
         })
         .await?;
+
+    // The cache is committed; the observation and its events are a separate
+    // transaction, recorded before the comparison (REPORT §3.6).
+    crate::events::observe_refresh(store, dataset.name(), dataset.scope_key()).await?;
 
     Ok(RefreshOutcome {
         freshness: FreshnessInfo {

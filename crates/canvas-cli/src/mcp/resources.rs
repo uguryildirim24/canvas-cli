@@ -46,6 +46,15 @@ impl Binding {
         format!("{SCHEME}{}/{}/{}", self.key, self.generation, path)
     }
 
+    /// What a URI names, when this instance serves it.
+    ///
+    /// A foreign identity key, another generation, and an unknown path all
+    /// address nothing here, so each reads as `None` rather than an error.
+    #[must_use]
+    pub fn target(&self, uri: &str) -> Option<Target> {
+        self.path_of(uri).and_then(target_of)
+    }
+
     /// The path part of a URI, if it belongs to this binding.
     ///
     /// A different key or a different generation is not an error to explain;
@@ -146,7 +155,7 @@ pub async fn read(
     uri: &str,
     consumer: &str,
 ) -> Result<ReadResourceResult, ErrorData> {
-    let Some(target) = binding.path_of(uri).and_then(target_of) else {
+    let Some(target) = binding.target(uri) else {
         return Err(ErrorData::resource_not_found(
             "no such resource",
             Some(json!({ "uri": uri })),

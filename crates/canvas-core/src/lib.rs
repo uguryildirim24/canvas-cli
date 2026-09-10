@@ -9,6 +9,12 @@ pub mod identity;
 /// Dataset refresh and sync.
 pub mod sync;
 
+/// Per-identity coordinator: permits, shared governor, single-flight, interest.
+pub mod coord;
+
+/// Observations, baselines, and the event log.
+pub mod events;
+
 /// Course and target name resolution.
 pub mod resolve;
 

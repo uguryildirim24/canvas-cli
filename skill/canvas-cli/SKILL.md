@@ -173,6 +173,19 @@ earlier identity generation resolves to nothing.
 The `context/` resource is metadata only, and reading or subscribing to it
 attaches nothing: until you call `context.attach`, it answers `not_attached`.
 
+`subscriptions/listen` is real. Name the resource URIs you hold in
+`resourceSubscriptions`, and the server sends
+`notifications/resources/updated` when the local event log records a change
+to what that resource reads: an assignment change updates that course's
+assignments and `todo`, a new missing submission updates `todo`, and a
+submission journal transition updates `receipts`. Read the resource again
+when a notification names it; nothing else changed. The acknowledgment lists
+the URIs the server accepted, so a name it cannot update never looks
+subscribed. A stream resumes where the last one stopped. Send
+`dev.canvas-cli/cursor` in `_meta` to resume from a position of your own. If
+the position can no longer be replayed, the server invalidates every
+subscribed resource once: read them all again.
+
 ## MCP setup
 
 One instance serves one identity. Name the profile explicitly when the user
