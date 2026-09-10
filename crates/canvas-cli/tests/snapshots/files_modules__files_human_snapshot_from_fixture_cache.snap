@@ -1,0 +1,6 @@
+---
+source: crates/canvas-cli/tests/files_modules.rs
+expression: stdout
+---
+  ID    SOURCE     PATH      NAME       SIZE  
+  50    listing    Slides    lec.pdf    10

@@ -394,9 +394,7 @@ fn every_v1_stub_is_callable() {
         &["receipts", "export", "receipt-1"],
         &["receipts", "acknowledge", "journal-1"],
         &["grades"],
-        &["files", "chem"],
         &["download", "chem"],
-        &["modules", "chem"],
         &["announcements"],
         &["announcement", "chem", "123"],
         &[
@@ -434,6 +432,8 @@ fn m1b_commands_exit_auth_without_identity() {
         vec!["cache", "stats"],
         vec!["cache", "clear"],
         vec!["cache", "path"],
+        vec!["files", "chem"],
+        vec!["modules", "chem"],
     ] {
         let assert = Command::cargo_bin("canvas")
             .unwrap()

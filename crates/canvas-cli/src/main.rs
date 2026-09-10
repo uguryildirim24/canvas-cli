@@ -587,6 +587,14 @@ async fn main() -> ExitCode {
             };
             commands::cache::run(&globals, cmd).await
         }
+        Commands::Files {
+            course,
+            tree,
+            search,
+        } => commands::files::run(&globals, course, tree, search).await,
+        Commands::Modules { course, items } => {
+            commands::modules::run(&globals, course, items).await
+        }
         Commands::Auth { .. }
         | Commands::Identity { .. }
         | Commands::Todo { .. }
@@ -596,9 +604,7 @@ async fn main() -> ExitCode {
         | Commands::Submission { .. }
         | Commands::Receipts { .. }
         | Commands::Grades { .. }
-        | Commands::Files { .. }
         | Commands::Download { .. }
-        | Commands::Modules { .. }
         | Commands::Announcements { .. }
         | Commands::Announcement { .. }
         | Commands::Calendar { .. }
