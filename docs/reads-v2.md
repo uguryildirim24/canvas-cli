@@ -230,8 +230,12 @@ request cannot return one, and its description points at
 empty window rather than an error.
 
 These eight tools enlarge the `tools/list` document, which SPEC §19 item 19
-already tracks as a cost to beat. Nothing here changes how that document is
-built.
+already tracks as a cost to beat. `cargo xtask bench --mcp` measures the
+catalog at 30 tools, 220 855 bytes, about 55 200 estimated tokens, against
+the 22 tools and about 41 900 tokens M6-b recorded. The growth is the same
+per-tool cost item 19 names — every tool inlines the whole §7 envelope in
+both shapes — and nothing here changes how the document is built. The
+decision is still the owner's.
 
 ## Left for the next round
 

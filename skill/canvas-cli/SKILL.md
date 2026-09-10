@@ -1,6 +1,6 @@
 ---
 name: canvas-cli
-description: Read a student's Canvas LMS work — deadlines, assignments, grades, files, announcements — and submit work with a recorded human approval. Use it when the user asks what is due, what is missing, what an assignment asks for, what a grade is, or asks to hand something in.
+description: Read a student's Canvas LMS work — deadlines, assignments, grades, files, course pages, the syllabus, announcements, discussions, and the Canvas inbox — and submit work with a recorded human approval. Use it when the user asks what is due, what is missing, what an assignment asks for, what a grade is, what a course page or the syllabus says, whether anyone has written to them, or asks to hand something in.
 ---
 
 # Canvas CLI
