@@ -190,7 +190,8 @@ pub fn resolve_assignment(
 /// Insert or replace a course alias for the active identity.
 pub fn alias_set(state: &Connection, name: &str, course_id: i64) -> Result<(), ResolveError> {
     let created_at = Timestamp::now().to_string();
-    state.execute(
+    let tx = rusqlite::Transaction::new_unchecked(state, rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute(
         "INSERT INTO alias (name, target_kind, target_id, created_at)
          VALUES (?1, 'course', ?2, ?3)
          ON CONFLICT(name) DO UPDATE SET
@@ -199,6 +200,7 @@ pub fn alias_set(state: &Connection, name: &str, course_id: i64) -> Result<(), R
             created_at = excluded.created_at",
         params![name, course_id.to_string(), created_at],
     )?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -221,7 +223,9 @@ pub fn alias_list(state: &Connection) -> Result<Vec<AliasRow>, ResolveError> {
 
 /// Remove an alias by name. Returns `true` when a row was deleted.
 pub fn alias_remove(state: &Connection, name: &str) -> Result<bool, ResolveError> {
-    let n = state.execute("DELETE FROM alias WHERE name = ?1", params![name])?;
+    let tx = rusqlite::Transaction::new_unchecked(state, rusqlite::TransactionBehavior::Immediate)?;
+    let n = tx.execute("DELETE FROM alias WHERE name = ?1", params![name])?;
+    tx.commit()?;
     Ok(n > 0)
 }
 
@@ -271,9 +275,7 @@ fn resolve_course_substring(
     let union: Vec<_> = by_id.into_values().collect();
     match select_course_match(input, &union) {
         MatchOutcome::Unique(c) => Ok(c),
-        MatchOutcome::None => Err(ResolveError::NotFound {
-            candidates: Vec::new(),
-        }),
+        MatchOutcome::None => Err(ResolveError::NotFound { candidates: union }),
         MatchOutcome::Ambiguous(cands) => Err(ResolveError::Ambiguous { candidates: cands }),
     }
 }
@@ -413,7 +415,7 @@ fn load_assignment(
     id: i64,
     course_id: i64,
 ) -> Result<Option<ResolvedAssignment>, ResolveError> {
-    let row = conns
+    let row: Option<ResolvedAssignment> = conns
         .cache
         .query_row(
             "SELECT id, course_id, name FROM assignments WHERE id = ?1",
@@ -427,69 +429,56 @@ fn load_assignment(
             },
         )
         .optional()?;
+    if let Some(ref assignment) = row
+        && assignment.course_id != course_id
+    {
+        return Err(ResolveError::CourseIdMismatch {
+            url_course: assignment.course_id,
+            arg_course: course_id,
+        });
+    }
     Ok(row)
 }
 
-/// Parse a Canvas course URL. `Ok(None)` when `input` is not a course URL.
-fn parse_course_url(input: &str, identity_origin: &str) -> Result<Option<i64>, ResolveError> {
-    let Some((origin, path)) = split_origin_and_path(input) else {
+/// Parse and canonicalize URL origins before inspecting path segments.
+fn canvas_url(input: &str, identity_origin: &str) -> Result<Option<reqwest::Url>, ResolveError> {
+    let Ok(url) = reqwest::Url::parse(input) else {
         return Ok(None);
     };
-    let Some(course_id) = path_segment_after(path, "courses") else {
+    if !matches!(url.scheme(), "http" | "https") {
         return Ok(None);
-    };
-    if origin != identity_origin {
+    }
+    let identity =
+        reqwest::Url::parse(identity_origin).map_err(|_| ResolveError::OriginMismatch)?;
+    if url.origin() != identity.origin() || !url.username().is_empty() || url.password().is_some() {
         return Err(ResolveError::OriginMismatch);
     }
-    Ok(Some(course_id))
+    Ok(Some(url))
 }
 
-/// Parse a Canvas assignment URL. `Ok(None)` when `input` is not an assignment URL.
+fn parse_course_url(input: &str, identity_origin: &str) -> Result<Option<i64>, ResolveError> {
+    let Some(url) = canvas_url(input, identity_origin)? else {
+        return Ok(None);
+    };
+    let parts: Vec<_> = url.path_segments().into_iter().flatten().collect();
+    Ok(parts
+        .windows(2)
+        .find(|p| p[0] == "courses")
+        .and_then(|p| p[1].parse().ok()))
+}
+
 fn parse_assignment_url(
     input: &str,
     identity_origin: &str,
 ) -> Result<Option<(i64, i64)>, ResolveError> {
-    let Some((origin, path)) = split_origin_and_path(input) else {
+    let Some(url) = canvas_url(input, identity_origin)? else {
         return Ok(None);
     };
-    let Some(course_id) = path_segment_after(path, "courses") else {
-        return Ok(None);
-    };
-    let Some(assignment_id) = path_segment_after(path, "assignments") else {
-        return Ok(None);
-    };
-    if origin != identity_origin {
-        return Err(ResolveError::OriginMismatch);
-    }
-    Ok(Some((course_id, assignment_id)))
-}
-
-fn split_origin_and_path(input: &str) -> Option<(String, &str)> {
-    let (scheme, rest) = if let Some(r) = input.strip_prefix("https://") {
-        ("https", r)
-    } else {
-        let r = input.strip_prefix("http://")?;
-        ("http", r)
-    };
-    let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let authority = &rest[..auth_end];
-    if authority.is_empty() {
-        return None;
-    }
-    let path = &rest[auth_end..];
-    Some((format!("{scheme}://{authority}"), path))
-}
-
-fn path_segment_after(path: &str, label: &str) -> Option<i64> {
-    let path = path.split(['?', '#']).next().unwrap_or(path);
-    let mut parts = path.split('/').filter(|s| !s.is_empty());
-    while let Some(part) = parts.next() {
-        if part == label {
-            let id = parts.next()?;
-            return id.parse().ok();
-        }
-    }
-    None
+    let parts: Vec<_> = url.path_segments().into_iter().flatten().collect();
+    Ok(parts
+        .windows(4)
+        .find(|p| p[0] == "courses" && p[2] == "assignments")
+        .and_then(|p| Some((p[1].parse().ok()?, p[3].parse().ok()?))))
 }
 
 #[cfg(test)]
@@ -833,6 +822,46 @@ mod tests {
                 let err =
                     resolve_assignment(conns, 5, "homework", ORIGIN, CommandClass::B).unwrap_err();
                 assert!(matches!(err, ResolveError::NeedIdOrUrl));
+                Ok(())
+            })
+            .unwrap();
+    }
+    #[test]
+    fn canonical_urls_and_assignment_course_binding() {
+        assert_eq!(
+            parse_course_url("HTTPS://LASELL.INSTRUCTURE.COM:443/courses/42?x=1", ORIGIN).unwrap(),
+            Some(42)
+        );
+        assert!(matches!(
+            parse_course_url("https://user@lasell.instructure.com/courses/42", ORIGIN),
+            Err(ResolveError::OriginMismatch)
+        ));
+        assert_eq!(
+            parse_assignment_url(
+                "https://lasell.instructure.com/courses/1/files/2/assignments/3",
+                ORIGIN
+            )
+            .unwrap(),
+            None
+        );
+        let (_dir, open) = setup();
+        open.store
+            .call_blocking(|conns| {
+                conns
+                    .cache
+                    .execute("INSERT INTO assignments (id, course_id) VALUES (10, 9)", [])?;
+                for input in [
+                    "10",
+                    "https://lasell.instructure.com/courses/5/assignments/10",
+                ] {
+                    assert!(matches!(
+                        resolve_assignment(conns, 5, input, ORIGIN, CommandClass::B),
+                        Err(ResolveError::CourseIdMismatch {
+                            url_course: 9,
+                            arg_course: 5
+                        })
+                    ));
+                }
                 Ok(())
             })
             .unwrap();
