@@ -334,7 +334,9 @@ never resends, and never claims more than it observed.
 9. **`operation status` never changes state; `operation reconcile` may.**
    Both read the thread, and both record what they saw, because recording an
    observation is not a state change. Only `reconcile` moves
-   `outcome_unknown` to `matched` or to an asserted "never posted".
+   `outcome_unknown` to `matched` or to an asserted "never posted", and only
+   `reconcile` applies the owner-absent recovery table — SPEC §12.2 names the
+   recoverers, and a readback is not one.
 10. **A live owner stops recovery, not reading.** When another process holds
     the owner lock, `status` and `reconcile` still read the thread and report
     `verdict: not_read` with a warning. Changing the journal under a running

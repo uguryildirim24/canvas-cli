@@ -1188,6 +1188,67 @@ async fn assume_not_posted_is_refused_early_and_recorded_late() {
     );
 }
 
+/// `operation status` recovers nothing (M8-b review).
+///
+/// SPEC §12.2 names the recoverers, and a readback is not one.
+/// `docs/writes-v2.md` choice 9, the module doc, and the MCP tool description
+/// all say `status` never changes state; it applied the owner-absent recovery
+/// table anyway. `reconcile` still does.
+#[tokio::test]
+async fn status_leaves_an_abandoned_journal_where_it_found_it() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_topic(&server, open_topic()).await;
+    let client = test_client(&server.uri());
+
+    // A journal whose owner is gone, still `planned`: nothing left this
+    // machine, but only a recoverer may say so.
+    let prepared = approved_reply(&client, &open.store, &paths, &doc).await;
+    let Admitted::Created { journal_id, owner } = execute(
+        &client,
+        &open.store,
+        &paths.identity_dir,
+        doc.key.as_str(),
+        &prepared.plan.plan_id,
+        Timestamp::now(),
+    )
+    .await
+    .unwrap() else {
+        panic!("the plan admitted no journal");
+    };
+    drop(owner);
+
+    let seen = status(&client, &open.store, &paths.identity_dir, &journal_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        seen.row.state,
+        OpState::Planned,
+        "status recovered a journal"
+    );
+    assert_eq!(
+        super::ops::require(&open.store, &journal_id).unwrap().state,
+        OpState::Planned
+    );
+
+    // Reconcile is the recoverer, and it says the honest thing.
+    let resolved = reconcile(
+        &client,
+        &open.store,
+        &paths.identity_dir,
+        &journal_id,
+        false,
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(resolved.row.state, OpState::Refused);
+    assert_eq!(
+        resolved.row.not_posted_evidence,
+        Some(NotPostedEvidence::NeverSent)
+    );
+}
+
 // ------------------------------------------------------- owner-absent recovery
 
 /// Every non-terminal state recovers to the only answer it can honestly have.
