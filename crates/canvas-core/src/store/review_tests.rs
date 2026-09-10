@@ -393,3 +393,155 @@ fn wider_windows_are_reused_only_with_matching_context_and_containment() {
         })
         .unwrap();
 }
+
+#[test]
+fn interrupted_and_invalid_refreshes_preserve_values_membership_and_coverage() {
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store
+        .call_blocking(|conns| {
+            let ds = FakeEntity::new("course:1");
+            ds.ingest(&[page(100, "old")], &complete(0), conns)
+                .map_err(ingest_error)?;
+            let mut failed = complete(0);
+            failed.complete = false;
+            failed.error = Some("page 2 failed");
+            ds.ingest(&[page(200, "partial")], &failed, conns)
+                .map_err(ingest_error)?;
+            let log = load_fetch_log(&conns.cache, "fake", "course:1")?.unwrap();
+            assert!(log.complete && log.stale);
+            assert_eq!(log.fetched_at, ts(100));
+            assert_eq!(log.error.as_deref(), Some("page 2 failed"));
+            let mut bad_page = page(300, "invalid");
+            bad_page.entities[0].fields.push(FieldWrite {
+                name: "score",
+                group: FieldGroup::Status,
+                value: Some("not-a-number".into()),
+            });
+            assert!(
+                ds.ingest(&[page(250, "first-page"), bad_page], &complete(0), conns)
+                    .is_err()
+            );
+            let name: String =
+                conns
+                    .cache
+                    .query_row("SELECT name FROM fake_entities", [], |r| r.get(0))?;
+            let members: i64 =
+                conns
+                    .cache
+                    .query_row("SELECT count(*) FROM membership", [], |r| r.get(0))?;
+            assert_eq!(name, "old");
+            assert_eq!(members, 1);
+            assert_eq!(
+                field_observed_at(&conns.cache, "fake_entity", "1", "name")?.unwrap(),
+                ts(100).to_string()
+            );
+            assert!(matches!(
+                lookup_dataset(conns, &ds, ts(301), None)?,
+                LookupResult::Stale(_)
+            ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn fractional_observations_and_explicit_null_follow_time_order() {
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store
+        .call_blocking(|conns| {
+            let ds = FakeEntity::new("course:1");
+            ds.ingest(&[page(100, "old")], &complete(0), conns)
+                .map_err(ingest_error)?;
+            let mut newer = page(100, "unused");
+            newer.fetched_at = jiff::Timestamp::from_millisecond(100_500).unwrap();
+            newer.entities[0].fields[0].value = None;
+            ds.ingest(&[newer.clone()], &complete(0), conns)
+                .map_err(ingest_error)?;
+            ds.ingest(&[page(100, "stale")], &complete(0), conns)
+                .map_err(ingest_error)?;
+            let name: Option<String> =
+                conns
+                    .cache
+                    .query_row("SELECT name FROM fake_entities", [], |r| r.get(0))?;
+            assert!(name.is_none());
+            assert_eq!(
+                field_observed_at(&conns.cache, "fake_entity", "1", "name")?.unwrap(),
+                newer.fetched_at.to_string()
+            );
+            let value: FakeEntityRow =
+                serde_json::from_str(r#"{"id":1,"name":null,"can_submit":false}"#).unwrap();
+            assert_eq!(value.name, Supplied::Null);
+            assert_eq!(value.due_at, Supplied::Absent);
+            assert_eq!(value.can_submit, Supplied::Value(false));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn overlapping_pages_deduplicate_membership_and_leave_other_scopes_untouched() {
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store.call_blocking(|conns| {
+        let ds = FakeEntity::new("course:1");
+        FakeEntity::new("other").ingest(&[page(50, "original")], &complete(0), conns).map_err(ingest_error)?;
+        ds.ingest(&[page(100, "old"), page(200, "new")], &complete(0), conns).map_err(ingest_error)?;
+        let log = load_fetch_log(&conns.cache, "fake", "course:1")?.unwrap();
+        assert_eq!(log.count, 1);
+        assert!(load_fetch_log(&conns.cache, "fake", "other")?.is_some());
+        ds.ingest(&[IngestPage { fetched_at: ts(300), entities: vec![] }], &complete(0), conns).map_err(ingest_error)?;
+        assert!(matches!(lookup_dataset(conns, &ds, ts(301), None)?, LookupResult::Hit(row) if row.count == 0));
+        let entities: i64 = conns.cache.query_row("SELECT count(*) FROM fake_entities", [], |r| r.get(0))?;
+        let members: i64 = conns.cache.query_row("SELECT count(*) FROM membership WHERE scope = 'other'", [], |r| r.get(0))?;
+        assert_eq!((entities, members), (1, 1));
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn grade_letters_are_written_with_independent_period_clocks() {
+    let (_dir, paths, doc) = identity();
+    let store = Store::open(&paths, &doc).unwrap();
+    store
+        .call_blocking(|conns| {
+            let tx = conns
+                .cache
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            for (period, at, grade) in [
+                ("P", 30, Some("A")),
+                ("Q", 20, Some("B")),
+                ("P", 25, Some("C")),
+                ("Q", 21, None),
+            ] {
+                upsert_enrollment_grades(
+                    &tx,
+                    7,
+                    period,
+                    ts(at),
+                    &[FieldWrite {
+                        name: "current_grade",
+                        group: FieldGroup::Status,
+                        value: grade.map(str::to_owned),
+                    }],
+                )
+                .map_err(ingest_error)?;
+            }
+            tx.commit()?;
+            let p: Option<String> = conns.cache.query_row(
+                "SELECT current_grade FROM enrollment_grades WHERE period='P'",
+                [],
+                |r| r.get(0),
+            )?;
+            let q: Option<String> = conns.cache.query_row(
+                "SELECT current_grade FROM enrollment_grades WHERE period='Q'",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(p.as_deref(), Some("A"));
+            assert!(q.is_none());
+            Ok(())
+        })
+        .unwrap();
+}

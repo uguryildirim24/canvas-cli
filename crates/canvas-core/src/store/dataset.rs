@@ -1,7 +1,10 @@
 //! Dataset trait, field-group ingest, and `FakeEntity` for tests.
 
+use std::collections::HashSet;
+
 use jiff::Timestamp;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use serde::{Deserialize, Deserializer};
 
 use super::db::DbError;
 use super::ops::{self, EpochAbort, FetchLogRow};
@@ -32,6 +35,12 @@ pub enum Supplied<T> {
     Absent,
     Null,
     Value(T),
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Supplied<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Option::<T>::deserialize(deserializer).map(|value| value.map_or(Self::Null, Self::Value))
+    }
 }
 
 impl<T> Supplied<T> {
@@ -78,6 +87,7 @@ pub struct IngestOpts<'a> {
     pub epoch_seen: i64,
     pub complete: bool,
     pub stale: bool,
+    /// Sanitized summary only; never a raw response body or credential-bearing error.
     pub error: Option<&'a str>,
     pub window: Option<(Timestamp, Timestamp)>,
     pub contexts: Option<&'a str>,
@@ -108,49 +118,92 @@ pub trait Dataset {
         opts: &IngestOpts<'_>,
         conns: &mut super::db::StoreConns,
     ) -> Result<(), IngestError> {
-        let super::db::StoreConns { cache, state, .. } = conns;
-        let tx = cache.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let mut count = 0i64;
-        for page in pages {
-            for entity in &page.entities {
-                self.upsert_entity(&tx, entity, page.fetched_at)?;
-                count += 1;
-            }
+        if !opts.complete || opts.stale || opts.error.is_some() {
+            return mark_refresh_failed(self, opts.error.unwrap_or("refresh incomplete"), conns);
         }
+        let result = commit_refresh(self, pages, opts, conns);
+        if result.is_err() && !matches!(result, Err(IngestError::Epoch(_))) {
+            mark_refresh_failed(self, "refresh ingestion failed", conns)?;
+        }
+        result
+    }
 
-        // Replace membership for the exact scope.
-        tx.execute(
-            "DELETE FROM membership WHERE dataset = ?1 AND scope = ?2",
-            params![self.name(), self.scope_key()],
-        )?;
-        let mut pos = 0i64;
-        for page in pages {
-            for entity in &page.entities {
-                tx.execute(
-                    "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
+    /// Upsert one entity using the per-field write rule.
+    fn upsert_entity(
+        &self,
+        tx: &Transaction<'_>,
+        entity: &EntityIngest,
+        fetched_at: Timestamp,
+    ) -> Result<(), IngestError>;
+}
+
+fn mark_refresh_failed<D: Dataset + ?Sized>(
+    dataset: &D,
+    error: &str,
+    conns: &mut super::db::StoreConns,
+) -> Result<(), IngestError> {
+    let tx = conns
+        .cache
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute(
+        "UPDATE fetch_log SET stale = 1, error = ?1 WHERE dataset = ?2 AND scope = ?3",
+        params![error, dataset.name(), dataset.scope_key()],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn commit_refresh<D: Dataset + ?Sized>(
+    dataset: &D,
+    pages: &[IngestPage],
+    opts: &IngestOpts<'_>,
+    conns: &mut super::db::StoreConns,
+) -> Result<(), IngestError> {
+    let super::db::StoreConns { cache, state, .. } = conns;
+    let tx = cache.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    for page in pages {
+        for entity in &page.entities {
+            dataset.upsert_entity(&tx, entity, page.fetched_at)?;
+        }
+    }
+
+    // Replace membership for the exact scope.
+    tx.execute(
+        "DELETE FROM membership WHERE dataset = ?1 AND scope = ?2",
+        params![dataset.name(), dataset.scope_key()],
+    )?;
+    let mut pos = 0i64;
+    let mut seen = HashSet::new();
+    for page in pages {
+        for entity in &page.entities {
+            if !seen.insert(&entity.entity_key) {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
                      VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![
-                        self.name(),
-                        self.scope_key(),
-                        self.entity_kind(),
-                        entity.entity_key,
-                        pos
-                    ],
-                )?;
-                pos += 1;
-            }
+                params![
+                    dataset.name(),
+                    dataset.scope_key(),
+                    dataset.entity_kind(),
+                    entity.entity_key,
+                    pos
+                ],
+            )?;
+            pos += 1;
         }
+    }
 
-        let fetched_at = pages.last().map_or_else(
-            || Timestamp::now().to_string(),
-            |p| p.fetched_at.to_string(),
-        );
-        let (window_start, window_end) = match opts.window {
-            Some((s, e)) => (Some(s.to_string()), Some(e.to_string())),
-            None => (None, None),
-        };
-        tx.execute(
-            "INSERT INTO fetch_log (
+    let fetched_at = pages.last().map_or_else(
+        || Timestamp::now().to_string(),
+        |p| p.fetched_at.to_string(),
+    );
+    let (window_start, window_end) = match opts.window {
+        Some((s, e)) => (Some(s.to_string()), Some(e.to_string())),
+        None => (None, None),
+    };
+    tx.execute(
+        "INSERT INTO fetch_log (
                 dataset, scope, fetched_at, complete, count, stale, error,
                 epoch_seen, contexts, window_start, window_end
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
@@ -164,45 +217,36 @@ pub trait Dataset {
                 contexts = excluded.contexts,
                 window_start = excluded.window_start,
                 window_end = excluded.window_end",
-            params![
-                self.name(),
-                self.scope_key(),
-                fetched_at,
-                i64::from(opts.complete),
-                count,
-                i64::from(opts.stale),
-                opts.error,
-                opts.epoch_seen,
-                opts.contexts,
-                window_start,
-                window_end,
-            ],
-        )?;
+        params![
+            dataset.name(),
+            dataset.scope_key(),
+            fetched_at,
+            i64::from(opts.complete),
+            pos,
+            i64::from(opts.stale),
+            opts.error,
+            opts.epoch_seen,
+            opts.contexts,
+            window_start,
+            window_end,
+        ],
+    )?;
 
-        // Serialize the final epoch check with journal transitions until cache commit.
-        // Always acquire cache before state; no network work runs under either lock.
-        let state_tx = state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let scope = self.epoch_scope();
-        let current = ops::read_scope_epoch(&state_tx, &scope)?;
-        if current > opts.epoch_seen {
-            return Err(IngestError::Epoch(EpochAbort {
-                scope,
-                epoch_seen: opts.epoch_seen,
-                current,
-            }));
-        }
-        tx.commit()?;
-        state_tx.commit()?;
-        Ok(())
+    // Serialize the final epoch check with journal transitions until cache commit.
+    // Always acquire cache before state; no network work runs under either lock.
+    let state_tx = state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let scope = dataset.epoch_scope();
+    let current = ops::read_scope_epoch(&state_tx, &scope)?;
+    if current > opts.epoch_seen {
+        return Err(IngestError::Epoch(EpochAbort {
+            scope,
+            epoch_seen: opts.epoch_seen,
+            current,
+        }));
     }
-
-    /// Upsert one entity using the per-field write rule.
-    fn upsert_entity(
-        &self,
-        tx: &Transaction<'_>,
-        entity: &EntityIngest,
-        fetched_at: Timestamp,
-    ) -> Result<(), IngestError>;
+    tx.commit()?;
+    state_tx.commit()?;
+    Ok(())
 }
 
 /// Ingest failures including epoch abort.
@@ -246,7 +290,7 @@ pub fn apply_field_writes(
             .optional()?;
         if let Some(ref observed) = prev {
             // Newer fetched_at wins; equal does not overwrite.
-            if fetched.as_str() <= observed.as_str() {
+            if fetched_at <= parse_observed(observed)? {
                 continue;
             }
         }
@@ -265,6 +309,26 @@ pub fn apply_field_writes(
         }
     }
     Ok(out)
+}
+
+fn parse_observed(value: &str) -> Result<Timestamp, DbError> {
+    value.parse().map_err(|e| {
+        DbError::Sqlite(rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            Box::new(e),
+        ))
+    })
+}
+
+fn validate_fields(fields: &[FieldWrite], allowed: &[&str]) -> Result<(), IngestError> {
+    let mut seen = HashSet::new();
+    for field in fields {
+        if !allowed.contains(&field.name) || !seen.insert(field.name) {
+            return Err(DbError::Message("unsupported or duplicate entity field".into()).into());
+        }
+    }
+    Ok(())
 }
 
 /// Read current `observed_at` for a field.
@@ -330,6 +394,13 @@ impl Dataset for FakeEntity {
             )))
         })?;
 
+        if entity.entity_key != id.to_string() {
+            return Err(DbError::Message("entity key must be normalized".into()).into());
+        }
+        validate_fields(
+            &entity.fields,
+            &["name", "due_at", "description", "score", "can_submit"],
+        )?;
         // Ensure a row exists.
         tx.execute(
             "INSERT INTO fake_entities (id) VALUES (?1)
@@ -427,7 +498,8 @@ pub struct FakeEntityPage {
 }
 
 /// One `FakeEntity` row with three-state fields.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct FakeEntityRow {
     pub id: i64,
     pub name: Supplied<String>,
@@ -521,6 +593,16 @@ pub fn upsert_enrollment_grades(
     fetched_at: Timestamp,
     fields: &[FieldWrite],
 ) -> Result<(), IngestError> {
+    validate_fields(
+        fields,
+        &[
+            "course_id",
+            "current_score",
+            "final_score",
+            "current_grade",
+            "final_grade",
+        ],
+    )?;
     let entity_key = format!("{enrollment_id}|{period}");
     tx.execute(
         "INSERT INTO enrollment_grades (enrollment_id, period) VALUES (?1, ?2)
@@ -563,7 +645,12 @@ pub fn upsert_enrollment_grades(
                     params![v, enrollment_id, period],
                 )?;
             }
-            _ => {}
+            "current_grade" | "final_grade" | "course_id" => {
+                // Identifiers above are allowlisted, values remain bound parameters.
+                tx.execute(&format!("UPDATE enrollment_grades SET {} = ?1 WHERE enrollment_id = ?2 AND period = ?3", field.name),
+                    params![field.value, enrollment_id, period])?;
+            }
+            _ => unreachable!("fields were validated"),
         }
     }
     let ts = fetched_at.to_string();
