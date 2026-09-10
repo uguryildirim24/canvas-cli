@@ -22,6 +22,12 @@ expression: value
   "result": {
     "journal": {
       "acknowledged_at": null,
+      "approval": {
+        "at": "2026-09-09T17:05:12Z",
+        "channel": "yes-flag",
+        "consumer": null,
+        "plan_sha256": "<digest>"
+      },
       "assignment_id": "9",
       "assignment_name": "Problem Set 1",
       "baseline_attempt": 0,
@@ -33,6 +39,7 @@ expression: value
       "kind": "online_text_entry",
       "not_submitted_evidence": null,
       "owner": "n/a",
+      "plan_id": "<id>",
       "post_status": 200,
       "posted": {
         "attachments": [],
@@ -66,6 +73,12 @@ expression: value
       "uploaded_file_ids": []
     },
     "receipt": {
+      "approval": {
+        "at": "2026-09-09T17:05:12Z",
+        "channel": "yes-flag",
+        "consumer": null,
+        "plan_sha256": "<digest>"
+      },
       "assignment_id": "9",
       "assignment_name": "Problem Set 1",
       "attribution": "observed",
@@ -83,6 +96,7 @@ expression: value
       },
       "journal_id": "00000000-0000-4000-8000-00000000000j",
       "kind": "online_text_entry",
+      "plan_id": "<id>",
       "posted": {
         "attachments": [],
         "attempt": 1,

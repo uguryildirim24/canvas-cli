@@ -5,10 +5,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use canvas_core::journal::{State, get_journal};
+use canvas_core::plan::{Admission, ApprovalChannel, PlanError, PrepareRequest};
 use canvas_core::submit::{
     ExecuteError, ExecuteOutcome, FreezeError, FrozenInput, InputKind, Plan, PreflightError,
-    SubmitError, TextSource, create_from_plan, execute, freeze_files, freeze_html, freeze_text,
-    freeze_url, preflight_with_input,
+    SubmitError, TextSource, execute, freeze_files, freeze_html, freeze_text, freeze_url,
 };
 
 use super::Globals;
@@ -82,14 +82,22 @@ pub async fn run(
     } else {
         InputKind::OnlineTextEntry
     };
-    let mut outcome = match preflight_with_input(
-        client,
-        &session.open.store,
-        &session.paths.identity_dir,
-        session.identity.key.as_str(),
+    // The human flow is the plan flow: freeze and store a plan, record the
+    // decision as an approval, then execute the approved plan (REPORT §3.5).
+    let request = PrepareRequest {
+        identity_dir: &session.paths.identity_dir,
+        identity_key: session.identity.key.as_str(),
+        consumer: None,
         course_id,
         assignment_id,
+        // The assignment GET omits the course include; fall back to the resolved code.
+        course_code: course.code.as_deref(),
         kind,
+    };
+    let prepared = match canvas_core::plan::prepare(
+        client,
+        &session.open.store,
+        &request,
         move || {
             freeze_inputs(
                 &files,
@@ -103,56 +111,76 @@ pub async fn run(
     )
     .await
     {
-        Ok(o) => o,
-        Err(e) => return map_preflight_error(globals, &session, e),
+        Ok(prepared) => prepared,
+        Err(e) => return map_plan_error(globals, &session, e),
     };
+    let plan_id = prepared.plan.plan_id.clone();
 
-    // The assignment GET omits the course include; fall back to the resolved code.
-    if outcome.plan.course_code.is_none() {
-        outcome.plan.course_code.clone_from(&course.code);
-        outcome
-            .plan
-            .frozen
-            .payload
-            .course_code
-            .clone_from(&course.code);
-    }
-
-    for (jid, state) in &outcome.plan.recovered {
+    for (jid, state) in &prepared.display.recovered {
         let _ = writeln!(io::stderr(), "recovered journal {jid} → {state}");
     }
 
-    print_plan(&outcome.plan);
-    if !yes {
+    print_plan(&prepared.display);
+    let channel = if yes {
+        // `--yes` is recorded as itself; it never claims an interactive decision.
+        ApprovalChannel::YesFlag
+    } else {
         match confirm_tty().await {
-            Ok(true) => {}
+            Ok(true) => ApprovalChannel::Tty,
             Ok(false) => {
-                drop(outcome.admission);
+                cancel_plan(&session, &plan_id);
                 return selected_error(globals, &session, "cancelled", "submission cancelled", 11);
             }
             Err(message) => {
-                drop(outcome.admission);
+                cancel_plan(&session, &plan_id);
                 return selected_error(globals, &session, "usage", &message, 2);
             }
         }
+    };
+
+    let approved =
+        canvas_core::plan::issue_handle(&session.open.store, &plan_id, None).and_then(|handle| {
+            canvas_core::plan::approve(
+                &session.open.store,
+                &plan_id,
+                &handle,
+                channel,
+                None,
+                crate::output::now_timestamp(),
+            )
+        });
+    if let Err(e) = approved {
+        return map_plan_error(globals, &session, e);
     }
 
-    let (journal_id, owner) = match create_from_plan(
+    let (journal_id, owner, frozen, past_due) = match canvas_core::plan::execute(
+        client,
         &session.open.store,
         &session.paths.identity_dir,
         session.identity.key.as_str(),
-        &outcome.admission,
-        &outcome.plan,
-    ) {
-        Ok(pair) => pair,
-        Err(e) => {
-            drop(outcome.admission);
-            return map_preflight_error(globals, &session, e);
+        &plan_id,
+        crate::output::now_timestamp(),
+    )
+    .await
+    {
+        Ok(Admission::Created {
+            journal_id,
+            owner,
+            frozen,
+            past_due,
+        }) => (journal_id, owner, *frozen, past_due),
+        Ok(Admission::Existing { journal_id }) => {
+            return selected_error(
+                globals,
+                &session,
+                "refused",
+                &format!("plan already executed as journal {journal_id}"),
+                8,
+            );
         }
+        Err(e) => return map_plan_error(globals, &session, e),
     };
-    drop(outcome.admission);
 
-    let frozen = outcome.plan.frozen.clone();
     match execute(
         client,
         &session.open.store,
@@ -164,7 +192,7 @@ pub async fn run(
     .await
     {
         Ok(mut exec) => {
-            if outcome.plan.past_due {
+            if past_due {
                 exec.warning = Some(exec.warning.map_or_else(
                     || "assignment is past due".into(),
                     |w| format!("assignment is past due; {w}"),
@@ -410,6 +438,50 @@ fn build_submit_result(exec: &ExecuteOutcome, frozen: &FrozenInput) -> SubmitRes
         url: frozen.payload.url.clone(),
         error: None,
     }
+}
+
+/// Invalidate a plan the user did not approve, so it can never be executed.
+fn cancel_plan(session: &Session, plan_id: &str) {
+    let _ = canvas_core::plan::cancel(&session.open.store, plan_id);
+}
+
+/// Map a plan-layer failure onto the §14 exit codes.
+///
+/// Every plan refusal is exit 8 and carries the REPORT §3.2 reason
+/// (`expired`, `invalidated`, or `approval_required`) in `details`.
+fn map_plan_error(globals: &Globals, session: &Session, err: PlanError) -> ExitCode {
+    if let Some(reason) = err.refusal_reason() {
+        let reason = reason.to_owned();
+        return plan_refusal(globals, session, &reason, &err.to_string());
+    }
+    match err {
+        PlanError::Preflight(e) => map_preflight_error(globals, session, e),
+        PlanError::InProgress { journal_id } => {
+            map_submit_error(globals, session, SubmitError::InProgress { journal_id })
+        }
+        PlanError::Journal(e) => map_submit_error(globals, session, SubmitError::Journal(e)),
+        PlanError::Store(e) => selected_error(globals, session, "local", &e.to_string(), 13),
+        PlanError::Json(e) => selected_error(globals, session, "local", &e.to_string(), 13),
+        PlanError::Io(e) => selected_error(globals, session, "local", &e.to_string(), 13),
+        // `refusal_reason` covers every remaining variant.
+        other => plan_refusal(globals, session, "invalidated", &other.to_string()),
+    }
+}
+
+fn plan_refusal(globals: &Globals, session: &Session, reason: &str, message: &str) -> ExitCode {
+    let mut env = crate::output::error_envelope(
+        "refused",
+        message,
+        None,
+        serde_json::json!({ "reason": reason }),
+        8,
+    );
+    env.profile.clone_from(&session.profile);
+    env.identity = Some(session.identity_ref());
+    env.requests = session.requests();
+    emit(globals.json, &env, || {
+        writeln!(io::stderr(), "{}", env.result.message)
+    })
 }
 
 fn map_preflight_error(globals: &Globals, session: &Session, err: PreflightError) -> ExitCode {

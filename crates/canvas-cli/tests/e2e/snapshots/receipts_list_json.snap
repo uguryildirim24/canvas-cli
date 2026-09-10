@@ -23,6 +23,12 @@ expression: value
     "journals": [
       {
         "acknowledged_at": null,
+        "approval": {
+          "at": "2026-09-09T17:05:12Z",
+          "channel": "yes-flag",
+          "consumer": null,
+          "plan_sha256": "<digest>"
+        },
         "assignment_id": "9",
         "assignment_name": "Problem Set 1",
         "baseline_attempt": 0,
@@ -34,6 +40,7 @@ expression: value
         "kind": "online_text_entry",
         "not_submitted_evidence": null,
         "owner": "n/a",
+        "plan_id": "<id>",
         "post_status": 200,
         "posted": {
           "attachments": [],

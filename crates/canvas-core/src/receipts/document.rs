@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::journal::{PostedRecord, ReadbackRecord};
+use crate::plan::Approval;
 
 /// Identity block embedded in a receipt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,6 +89,16 @@ pub struct ReceiptDocument {
     pub cli_version: String,
     /// Journal `created_at`.
     pub created_at: String,
+    /// The plan this submission was admitted from (REPORT §3.5).
+    ///
+    /// Appendix D's nullable convention: the field is always present, and a
+    /// receipt rebuilt from a journal created before plans expose `null`
+    /// rather than invented approval evidence.
+    #[serde(default)]
+    pub plan_id: Option<String>,
+    /// The approval audit copied in at admission; `null` for legacy journals.
+    #[serde(default)]
+    pub approval: Option<Approval>,
 }
 
 impl ReceiptDocument {
