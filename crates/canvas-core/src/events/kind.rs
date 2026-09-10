@@ -23,7 +23,7 @@ pub enum EventKind {
     SubmissionState,
     /// An operation journal changed state (M8-b, §12.2 discipline).
     OperationState,
-    /// Registered for M8-a; this package writes no producer for it.
+    /// The unread-conversation count changed (M8-a `inbox_unread`).
     InboxUnreadCount,
     /// The recorded observation could not be applied; rebuild the baseline.
     ResyncRequired,

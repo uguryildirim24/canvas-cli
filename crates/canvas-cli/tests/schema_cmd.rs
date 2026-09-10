@@ -156,6 +156,55 @@ fn a_command_schema_describes_the_envelope_and_the_error_branch() {
     }
 }
 
+/// The stream is its own contract (SPEC §7), and the page says so: an
+/// `event@1` line claims no envelope, and the `watch@1` page names the flag
+/// that prints it and the one that is refused.
+#[test]
+fn the_stream_schemas_describe_the_jsonl_contract() {
+    let document = |command: &str| -> serde_json::Value {
+        let assert = canvas().args(["schema", command]).assert().success();
+        serde_json::from_slice(&assert.get_output().stdout).expect("one JSON document")
+    };
+
+    let event = document("event");
+    assert_eq!(event["schema"], "canvas-cli/event@1");
+    assert_eq!(event["output"]["form"], "jsonl");
+    assert_eq!(event["output"]["flag"], "--jsonl");
+    assert_eq!(event["output"]["refuses"][0], "--json");
+    // No envelope is claimed, and no error branch: a line is never wrapped,
+    // and a failed run reports itself in the closing `watch@1` document.
+    assert!(event["envelope"].is_null(), "{event}");
+    assert!(event["error"].is_null(), "{event}");
+    assert_eq!(
+        event["line"]["properties"]["schema"]["const"],
+        "canvas-cli/event@1"
+    );
+    assert!(
+        event["line"]["properties"]["cursor"].is_object(),
+        "the line does not describe its cursor: {event}"
+    );
+
+    let watch = document("watch");
+    assert_eq!(watch["schema"], "canvas-cli/watch@1");
+    assert_eq!(watch["output"]["form"], "envelope");
+    assert_eq!(watch["output"]["flag"], "--jsonl");
+    assert_eq!(watch["output"]["refuses"][0], "--json");
+    let comment = watch["output"]["$comment"].as_str().unwrap_or_default();
+    assert!(
+        comment.contains("--jsonl` is the machine-readable form"),
+        "{comment}"
+    );
+    assert!(
+        comment.contains("`--json` is refused with exit 2"),
+        "{comment}"
+    );
+    // The closing summary is still a §7 envelope with both branches.
+    assert_eq!(
+        watch["envelope"]["oneOf"][1]["properties"]["schema"]["const"],
+        "canvas-cli/error@1"
+    );
+}
+
 /// The generated schema must accept the document the command actually prints.
 #[test]
 fn the_version_schema_accepts_the_version_envelope() {
