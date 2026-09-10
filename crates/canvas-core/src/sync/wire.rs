@@ -1,10 +1,13 @@
 //! Preserve field presence while projecting API models onto allowlisted cache fields.
 
-use super::{SyncError, course_to_entity, enrollment_to_entity, grading_period_to_entity};
+use super::{
+    SyncError, course_to_entity, enrollment_to_entity, file_to_entity, folder_to_entity,
+    grading_period_to_entity, module_to_entity,
+};
 use crate::store::{EntityIngest, FieldGroup, FieldWrite};
 use canvas_api::{
     Supplied,
-    models::{Course, Enrollment, GradingPeriod},
+    models::{Course, Enrollment, File, Folder, GradingPeriod, Module, ModuleItem},
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -225,5 +228,80 @@ impl Observed<GradingPeriod> {
             }
         }
         entity
+    }
+}
+
+impl Observed<Folder> {
+    pub fn entity(self, course_id: i64) -> EntityIngest {
+        let mut entity = folder_to_entity(&self.model, course_id);
+        for (name, group) in [
+            ("name", FieldGroup::Core),
+            ("full_name", FieldGroup::Core),
+            ("parent_folder_id", FieldGroup::Core),
+            ("hidden", FieldGroup::Status),
+            ("locked", FieldGroup::Status),
+            ("locked_for_user", FieldGroup::Status),
+        ] {
+            if self.raw.get(name).is_some() {
+                observe(&mut entity.fields, &self.raw, name, group);
+            }
+        }
+        entity
+    }
+}
+
+impl Observed<File> {
+    pub fn entity(self, course_id: i64) -> EntityIngest {
+        let mut entity = file_to_entity(&self.model, course_id);
+        for (name, group) in [
+            ("display_name", FieldGroup::Core),
+            ("filename", FieldGroup::Core),
+            ("folder_id", FieldGroup::Core),
+            ("size", FieldGroup::Core),
+            ("content_type", FieldGroup::Core),
+            ("hidden", FieldGroup::Status),
+            ("locked", FieldGroup::Status),
+            ("locked_for_user", FieldGroup::Status),
+            ("lock_explanation", FieldGroup::Status),
+            ("unlock_at", FieldGroup::Status),
+            ("lock_at", FieldGroup::Status),
+            ("updated_at", FieldGroup::Detail),
+            ("url", FieldGroup::Detail),
+        ] {
+            if self.raw.get(name).is_some() {
+                observe(&mut entity.fields, &self.raw, name, group);
+            }
+        }
+        entity
+    }
+}
+
+impl Observed<Module> {
+    pub fn entity(
+        self,
+        course_id: i64,
+        items_complete: bool,
+        items: &[ModuleItem],
+    ) -> EntityIngest {
+        let mut entity = module_to_entity(&self.model, course_id, items_complete, items);
+        for (name, group) in [
+            ("name", FieldGroup::Core),
+            ("position", FieldGroup::Core),
+            ("items_count", FieldGroup::Core),
+            ("state", FieldGroup::Status),
+            ("unlock_at", FieldGroup::Detail),
+            ("published", FieldGroup::Detail),
+        ] {
+            if self.raw.get(name).is_some() {
+                observe(&mut entity.fields, &self.raw, name, group);
+            }
+        }
+        entity
+    }
+}
+
+impl Observed<ModuleItem> {
+    pub fn into_model(self) -> ModuleItem {
+        self.model
     }
 }

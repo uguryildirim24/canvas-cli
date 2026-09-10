@@ -131,7 +131,8 @@ pub trait Dataset {
         opts: &IngestOpts<'_>,
         conns: &mut super::db::StoreConns,
     ) -> Result<(), IngestError> {
-        if !opts.complete || opts.stale || opts.error.is_some() {
+        // Complete denials use complete=true, stale=false, error=Some("unavailable:NNN").
+        if !opts.complete || opts.stale {
             return mark_refresh_failed(self, opts.error.unwrap_or("refresh incomplete"), conns);
         }
         let result = commit_refresh(self, pages, opts, conns);
