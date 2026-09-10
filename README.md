@@ -103,14 +103,14 @@ and exits with `not implemented`.
 | `canvas files` | List a course's files. `--tree`, `--search`. | available |
 | `canvas download` | Download course files per module, never clobbering. `--dest`, `--module`, `--file`, `--jobs`, `--dry-run`, `--force`, `--verify`. | available |
 | `canvas modules` | List a course's modules. `--items`. | available |
-| `canvas announcements` | Recent announcements. `--since`, `--unread`. | planned |
-| `canvas announcement` | Show one announcement as Markdown. | planned |
-| `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. | planned |
+| `canvas announcements` | Recent announcements. `--since`, `--unread`. | available |
+| `canvas announcement` | Show one announcement as Markdown. | available |
+| `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. | available |
 | `canvas open` | Open a course, or any Canvas URL, in the browser. | available |
 | `canvas open assignment` | Open an assignment page in the browser. | available |
 | `canvas open file` | Open a file by id in the browser. | available |
 | `canvas open announcement` | Open an announcement page in the browser. | available |
-| `canvas sync` | Refresh the cached datasets. `--full` adds files and modules. | available |
+| `canvas sync` | Refresh the cached datasets. `--full` adds files, modules, and the calendar. | available |
 | `canvas cache stats` | Row counts and size per cached dataset. | available |
 | `canvas cache clear` | Drop the cache database. State and receipts survive. | available |
 | `canvas cache path` | Print the cache database path. | available |
