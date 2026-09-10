@@ -180,6 +180,31 @@ fn mixed_commands_enforce_global_conflicts_after_operands() {
 }
 
 #[test]
+fn submission_accepts_options_between_operands() {
+    for options in [
+        vec!["--fresh"],
+        vec!["--offline"],
+        vec!["--json"],
+        vec!["--profile", "school"],
+        vec!["--color", "never"],
+        vec!["-q", "-v"],
+        vec!["--history"],
+    ] {
+        let mut args = vec!["submission", "chem"];
+        args.extend(options);
+        args.push("123");
+        assert_stub(&args);
+    }
+    assert_usage_error(&["submission", "chem", "--fresh", "123", "--offline"]);
+    assert_usage_error(&["--offline", "submission", "chem", "--fresh", "123"]);
+    assert_usage_error(&["submission", "chem", "--fresh"]);
+    assert_usage_error(&["submission", "chem", "--fresh", "123", "extra"]);
+    // Escape a subcommand name when it follows an option.
+    assert_stub(&["submission", "chem", "--fresh", "--", "verify"]);
+    assert_stub(&["submission", "--", "verify", "123"]);
+}
+
+#[test]
 fn mixed_command_help_lists_real_operands() {
     for (command, expected) in [
         ("submission", vec!["COURSE", "ASSIGNMENT", "--history"]),
