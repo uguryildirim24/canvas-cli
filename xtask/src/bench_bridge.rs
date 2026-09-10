@@ -1,8 +1,14 @@
 //! What the browser companion costs: `cargo xtask bench --bridge`.
 //!
-//! One number, measured the way a consumer actually pays it: a warm metadata
-//! `here` over the `bridge-ipc@1` socket, p50 and p95, with the target
-//! p95 < 100 ms.
+//! Two numbers, each measured the way a consumer actually pays it:
+//!
+//! - a warm metadata `here` over the `bridge-ipc@1` socket, target
+//!   p95 < 100 ms;
+//! - a **follow acknowledgement**: the socket round trip that ends when the
+//!   companion says it took the navigation, target p95 < 300 ms. It is not
+//!   the time to load a page. Nothing here waits for a load, and nothing
+//!   here could: the load outcome is a separate message that arrives later
+//!   (REPORT §3.2). What this measures is the cost of asking.
 //!
 //! What is deliberately outside the measurement:
 //!
@@ -22,6 +28,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -35,6 +43,9 @@ use crate::bench::percentile;
 
 /// Target for one warm metadata `here` over the socket, in milliseconds.
 pub const HERE_P95_MS: f64 = 100.0;
+
+/// Target for one follow acknowledgement, in milliseconds.
+pub const FOLLOW_P95_MS: f64 = 300.0;
 
 /// Round trips discarded before the timed ones.
 pub const WARMUP: u32 = 5;
@@ -59,8 +70,8 @@ pub struct Latency {
 
 impl Latency {
     #[must_use]
-    pub fn missed(&self) -> bool {
-        self.p95 > HERE_P95_MS
+    pub fn missed_at(&self, target: f64) -> bool {
+        self.p95 > target
     }
 }
 
@@ -70,12 +81,14 @@ pub struct Report {
     pub here: Latency,
     /// Bytes of one `here` answer on the socket.
     pub answer_bytes: usize,
+    /// The socket round trip that ends at the companion's acknowledgement.
+    pub follow: Latency,
 }
 
 impl Report {
     #[must_use]
     pub fn missed(&self) -> bool {
-        self.here.missed()
+        self.here.missed_at(HERE_P95_MS) || self.follow.missed_at(FOLLOW_P95_MS)
     }
 }
 
@@ -99,8 +112,24 @@ pub fn measure(binary: &Path, runs: u32) -> Result<Report> {
         answer_bytes = bytes;
         samples.push(elapsed);
     }
-    host.stop();
     samples.sort_by(f64::total_cmp);
+
+    // The follow round trip needs the companion to answer while the consumer
+    // waits, so the extension side moves to its own thread for this part. It
+    // answers every navigation at once: what is being measured is the broker
+    // and the two pipes, not how fast a browser decides.
+    let mut companion = Companion::start(host);
+    for _ in 0..WARMUP {
+        client.follow(&format!("{ORIGIN}/courses/45679"))?;
+    }
+    let mut follows = Vec::with_capacity(runs as usize);
+    for run in 0..runs {
+        let (_, elapsed) = client.follow(&format!("{ORIGIN}/courses/45679/assignments/{run}"))?;
+        follows.push(elapsed);
+    }
+    follows.sort_by(f64::total_cmp);
+    companion.stop()?;
+
     Ok(Report {
         here: Latency {
             p50: percentile(&samples, 50.0),
@@ -108,7 +137,64 @@ pub fn measure(binary: &Path, runs: u32) -> Result<Report> {
             runs,
         },
         answer_bytes,
+        follow: Latency {
+            p50: percentile(&follows, 50.0),
+            p95: percentile(&follows, 95.0),
+            runs,
+        },
     })
+}
+
+// ---------------------------------------------------- the answering companion
+
+/// The extension side, answering navigations while a consumer waits.
+struct Companion {
+    worker: Option<JoinHandle<Result<Host>>>,
+    stop: std::sync::mpsc::Sender<()>,
+}
+
+impl Companion {
+    fn start(mut host: Host) -> Self {
+        let (stop, stopped) = channel();
+        let worker = std::thread::spawn(move || -> Result<Host> {
+            answer_navigations(&mut host, &stopped)?;
+            Ok(host)
+        });
+        Self {
+            worker: Some(worker),
+            stop,
+        }
+    }
+
+    fn stop(&mut self) -> Result<()> {
+        let _ = self.stop.send(());
+        if let Some(worker) = self.worker.take() {
+            match worker.join() {
+                Ok(host) => host?.stop(),
+                Err(_) => bail!("the companion thread panicked"),
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Acknowledge every navigation until the measurement is over.
+fn answer_navigations(host: &mut Host, stopped: &Receiver<()>) -> Result<()> {
+    loop {
+        match stopped.try_recv() {
+            Ok(()) | Err(TryRecvError::Disconnected) => return Ok(()),
+            Err(TryRecvError::Empty) => {}
+        }
+        let message = host.recv()?;
+        if message["type"] == "navigate" {
+            host.send(&json!({
+                "type": "navigate_ack",
+                "request_id": message["request_id"],
+                "accepted": true,
+                "reason": null,
+            }))?;
+        }
+    }
 }
 
 // ------------------------------------------------------------------ the bed
@@ -301,7 +387,7 @@ impl Host {
         }))
     }
 
-    fn stop(&mut self) {
+    fn stop(mut self) {
         self.stdin.take();
         self.stdout.take();
         let _ = self.child.wait();
@@ -358,6 +444,32 @@ impl Client {
         let answer: Value = serde_json::from_str(&line).context("not bridge-ipc@1")?;
         if answer["result"] != "context" {
             bail!("the broker refused a warm here: {answer}");
+        }
+        Ok((line.len(), elapsed))
+    }
+
+    /// One follow: the round trip that ends at the acknowledgement.
+    fn follow(&mut self, url: &str) -> Result<(usize, f64)> {
+        let id = self.next_id.to_string();
+        self.next_id += 1;
+        let request = json!({
+            "v": "bridge-ipc@1",
+            "id": id,
+            "op": "follow",
+            "generation": 1,
+            "url": url,
+        });
+        let started = Instant::now();
+        writeln!(self.stream, "{request}")?;
+        self.stream.flush()?;
+        let mut line = String::new();
+        if self.reader.read_line(&mut line)? == 0 {
+            bail!("the broker closed the endpoint");
+        }
+        let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+        let answer: Value = serde_json::from_str(&line).context("not bridge-ipc@1")?;
+        if answer["result"] != "followed" {
+            bail!("the broker refused a follow: {answer}");
         }
         Ok((line.len(), elapsed))
     }
