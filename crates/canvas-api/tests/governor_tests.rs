@@ -373,3 +373,127 @@ async fn invalid_headers_do_not_poison_estimate_or_telemetry() {
     assert_eq!(gov.telemetry().cost, None);
     assert!((gov.estimate() - 699.0).abs() < 1e-6);
 }
+
+#[tokio::test(start_paused = true)]
+async fn http_retries_have_exact_delays_and_exhaust_429_and_throttle_403() {
+    // Keep paused time from auto-advancing while real socket I/O is pending.
+    let keep_awake = tokio::spawn(async {
+        loop {
+            tokio::task::yield_now().await;
+        }
+    });
+    for status in [429, 403] {
+        let server = MockServer::start().await;
+        Mock::given(path("/retry"))
+            .respond_with(ResponseTemplate::new(status).set_body_string("Rate Limit Exceeded"))
+            .expect(5)
+            .mount(&server)
+            .await;
+        let client = common::test_client(&server);
+        let state = client.clone();
+        let request = tokio::spawn(async move { client.get::<serde_json::Value>("/retry").await });
+        wait_for_received(&server, 1).await;
+        let mut times = vec![Instant::now()];
+        for (index, seconds) in [1, 2, 4, 8].into_iter().enumerate() {
+            while state.governor().in_flight() != 0 {
+                wall_sleep(1).await;
+            }
+            wall_sleep(2).await;
+            advance(
+                Duration::from_secs(seconds)
+                    .checked_sub(Duration::from_millis(1))
+                    .unwrap(),
+            )
+            .await;
+            wall_sleep(2).await;
+            assert_eq!(server.received_requests().await.unwrap().len(), index + 1);
+            advance(Duration::from_millis(1)).await;
+            wait_for_received(&server, index + 2).await;
+            times.push(Instant::now());
+        }
+        assert!(matches!(request.await.unwrap(), Err(Error::RateLimited)));
+        let delays: Vec<_> = times.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        assert_eq!(delays, [1, 2, 4, 8].map(Duration::from_secs));
+        assert_eq!(state.telemetry().api, 5);
+    }
+    keep_awake.abort();
+}
+
+#[tokio::test]
+async fn ordinary_403_is_not_retried_and_validation_keeps_messages() {
+    let server = MockServer::start().await;
+    Mock::given(path("/forbidden"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("Forbidden"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/invalid"))
+        .respond_with(
+            ResponseTemplate::new(422)
+                .set_body_json(json!({"errors":{"name":[{"message":"is required"}]}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = common::test_client(&server);
+    assert!(matches!(
+        client.get::<serde_json::Value>("/forbidden").await,
+        Err(Error::Forbidden {
+            rate_limited: false,
+            ..
+        })
+    ));
+    let Error::Validation { status, errors } = client
+        .get::<serde_json::Value>("/invalid")
+        .await
+        .unwrap_err()
+    else {
+        panic!("expected validation");
+    };
+    assert_eq!(status, 422);
+    assert_eq!(errors, vec!["name: is required"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_must_pass_cooldown_admission_again() {
+    let keep_awake = tokio::spawn(async {
+        loop {
+            tokio::task::yield_now().await;
+        }
+    });
+    let server = MockServer::start().await;
+    Mock::given(path("/retry"))
+        .respond_with(ResponseTemplate::new(429).insert_header("X-Rate-Limit-Remaining", "100"))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/retry"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"ok":true}))
+                .insert_header("X-Rate-Limit-Remaining", "350"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = common::test_client(&server);
+    let state = client.clone();
+    let request = tokio::spawn(async move { client.get::<OkBody>("/retry").await });
+    wait_for_received(&server, 1).await;
+    while state.governor().in_flight() > 0 {
+        wall_sleep(1).await;
+    }
+    wall_sleep(2).await;
+    advance(Duration::from_secs(1)).await;
+    wall_sleep(2).await;
+    assert_eq!(state.telemetry().api, 1);
+    advance(Duration::from_secs(4)).await;
+    wall_sleep(2).await;
+    assert_eq!(state.telemetry().api, 1);
+    advance(Duration::from_secs(1)).await;
+    wait_for_received(&server, 2).await;
+    assert!(request.await.unwrap().unwrap().ok);
+    assert_eq!(state.telemetry().api, 2);
+    keep_awake.abort();
+}

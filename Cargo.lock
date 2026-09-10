@@ -242,6 +242,7 @@ name = "canvas-api"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "httpdate",
  "jiff",
  "reqwest",
  "serde",
