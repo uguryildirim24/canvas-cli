@@ -29,7 +29,7 @@ pub struct GradingPeriod {
 #[serde(bound(deserialize = "T: DeserializeOwned"))]
 pub struct WrappedCollection<T> {
     /// Collection items (JSON name `grading_periods` or generic `items`).
-    #[serde(default, alias = "grading_periods")]
+    #[serde(alias = "grading_periods")]
     pub items: Vec<T>,
     /// Optional meta object.
     #[serde(default)]

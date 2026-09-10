@@ -5,9 +5,7 @@ use jiff::civil::Date;
 use reqwest::Url;
 use serde::Deserialize;
 
-use crate::serde_util::{
-    deserialize_id, deserialize_opt_date, deserialize_opt_timestamp,
-};
+use crate::serde_util::{deserialize_id, deserialize_opt_date, deserialize_opt_timestamp};
 
 /// Calendar event.
 #[derive(Debug, Clone, Deserialize, Default)]
