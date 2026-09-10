@@ -1,0 +1,200 @@
+---
+source: crates/canvas-cli/tests/grades.rs
+expression: v
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 3,
+      "dataset": "courses",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "active",
+      "source": "cache",
+      "stale": true
+    },
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "grading_periods",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "course:101",
+      "source": "cache",
+      "stale": true
+    },
+    {
+      "complete": true,
+      "count": 5,
+      "dataset": "enrollment_grades",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "period:none",
+      "source": "cache",
+      "stale": true
+    },
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "course_totals",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "course:101",
+      "source": "cache",
+      "stale": true
+    },
+    {
+      "complete": true,
+      "count": 2,
+      "dataset": "assignment_groups",
+      "fetched_at": "2026-09-09T16:00:00Z",
+      "scope": "course:101:period:none",
+      "source": "cache",
+      "stale": true
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "KEY",
+    "origin": "https://lasell.instructure.com",
+    "user_id": "12345"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 0,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course": {
+      "groups": [
+        {
+          "assignments": [
+            {
+              "id": "31",
+              "name": "Problem Set 1",
+              "omit_from_final_grade": false,
+              "points_possible": 25.0,
+              "status": {
+                "attempt": 1,
+                "excused": false,
+                "grade": "23",
+                "graded": true,
+                "late": false,
+                "missing": false,
+                "pending": false,
+                "posted_at": "2026-09-16T12:00:00Z",
+                "score": 23.0,
+                "submitted": true,
+                "submitted_at": "2026-09-13T18:00:00Z",
+                "submitted_at_local": "2026-09-13T14:00:00-04:00",
+                "workflow_state": "graded"
+              }
+            },
+            {
+              "id": "32",
+              "name": "Problem Set 2",
+              "omit_from_final_grade": false,
+              "points_possible": 25.0,
+              "status": {
+                "attempt": null,
+                "excused": null,
+                "grade": null,
+                "graded": false,
+                "late": null,
+                "missing": true,
+                "pending": false,
+                "posted_at": null,
+                "score": null,
+                "submitted": false,
+                "submitted_at": null,
+                "submitted_at_local": null,
+                "workflow_state": "unsubmitted"
+              }
+            }
+          ],
+          "id": "20",
+          "name": "Homework",
+          "position": 1,
+          "rules": {
+            "drop_highest": null,
+            "drop_lowest": 1,
+            "never_drop": [
+              "31"
+            ]
+          },
+          "subtotal": {
+            "possible": 50.0,
+            "score": 23.0
+          },
+          "weight": 40.0
+        },
+        {
+          "assignments": [],
+          "id": "21",
+          "name": "Exams",
+          "position": 2,
+          "rules": {
+            "drop_highest": null,
+            "drop_lowest": null,
+            "never_drop": []
+          },
+          "subtotal": null,
+          "weight": 60.0
+        }
+      ],
+      "periods": [
+        {
+          "end_date": "2026-10-31T00:00:00Z",
+          "id": "5",
+          "is_current": true,
+          "start_date": "2026-09-01T00:00:00Z",
+          "title": "Fall Term 1"
+        },
+        {
+          "end_date": "2026-12-20T00:00:00Z",
+          "id": "6",
+          "is_current": false,
+          "start_date": "2026-11-01T00:00:00Z",
+          "title": "Fall Term 2"
+        }
+      ]
+    },
+    "courses": [
+      {
+        "course": {
+          "code": "CS-101",
+          "enrollment_state": "active",
+          "html_url": "https://lasell.instructure.com/courses/101",
+          "id": "101",
+          "is_favorite": true,
+          "name": "Intro to Computing",
+          "restricted": false,
+          "term": {
+            "end_at": "2026-12-15T05:00:00Z",
+            "id": "7",
+            "name": "Fall 2026",
+            "start_at": "2026-08-25T04:00:00Z"
+          }
+        },
+        "grades": {
+          "current_grade": "B+",
+          "current_score": 88.0,
+          "final_grade": "B",
+          "final_score": 85.0,
+          "period": {
+            "id": null,
+            "mode": "all",
+            "title": null
+          }
+        },
+        "unavailable_reason": null
+      }
+    ],
+    "period_mode": "all"
+  },
+  "schema": "canvas-cli/grades@1",
+  "warnings": [
+    "served stale courses cache"
+  ]
+}

@@ -456,11 +456,15 @@ fn commit_confirmed(
     }
     let jid = journal_id.to_owned();
     let response = serde_json::to_string(posted)?;
-    let readback = receipt
-        .readback
-        .as_ref()
-        .map(serde_json::to_string)
-        .transpose()?;
+    let readback = if observed {
+        receipt
+            .readback
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?
+    } else {
+        Some(full_readback(&receipt.posted)?.to_string())
+    };
     let now = Timestamp::now().to_string();
     store
         .call_blocking(move |conns| {
@@ -548,6 +552,15 @@ fn validate_history_match(row: &JournalRow, receipt: &ReceiptRecord) -> Result<(
     Ok(())
 }
 
+fn full_readback(record: &PostedRecord) -> Result<serde_json::Value, JournalError> {
+    let mut value = serde_json::to_value(record)?;
+    if let Some(map) = value.as_object_mut() {
+        map.remove("evidence");
+        map.remove("response_sha256");
+    }
+    Ok(value)
+}
+
 /// Enrich only the recorded attempt, updating both journal and receipt in one transaction.
 pub fn enrich_readback(
     store: &Store,
@@ -555,6 +568,41 @@ pub fn enrich_readback(
     journal_id: &str,
     attempt: i64,
     readback: &super::ReadbackRecord,
+) -> Result<(), JournalError> {
+    enrich_readback_impl(store, owner, journal_id, attempt, readback, None)
+}
+
+/// Enrich the stored full allowlist while projecting only Readback fields into the receipt.
+pub fn enrich_readback_full(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    record: &PostedRecord,
+) -> Result<(), JournalError> {
+    let readback = super::ReadbackRecord {
+        submitted_at: record.submitted_at.clone(),
+        submitted_at_local: record.submitted_at_local.clone(),
+        late: record.late,
+        attachments: record.attachments.clone(),
+        body_sha256: record.body_sha256.clone(),
+    };
+    enrich_readback_impl(
+        store,
+        owner,
+        journal_id,
+        record.attempt.ok_or(JournalError::StateConflict)?,
+        &readback,
+        Some(record),
+    )
+}
+
+fn enrich_readback_impl(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    attempt: i64,
+    readback: &super::ReadbackRecord,
+    full: Option<&PostedRecord>,
 ) -> Result<(), JournalError> {
     verify_store_directory(store, owner.identity_dir())?;
     if !owner.matches(journal_id) {
@@ -582,8 +630,25 @@ pub fn enrich_readback(
             .ok_or(JournalError::StateConflict)?,
     )?;
     receipt["readback"] = serde_json::to_value(&readback)?;
+    if receipt
+        .get("text")
+        .is_some_and(serde_json::Value::is_object)
+    {
+        receipt["text"]["server_body_sha256"] = serde_json::to_value(
+            posted
+                .body_sha256
+                .as_ref()
+                .or(readback.body_sha256.as_ref()),
+        )?;
+    }
     let receipt = receipt.to_string();
-    let readback = serde_json::to_string(&readback)?;
+    let readback = if let Some(full) = full {
+        let mut value = full_readback(full)?;
+        value["submitted_at_local"] = serde_json::to_value(&readback.submitted_at_local)?;
+        value.to_string()
+    } else {
+        serde_json::to_string(&readback)?
+    };
     let jid = journal_id.to_owned();
     store.call_blocking(move |conns| {
         let tx = conns.state.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -640,6 +705,19 @@ pub fn recover_if_owner_absent(
     let Some(owner) = OwnerLock::try_acquire(identity_dir, journal_id)? else {
         return Ok(None);
     };
+    recover_owned(store, &owner, journal_id).map(Some)
+}
+
+/// Recover a stale operation after the caller acquired its absent owner's lock.
+pub fn recover_owned(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+) -> Result<State, JournalError> {
+    verify_store_directory(store, owner.identity_dir())?;
+    if !owner.matches(journal_id) {
+        return Err(JournalError::StateConflict);
+    }
     let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
     let (to, patch) = match row.state {
         State::Planned => (
@@ -664,10 +742,10 @@ pub fn recover_if_owner_absent(
                 ..TransitionPatch::default()
             },
         ),
-        other => return Ok(Some(other)),
+        other => return Ok(other),
     };
-    transition(store, &owner, journal_id, row.state, to, patch)?;
-    Ok(Some(to))
+    transition(store, owner, journal_id, row.state, to, patch)?;
+    Ok(to)
 }
 
 /// Load a journal row.

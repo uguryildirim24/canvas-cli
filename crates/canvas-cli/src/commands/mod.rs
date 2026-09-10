@@ -19,30 +19,20 @@ pub mod download;
 pub mod duration;
 pub mod emit;
 pub mod files;
+pub mod grades;
+pub mod grades_load;
 pub mod identity;
 pub mod modules;
 pub mod open;
+pub mod receipts;
+pub mod submission;
+pub mod submit;
 pub mod sync;
 pub mod todo;
 pub mod version;
 
-use std::process::ExitCode;
-
 use crate::output::ColorMode;
 use crate::session::{Session, SessionError};
-
-/// Stub answer for a command whose package has not landed yet: exit 1 with an
-/// `error@1` envelope. Replaced arm by arm as each package lands.
-pub fn not_implemented(json: bool) -> ExitCode {
-    emit::emit_error(
-        json,
-        "not_implemented",
-        "not implemented yet",
-        1,
-        None,
-        None,
-    )
-}
 
 /// Global CLI flags passed into command runners.
 #[derive(Debug, Clone)]

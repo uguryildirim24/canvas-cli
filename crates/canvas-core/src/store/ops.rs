@@ -323,29 +323,47 @@ pub fn bump_epochs(scopes: &[&str], state_tx: &Transaction<'_>) -> Result<(), Db
 /// Pending when state is `planned|uploading|uploaded|posting`, or
 /// `outcome_unknown` and neither superseded nor acknowledged.
 pub fn pending_for_assignment(state: &Connection, assignment_id: i64) -> Result<bool, DbError> {
+    Ok(!pending_journals_for_assignment(state, assignment_id)?.is_empty())
+}
+
+/// Every pending journal id for an assignment, oldest first (`submission@1`).
+///
+/// Same rule as [`pending_for_assignment`]; this returns the identifiers so a
+/// reader can name the journals that make the status unknown.
+pub fn pending_journals_for_assignment(
+    state: &Connection,
+    assignment_id: i64,
+) -> Result<Vec<String>, DbError> {
     let mut stmt = state.prepare(
-        "SELECT state, created_at, acknowledged_at FROM submission_journal WHERE assignment_id = ?1",
+        "SELECT journal_id, state, created_at, acknowledged_at FROM submission_journal \
+         WHERE assignment_id = ?1 ORDER BY created_at ASC, journal_id ASC",
     )?;
-    let rows: Vec<(String, Timestamp, Option<String>)> = stmt
+    let rows: Vec<(String, String, Timestamp, Option<String>)> = stmt
         .query_map(params![assignment_id], |r| {
-            Ok((r.get(0)?, parse_ts(&r.get::<_, String>(1)?)?, r.get(2)?))
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                parse_ts(&r.get::<_, String>(2)?)?,
+                r.get(3)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    for (state_name, created_at, acknowledged_at) in &rows {
+    let mut pending = Vec::new();
+    for (journal_id, state_name, created_at, acknowledged_at) in &rows {
         match state_name.as_str() {
-            "planned" | "uploading" | "uploaded" | "posting" => return Ok(true),
+            "planned" | "uploading" | "uploaded" | "posting" => pending.push(journal_id.clone()),
             "outcome_unknown" if acknowledged_at.is_none() => {
-                let superseded = rows.iter().any(|(later_state, later_at, _)| {
+                let superseded = rows.iter().any(|(_, later_state, later_at, _)| {
                     later_at > created_at && matches!(later_state.as_str(), "submitted" | "matched")
                 });
                 if !superseded {
-                    return Ok(true);
+                    pending.push(journal_id.clone());
                 }
             }
             _ => {}
         }
     }
-    Ok(false)
+    Ok(pending)
 }
 
 /// `cache stats`: row counts per cache table.

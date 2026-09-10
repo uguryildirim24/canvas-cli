@@ -395,15 +395,44 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "attribution": null,
+      "attribution": "observed",
       "candidates": [],
       "error": null,
-      "files": [],
-      "journal_id": "j1",
+      "files": [
+        {
+          "canvas_file_id": "55001",
+          "name": "essay.pdf",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "size": 24576
+        }
+      ],
+      "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
       "outcome": "ok",
       "post_status": 201,
-      "posted": null,
-      "receipt_id": null,
+      "posted": {
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "attempt": 1,
+        "body_sha256": null,
+        "evidence": "post-response",
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "submission_id": "9001",
+        "submission_type": "online_upload",
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "url": null,
+        "workflow_state": "submitted"
+      },
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
       "response_kind": null,
       "server_match": null,
       "state": "submitted",
@@ -431,29 +460,79 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "history": [],
+      "history": [
+        {
+          "attachments": [
+            {
+              "content_type": "application/pdf",
+              "display_name": "draft.pdf",
+              "id": "55000",
+              "size": 1024
+            }
+          ],
+          "attempt": 1,
+          "score": null,
+          "submitted_at": "2026-09-08T12:00:00Z",
+          "submitted_at_local": "2026-09-08T08:00:00-04:00"
+        },
+        {
+          "attachments": [
+            {
+              "content_type": "application/pdf",
+              "display_name": "essay.pdf",
+              "id": "55001",
+              "size": 24576
+            }
+          ],
+          "attempt": 2,
+          "score": 8.5,
+          "submitted_at": "2026-09-09T16:05:00Z",
+          "submitted_at_local": "2026-09-09T12:05:00-04:00"
+        }
+      ],
       "pending_journals": [],
       "submission": {
-        "attachments": [],
-        "attempt": 1,
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "attempt": 2,
         "body_sha256": null,
-        "comments": [],
+        "comments": [
+          {
+            "author": "Prof. Ada",
+            "created_at": "2026-09-09T16:40:00Z",
+            "created_at_local": "2026-09-09T12:40:00-04:00",
+            "id": "9",
+            "text": "Nice work."
+          }
+        ],
         "excused": false,
-        "grade": null,
-        "graded": false,
+        "grade": "8.5",
+        "graded": true,
         "late": false,
         "missing": false,
         "pending": false,
-        "posted_at": null,
-        "rubric_assessed": false,
-        "rubric_assessment": [],
-        "score": null,
+        "posted_at": "2026-09-09T16:30:00Z",
+        "rubric_assessed": true,
+        "rubric_assessment": [
+          {
+            "comments": "Clear reasoning.",
+            "criterion_id": "c1",
+            "points": 8.5
+          }
+        ],
+        "score": 8.5,
         "submission_type": "online_upload",
         "submitted": true,
-        "submitted_at": "2026-09-09T12:00:00Z",
-        "submitted_at_local": "2026-09-09T08:00:00-04:00",
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
         "url": null,
-        "workflow_state": "submitted"
+        "workflow_state": "graded"
       }
     },
     "schema": "canvas-cli/submission@1",
@@ -477,41 +556,68 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "assignment_id": "1",
-      "assignment_name": "HW1",
+      "assignment_id": "202",
+      "assignment_name": "Essay 1",
       "attribution": "observed",
       "baseline_attempt": 0,
       "cli_version": "0.1.0",
       "course_code": "CS-101",
       "course_id": "101",
-      "created_at": "2026-09-09T12:00:00Z",
-      "due_at": null,
-      "files": [],
+      "created_at": "2026-09-09T16:04:58Z",
+      "due_at": "2026-09-15T23:59:59Z",
+      "files": [
+        {
+          "canvas_file_id": "55001",
+          "name": "essay.pdf",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "size": 24576
+        }
+      ],
       "identity": {
         "key": "example.instructure.com-1-deadbeef",
         "origin": "https://example.instructure.com",
         "user_id": "1"
       },
-      "journal_id": "j1",
-      "kind": "file",
+      "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+      "kind": "online_upload",
       "posted": {
-        "attachments": [],
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
         "attempt": 1,
         "body_sha256": null,
         "evidence": "post-response",
         "excused": false,
         "late": false,
         "missing": false,
-        "response_sha256": null,
-        "submission_id": "9",
+        "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "submission_id": "9001",
         "submission_type": "online_upload",
-        "submitted_at": "2026-09-09T12:00:00Z",
-        "submitted_at_local": "2026-09-09T08:00:00-04:00",
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
         "url": null,
         "workflow_state": "submitted"
       },
-      "readback": null,
-      "receipt_id": "r1",
+      "readback": {
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "body_sha256": null,
+        "late": false,
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00"
+      },
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
       "text": null,
       "url": null
     },
@@ -536,7 +642,56 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "journals": []
+      "journals": [
+        {
+          "acknowledged_at": null,
+          "assignment_id": "202",
+          "assignment_name": "Essay 1",
+          "baseline_attempt": 0,
+          "course_code": "CS-101",
+          "course_id": "101",
+          "created_at": "2026-09-09T16:04:58Z",
+          "error": null,
+          "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+          "kind": "online_upload",
+          "not_submitted_evidence": null,
+          "owner": "n/a",
+          "post_status": 201,
+          "posted": {
+            "attachments": [
+              {
+                "content_type": "application/pdf",
+                "display_name": "essay.pdf",
+                "id": "55001",
+                "size": 24576
+              }
+            ],
+            "attempt": 1,
+            "body_sha256": null,
+            "evidence": "post-response",
+            "excused": false,
+            "late": false,
+            "missing": false,
+            "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "submission_id": "9001",
+            "submission_type": "online_upload",
+            "submitted_at": "2026-09-09T16:05:00Z",
+            "submitted_at_local": "2026-09-09T12:05:00-04:00",
+            "url": null,
+            "workflow_state": "submitted"
+          },
+          "readback": null,
+          "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
+          "response_kind": null,
+          "server_match": null,
+          "state": "submitted",
+          "superseded": false,
+          "updated_at": "2026-09-09T16:05:01Z",
+          "uploaded_file_ids": [
+            "55001"
+          ]
+        }
+      ]
     },
     "schema": "canvas-cli/receipts@1",
     "warnings": []
@@ -562,10 +717,18 @@ expression: rendered
       "attempt": 1,
       "attribution": "observed",
       "body": null,
-      "files": [],
+      "files": [
+        {
+          "actual_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "canvas_file_id": "55001",
+          "expected_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "name": "essay.pdf",
+          "status": "ok"
+        }
+      ],
       "outcome": "verified",
       "reason": null,
-      "receipt_id": "r1"
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde"
     },
     "schema": "canvas-cli/verify@1",
     "warnings": []
@@ -590,14 +753,45 @@ expression: rendered
     "result": {
       "assume_available": false,
       "attribution": "unproven",
-      "candidates": [],
-      "journal_id": "j1",
-      "message": "matched",
+      "candidates": [
+        {
+          "attachment_ids": [
+            "55001"
+          ],
+          "attempt": 1,
+          "submitted_at": "2026-09-09T16:05:00Z",
+          "submitted_at_local": "2026-09-09T12:05:00-04:00"
+        }
+      ],
+      "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
+      "message": "matched via history attachment set",
       "not_submitted_evidence": null,
       "outcome": "ok",
-      "owner": "live",
-      "posted": null,
-      "receipt_id": "r1",
+      "owner": "n/a",
+      "posted": {
+        "attachments": [
+          {
+            "content_type": "application/pdf",
+            "display_name": "essay.pdf",
+            "id": "55001",
+            "size": 24576
+          }
+        ],
+        "attempt": 1,
+        "body_sha256": null,
+        "evidence": "history-files",
+        "excused": false,
+        "late": false,
+        "missing": false,
+        "response_sha256": null,
+        "submission_id": "9001",
+        "submission_type": "online_upload",
+        "submitted_at": "2026-09-09T16:05:00Z",
+        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "url": null,
+        "workflow_state": "submitted"
+      },
+      "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
       "response_kind": null,
       "server_match": null,
       "state": "matched"
@@ -623,8 +817,160 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "course": null,
-      "courses": [],
+      "course": {
+        "groups": [
+          {
+            "assignments": [
+              {
+                "id": "31",
+                "name": "Problem Set 1",
+                "omit_from_final_grade": false,
+                "points_possible": 25.0,
+                "status": {
+                  "attempt": 1,
+                  "excused": false,
+                  "grade": "23",
+                  "graded": true,
+                  "late": false,
+                  "missing": false,
+                  "pending": false,
+                  "posted_at": "2026-09-16T12:00:00Z",
+                  "score": 23.0,
+                  "submitted": true,
+                  "submitted_at": "2026-09-14T18:00:00Z",
+                  "submitted_at_local": "2026-09-14T14:00:00-04:00",
+                  "workflow_state": "graded"
+                }
+              },
+              {
+                "id": "32",
+                "name": "Problem Set 2",
+                "omit_from_final_grade": false,
+                "points_possible": 25.0,
+                "status": {
+                  "attempt": null,
+                  "excused": null,
+                  "grade": null,
+                  "graded": false,
+                  "late": null,
+                  "missing": true,
+                  "pending": false,
+                  "posted_at": null,
+                  "score": null,
+                  "submitted": false,
+                  "submitted_at": null,
+                  "submitted_at_local": null,
+                  "workflow_state": "unsubmitted"
+                }
+              }
+            ],
+            "id": "20",
+            "name": "Homework",
+            "position": 1,
+            "rules": {
+              "drop_highest": null,
+              "drop_lowest": 1,
+              "never_drop": [
+                "31"
+              ]
+            },
+            "subtotal": {
+              "possible": 50.0,
+              "score": 45.0
+            },
+            "weight": 40.0
+          },
+          {
+            "assignments": [],
+            "id": "21",
+            "name": "Exams",
+            "position": 2,
+            "rules": {
+              "drop_highest": null,
+              "drop_lowest": null,
+              "never_drop": []
+            },
+            "subtotal": null,
+            "weight": 60.0
+          }
+        ],
+        "periods": [
+          {
+            "end_date": "2026-10-31T00:00:00Z",
+            "id": "5",
+            "is_current": true,
+            "start_date": "2026-09-01T00:00:00Z",
+            "title": "Fall Term 1"
+          },
+          {
+            "end_date": "2026-12-20T00:00:00Z",
+            "id": "6",
+            "is_current": false,
+            "start_date": "2026-11-01T00:00:00Z",
+            "title": "Fall Term 2"
+          }
+        ]
+      },
+      "courses": [
+        {
+          "course": {
+            "code": "CS-101",
+            "enrollment_state": "active",
+            "html_url": "https://example.instructure.com/courses/101",
+            "id": "101",
+            "is_favorite": true,
+            "name": "Intro to Computer Science",
+            "restricted": false,
+            "term": {
+              "end_at": "2026-12-20T00:00:00Z",
+              "id": "7",
+              "name": "Fall 2026",
+              "start_at": "2026-09-01T00:00:00Z"
+            }
+          },
+          "grades": {
+            "current_grade": "A-",
+            "current_score": 91.5,
+            "final_grade": "B+",
+            "final_score": 88.0,
+            "period": {
+              "id": "5",
+              "mode": "current",
+              "title": "Fall Term 1"
+            }
+          },
+          "unavailable_reason": null
+        },
+        {
+          "course": {
+            "code": "MATH-201",
+            "enrollment_state": "active",
+            "html_url": "https://example.instructure.com/courses/102",
+            "id": "102",
+            "is_favorite": false,
+            "name": "Linear Algebra",
+            "restricted": false,
+            "term": {
+              "end_at": null,
+              "id": "7",
+              "name": "Fall 2026",
+              "start_at": null
+            }
+          },
+          "grades": {
+            "current_grade": null,
+            "current_score": null,
+            "final_grade": null,
+            "final_score": null,
+            "period": {
+              "id": null,
+              "mode": "current",
+              "title": null
+            }
+          },
+          "unavailable_reason": "no current grading period total"
+        }
+      ],
       "period_mode": "current"
     },
     "schema": "canvas-cli/grades@1",

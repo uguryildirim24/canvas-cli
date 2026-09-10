@@ -18,6 +18,7 @@ pub struct ApiRequest {
     pub(crate) headers: HeaderMap,
     pub(crate) body: Option<Vec<u8>>,
     pub(crate) route_key: String,
+    pub(crate) preserve_error_response: bool,
 }
 
 impl ApiRequest {
@@ -31,6 +32,7 @@ impl ApiRequest {
             headers: HeaderMap::new(),
             body: None,
             route_key,
+            preserve_error_response: false,
         }
     }
 
@@ -141,7 +143,11 @@ pub(crate) async fn execute_api(
             return Ok((status, headers, body, url));
         }
         if attempt == 4 {
-            return Err(Error::RateLimited);
+            return if request.preserve_error_response {
+                Ok((status, headers, body, url))
+            } else {
+                Err(Error::RateLimited)
+            };
         }
         retry_delays(
             attempt,
@@ -182,6 +188,16 @@ async fn execute_api_once(client: &Client, request: &ApiRequest) -> Result<ApiRe
         let status = response.status();
         let headers = response.headers().clone();
         observe_headers(client, permit.issue(), &headers);
+        if request.preserve_error_response && status.is_redirection() {
+            let allowed = is_redirect(status)
+                && hop < 5
+                && location_url(&url, &headers).is_ok_and(|location| client.same_origin(&location))
+                && (!matches!(status.as_u16(), 301 | 302) || request.method == Method::GET);
+            if !allowed {
+                let bytes = response.bytes().await.map_err(|e| map_reqwest_error(&e))?;
+                return Ok((status, headers, bytes.to_vec(), url));
+            }
+        }
         if is_redirect(status) {
             let location = location_url(&url, &headers)?;
             if !client.same_origin(&location) {

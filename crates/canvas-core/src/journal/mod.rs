@@ -8,8 +8,9 @@ mod state;
 pub use locks::{AdmissionLock, LockError, OwnerLock, probe_owner};
 pub use ops::{
     CreateOpts, JournalError, JournalRow, TransitionPatch, acknowledge, append_uploaded_file_id,
-    assume_not_submitted, commit_matched, commit_success, create, enrich_readback, get_journal,
-    is_superseded, mark_posting, owner_status_for, recover_if_owner_absent, transition,
+    assume_not_submitted, commit_matched, commit_success, create, enrich_readback,
+    enrich_readback_full, get_journal, is_superseded, mark_posting, owner_status_for,
+    recover_if_owner_absent, recover_owned, transition,
 };
 pub use record::{
     AttachmentRecord, CandidateRecord, Evidence, IntendedFile, IntendedPayload, IntendedText,

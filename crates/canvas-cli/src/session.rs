@@ -172,7 +172,12 @@ impl Session {
         })
     }
 
-    /// Validate a newly seen environment token before it can populate this identity's cache.
+    /// Client construction failure, if any (for auth vs network exits).
+    #[must_use]
+    pub fn client_init_error(&self) -> Option<&canvas_api::Error> {
+        self.client_init_error.as_ref()
+    }
+
     pub async fn validate_network_token(&self) -> Result<(), canvas_core::sync::SyncError> {
         let Some(client) = &self.client else {
             return Err(
@@ -196,10 +201,12 @@ impl Session {
         if user.id != self.identity.user_id {
             return Err(canvas_api::Error::Unauthorized.into());
         }
+        let time_zone = user.time_zone;
         let at = crate::output::generated_at_now();
         self.open.store.call(move |conns| {
             let tx = conns.state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             tx.execute("INSERT INTO credential (identity_key,token_sha256,validated_at) VALUES (?1,?2,?3) ON CONFLICT(identity_key) DO UPDATE SET token_sha256=excluded.token_sha256,validated_at=excluded.validated_at", rusqlite::params![key, hash, at])?;
+            if let Some(zone) = time_zone { tx.execute("INSERT INTO identity(key,value) VALUES ('time_zone',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[zone])?; }
             tx.commit()?; Ok(())
         }).await?;
         Ok(())
