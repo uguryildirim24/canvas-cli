@@ -158,6 +158,31 @@ stdout carries data only. Progress, logs, and confirmations go to stderr.
 (`completions`, `auth token --reveal`, `config edit`, `calendar --ics -`,
 `receipts export --out -`) reject it with exit 2.
 
+## Agents
+
+`canvas mcp` serves the Model Context Protocol on stdin and stdout. One
+instance serves one identity: pick it with `--profile`. The catalog is
+read-first, and it holds no tool that reveals a credential, changes an
+identity, runs arbitrary HTTP or shell, clears the cache, overwrites a file,
+or opens a browser. A submission still needs a recorded human approval.
+
+```json
+{
+  "mcpServers": {
+    "canvas": { "command": "canvas", "args": ["--profile", "default", "mcp"] }
+  }
+}
+```
+
+[`skill/canvas-cli/`](skill/canvas-cli/SKILL.md) is the shipped skill: the
+identity model, five workflows, the exit-code and recovery table, and the MCP
+setup for Claude Code, Codex, and Cursor. The release archives carry it.
+`docs/agent-hosts.md` records which hosts were actually exercised.
+
+`canvas schema <command>` prints the JSON Schema of any command's envelope and
+`result`, and `canvas schema --list` prints the registry. The MCP tools use the
+same documents as their output schemas.
+
 ## Where things live
 
 XDG layout on macOS and Linux, AppData on Windows.
