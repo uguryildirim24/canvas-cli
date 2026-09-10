@@ -37,7 +37,7 @@ pub const ID_BASE: i64 = 900_000_000;
 const HOST: &str = "canvas.example.edu";
 
 /// Keys whose value is dropped outright (SPEC §11 redaction list).
-fn is_secret_key(key: &str) -> bool {
+pub fn is_secret_key(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
     matches!(
         key.as_str(),
@@ -270,6 +270,74 @@ pub fn placeholder(input: &str) -> String {
     out
 }
 
+/// Strip every capability from a value, pseudonymizing nothing.
+///
+/// Sanitizing needs a whole set and a stable mapping, so it can only run once
+/// a recording is complete. Keeping a token or a signed storage URL off the
+/// disk cannot wait that long (SPEC §15), so `record` runs this over every
+/// body before it writes one.
+pub fn redact_capabilities(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut out = Map::with_capacity(map.len());
+            for (name, child) in map {
+                let child = if is_secret_key(name) {
+                    Value::Null
+                } else {
+                    redact_capabilities(child)
+                };
+                out.insert(name.clone(), child);
+            }
+            Value::Object(out)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(redact_capabilities).collect()),
+        Value::String(text) => Value::String(strip_capability_params(text)),
+        other => other.clone(),
+    }
+}
+
+/// Drop the §11 query parameters, and any userinfo, from one URL.
+///
+/// A string that is not an absolute `http(s)` URL, and a URL that carries
+/// nothing on the list, come back byte for byte unchanged: re-encoding a URL
+/// that needed no change would rewrite escapes a fixture is meant to preserve.
+pub fn strip_capability_params(text: &str) -> String {
+    let Ok(mut url) = url::Url::parse(text) else {
+        return text.to_owned();
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return text.to_owned();
+    }
+    let total = url.query_pairs().count();
+    let kept: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(k, _)| !is_secret_key(k))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    let credentials = !url.username().is_empty() || url.password().is_some();
+    if kept.len() == total && !credentials {
+        return text.to_owned();
+    }
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    set_query_pairs(&mut url, kept);
+    url.to_string()
+}
+
+/// Replace a URL's query with `pairs`, dropping it entirely when empty.
+fn set_query_pairs(url: &mut url::Url, pairs: Vec<(String, String)>) {
+    if pairs.is_empty() {
+        url.set_query(None);
+        return;
+    }
+    let mut query = url.query_pairs_mut();
+    query.clear();
+    for (key, value) in pairs {
+        query.append_pair(&key, &value);
+    }
+    drop(query);
+}
+
 /// Rewrite a URL: drop every capability-bearing query pair, move it to the
 /// pseudonym host, and map the IDs in its path.
 fn sanitize_url(raw: &str, state: &mut Sanitizer) -> String {
@@ -292,16 +360,7 @@ fn sanitize_url(raw: &str, state: &mut Sanitizer) -> String {
     }
     url.set_path(&path);
     url.set_fragment(None);
-    if kept.is_empty() {
-        url.set_query(None);
-    } else {
-        let mut pairs = url.query_pairs_mut();
-        pairs.clear();
-        for (k, v) in kept {
-            pairs.append_pair(&k, &v);
-        }
-        drop(pairs);
-    }
+    set_query_pairs(&mut url, kept);
     url.to_string()
 }
 

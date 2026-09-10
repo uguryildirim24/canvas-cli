@@ -12,8 +12,11 @@
 //! - The token never reaches the disk. The request headers are never written,
 //!   and the four kept response headers cannot carry it.
 //! - A URL that carries a capability (`verifier`, an S3 signature) is never
-//!   followed and never stored: `record` walks `/api/v1` only, and hands every
-//!   body to [`crate::sanitize`] before it may be tracked.
+//!   followed and never stored: `record` walks `/api/v1` only, and every body,
+//!   header, and query pair goes through
+//!   [`redact_capabilities`](crate::sanitize::redact_capabilities) before it
+//!   reaches the disk. Pseudonymizing waits for `sanitize`, which needs the
+//!   whole set; dropping a capability cannot wait that long.
 //! - The tracked fixture directory is refused. Only `xtask sanitize` writes
 //!   there (SPEC §15).
 
@@ -25,6 +28,7 @@ use canvas_api::{ApiRequest, Client, Secret};
 use serde_json::Value;
 
 use crate::fixture::{KEPT_HEADERS, Recorded, is_tracked_fixture_dir, write_recorded};
+use crate::sanitize::{is_secret_key, redact_capabilities, strip_capability_params};
 
 /// How many pages one endpoint may contribute, so a large account cannot turn
 /// a recording into an unbounded crawl.
@@ -178,24 +182,27 @@ async fn record_endpoint(
             .send_api_with_headers::<Value>(request)
             .await
             .with_context(|| format!("GET {url}"))?;
+        // The next page is taken from the response as it arrived; only the
+        // stored copy is redacted.
+        let next = headers
+            .get("link")
+            .and_then(|value| value.to_str().ok())
+            .and_then(next_link);
         let recorded = Recorded {
             method: "GET".to_owned(),
             path: url.path().to_owned(),
             query: url
                 .query_pairs()
+                .filter(|(k, _)| !is_secret_key(k))
                 .map(|(k, v)| (k.into_owned(), v.into_owned()))
                 .collect(),
             status: 200,
             headers: kept_headers(&headers),
-            body,
+            body: redact_capabilities(&body),
             page: paginated.then_some(page),
         };
         written.push(write_recorded(out, &recorded)?);
 
-        let next = recorded
-            .headers
-            .get("link")
-            .and_then(|link| next_link(link));
         match next {
             Some(next) if paginated => {
                 let next: url::Url = next.parse()?;
@@ -212,23 +219,53 @@ async fn record_endpoint(
 }
 
 /// Keep only the four headers the client reads, lowercase.
+///
+/// `Link` is the one kept header that carries a URL, so it is the one that can
+/// carry a capability; every URL in it is stripped before it is stored.
 fn kept_headers(headers: &reqwest::header::HeaderMap) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for name in KEPT_HEADERS {
         if let Some(value) = headers.get(name)
             && let Ok(text) = value.to_str()
         {
-            out.insert(name.to_owned(), text.to_owned());
+            let text = if name == "link" {
+                strip_link_capabilities(text)
+            } else {
+                text.to_owned()
+            };
+            out.insert(name.to_owned(), text);
         }
     }
     out
+}
+
+/// Strip the capability parameters from every URL in a `Link` header.
+fn strip_link_capabilities(header: &str) -> String {
+    header
+        .split(',')
+        .map(|part| {
+            let part = part.trim();
+            match (part.find('<'), part.find('>')) {
+                (Some(start), Some(end)) if end > start => {
+                    let url = strip_capability_params(&part[start + 1..end]);
+                    format!("<{url}>{}", &part[end + 1..])
+                }
+                _ => part.to_owned(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The `rel="next"` URL of a `Link` header.
 fn next_link(header: &str) -> Option<String> {
     for part in header.split(',') {
         let part = part.trim();
-        let (url, rest) = part.strip_prefix('<')?.split_once('>')?;
+        // A part this does not understand is skipped, not fatal: a `rel="next"`
+        // later in the same header is still the page to follow.
+        let Some((url, rest)) = part.strip_prefix('<').and_then(|p| p.split_once('>')) else {
+            continue;
+        };
         if rest.contains("rel=\"next\"") || rest.contains("rel=next") {
             return Some(url.to_owned());
         }

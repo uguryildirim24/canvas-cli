@@ -212,13 +212,34 @@ async fn record_keeps_the_read_headers_and_writes_the_token_nowhere() {
         files.keys().collect::<Vec<_>>()
     );
 
-    // Nothing on disk carries the token, a cookie, or an S3 signature.
+    // Nothing on disk carries the token, a cookie, or a capability. A recording
+    // is a scratch artifact, but a capability in it is live the moment it lands
+    // (SPEC §15), so it is stripped at record time, not at sanitize time.
     for (name, text) in &files {
+        let lower = text.to_lowercase();
         assert!(!text.contains(TOKEN), "{name} carries the token");
-        assert!(!text.to_lowercase().contains("set-cookie"), "{name}");
-        assert!(!text.to_lowercase().contains("authorization"), "{name}");
-        assert!(!text.to_lowercase().contains("x-amz-"), "{name}");
+        assert!(!lower.contains("set-cookie"), "{name}");
+        assert!(!lower.contains("authorization"), "{name}");
+        assert!(!lower.contains("x-amz-"), "{name}");
+        for capability in ["verifier", "\"sig\"", "signature", "capability"] {
+            assert!(
+                !lower.contains(capability),
+                "{name} carries {capability}: {text}"
+            );
+        }
     }
+
+    // The capability came off the URL; the rest of the URL is untouched, which
+    // is what `sanitize` later pseudonymizes.
+    let course_files: Value = serde_json::from_str(&files["get-courses-77-files.json"]).unwrap();
+    assert_eq!(
+        course_files["body"][0]["url"],
+        "https://files.real.edu/files/501/download"
+    );
+    let user_avatar = user["body"]["avatar_url"].as_str().unwrap();
+    assert_eq!(user_avatar, "https://canvas.real.edu/images/9/a");
+    // The identifying values are still there: only `sanitize` removes those.
+    assert_eq!(user["body"]["name"], "Ada Lovelace");
 }
 
 #[tokio::test]
