@@ -1907,6 +1907,8 @@ expression: rendered
           "complete": true,
           "pages_fetched": 2
         },
+        "replies_page": 1,
+        "replies_total": 1,
         "reply_count": 4,
         "require_initial_post": true,
         "title": "Week 1 reflection",

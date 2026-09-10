@@ -1537,6 +1537,14 @@ pub struct DiscussionDetailJson {
     pub files: Vec<FileRefJson>,
     pub external_links: Vec<ExternalLinkJson>,
     pub replies: Vec<DiscussionReplyJson>,
+    /// Which `--page` of replies `replies` holds. 1 when `--page` is absent.
+    pub replies_page: u32,
+    /// How many replies the covered set holds, across every page.
+    ///
+    /// `replies` shows at most one page of them, so a page past the end is an
+    /// empty list beside a non-zero total, and a reader can tell that apart
+    /// from a thread with no replies (SPEC §19 item 28).
+    pub replies_total: u32,
     pub replies_coverage: RepliesCoverageJson,
 }
 

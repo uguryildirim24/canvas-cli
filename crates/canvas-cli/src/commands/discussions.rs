@@ -221,6 +221,10 @@ pub async fn handle_show(
     let coverage = coverage_of(&row, replies);
     let window = page.unwrap_or(1) as usize;
     let start = (window - 1) * REPLY_PAGE;
+    // A page past the end is an empty list, not an error (SPEC §19 item 28).
+    // `replies_total` is what tells the two apart, so it counts the whole
+    // covered set rather than the window.
+    let replies_total = u32::try_from(entries.len()).unwrap_or(u32::MAX);
     let mut reply_json = Vec::new();
     for entry in entries.iter().skip(start).take(REPLY_PAGE) {
         let body = rich_or_default(entry.message.as_deref()).await;
@@ -263,6 +267,8 @@ pub async fn handle_show(
         files: files_json(&refs),
         external_links: external_json(&refs),
         replies: reply_json,
+        replies_page: u32::try_from(window).unwrap_or(u32::MAX),
+        replies_total,
         replies_coverage: coverage.clone(),
     };
 
@@ -681,7 +687,10 @@ fn print_topic(topic: &DiscussionDetailJson) -> io::Result<()> {
     }
     writeln!(
         out,
-        "\nreplies: {} pages fetched, complete={}",
-        topic.replies_coverage.pages_fetched, topic.replies_coverage.complete
+        "\nreplies: page {} of {} shown, {} pages fetched, complete={}",
+        topic.replies_page,
+        topic.replies_total,
+        topic.replies_coverage.pages_fetched,
+        topic.replies_coverage.complete
     )
 }
