@@ -588,13 +588,7 @@ pub fn run(input: &Path, output: &Path) -> Result<Vec<String>> {
     }
 
     std::fs::create_dir_all(output).with_context(|| format!("create {}", output.display()))?;
-    // A rerun into a populated directory must not leave stale files behind.
-    for entry in std::fs::read_dir(output)? {
-        let path = entry?.path();
-        if path.extension().is_some_and(|e| e == "json") {
-            std::fs::remove_file(path)?;
-        }
-    }
+    clear_previous_set(output)?;
 
     let mut names = Vec::with_capacity(sanitized.len());
     let mut endpoints = BTreeSet::new();
@@ -627,6 +621,43 @@ pub fn run(input: &Path, output: &Path) -> Result<Vec<String>> {
     write_manifest(output, &manifest)?;
     names.sort();
     Ok(names)
+}
+
+/// Remove the set a previous pass wrote, so a rerun leaves nothing stale.
+///
+/// Only files this tool could have written are removed: the manifest, and a
+/// `*.json` that parses as a [`Recorded`] envelope. Anything else means
+/// `--out` is not a fixture set, and the run stops before it deletes a single
+/// file — `--out .` would otherwise take every JSON file in the directory
+/// with it.
+fn clear_previous_set(output: &Path) -> Result<()> {
+    let mut removable = Vec::new();
+    for entry in std::fs::read_dir(output)? {
+        let path = entry?.path();
+        if path.extension().is_none_or(|e| e != "json") {
+            continue;
+        }
+        let is_set_file = path
+            .file_name()
+            .is_some_and(|n| n == crate::fixture::MANIFEST)
+            || std::fs::read_to_string(&path)
+                .ok()
+                .is_some_and(|text| serde_json::from_str::<Recorded>(&text).is_ok());
+        if !is_set_file {
+            bail!(
+                "{} is not a fixture set: {} is neither {} nor a recorded response; \
+                 point --out at a set directory",
+                output.display(),
+                path.display(),
+                crate::fixture::MANIFEST
+            );
+        }
+        removable.push(path);
+    }
+    for path in removable {
+        std::fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -846,6 +877,61 @@ mod tests {
             serde_json::to_value(&a).unwrap(),
             serde_json::to_value(&b).unwrap()
         );
+    }
+
+    #[test]
+    fn an_output_directory_that_is_not_a_set_is_refused_before_anything_is_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = dir.path().join("raw");
+        let out = dir.path().join("not-a-set");
+        write_recorded(
+            &raw,
+            &Recorded {
+                method: "GET".into(),
+                path: "/api/v1/users/self".into(),
+                query: vec![],
+                status: 200,
+                headers: BTreeMap::new(),
+                body: json!({"id": 1}),
+                page: None,
+            },
+        )
+        .unwrap();
+        std::fs::create_dir_all(&out).unwrap();
+        let bystander = out.join("package.json");
+        std::fs::write(&bystander, "{\"name\":\"mine\"}\n").unwrap();
+
+        let error = run(&raw, &out).unwrap_err().to_string();
+        assert!(error.contains("is not a fixture set"), "{error}");
+        // Nothing was removed.
+        assert_eq!(
+            std::fs::read_to_string(&bystander).unwrap(),
+            "{\"name\":\"mine\"}\n"
+        );
+    }
+
+    #[test]
+    fn a_rerun_removes_the_set_the_previous_pass_wrote() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = dir.path().join("raw");
+        let out = dir.path().join("set");
+        let recorded = |path: &str| Recorded {
+            method: "GET".into(),
+            path: path.into(),
+            query: vec![],
+            status: 200,
+            headers: BTreeMap::new(),
+            body: json!({"id": 1}),
+            page: None,
+        };
+        write_recorded(&raw, &recorded("/api/v1/users/self")).unwrap();
+        write_recorded(&raw, &recorded("/api/v1/courses")).unwrap();
+        run(&raw, &out).unwrap();
+        // A second recording with fewer endpoints leaves no stale file behind.
+        std::fs::remove_file(raw.join("get-courses.json")).unwrap();
+        let names = run(&raw, &out).unwrap();
+        assert_eq!(names, vec!["get-users-self.json".to_owned()]);
+        assert!(!out.join("get-courses.json").exists());
     }
 
     #[test]
