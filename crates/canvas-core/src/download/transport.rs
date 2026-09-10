@@ -30,7 +30,10 @@ pub async fn file_remote_meta(
     if file.id != file_id {
         return Err(ApiError::Decode.into());
     }
-    let locked = file.locked_for_user.or(file.locked) == Some(true);
+    let now = jiff::Timestamp::now();
+    let locked = file.locked_for_user.or(file.locked) == Some(true)
+        || file.unlock_at.as_value().is_some_and(|at| *at > now)
+        || file.lock_at.as_value().is_some_and(|at| *at <= now);
     // Zero is a valid size. Unknown size must never borrow stale listing data.
     let size = match file.size {
         Some(size) => size,
