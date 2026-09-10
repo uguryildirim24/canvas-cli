@@ -545,6 +545,24 @@ async fn a_server_error_stays_unknown_and_reconcile_resolves_it_without_resendin
         !too_early["warnings"].as_array().unwrap().is_empty(),
         "{too_early}"
     );
+
+    // A journal that bears no receipt is an ineligible export: exit 8
+    // (SPEC §12.2 and §14), not exit 13 for a journal that plainly exists.
+    let out_path = f.dir.path().join("receipt.json");
+    let ineligible = f
+        .run(
+            &[
+                "receipts",
+                "export",
+                &journal_id,
+                "--out",
+                out_path.to_str().unwrap(),
+            ],
+            8,
+        )
+        .await;
+    assert_eq!(ineligible["outcome"], "error", "{ineligible}");
+    assert_eq!(ineligible["result"]["code"], "export", "{ineligible}");
 }
 
 #[tokio::test]

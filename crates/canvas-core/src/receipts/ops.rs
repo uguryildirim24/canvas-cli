@@ -218,9 +218,11 @@ pub fn export(
     out: Option<&Path>,
 ) -> Result<ExportResult, ReceiptError> {
     // An operation journal keeps its receipt in its own table (M8-b), so it
-    // is resolved first; the two id spaces never overlap.
+    // is resolved first; the two id spaces never overlap. A journal that is
+    // not `posted` or `matched` bears no receipt, and SPEC §12.2 calls that a
+    // refusal (exit 8), not a missing id (exit 13).
     let doc = if let Some(row) = operation_by_id(store, journal_id_or_receipt_id)? {
-        operation_receipt(store, &row)?.ok_or(ReceiptError::NotFound)?
+        operation_receipt(store, &row)?.ok_or(ReceiptError::Refused)?
     } else {
         let jid = resolve_journal_id(store, journal_id_or_receipt_id)?;
         rebuild_from_journal(store, &jid)?
