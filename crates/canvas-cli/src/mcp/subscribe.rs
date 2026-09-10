@@ -5,8 +5,10 @@
 //! that names a dataset scope invalidates the resources that answer from that
 //! scope, and the server sends one `notifications/resources/updated` per
 //! resource. Nothing is invented here. A URI is invalidated only when a row in
-//! the log says its scope changed, and a dataset REPORT §3.6 names no kind for
-//! emits nothing at all.
+//! the log names its scope — either because that scope changed, or because a
+//! `resync_required` row says an observation of it was lost and nothing about
+//! it is known any more — and a dataset REPORT §3.6 names no kind for emits
+//! nothing at all.
 //!
 //! The cursor rules are the ones `watch --since` follows. The position is
 //! durable per consumer, so a reconnecting host resumes where it stopped; a
@@ -101,6 +103,11 @@ pub fn served(binding: &Binding, requested: &[String]) -> Vec<String> {
 ///
 /// REPORT §3.6 leaves the mapping open, and the rule for an undefined case is
 /// to claim less: a dataset is mapped only to the resources that read it.
+///
+/// The mapping reads the dataset scope, not the kind, so the `resync_required`
+/// row an overwritten observation writes invalidates the same resources a
+/// change to that scope would. That is the honest answer to a gap: the scope
+/// was not observed, so nothing the host holds of it is known to be current.
 #[must_use]
 pub fn invalidated(binding: &Binding, record: &EventRecord) -> Vec<String> {
     // Both halves of the name are part of every URI, so a row another
@@ -123,8 +130,7 @@ pub fn invalidated(binding: &Binding, record: &EventRecord) -> Vec<String> {
         // A journal transition changes the local receipts, and only those:
         // nothing about the deadline window was observed on Canvas.
         "submission_journal" => uris.push(binding.uri("receipts")),
-        // `announcements` has an event kind but no resource, and no other
-        // dataset writes events, so nothing else is invalidated.
+        // `announcements` has an event kind but no resource, and no other dataset writes events, so nothing else is invalidated.
         _ => {}
     }
     uris
@@ -349,6 +355,24 @@ mod tests {
                 "{dataset}"
             );
         }
+    }
+
+    /// A lost observation writes a `resync_required` row on the same dataset
+    /// scope. Nothing about that scope was observed, so the resources that
+    /// read it are invalidated exactly as a change to it would invalidate
+    /// them: the mapping reads the scope, not the kind.
+    #[test]
+    fn a_gap_on_a_scope_invalidates_the_resources_that_read_it() {
+        let binding = binding();
+        let mut gap = record("assignments", "course:1");
+        gap.kind = "resync_required".to_owned();
+        assert_eq!(
+            invalidated(&binding, &gap),
+            vec![binding.uri("course/1/assignments"), binding.uri("todo")]
+        );
+        let mut gap = record("missing", "self");
+        gap.kind = "resync_required".to_owned();
+        assert_eq!(invalidated(&binding, &gap), vec![binding.uri("todo")]);
     }
 
     #[test]
