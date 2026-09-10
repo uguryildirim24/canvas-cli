@@ -9,7 +9,8 @@ pub mod extract;
 use htmd::HtmlToMarkdown;
 
 pub use extract::{
-    BODY_LIMIT, EmbeddedRef, ExternalLink, FileRef, RichText, rich_text, rich_text_opt,
+    BODY_LIMIT, BodyRefs, EmbeddedRef, ExternalLink, FileRef, RawEmbed, RawLink, ResolvedRefs,
+    RichText, rich_text, rich_text_opt,
 };
 
 /// Convert HTML on the blocking pool.

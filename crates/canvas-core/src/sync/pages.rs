@@ -190,7 +190,12 @@ pub fn page_to_entity(item: &WikiPage, course_id: i64) -> Result<EntityIngest, c
         value: Some(course_id.to_string()),
     }];
     push_opt_str(&mut fields, "url", FieldGroup::Core, item.url.as_deref());
-    push_opt_str(&mut fields, "title", FieldGroup::Core, item.title.as_deref());
+    push_opt_str(
+        &mut fields,
+        "title",
+        FieldGroup::Core,
+        item.title.as_deref(),
+    );
     push_opt_ts(&mut fields, "updated_at", FieldGroup::Core, item.updated_at);
     push_opt_ts(
         &mut fields,
@@ -199,12 +204,7 @@ pub fn page_to_entity(item: &WikiPage, course_id: i64) -> Result<EntityIngest, c
         item.created_at,
     );
     push_opt_bool(&mut fields, "published", FieldGroup::Status, item.published);
-    push_opt_bool(
-        &mut fields,
-        "front_page",
-        FieldGroup::Core,
-        item.front_page,
-    );
+    push_opt_bool(&mut fields, "front_page", FieldGroup::Core, item.front_page);
     push_opt_bool(
         &mut fields,
         "hide_from_students",
@@ -223,7 +223,12 @@ pub fn page_to_entity(item: &WikiPage, course_id: i64) -> Result<EntityIngest, c
         FieldGroup::Status,
         item.locked_for_user,
     );
-    push_opt_str(&mut fields, "body", FieldGroup::Detail, item.body.as_deref());
+    push_opt_str(
+        &mut fields,
+        "body",
+        FieldGroup::Detail,
+        item.body.as_deref(),
+    );
     if let Some(url) = item.html_url.as_ref() {
         fields.push(FieldWrite {
             name: "html_url",
@@ -270,9 +275,7 @@ fn upsert_page(
                 },
             );
         } else {
-            return Err(
-                DbError::Message(format!("unsupported page field: {}", field.name)).into(),
-            );
+            return Err(DbError::Message(format!("unsupported page field: {}", field.name)).into());
         }
     }
     validate_fields(&columns, COLUMN_FIELDS)?;
@@ -345,8 +348,9 @@ pub async fn refresh_pages(
             items.extend(page?.items);
         }
         Ok(FetchBundle {
-            pages: vec![pages_to_ingest_page(&items, course_id, now)
-                .map_err(super::SyncError::from)?],
+            pages: vec![
+                pages_to_ingest_page(&items, course_id, now).map_err(super::SyncError::from)?,
+            ],
         })
     })
     .await

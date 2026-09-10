@@ -151,6 +151,26 @@ expression: value
         "rows": 0
       },
       {
+        "name": "pages",
+        "rows": 0
+      },
+      {
+        "name": "discussion_topics",
+        "rows": 0
+      },
+      {
+        "name": "discussion_entries",
+        "rows": 0
+      },
+      {
+        "name": "conversations",
+        "rows": 0
+      },
+      {
+        "name": "conversation_unread",
+        "rows": 0
+      },
+      {
         "name": "planner_items",
         "rows": 1
       },
@@ -172,7 +192,7 @@ expression: value
       },
       {
         "name": "field_obs",
-        "rows": 72
+        "rows": 73
       },
       {
         "name": "membership",

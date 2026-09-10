@@ -142,18 +142,30 @@ impl Observed<Course> {
             );
         }
         if self.raw.get("syllabus_body").is_some() {
-            let markdown = match &self.model.syllabus_body {
-                Some(html) => Some(
-                    crate::markdown::html_to_markdown(html)
+            // The Markdown alone cannot say what it dropped, so the cache also
+            // keeps the reference projection `syllabus` (M8-a) reports. The
+            // projection is JSON, never the source HTML.
+            let (markdown, refs) = match &self.model.syllabus_body {
+                Some(html) => {
+                    let rich = crate::markdown::rich_text(html)
                         .await
-                        .map_err(|_| canvas_api::Error::Decode)?,
-                ),
-                None => None,
+                        .map_err(|_| canvas_api::Error::Decode)?;
+                    let refs =
+                        serde_json::to_string(&rich.refs).map_err(|_| canvas_api::Error::Decode)?;
+                    (rich.markdown, Some(refs))
+                }
+                None => (None, None),
             };
             observe(
                 fields,
                 &json!({"syllabus_markdown": markdown}),
                 "syllabus_markdown",
+                FieldGroup::Detail,
+            );
+            observe(
+                fields,
+                &json!({"syllabus_refs": refs}),
+                "syllabus_refs",
                 FieldGroup::Detail,
             );
         }

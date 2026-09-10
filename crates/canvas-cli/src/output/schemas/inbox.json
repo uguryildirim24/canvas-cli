@@ -1,0 +1,24 @@
+{
+  "conversations": [
+    {
+      "context_name": "CHEM-101",
+      "id": "700",
+      "last_message_at": "2026-09-09T12:00:00Z",
+      "message_count": 3,
+      "participants": [
+        {
+          "id": "31",
+          "name": "Alex Kim"
+        }
+      ],
+      "starred": false,
+      "subject": "Lab partner",
+      "workflow_state": "unread"
+    }
+  ],
+  "listing": {
+    "available": true,
+    "http_status": null
+  },
+  "scope": "inbox"
+}

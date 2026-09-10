@@ -1,0 +1,34 @@
+{
+  "page": {
+    "body_markdown": "Read the syllabus.\n\n[embedded iframe: unavailable to this tool]",
+    "course_id": "1",
+    "embedded": [
+      {
+        "kind": "iframe",
+        "reported": "unavailable",
+        "src_origin": "https://player.test"
+      }
+    ],
+    "external_links": [
+      {
+        "url": "https://elsewhere.test/notes"
+      }
+    ],
+    "files": [
+      {
+        "file_id": "42",
+        "name": "Syllabus.pdf",
+        "url": "https://canvas.test/courses/1/files/42"
+      }
+    ],
+    "front_page": true,
+    "html_url": "https://canvas.test/courses/1/pages/course-overview",
+    "id": "301",
+    "locked_for_user": false,
+    "published": true,
+    "title": "Course Overview",
+    "truncated": false,
+    "updated_at": "2026-09-01T14:00:00Z",
+    "url": "course-overview"
+  }
+}

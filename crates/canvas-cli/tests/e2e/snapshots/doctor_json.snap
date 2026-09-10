@@ -42,7 +42,7 @@ expression: value
         "status": "ok"
       },
       {
-        "message": "cache schema=1, state schema=2",
+        "message": "cache schema=2, state schema=2",
         "name": "databases",
         "status": "ok"
       },

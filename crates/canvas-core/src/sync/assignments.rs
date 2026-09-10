@@ -256,13 +256,57 @@ fn push_rubric(fields: &mut Vec<FieldWrite>, supplied: &ApiSupplied<Value>) {
         ApiSupplied::Value(v) => fields.push(FieldWrite {
             name: "rubric_json",
             group: FieldGroup::Detail,
-            value: Some(serde_json::Value::Array(v.as_array().into_iter().flatten().map(|c| serde_json::json!({
-                "id": c.get("id").and_then(|v| v.as_str().map(str::to_owned).or_else(||v.as_i64().map(|n|n.to_string()))),
-                "description": c.get("description").and_then(Value::as_str),
-                "points": c.get("points").and_then(Value::as_f64),
-            })).collect()).to_string()),
+            value: Some(
+                Value::Array(
+                    v.as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(criterion_json)
+                        .collect(),
+                )
+                .to_string(),
+            ),
         }),
     }
+}
+
+/// One rubric criterion, with the rating scale an agent needs to read a score.
+///
+/// M8-a adds `long_description`, `criterion_use_range`, and `ratings[]`; the
+/// v1 keys keep their names and types.
+fn criterion_json(c: &Value) -> Value {
+    serde_json::json!({
+        "id": opt_id(c.get("id")),
+        "description": c.get("description").and_then(Value::as_str),
+        "long_description": c.get("long_description").and_then(Value::as_str),
+        "points": c.get("points").and_then(Value::as_f64),
+        "criterion_use_range": c
+            .get("criterion_use_range")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        "ratings": Value::Array(
+            c.get("ratings")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|r| serde_json::json!({
+                    "id": opt_id(r.get("id")),
+                    "description": r.get("description").and_then(Value::as_str),
+                    "long_description": r.get("long_description").and_then(Value::as_str),
+                    "points": r.get("points").and_then(Value::as_f64),
+                }))
+                .collect(),
+        ),
+    })
+}
+
+/// Canvas sends a rubric id as a string or as a number.
+fn opt_id(raw: Option<&Value>) -> Option<String> {
+    raw.and_then(|v| {
+        v.as_str()
+            .map(str::to_owned)
+            .or_else(|| v.as_i64().map(|n| n.to_string()))
+    })
 }
 
 pub(super) fn push_submission_status(fields: &mut Vec<FieldWrite>, sub: &Submission) {
