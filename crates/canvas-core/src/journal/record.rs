@@ -220,7 +220,10 @@ mod tests {
         assert!(!ser.contains("token=secret"));
         assert!(!ser.contains("s3.example"));
         assert_eq!(posted.attachments.len(), 1);
-        assert_eq!(posted.url.as_deref(), Some("https://example.test/assignment"));
+        assert_eq!(
+            posted.url.as_deref(),
+            Some("https://example.test/assignment")
+        );
         assert!(posted.response_sha256.is_some());
     }
 }

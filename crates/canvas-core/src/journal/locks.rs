@@ -61,10 +61,9 @@ fn ensure_lock_file(path: &Path) -> Result<File, LockError> {
         .open(path)
     {
         Ok(f) => Ok(f),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)?),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            Ok(OpenOptions::new().read(true).write(true).open(path)?)
+        }
         Err(e) => Err(e.into()),
     }
 }
@@ -91,10 +90,7 @@ impl OwnerLock {
     }
 
     /// Non-blocking exclusive acquire. `Ok(None)` if held by a live owner.
-    pub fn try_acquire(
-        identity_dir: &Path,
-        journal_id: &str,
-    ) -> Result<Option<Self>, LockError> {
+    pub fn try_acquire(identity_dir: &Path, journal_id: &str) -> Result<Option<Self>, LockError> {
         let path = journals_dir(identity_dir).join(format!("{journal_id}.lock"));
         let file = ensure_lock_file(&path)?;
         if FileExt::try_lock_exclusive(&file)? {

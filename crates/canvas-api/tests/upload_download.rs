@@ -63,9 +63,7 @@ async fn upload_params_order_file_last_no_bearer_201_body() {
         .find(|r| r.url.path() == "/storage")
         .expect("storage POST");
     let body = String::from_utf8_lossy(&storage.body);
-    let file_field = body
-        .find("name=\"file\"")
-        .expect("multipart file field");
+    let file_field = body.find("name=\"file\"").expect("multipart file field");
     let key_field = body.find("name=\"key\"").expect("key field");
     assert!(key_field < file_field, "file must be last");
     assert!(
