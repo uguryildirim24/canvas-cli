@@ -1,0 +1,433 @@
+---
+source: crates/canvas-cli/tests/review_m2b.rs
+expression: snapshot
+---
+[
+  {
+    "command": "submit",
+    "json": {
+      "exit": 0,
+      "freshness": [],
+      "generated_at": "2026-09-09T17:05:12Z",
+      "identity": {
+        "key": "<identity>",
+        "origin": "<origin>",
+        "user_id": "123"
+      },
+      "outcome": "ok",
+      "partial": [],
+      "profile": null,
+      "requests": {
+        "api": 3,
+        "cost": null,
+        "storage": 0
+      },
+      "result": {
+        "attribution": "observed",
+        "candidates": [],
+        "error": null,
+        "files": [],
+        "journal_id": "<journal>",
+        "outcome": "ok",
+        "post_status": 201,
+        "posted": {
+          "attachments": [],
+          "attempt": 1,
+          "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+          "evidence": "post-response",
+          "excused": null,
+          "late": null,
+          "missing": null,
+          "response_sha256": "a38b73eb986631fde140f8de2a456ee4078ce72e29d9392712232d04e0eb3386",
+          "submission_id": "55",
+          "submission_type": null,
+          "submitted_at": "2026-09-09T17:05:12Z",
+          "submitted_at_local": "2026-09-09T13:05:12-04:00",
+          "url": null,
+          "workflow_state": null
+        },
+        "receipt_id": "<receipt>",
+        "response_kind": null,
+        "server_match": null,
+        "state": "submitted",
+        "text": {
+          "input_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+          "sent_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+          "transform": "text-to-html"
+        },
+        "url": null
+      },
+      "schema": "canvas-cli/submit@1",
+      "warnings": [
+        "assignment is past due"
+      ]
+    }
+  },
+  {
+    "command": "list",
+    "human": "<journal>  submitted  owner=n/a  superseded=false  acknowledged=false\n",
+    "json": {
+      "exit": 0,
+      "freshness": [],
+      "generated_at": "2026-09-09T17:05:12Z",
+      "identity": {
+        "key": "<identity>",
+        "origin": "<origin>",
+        "user_id": "123"
+      },
+      "outcome": "ok",
+      "partial": [],
+      "profile": null,
+      "requests": {
+        "api": 0,
+        "cost": null,
+        "storage": 0
+      },
+      "result": {
+        "journals": [
+          {
+            "acknowledged_at": null,
+            "assignment_id": "2",
+            "assignment_name": "HW",
+            "baseline_attempt": 0,
+            "course_code": null,
+            "course_id": "1",
+            "created_at": "<time>",
+            "error": null,
+            "journal_id": "<journal>",
+            "kind": "online_text_entry",
+            "not_submitted_evidence": null,
+            "owner": "n/a",
+            "post_status": 201,
+            "posted": {
+              "attachments": [],
+              "attempt": 1,
+              "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+              "evidence": "post-response",
+              "excused": null,
+              "late": null,
+              "missing": null,
+              "response_sha256": "a38b73eb986631fde140f8de2a456ee4078ce72e29d9392712232d04e0eb3386",
+              "submission_id": "55",
+              "submission_type": null,
+              "submitted_at": "2026-09-09T17:05:12Z",
+              "submitted_at_local": "2026-09-09T13:05:12-04:00",
+              "url": null,
+              "workflow_state": null
+            },
+            "readback": {
+              "attachments": [],
+              "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+              "late": null,
+              "submitted_at": "2026-09-09T17:05:12Z",
+              "submitted_at_local": "2026-09-09T13:05:12-04:00"
+            },
+            "receipt_id": "<receipt>",
+            "response_kind": null,
+            "server_match": null,
+            "state": "submitted",
+            "superseded": false,
+            "updated_at": "<time>",
+            "uploaded_file_ids": []
+          }
+        ]
+      },
+      "schema": "canvas-cli/receipts@1",
+      "warnings": []
+    }
+  },
+  {
+    "command": "show",
+    "human": "  journal_id         <journal>  \n  state              submitted                             \n  owner              n/a                                   \n  course_id          1                                     \n  assignment_id      2                                     \n  kind               online_text_entry                     \n  superseded         false                                 \n  acknowledged_at    null                                  \n  error              null                                  \nreceipt <receipt>  attempt 1  attribution=observed\n",
+    "json": {
+      "exit": 0,
+      "freshness": [],
+      "generated_at": "2026-09-09T17:05:12Z",
+      "identity": {
+        "key": "<identity>",
+        "origin": "<origin>",
+        "user_id": "123"
+      },
+      "outcome": "ok",
+      "partial": [],
+      "profile": null,
+      "requests": {
+        "api": 0,
+        "cost": null,
+        "storage": 0
+      },
+      "result": {
+        "journal": {
+          "acknowledged_at": null,
+          "assignment_id": "2",
+          "assignment_name": "HW",
+          "baseline_attempt": 0,
+          "course_code": null,
+          "course_id": "1",
+          "created_at": "<time>",
+          "error": null,
+          "journal_id": "<journal>",
+          "kind": "online_text_entry",
+          "not_submitted_evidence": null,
+          "owner": "n/a",
+          "post_status": 201,
+          "posted": {
+            "attachments": [],
+            "attempt": 1,
+            "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+            "evidence": "post-response",
+            "excused": null,
+            "late": null,
+            "missing": null,
+            "response_sha256": "a38b73eb986631fde140f8de2a456ee4078ce72e29d9392712232d04e0eb3386",
+            "submission_id": "55",
+            "submission_type": null,
+            "submitted_at": "2026-09-09T17:05:12Z",
+            "submitted_at_local": "2026-09-09T13:05:12-04:00",
+            "url": null,
+            "workflow_state": null
+          },
+          "readback": {
+            "attachments": [],
+            "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+            "late": null,
+            "submitted_at": "2026-09-09T17:05:12Z",
+            "submitted_at_local": "2026-09-09T13:05:12-04:00"
+          },
+          "receipt_id": "<receipt>",
+          "response_kind": null,
+          "server_match": null,
+          "state": "submitted",
+          "superseded": false,
+          "updated_at": "<time>",
+          "uploaded_file_ids": []
+        },
+        "receipt": {
+          "assignment_id": "2",
+          "assignment_name": "HW",
+          "attribution": "observed",
+          "baseline_attempt": 0,
+          "cli_version": "0.1.0",
+          "course_code": null,
+          "course_id": "1",
+          "created_at": "<time>",
+          "due_at": "2020-01-01T00:00:00Z",
+          "files": [],
+          "identity": {
+            "key": "<identity>",
+            "origin": "<origin>",
+            "user_id": "123"
+          },
+          "journal_id": "<journal>",
+          "kind": "online_text_entry",
+          "posted": {
+            "attachments": [],
+            "attempt": 1,
+            "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+            "evidence": "post-response",
+            "excused": null,
+            "late": null,
+            "missing": null,
+            "response_sha256": "a38b73eb986631fde140f8de2a456ee4078ce72e29d9392712232d04e0eb3386",
+            "submission_id": "55",
+            "submission_type": null,
+            "submitted_at": "2026-09-09T17:05:12Z",
+            "submitted_at_local": "2026-09-09T13:05:12-04:00",
+            "url": null,
+            "workflow_state": null
+          },
+          "readback": {
+            "attachments": [],
+            "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+            "late": null,
+            "submitted_at": "2026-09-09T17:05:12Z",
+            "submitted_at_local": "2026-09-09T13:05:12-04:00"
+          },
+          "receipt_id": "<receipt>",
+          "text": {
+            "input_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            "sent_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+            "server_body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+            "transform": "text-to-html"
+          },
+          "url": null
+        }
+      },
+      "schema": "canvas-cli/receipts@1",
+      "warnings": []
+    }
+  },
+  {
+    "command": "export",
+    "human": "exported <receipt> (<root>/data/<identity>/receipts/<receipt>.json)\n",
+    "json": {
+      "exit": 0,
+      "freshness": [],
+      "generated_at": "2026-09-09T17:05:12Z",
+      "identity": {
+        "key": "<identity>",
+        "origin": "<origin>",
+        "user_id": "123"
+      },
+      "outcome": "ok",
+      "partial": [],
+      "profile": null,
+      "requests": {
+        "api": 0,
+        "cost": null,
+        "storage": 0
+      },
+      "result": {
+        "bytes": "<byte-count>",
+        "path": "<root>/data/<identity>/receipts/<receipt>.json",
+        "receipt_id": "<receipt>"
+      },
+      "schema": "canvas-cli/receipts@1",
+      "warnings": []
+    }
+  },
+  {
+    "command": "verify",
+    "human": "verify verified_body  receipt=<receipt>  attempt=1  attribution=observed\nbody ok  expected=a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae  actual=a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae\n",
+    "json": {
+      "exit": 0,
+      "freshness": [],
+      "generated_at": "2026-09-09T17:05:12Z",
+      "identity": {
+        "key": "<identity>",
+        "origin": "<origin>",
+        "user_id": "123"
+      },
+      "outcome": "ok",
+      "partial": [],
+      "profile": null,
+      "requests": {
+        "api": 1,
+        "cost": null,
+        "storage": 0
+      },
+      "result": {
+        "attempt": 1,
+        "attribution": "observed",
+        "body": {
+          "actual_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+          "expected_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+          "status": "ok"
+        },
+        "files": [],
+        "outcome": "verified_body",
+        "reason": null,
+        "receipt_id": "<receipt>"
+      },
+      "schema": "canvas-cli/verify@1",
+      "warnings": []
+    }
+  },
+  {
+    "command": "reconcile",
+    "human": "reconcile ok — confirmed\njournal <journal>  state=submitted  owner=n/a  attribution=observed\nattempt 1  submitted_at 2026-09-09T13:05:12-04:00\n",
+    "json": {
+      "exit": 0,
+      "freshness": [],
+      "generated_at": "2026-09-09T17:05:12Z",
+      "identity": {
+        "key": "<identity>",
+        "origin": "<origin>",
+        "user_id": "123"
+      },
+      "outcome": "ok",
+      "partial": [],
+      "profile": null,
+      "requests": {
+        "api": 0,
+        "cost": null,
+        "storage": 0
+      },
+      "result": {
+        "assume_available": false,
+        "attribution": "observed",
+        "candidates": [],
+        "journal_id": "<journal>",
+        "message": "confirmed",
+        "not_submitted_evidence": null,
+        "outcome": "ok",
+        "owner": "n/a",
+        "posted": {
+          "attachments": [],
+          "attempt": 1,
+          "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+          "evidence": "post-response",
+          "excused": null,
+          "late": null,
+          "missing": null,
+          "response_sha256": "a38b73eb986631fde140f8de2a456ee4078ce72e29d9392712232d04e0eb3386",
+          "submission_id": "55",
+          "submission_type": null,
+          "submitted_at": "2026-09-09T17:05:12Z",
+          "submitted_at_local": "2026-09-09T13:05:12-04:00",
+          "url": null,
+          "workflow_state": null
+        },
+        "receipt_id": "<receipt>",
+        "response_kind": null,
+        "server_match": null,
+        "state": "submitted"
+      },
+      "schema": "canvas-cli/reconcile@1",
+      "warnings": []
+    }
+  },
+  {
+    "command": "receipt@1 export",
+    "json": {
+      "assignment_id": "2",
+      "assignment_name": "HW",
+      "attribution": "observed",
+      "baseline_attempt": 0,
+      "cli_version": "0.1.0",
+      "course_code": null,
+      "course_id": "1",
+      "created_at": "<time>",
+      "due_at": "2020-01-01T00:00:00Z",
+      "files": [],
+      "identity": {
+        "key": "<identity>",
+        "origin": "<origin>",
+        "user_id": "123"
+      },
+      "journal_id": "<journal>",
+      "kind": "online_text_entry",
+      "posted": {
+        "attachments": [],
+        "attempt": 1,
+        "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+        "evidence": "post-response",
+        "excused": null,
+        "late": null,
+        "missing": null,
+        "response_sha256": "a38b73eb986631fde140f8de2a456ee4078ce72e29d9392712232d04e0eb3386",
+        "submission_id": "55",
+        "submission_type": null,
+        "submitted_at": "2026-09-09T17:05:12Z",
+        "submitted_at_local": "2026-09-09T13:05:12-04:00",
+        "url": null,
+        "workflow_state": null
+      },
+      "readback": {
+        "attachments": [],
+        "body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+        "late": null,
+        "submitted_at": "2026-09-09T17:05:12Z",
+        "submitted_at_local": "2026-09-09T13:05:12-04:00"
+      },
+      "receipt_id": "<receipt>",
+      "text": {
+        "input_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        "sent_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+        "server_body_sha256": "a5652be1ca864d36d25cfb54a41f384e2de1b3acf7513a925d72ed7258fdc0ae",
+        "transform": "text-to-html"
+      },
+      "url": null
+    }
+  }
+]

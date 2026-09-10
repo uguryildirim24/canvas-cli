@@ -1,1 +1,131 @@
-{ "period_mode": "current", "courses": [], "course": null }
+{
+  "period_mode": "current",
+  "courses": [
+    {
+      "course": {
+        "id": "101",
+        "code": "CS-101",
+        "name": "Intro to Computer Science",
+        "term": {
+          "id": "7",
+          "name": "Fall 2026",
+          "start_at": "2026-09-01T00:00:00Z",
+          "end_at": "2026-12-20T00:00:00Z"
+        },
+        "enrollment_state": "active",
+        "is_favorite": true,
+        "restricted": false,
+        "html_url": "https://example.instructure.com/courses/101"
+      },
+      "grades": {
+        "current_score": 91.5,
+        "current_grade": "A-",
+        "final_score": 88.0,
+        "final_grade": "B+",
+        "period": { "mode": "current", "id": "5", "title": "Fall Term 1" }
+      },
+      "unavailable_reason": null
+    },
+    {
+      "course": {
+        "id": "102",
+        "code": "MATH-201",
+        "name": "Linear Algebra",
+        "term": { "id": "7", "name": "Fall 2026", "start_at": null, "end_at": null },
+        "enrollment_state": "active",
+        "is_favorite": false,
+        "restricted": false,
+        "html_url": "https://example.instructure.com/courses/102"
+      },
+      "grades": {
+        "current_score": null,
+        "current_grade": null,
+        "final_score": null,
+        "final_grade": null,
+        "period": { "mode": "current", "id": null, "title": null }
+      },
+      "unavailable_reason": "no current grading period total"
+    }
+  ],
+  "course": {
+    "groups": [
+      {
+        "id": "20",
+        "name": "Homework",
+        "position": 1,
+        "weight": 40.0,
+        "rules": { "drop_lowest": 1, "drop_highest": null, "never_drop": ["31"] },
+        "subtotal": { "score": 45.0, "possible": 50.0 },
+        "assignments": [
+          {
+            "id": "31",
+            "name": "Problem Set 1",
+            "points_possible": 25.0,
+            "omit_from_final_grade": false,
+            "status": {
+              "submitted": true,
+              "graded": true,
+              "score": 23.0,
+              "grade": "23",
+              "late": false,
+              "missing": false,
+              "excused": false,
+              "workflow_state": "graded",
+              "submitted_at": "2026-09-14T18:00:00Z",
+              "submitted_at_local": "2026-09-14T14:00:00-04:00",
+              "attempt": 1,
+              "posted_at": "2026-09-16T12:00:00Z",
+              "pending": false
+            }
+          },
+          {
+            "id": "32",
+            "name": "Problem Set 2",
+            "points_possible": 25.0,
+            "omit_from_final_grade": false,
+            "status": {
+              "submitted": false,
+              "graded": false,
+              "score": null,
+              "grade": null,
+              "late": null,
+              "missing": true,
+              "excused": null,
+              "workflow_state": "unsubmitted",
+              "submitted_at": null,
+              "submitted_at_local": null,
+              "attempt": null,
+              "posted_at": null,
+              "pending": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "21",
+        "name": "Exams",
+        "position": 2,
+        "weight": 60.0,
+        "rules": { "drop_lowest": null, "drop_highest": null, "never_drop": [] },
+        "subtotal": null,
+        "assignments": []
+      }
+    ],
+    "periods": [
+      {
+        "id": "5",
+        "title": "Fall Term 1",
+        "start_date": "2026-09-01T00:00:00Z",
+        "end_date": "2026-10-31T00:00:00Z",
+        "is_current": true
+      },
+      {
+        "id": "6",
+        "title": "Fall Term 2",
+        "start_date": "2026-11-01T00:00:00Z",
+        "end_date": "2026-12-20T00:00:00Z",
+        "is_current": false
+      }
+    ]
+  }
+}

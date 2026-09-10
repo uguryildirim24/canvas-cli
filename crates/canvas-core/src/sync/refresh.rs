@@ -4,7 +4,8 @@
 
 use canvas_api::Client;
 use canvas_api::models::{
-    Assignment, Course, Enrollment, File, Folder, GradingPeriod, Module, ModuleItem,
+    Assignment, AssignmentGroup, Course, Enrollment, File, Folder, GradingPeriod, Module,
+    ModuleItem,
 };
 use futures_util::StreamExt;
 use jiff::{Span, Timestamp};
@@ -14,6 +15,7 @@ use crate::store::{
     lookup_dataset,
 };
 
+use super::assignment_groups::{AssignmentGroupsDataset, assignment_groups_path};
 use super::assignments::{AssignmentsDataset, assignments_path};
 use super::courses::{CoursesDataset, CoursesScope, courses_path};
 use super::enrollment_grades::{EnrollmentGradesDataset, PeriodKey, enrollment_grades_path};
@@ -585,6 +587,49 @@ where
             .await
         }
     }
+}
+
+/// Refresh `assignment_groups` for one course under one grading period.
+pub async fn refresh_assignment_groups(
+    client: &Client,
+    store: &Store,
+    course_id: i64,
+    period: PeriodKey,
+    ttl: Span,
+    now: Timestamp,
+    fresh: bool,
+    offline: bool,
+) -> Result<RefreshOutcome, SyncError> {
+    let dataset = AssignmentGroupsDataset::new(course_id, period, ttl);
+    refresh_dataset(
+        client,
+        store,
+        &dataset,
+        now,
+        fresh,
+        offline,
+        None,
+        None,
+        || async {
+            let path = assignment_groups_path(course_id, period);
+            let mut items = Vec::new();
+            let mut stream = std::pin::pin!(client.get_all::<Observed<AssignmentGroup>>(&path));
+            while let Some(page) = stream.next().await {
+                let page = page?;
+                items.extend(page.items);
+            }
+            Ok(FetchBundle {
+                pages: vec![IngestPage {
+                    fetched_at: now,
+                    entities: items
+                        .into_iter()
+                        .map(|g| g.entity(course_id, now))
+                        .collect(),
+                }],
+            })
+        },
+    )
+    .await
 }
 
 /// Listing refresh with denial classification for folders/files.

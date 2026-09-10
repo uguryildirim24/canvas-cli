@@ -119,6 +119,50 @@ pub fn error_schema() -> &'static str {
     SCHEMA_ERROR
 }
 
+/// Require an online API client (rejects `--offline` and missing token).
+pub fn require_client<'a>(
+    globals: &super::Globals,
+    session: &'a Session,
+) -> Result<&'a canvas_api::Client, ExitCode> {
+    if globals.offline {
+        return Err(emit_error(
+            globals.json,
+            "usage",
+            "this command cannot run with --offline",
+            2,
+            session.profile.clone(),
+            Some(session.identity_ref()),
+        ));
+    }
+    match &session.client {
+        Some(client) => Ok(client),
+        None => {
+            if matches!(
+                session.client_init_error(),
+                Some(canvas_api::Error::Network)
+            ) {
+                Err(emit_error(
+                    globals.json,
+                    "network",
+                    "network error",
+                    4,
+                    session.profile.clone(),
+                    Some(session.identity_ref()),
+                ))
+            } else {
+                Err(emit_error(
+                    globals.json,
+                    "auth",
+                    "no token; set CANVAS_TOKEN or run auth login",
+                    3,
+                    session.profile.clone(),
+                    Some(session.identity_ref()),
+                ))
+            }
+        }
+    }
+}
+
 /// Keep API variants, status, and invocation telemetry on every abort.
 pub fn sync_error(
     globals: &super::Globals,

@@ -50,7 +50,7 @@ pub async fn ensure_courses(
         .store
         .call(move |conns| {
             let rows = load_courses_for_scope(conns, scope.as_str())?;
-            Ok(grade_freshness(conns, &rows, now, false)?
+            Ok(grade_freshness(conns, &rows, now, false, None)?
                 .iter()
                 .any(|f| f.stale))
         })
@@ -486,11 +486,15 @@ pub fn cached_outcome(
 }
 
 /// Totals have a shorter TTL and independent observation clocks from the course list.
+///
+/// `mode` names the `course_totals` mode the caller actually read; `None`
+/// means the course's own default mode.
 pub fn grade_freshness(
     conns: &StoreConns,
     rows: &[CourseRow],
     now: Timestamp,
     offline: bool,
+    mode: Option<&str>,
 ) -> Result<Vec<Freshness>, DbError> {
     use canvas_core::sync::CourseTotalsDataset;
     let ttl = crate::session::ttl_grades();
@@ -498,7 +502,7 @@ pub fn grade_freshness(
         let dataset = CourseTotalsDataset::new(row.id, ttl);
         let lookup = lookup_dataset(conns, &dataset, now, None)?;
         let (log, hit) = match lookup { LookupResult::Hit(log) => (Some(log), true), LookupResult::Stale(log) => (Some(log), false), LookupResult::Miss => (None, false) };
-        let key = format!("{}|{}", row.id, row.period_mode);
+        let key = format!("{}|{}", row.id, mode.unwrap_or(&row.period_mode));
         let oldest: Option<String> = conns.cache.query_row("SELECT MIN(observed_at) FROM field_obs WHERE entity_kind='course_totals' AND entity_key=?1", [key], |r| r.get(0))?;
         let has_values = row.current_score.is_some() || row.current_grade.is_some() || row.final_score.is_some() || row.final_grade.is_some();
         let fields_fresh = if let Some(raw) = oldest { let at: Timestamp = raw.parse().map_err(|_| DbError::Message("invalid grade observation timestamp".into()))?; at <= now && at.checked_add(ttl).is_ok_and(|expiry| now <= expiry) } else { !has_values };

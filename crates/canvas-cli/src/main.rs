@@ -34,7 +34,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use cli::{AliasCommand, CacheCommand, Cli, ColorChoice, Commands, Globals};
+use cli::{AliasCommand, CacheCommand, Cli, ColorChoice, Commands, Globals, ReceiptsCommand};
 use output::ColorMode;
 
 impl From<ColorChoice> for ColorMode {
@@ -45,11 +45,6 @@ impl From<ColorChoice> for ColorMode {
             ColorChoice::Never => Self::Never,
         }
     }
-}
-
-/// Peer-lane Round-3 stub: exit 2 with `not implemented`.
-fn not_implemented_r3(json: bool) -> ExitCode {
-    commands::emit::emit_error(json, "not_implemented", "not implemented", 2, None, None)
 }
 
 fn m1b_globals(globals: &Globals) -> commands::Globals {
@@ -179,6 +174,76 @@ async fn main() -> ExitCode {
                 Commands::Open { command, target } => {
                     commands::open::run(&m1b_globals(&globals), command, target).await
                 }
+                Commands::Grades { course, period } => {
+                    commands::grades::run(&m1b_globals(&globals), course, period).await
+                }
+                Commands::Submit {
+                    target,
+                    assignment,
+                    files,
+                    text,
+                    html,
+                    url,
+                    comment,
+                    yes,
+                } => {
+                    commands::submit::run(
+                        &m1b_globals(&globals),
+                        target,
+                        assignment,
+                        files,
+                        text,
+                        html,
+                        url,
+                        comment,
+                        yes,
+                    )
+                    .await
+                }
+                Commands::Submission {
+                    command,
+                    target,
+                    history,
+                } => {
+                    let cmd = match command {
+                        Some(cli::SubmissionCommand::Verify { receipt_id }) => {
+                            commands::submission::SubmissionCmd::Verify { receipt_id }
+                        }
+                        Some(cli::SubmissionCommand::Reconcile {
+                            journal_id,
+                            assume_not_submitted,
+                        }) => commands::submission::SubmissionCmd::Reconcile {
+                            journal_id,
+                            assume_not_submitted,
+                        },
+                        None => {
+                            let course = target.first().cloned().unwrap_or_default();
+                            commands::submission::SubmissionCmd::Show {
+                                course,
+                                assignment: target.get(1).cloned(),
+                                history,
+                            }
+                        }
+                    };
+                    commands::submission::run(&m1b_globals(&globals), cmd).await
+                }
+                Commands::Receipts { command } => {
+                    let cmd = match command {
+                        ReceiptsCommand::List { course, state } => {
+                            commands::receipts::ReceiptsCmd::List { course, state }
+                        }
+                        ReceiptsCommand::Show { id } => {
+                            commands::receipts::ReceiptsCmd::Show { id }
+                        }
+                        ReceiptsCommand::Export { receipt_id, out } => {
+                            commands::receipts::ReceiptsCmd::Export { receipt_id, out }
+                        }
+                        ReceiptsCommand::Acknowledge { journal_id } => {
+                            commands::receipts::ReceiptsCmd::Acknowledge { journal_id }
+                        }
+                    };
+                    commands::receipts::run(&m1b_globals(&globals), cmd)
+                }
                 Commands::Announcements {
                     course,
                     since,
@@ -207,12 +272,6 @@ async fn main() -> ExitCode {
                     )
                     .await
                 }
-                // Round-4 peer-lane stub (M4-a, lane w1).
-                Commands::Grades { .. } => commands::not_implemented(globals.json),
-                // Round-3 peer-lane stubs (M2-b): exit 2.
-                Commands::Submit { .. }
-                | Commands::Submission { .. }
-                | Commands::Receipts { .. } => not_implemented_r3(globals.json),
             }
         })
     })
