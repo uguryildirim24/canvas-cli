@@ -198,35 +198,34 @@ impl Default for BridgeConfig {
 /// `bridge.pause_hidden_after` when the config says nothing, in milliseconds.
 pub const DEFAULT_PAUSE_HIDDEN_MS: u64 = 10 * 60 * 1000;
 
-/// Parse `bridge.pause_hidden_after` into milliseconds.
+/// Parse `bridge.pause_hidden_after`, or `None` when it is not a duration.
 ///
 /// The SPEC duration form is `<n>h` or `<n>m`, as every `cache.ttl_*` key
-/// uses. Anything else falls back to the default rather than sharing for
-/// longer than the person asked for.
+/// uses; `<n>s` is accepted too, because ten minutes is a long time to wait
+/// for a check.
 #[must_use]
-pub fn pause_hidden_after_ms(raw: &str) -> u64 {
+pub fn parse_pause_hidden_after(raw: &str) -> Option<u64> {
     let parse = |text: &str, unit: u64| -> Option<u64> {
         text.parse::<u64>()
             .ok()
             .and_then(|n| n.checked_mul(unit))
             .filter(|ms| *ms > 0)
     };
-    if let Some(hours) = raw.strip_suffix('h')
-        && let Some(ms) = parse(hours, 60 * 60 * 1000)
-    {
-        return ms;
+    for (suffix, unit) in [('h', 60 * 60 * 1000), ('m', 60 * 1000), ('s', 1000)] {
+        if let Some(count) = raw.strip_suffix(suffix) {
+            return parse(count, unit);
+        }
     }
-    if let Some(minutes) = raw.strip_suffix('m')
-        && let Some(ms) = parse(minutes, 60 * 1000)
-    {
-        return ms;
-    }
-    if let Some(seconds) = raw.strip_suffix('s')
-        && let Some(ms) = parse(seconds, 1000)
-    {
-        return ms;
-    }
-    DEFAULT_PAUSE_HIDDEN_MS
+    None
+}
+
+/// `bridge.pause_hidden_after` in milliseconds.
+///
+/// A value this build cannot read falls back to the default rather than
+/// sharing for longer than the person asked for.
+#[must_use]
+pub fn pause_hidden_after_ms(raw: &str) -> u64 {
+    parse_pause_hidden_after(raw).unwrap_or(DEFAULT_PAUSE_HIDDEN_MS)
 }
 
 impl Default for Config {
@@ -437,7 +436,7 @@ fn apply_set(config: &mut Config, key: &str, value: &str) -> Result<(), CliError
             config.output.color = value.to_owned();
         }
         "bridge.pause_hidden_after" => {
-            if pause_hidden_after_ms(value) == DEFAULT_PAUSE_HIDDEN_MS && value != "10m" {
+            if parse_pause_hidden_after(value).is_none() {
                 return Err(CliError::usage(
                     "bridge.pause_hidden_after must be a duration such as 10m or 1h",
                 ));
