@@ -196,6 +196,10 @@ enum Shape {
     Email,
     Login,
     FileName,
+    /// An identifier Canvas does not send as a number: an LTI ID, a UUID, an
+    /// anonymous submission ID. It names a person or a record as surely as a
+    /// numeric ID does, and no shape rule can tell one from a free string.
+    Opaque,
 }
 
 impl Shape {
@@ -216,6 +220,9 @@ impl Shape {
                 stem.strip_prefix("file-")
                     .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
             }
+            Self::Opaque => value
+                .strip_prefix("opaque-")
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())),
         }
     }
 
@@ -229,6 +236,7 @@ impl Shape {
                 Some((_, ext)) if !ext.is_empty() && ext.len() <= 8 => format!("file-{n}.{ext}"),
                 _ => format!("file-{n}"),
             },
+            Self::Opaque => format!("opaque-{n}"),
         }
     }
 }
@@ -406,15 +414,23 @@ fn map_path_ids(path: &str, state: &mut Sanitizer) -> String {
 }
 
 /// Map one ID value, keeping the JSON type Canvas used.
+///
+/// A string that is not all digits is still an identifier — `lti_user_id`,
+/// `anonymous_id`, a UUID — and used to pass through untouched. It goes
+/// through its own pseudonym shape instead. An object under an ID key is not
+/// an ID at all, so it goes back through the ordinary walk rather than being
+/// copied whole.
 fn sanitize_id(value: &Value, state: &mut Sanitizer) -> Value {
     match value {
         Value::Number(n) => Value::from(state.id(&n.to_string())),
         Value::String(s) if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) => {
             Value::String(state.id(s).to_string())
         }
+        Value::String(s) if !s.is_empty() => Value::String(state.string(s, Shape::Opaque)),
         Value::Array(items) => {
             Value::Array(items.iter().map(|item| sanitize_id(item, state)).collect())
         }
+        Value::Object(_) => sanitize_value(None, value, state),
         other => other.clone(),
     }
 }
@@ -634,6 +650,35 @@ mod tests {
         }
         assert_eq!(out["upload_params"], Value::Null);
         assert_eq!(out["nested"]["sig"], Value::Null);
+    }
+
+    #[test]
+    fn an_id_that_is_not_a_number_is_still_pseudonymized() {
+        let mut s = state();
+        let out = sanitize_value(
+            None,
+            &json!({
+                "id": 4321,
+                "lti_user_id": "5c9d8f1a2b3c4d5e6f708192a3b4c5d6",
+                "anonymous_id": "z1B9",
+                // Not an ID at all; the ordinary walk still has to reach it.
+                "custom_id": {"name": "Ada Lovelace"}
+            }),
+            &mut s,
+        );
+        let text = out.to_string();
+        for leak in ["5c9d8f1a", "z1B9", "Ada Lovelace"] {
+            assert!(!text.contains(leak), "{leak} survived in {text}");
+        }
+        // Keys are visited in sorted order: anonymous_id, custom_id, id,
+        // lti_user_id.
+        assert_eq!(out["anonymous_id"], json!("opaque-1"));
+        assert_eq!(out["custom_id"]["name"], json!("Name 2"));
+        assert_eq!(out["id"], json!(ID_BASE + 1));
+        assert_eq!(out["lti_user_id"], json!("opaque-3"));
+        // Stable inside the set, and its own fixed point on a second pass.
+        let again = sanitize_value(None, &out, &mut s);
+        assert_eq!(again, out);
     }
 
     #[test]
