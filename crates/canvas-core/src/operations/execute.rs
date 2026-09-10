@@ -296,6 +296,11 @@ pub async fn post(
     };
 
     ops::mark_posting(store, owner, journal_id)?;
+    // The journal says `posting` and nothing has been sent. A process that
+    // dies here recovers to `outcome_unknown`, which is the honest answer:
+    // this process cannot prove the request never left.
+    #[cfg(test)]
+    super::crash_tests::checkpoint("posting", journal_id);
     let (path, body) = request_of(&row, &attachment_ids);
     let url = client.api_url(&path).map_err(|_| {
         OperationError::refused("unresolved", "the target URL is not on this origin")
@@ -307,6 +312,9 @@ pub async fn post(
 
     match client.execute_api(request).await {
         Ok((status, _headers, bytes, _url)) => {
+            // The response is in hand and the journal has not moved yet.
+            #[cfg(test)]
+            super::crash_tests::checkpoint("response_received", journal_id);
             record_response(store, owner, journal_id, status.as_u16(), &bytes)
         }
         // Nothing observed. The journal says so and stays there: only
@@ -378,17 +386,27 @@ fn record_response(
         });
     }
 
-    // Canvas answered, and the answer was not an acceptance. Nothing was
-    // posted, and the status says why.
+    // Canvas answered, and the answer was not an acceptance.
+    //
+    // A 4xx is Canvas declining before it wrote anything, so the journal is
+    // `failed` and nothing was posted. A 5xx says nothing of the kind: SPEC
+    // §12.2 records that Canvas can answer 500 after it has already
+    // committed, so the honest state is `outcome_unknown`, and only
+    // `operation reconcile` moves it.
     let canvas_shaped = value
         .as_ref()
         .is_some_and(|v| v.get("errors").is_some() || v.get("message").is_some());
+    let to = if status >= 500 {
+        OpState::OutcomeUnknown
+    } else {
+        OpState::Failed
+    };
     ops::transition(
         store,
         owner,
         journal_id,
         OpState::Posting,
-        OpState::Failed,
+        to,
         ops::Patch {
             error_text: Some(errors_of(value.as_ref()).unwrap_or_else(|| format!("HTTP {status}"))),
             post_status: Some(i64::from(status)),
@@ -402,7 +420,11 @@ fn record_response(
     )?;
     Ok(Posted {
         row: Box::new(ops::require(store, journal_id)?),
-        warning: None,
+        warning: (to == OpState::OutcomeUnknown).then(|| {
+            "Canvas answered with a server error, which does not prove the write did not \
+             happen; operation reconcile re-checks it"
+                .to_owned()
+        }),
     })
 }
 

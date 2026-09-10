@@ -354,14 +354,17 @@ pub fn pending_operations(
     state: &Connection,
     target: PendingTarget,
 ) -> Result<Vec<String>, DbError> {
-    let (clause, topic, conversation): (&str, Option<i64>, Option<i64>) = match target {
-        PendingTarget::Topic(id) => ("topic_id = ?1", Some(id), None),
+    // Each clause binds exactly the parameters it names, so the count always
+    // matches what the statement was prepared with.
+    let (clause, args): (&str, Vec<i64>) = match target {
+        PendingTarget::Topic(id) => ("topic_id = ?1", vec![id]),
+        // A send has no conversation id until Canvas answers, so an
+        // unfinished one is pending for every conversation read.
         PendingTarget::Conversation(id) => (
-            "(conversation_id = ?2 OR (kind = 'inbox_send' AND state IN ('planned','posting')))",
-            None,
-            Some(id),
+            "(conversation_id = ?1 OR (kind = 'inbox_send' AND state IN ('planned','posting')))",
+            vec![id],
         ),
-        PendingTarget::Inbox => ("kind IN ('inbox_send','inbox_reply')", None, None),
+        PendingTarget::Inbox => ("kind IN ('inbox_send','inbox_reply')", Vec::new()),
     };
     let sql = format!(
         "SELECT journal_id, state, created_at, acknowledged_at, topic_id, conversation_id
@@ -371,7 +374,7 @@ pub fn pending_operations(
     );
     let mut stmt = state.prepare(&sql)?;
     let rows: Vec<PendingRow> = stmt
-        .query_map(params![topic, conversation], |r| {
+        .query_map(rusqlite::params_from_iter(args), |r| {
             Ok((
                 r.get(0)?,
                 r.get(1)?,
