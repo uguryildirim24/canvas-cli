@@ -118,6 +118,17 @@ pub async fn execute(
                 message: "executed plan has no journal".into(),
             });
     }
+    // The first read happened before the revalidation `GET`; a decline, a
+    // cancel, or an expiry could have landed while it was in flight. Admission
+    // makes this read authoritative, so the refusal names what actually
+    // happened instead of letting the guarded link report a lost race.
+    ops::guard_admission(&plan, now)?;
+    if plan.state != PlanState::Approved || plan.approval.is_none() {
+        return Err(PlanError::Refused {
+            reason: "approval_required",
+            message: "plan has no recorded human approval".into(),
+        });
+    }
     crate::submit::recover_active(store, identity_dir, plan.assignment_id)?;
 
     // Every observation the plan froze, then steps 3–4 on the fresh read. The

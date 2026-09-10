@@ -726,3 +726,51 @@ async fn declining_and_cancelling_spend_the_handles_and_refuse_execute() {
     assert_eq!(after.invalidated_reason.as_deref(), Some("cancelled"));
     assert!(!saw_a_write(&server).await);
 }
+
+#[tokio::test]
+async fn a_decline_during_the_revalidation_read_is_named_as_the_decline() {
+    // The plan is read once before the revalidation `GET` and again under
+    // admission. A decline that lands in between must be reported as what it
+    // is, and must not reach the guarded link and read as a lost race.
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    let client = test_client(&server.uri());
+    Mock::given(method("GET"))
+        .and(path("/api/v1/courses/1/assignments/2"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(assignment_json())
+                .set_delay(std::time::Duration::from_millis(300)),
+        )
+        .mount(&server)
+        .await;
+    let now = Timestamp::now();
+    let plan_id = approved_plan(&client, &open, &paths, &doc, now).await;
+
+    let running = execute(
+        &client,
+        &open.store,
+        &paths.identity_dir,
+        doc.key.as_str(),
+        &plan_id,
+        now,
+    );
+    let declining = async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        super::decline(&open.store, &plan_id).unwrap();
+    };
+    let (answer, ()) = tokio::join!(running, declining);
+
+    let error = answer.expect_err("a declined plan is never executed");
+    assert_eq!(error.refusal_reason(), Some("invalidated"));
+    assert_eq!(error.to_string(), "declined");
+    let journals: i64 = open
+        .store
+        .call_blocking(|c| {
+            Ok(c.state
+                .query_row("SELECT COUNT(*) FROM submission_journal", [], |r| r.get(0))?)
+        })
+        .unwrap();
+    assert_eq!(journals, 0, "a refusal never creates a journal");
+    assert!(!saw_a_write(&server).await);
+}
