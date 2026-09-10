@@ -889,6 +889,13 @@ impl E2e {
     pub fn snapshot_json(&self, name: &str, run: &Run) -> Value {
         let mut value = run.json();
         scrub_json(&mut value, self);
+        // `receipts export` reports the size of the document it wrote, and the
+        // document embeds `created_at`, whose fractional seconds print with a
+        // variable width. The byte count therefore moves by one or two between
+        // runs for reasons the command had no part in.
+        if value["schema"] == "canvas-cli/receipts@1" && value["result"]["bytes"].is_number() {
+            value["result"]["bytes"] = json!(0);
+        }
         insta::with_settings!({ prepend_module_to_snapshot => false }, {
             insta::assert_json_snapshot!(name, value);
         });
@@ -954,14 +961,15 @@ fn ensure_newline(text: &str) -> String {
 
 /// Keys whose value is generated per run and can never be snapshotted.
 ///
-/// `journal_id` and `receipt_id` are UUIDs. `created_at` and `updated_at` are
-/// journal row timestamps: `canvas-core` stamps them from the wall clock, so
-/// `CANVAS_NOW` does not reach them.
-const VOLATILE_KEYS: [(&str, &str); 4] = [
+/// `journal_id` and `receipt_id` are UUIDs. `created_at`, `updated_at` and
+/// `acknowledged_at` are journal row timestamps: `canvas-core` stamps them from
+/// the wall clock, so `CANVAS_NOW` does not reach them.
+const VOLATILE_KEYS: [(&str, &str); 5] = [
     ("journal_id", "<id>"),
     ("receipt_id", "<id>"),
     ("created_at", "<clock>"),
     ("updated_at", "<clock>"),
+    ("acknowledged_at", "<clock>"),
 ];
 
 /// Numeric keys whose value is a filesystem measurement, not a command result.

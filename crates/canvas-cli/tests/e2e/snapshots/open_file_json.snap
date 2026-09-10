@@ -20,10 +20,11 @@ expression: value
     "storage": 0
   },
   "result": {
-    "bytes": 0,
-    "path": "<scratch>/receipt.json",
-    "receipt_id": "00000000-0000-4000-8000-00000000000r"
+    "id": "501",
+    "launched": false,
+    "target_kind": "file",
+    "url": "<origin>/files/501"
   },
-  "schema": "canvas-cli/receipts@1",
+  "schema": "canvas-cli/open@1",
   "warnings": []
 }

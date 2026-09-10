@@ -20,9 +20,8 @@ expression: value
     "storage": 0
   },
   "result": {
-    "bytes": 0,
-    "path": "<scratch>/receipt.json",
-    "receipt_id": "00000000-0000-4000-8000-00000000000r"
+    "acknowledged_at": "<clock>",
+    "journal_id": "00000000-0000-4000-8000-00000000000j"
   },
   "schema": "canvas-cli/receipts@1",
   "warnings": []

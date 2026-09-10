@@ -205,6 +205,28 @@ async fn open_course() {
     snapshot_both(&env, "open", &["open", &COURSE_ID.to_string()], 0);
 }
 
+/// The three `open` subcommands, which build a URL without resolving a course.
+#[tokio::test]
+async fn open_subcommands() {
+    let server = CanvasServer::start().await;
+    let env = E2e::with_server(&server);
+    let course = COURSE_ID.to_string();
+    let assignment = ASSIGNMENT_ID.to_string();
+    snapshot_both(
+        &env,
+        "open_assignment",
+        &["open", "assignment", &course, &assignment],
+        0,
+    );
+    snapshot_both(&env, "open_file", &["open", "file", "501"], 0);
+    snapshot_both(
+        &env,
+        "open_announcement",
+        &["open", "announcement", &course, "40"],
+        0,
+    );
+}
+
 // ------------------------------------------------------------ local state --
 
 #[tokio::test]
@@ -291,6 +313,20 @@ async fn submit_receipts_and_verify() {
         0,
     );
     assert!(out.exists(), "export wrote the receipt file");
+    let written = std::fs::metadata(&out).unwrap().len();
+    let reported = env.run_local(&[
+        "receipts",
+        "export",
+        &receipt_id,
+        "--out",
+        out.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        reported.json()["result"]["bytes"].as_u64(),
+        Some(std::fs::metadata(&out).unwrap().len()),
+        "the reported byte count is the file it wrote (was {written})"
+    );
 
     server.echo_posted_submission().await;
     snapshot_both(
@@ -345,4 +381,83 @@ fn receipt_id_from(env: &E2e) -> String {
         .to_owned();
     env.mask(&receipt_id, RECEIPT_PLACEHOLDER);
     receipt_id
+}
+
+/// `submission reconcile` and `receipts acknowledge`, over an unknown journal.
+///
+/// Both commands only accept a journal whose `POST` outcome was never
+/// observed, so the test has to create one: the server answers the submission
+/// `POST` with a Canvas-shaped 500 and then shows no attempt.
+#[tokio::test]
+async fn reconcile_and_acknowledge_an_unknown_journal() {
+    let server = CanvasServer::start().await;
+    server.allow_text_submission().await;
+    server
+        .override_post_or_get(
+            &format!("/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}/submissions"),
+            wiremock::ResponseTemplate::new(500).set_body_json(serde_json::json!({
+                "status": "internal_server_error",
+                "message": "unexpected",
+                "error_report_id": 4242,
+            })),
+        )
+        .await;
+    server
+        .override_get(
+            &format!("/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}/submissions/self"),
+            200,
+            serde_json::json!({ "id": 77, "attempt": 0, "submission_history": [] }),
+        )
+        .await;
+    let env = E2e::with_server(&server);
+    let body = env.write_file("essay.txt", b"hello\n");
+    env.run(&[
+        "submit",
+        &COURSE_ID.to_string(),
+        &ASSIGNMENT_ID.to_string(),
+        "--text",
+        body.to_str().unwrap(),
+        "--yes",
+    ])
+    .assert_code(9);
+
+    let listed = env.run_local(&["receipts", "list", "--json"]);
+    listed.assert_code(0);
+    let journal_id = listed.json()["result"]["journals"][0]["journal_id"]
+        .as_str()
+        .expect("submit left one journal")
+        .to_owned();
+    env.mask(&journal_id, JOURNAL_PLACEHOLDER);
+
+    // Nothing new is visible, so the journal stays unknown: outcome `recovery`.
+    snapshot_both(
+        &env,
+        "submission_reconcile",
+        &["submission", "reconcile", &journal_id],
+        9,
+    );
+
+    // `acknowledge` retires the pending flag and changes nothing else. Each
+    // call restamps `acknowledged_at`, so both instants are masked before the
+    // run that printed them is snapshotted.
+    let json = env.run_local(&["receipts", "acknowledge", &journal_id, "--json"]);
+    json.assert_code(0);
+    let stamped = json.json()["result"]["acknowledged_at"]
+        .as_str()
+        .expect("acknowledge records an instant")
+        .to_owned();
+    env.mask(&stamped, "<clock>");
+    env.snapshot_json("receipts_acknowledge_json", &json);
+
+    let acknowledged = env.run_local(&["receipts", "acknowledge", &journal_id]);
+    acknowledged.assert_code(0);
+    // Each call restamps, so mask the instant this one wrote as well.
+    let listed = env.run_local(&["receipts", "list", "--json"]);
+    listed.assert_code(0);
+    let restamped = listed.json()["result"]["journals"][0]["acknowledged_at"]
+        .as_str()
+        .expect("the journal is acknowledged")
+        .to_owned();
+    env.mask(&restamped, "<clock>");
+    env.snapshot("receipts_acknowledge_table", &acknowledged);
 }
