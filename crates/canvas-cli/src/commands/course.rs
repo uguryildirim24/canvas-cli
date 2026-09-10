@@ -99,7 +99,7 @@ pub async fn run(globals: &Globals, course: String) -> ExitCode {
     })
 }
 
-async fn resolve_with_refresh(
+pub(super) async fn resolve_with_refresh(
     globals: &Globals,
     session: &Session,
     course: &str,

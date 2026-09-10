@@ -1,25 +1,15 @@
 //! `canvas todo` (class C).
-
-use std::collections::BTreeMap;
+use super::emit::{base_envelope, emit, emit_error, session_error, sync_error};
+use super::{Globals, assignment_read as read};
+use crate::output::{SCHEMA_TODO, now_timestamp};
+use crate::session::{ttl_assignments, ttl_courses};
+use canvas_core::sync::{self, CoursesScope, PlannerWindow};
+use canvas_core::todo::{self, TodoFilters, TodoItem, TodoWindow};
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use canvas_core::resolve::{CommandClass, ResolveError, resolve_course};
-use canvas_core::sync::{
-    CoursesScope, PlannerWindow, SyncError, refresh_courses, refresh_missing, refresh_planner,
-};
-use canvas_core::todo::{
-    TodoFilters, TodoItem, TodoWindow, assignment_pending, build_todo, course_code,
-    load_missing_rows, load_planner_rows, today_utc,
-};
-use serde_json::{Value, json};
-
-use super::Globals;
-use super::emit::{base_envelope, call_resolve, emit, emit_error, session_error};
-use crate::output::{SCHEMA_TODO, now_timestamp};
-use crate::session::{Session, ttl_courses, ttl_missing, ttl_planner};
-
-/// Run `canvas todo`.
 #[allow(clippy::too_many_lines)]
 pub async fn run(
     globals: &Globals,
@@ -32,334 +22,177 @@ pub async fn run(
         Ok(s) => s,
         Err(e) => return session_error(globals.json, e, globals.profile.clone()),
     };
-
+    let days = days.unwrap_or(14);
+    if days == 0
+        || now_timestamp()
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .date()
+            .checked_add(jiff::Span::new().days(i64::from(days)))
+            .is_err()
+    {
+        return emit_error(
+            globals.json,
+            "usage",
+            "days must be positive and fit the supported date range",
+            2,
+            session.profile.clone(),
+            Some(session.identity_ref()),
+        );
+    }
     let now = now_timestamp();
-    let today = today_utc(now);
-    let days = days.unwrap_or(14).max(1);
+    let zone = read::zone(&session);
+    let today = now.to_zoned(zone.clone()).date();
     let window = PlannerWindow::todo_default(today, days);
     let todo_window = TodoWindow {
         start: window.start,
         end: window.end,
         days,
     };
-
-    let client = session.client.as_ref();
-    if client.is_none() && !globals.offline {
-        // Class C without token still tries cache; treat as offline.
-    }
-
-    let mut freshness = Vec::new();
-    let warnings = Vec::new();
-
-    if let Some(client) = client {
-        match refresh_courses(
-            client,
+    let courses = async {
+        if let Some(out) = read::cached(
+            &session,
+            sync::CoursesDataset::new(CoursesScope::Active, ttl_courses()),
+            None,
+            globals,
+        )
+        .await?
+        {
+            return Ok(out);
+        }
+        sync::refresh_courses(
+            session
+                .client
+                .as_ref()
+                .ok_or(canvas_api::Error::Unauthorized)?,
             &session.open.store,
             CoursesScope::Active,
             ttl_courses(),
             now,
             globals.fresh,
-            globals.offline,
+            false,
         )
         .await
-        {
-            Ok(o) => freshness.push(o),
-            Err(e) => return sync_exit(globals, &session, e),
-        }
-        match refresh_planner(
-            client,
-            &session.open.store,
-            window.clone(),
-            ttl_planner(),
-            now,
-            globals.fresh,
-            globals.offline,
-        )
-        .await
-        {
-            Ok(o) => freshness.push(o),
-            Err(e) => return sync_exit(globals, &session, e),
-        }
-        match refresh_missing(
-            client,
-            &session.open.store,
-            ttl_missing(),
-            now,
-            globals.fresh,
-            globals.offline,
-        )
-        .await
-        {
-            Ok(o) => freshness.push(o),
-            Err(e) => return sync_exit(globals, &session, e),
-        }
-    } else if globals.offline || client.is_none() {
-        // Offline / no client: serve cache only via empty refresh paths.
-        for (dataset, scope) in [
-            ("courses", "active"),
-            ("planner", window.scope_key().as_str()),
-            ("missing", "all"),
-        ] {
-            let _ = (dataset, scope);
-        }
     }
-
-    let course_id = if let Some(ref course) = course {
-        let origin = session.identity.origin.clone();
-        let course = course.clone();
-        match call_resolve(&session, move |conns| {
-            resolve_course(conns, &course, &origin, CommandClass::C)
-        })
-        .await
-        {
-            Ok(Ok(c)) => Some(c.id),
-            Ok(Err(ResolveError::IncompleteDataset { .. })) => {
-                return emit_error(
-                    globals.json,
-                    "offline",
-                    "course list is incomplete; refresh online or use a numeric id",
-                    7,
-                    session.profile.clone(),
-                    Some(session.identity_ref()),
-                );
+    .await;
+    let mut outcomes = Vec::new();
+    match courses {
+        Ok(o) => outcomes.push(o),
+        Err(e) => return sync_error(globals, &session, &e),
+    }
+    let planner_scope = match read::planner(&session, globals, window.clone()).await {
+        Ok(o) => {
+            let scope = o.freshness.scope.clone();
+            outcomes.push(o);
+            scope
+        }
+        Err(e) => return sync_error(globals, &session, &e),
+    };
+    match read::missing(&session, globals).await {
+        Ok(o) => outcomes.push(o),
+        Err(e) => return sync_error(globals, &session, &e),
+    }
+    let mut resolver_freshness = Vec::new();
+    let course_id = if let Some(course) = course {
+        match super::course::resolve_with_refresh(globals, &session, &course).await {
+            Ok((c, f, _)) => {
+                resolver_freshness = f;
+                Some(c.id)
             }
-            Ok(Err(e)) => {
-                return emit_error(
-                    globals.json,
-                    "usage",
-                    &e.to_string(),
-                    2,
-                    session.profile.clone(),
-                    Some(session.identity_ref()),
-                );
-            }
-            Err(e) => {
-                return emit_error(
-                    globals.json,
-                    "local",
-                    &e.to_string(),
-                    13,
-                    session.profile.clone(),
-                    Some(session.identity_ref()),
-                );
-            }
+            Err(e) => return e,
         }
     } else {
         None
     };
-
-    if all && globals.offline {
-        return emit_error(
-            globals.json,
-            "offline",
-            "todo --all requires complete assignments per active course",
-            7,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        );
-    }
-
-    let scope = window.scope_key();
-    let built = match session
-        .open
-        .store
-        .call({
-            let filters = TodoFilters {
-                all,
-                missing_only: missing,
-                course_id,
-                bucket: None,
-                search: None,
-            };
-            let todo_window = todo_window.clone();
-            move |conns| {
-                let planner = load_planner_rows(conns, &scope)?;
-                let missing_rows = load_missing_rows(conns)?;
-                let mut codes = BTreeMap::new();
-                let mut pending = BTreeMap::new();
-                for row in &planner {
-                    if let Some(cid) = row.course_id {
-                        if let Ok(Some(code)) = course_code(conns, cid) {
-                            codes.insert(cid, code);
-                        }
-                    }
-                    if let Some(aid) = row.plannable_id {
-                        if let Ok(p) = assignment_pending(conns, aid) {
-                            pending.insert(aid, p);
-                        }
-                    }
-                }
-                for row in &missing_rows {
-                    if let Some(cid) = row.course_id {
-                        if let Ok(Some(code)) = course_code(conns, cid) {
-                            codes.insert(cid, code);
-                        }
-                    }
-                    if let Ok(p) = assignment_pending(conns, row.id) {
-                        pending.insert(row.id, p);
-                    }
-                }
-                Ok::<_, canvas_core::store::DbError>(build_todo(
-                    &planner,
-                    &missing_rows,
-                    &codes,
-                    &pending,
-                    now,
-                    today,
-                    &todo_window,
-                    &filters,
-                    canvas_core::sync::default_ttl_assignments(),
-                    &BTreeMap::new(),
-                ))
+    let active=match session.open.store.call(|conns|{
+        let mut stmt=conns.cache.prepare("SELECT CAST(entity_id AS INTEGER) FROM membership WHERE dataset='courses' AND scope='active' AND entity_kind='course'")?;
+        Ok(stmt.query_map([],|r|r.get::<_,i64>(0))?.collect::<Result<Vec<_>,_>>()?)
+    }).await{Ok(ids)=>ids,Err(e)=>return sync_error(globals,&session,&e.into())};
+    if all {
+        for id in &active {
+            match read::assignments(&session, globals, *id).await {
+                Ok(o) => outcomes.push(o),
+                Err(e) => return sync_error(globals, &session, &e),
             }
-        })
-        .await
+        }
+    }
+    match read::refresh_stale_eligibility(
+        &session,
+        globals,
+        if all { active.clone() } else { vec![] },
+        Some(planner_scope.clone()),
+    )
+    .await
     {
+        Ok(o) => outcomes.extend(o),
+        Err(e) => return sync_error(globals, &session, &e),
+    }
+    let view=session.open.store.call({let window=window.clone();let todo_window=todo_window.clone();let zone=zone.clone();move|conns|{
+        let mut planner=todo::load_planner_rows(conns,&planner_scope)?;
+        planner.retain(|row|{
+            let data:Value=serde_json::from_str(&row.data_json).unwrap_or(Value::Null);
+            let at=data.get("plannable_date").or_else(||data.get("due_at")).and_then(Value::as_str).and_then(|s|s.parse::<jiff::Timestamp>().ok());
+            at.is_none_or(|t|t>=window.start_timestamp() && t<window.end_timestamp())
+        });
+        let mut rows=todo::load_missing_rows(conns)?;
+        let mut ids:BTreeSet<i64>=rows.iter().map(|r|r.id).collect();
+        if all {
+            for cid in active {
+                let mut stmt=conns.cache.prepare("SELECT CAST(entity_id AS INTEGER) FROM membership WHERE dataset='assignments' AND scope=?1 AND entity_kind='assignment'")?;
+                let members=stmt.query_map([format!("course:{cid}")],|r|r.get::<_,i64>(0))?.collect::<Result<Vec<_>,_>>()?;
+                for id in members {if ids.insert(id){if let Some(row)=todo::load_assignment_row(conns,id)?{rows.push(row);}}}
+            }
+        }
+        let mut codes=BTreeMap::new();let mut pending=BTreeMap::new();
+        for row in &planner {
+            if let Some(cid)=row.course_id{if let Some(code)=todo::course_code(conns,cid)?{codes.insert(cid,code);}}
+            if let Some(a)=&row.assignment{ids.insert(a.id);}
+            let data:Value=serde_json::from_str(&row.data_json).unwrap_or(Value::Null);
+            for name in ["assignment_id","parent_assignment_id"] {
+                if let Some(id)=data.get(name).and_then(|v|v.as_i64().or_else(||v.as_str().and_then(|s|s.parse().ok()))){ids.insert(id);}
+            }
+        }
+        for row in &rows{if let Some(cid)=row.course_id{if let Some(code)=todo::course_code(conns,cid)?{codes.insert(cid,code);}}}
+        for id in ids{pending.insert(id,todo::assignment_pending(conns,id)?);}
+        Ok(todo::build_todo_in_zone(&planner,&rows,&codes,&pending,now,today,&todo_window,&TodoFilters{all,missing_only:missing,course_id,..TodoFilters::default()},ttl_assignments(),&todo::assignment_observations(conns)?,&zone))
+    }}).await;
+    let (items, counts) = match view {
         Ok(v) => v,
-        Err(e) => {
-            return emit_error(
-                globals.json,
-                "local",
-                &e.to_string(),
-                13,
-                session.profile.clone(),
-                Some(session.identity_ref()),
-            );
-        }
+        Err(e) => return sync_error(globals, &session, &e.into()),
     };
-
-    let (items, counts) = built;
-    let result = json!({
-        "window": {
-            "start": todo_window.start.to_string(),
-            "end": todo_window.end.to_string(),
-            "days": todo_window.days,
-        },
-        "items": items.iter().map(item_json).collect::<Vec<_>>(),
-        "counts": {
-            "missing": counts.missing,
-            "due_today": counts.due_today,
-            "due_week": counts.due_week,
-            "hidden": counts.hidden,
-        }
-    });
-
+    let result = json!({"window":{"start":todo_window.start.to_string(),"end":todo_window.end.to_string(),"days":days},"items":items.iter().map(|i|item_json(i,&zone)).collect::<Vec<_>>(),"counts":{"missing":counts.missing,"due_today":counts.due_today,"due_week":counts.due_week,"hidden":counts.hidden}});
     let mut envelope = base_envelope(SCHEMA_TODO, &session, result);
-    envelope.freshness = freshness
+    envelope.freshness = outcomes
         .iter()
-        .map(|o| crate::output::Freshness {
-            dataset: o.freshness.dataset.clone(),
-            scope: o.freshness.scope.clone(),
-            source: match o.freshness.source {
-                canvas_core::sync::FreshnessSource::Cache => crate::output::FreshnessSource::Cache,
-                canvas_core::sync::FreshnessSource::Network => {
-                    crate::output::FreshnessSource::Network
-                }
-            },
-            fetched_at: Some(o.freshness.fetched_at.to_string()),
-            complete: o.freshness.complete,
-            count: Some(u64_count(o.freshness.count)),
-            stale: o.freshness.stale,
-        })
+        .map(super::course_load::outcome_freshness)
         .collect();
-    envelope.requests = session.requests();
-    envelope.warnings = warnings;
-
-    emit(globals.json, &envelope, || print_human(&items, &counts))
-}
-
-fn item_json(item: &TodoItem) -> Value {
-    json!({
-        "key": item.key,
-        "kind": item.kind.as_str(),
-        "raw_type": item.raw_type,
-        "id": item.id.to_string(),
-        "assignment_id": item.assignment_id.map(|v| v.to_string()),
-        "parent_assignment_id": item.parent_assignment_id.map(|v| v.to_string()),
-        "course_id": item.course_id.map(|v| v.to_string()),
-        "course_code": item.course_code,
-        "title": item.title,
-        "due_at": item.due_at.map(|t| t.to_string()),
-        "due_at_local": null,
-        "scheduled_at": item.scheduled_at.map(|t| t.to_string()),
-        "scheduled_at_local": null,
-        "points_possible": item.points_possible,
-        "status": {
-            "submitted": item.status.submitted,
-            "graded": item.status.graded,
-            "score": item.status.score,
-            "late": item.status.late,
-            "missing": item.status.missing,
-            "excused": item.status.excused,
-            "locked": item.status.locked,
-            "pending": item.status.pending,
-        },
-        "availability": {
-            "locked": item.status.locked,
-            "lock_explanation": item.availability.lock_explanation,
-            "submittable": item.availability.submittable,
-            "external": item.availability.external,
-            "unlock_at": item.availability.unlock_at.map(|t| t.to_string()),
-            "unlock_at_local": null,
-            "lock_at": item.availability.lock_at.map(|t| t.to_string()),
-            "lock_at_local": null,
-        },
-        "marked_complete": item.marked_complete,
-        "dismissed": item.dismissed,
-        "html_url": item.html_url,
-    })
-}
-
-fn print_human(items: &[TodoItem], counts: &canvas_core::todo::TodoCounts) -> io::Result<()> {
-    writeln!(
-        io::stdout(),
-        "missing={} due_today={} due_week={} hidden={}",
-        counts.missing,
-        counts.due_today,
-        counts.due_week,
-        counts.hidden
-    )?;
-    for item in items {
-        let status = if item.status.pending {
-            "pending"
-        } else if item.status.missing {
-            "missing"
-        } else if item.status.submitted.unwrap_or(false) {
-            "submitted"
-        } else {
-            "open"
-        };
+    for row in resolver_freshness {
+        if !envelope
+            .freshness
+            .iter()
+            .any(|f| f.dataset == row.dataset && f.scope == row.scope)
+        {
+            envelope.freshness.push(row);
+        }
+    }
+    envelope
+        .warnings
+        .extend(outcomes.into_iter().filter_map(|o| o.error));
+    emit(globals.json, &envelope, || {
         writeln!(
             io::stdout(),
-            "[{status}] {} {}",
-            item.course_code.as_deref().unwrap_or("-"),
-            item.title
+            "missing={} due_today={} due_week={} hidden={}",
+            counts.missing,
+            counts.due_today,
+            counts.due_week,
+            counts.hidden
         )?;
-    }
-    Ok(())
+        writeln!(
+            io::stdout(),
+            "{}",
+            read::human_todo(&items, &zone, read::use_color(globals))
+        )
+    })
 }
-
-fn u64_count(n: i64) -> u64 {
-    u64::try_from(n.max(0)).unwrap_or(0)
-}
-
-fn sync_exit(globals: &Globals, session: &Session, err: SyncError) -> ExitCode {
-    match err {
-        SyncError::OfflineMiss => emit_error(
-            globals.json,
-            "offline",
-            "required dataset is not cached",
-            7,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        other => emit_error(
-            globals.json,
-            "network",
-            &other.to_string(),
-            4,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-    }
+fn item_json(item: &TodoItem, zone: &jiff::tz::TimeZone) -> Value {
+    json!({"key":item.key,"kind":item.kind.as_str(),"raw_type":item.raw_type,"id":item.id.to_string(),"assignment_id":item.assignment_id.map(|id|id.to_string()),"parent_assignment_id":item.parent_assignment_id.map(|id|id.to_string()),"course_id":item.course_id.map(|id|id.to_string()),"course_code":item.course_code,"title":item.title,"due_at":item.due_at.map(|t|t.to_string()),"due_at_local":read::local(item.due_at,zone),"scheduled_at":item.scheduled_at.map(|t|t.to_string()),"scheduled_at_local":read::local(item.scheduled_at,zone),"points_possible":item.points_possible,"status":read::status(item,zone),"availability":read::availability(item,zone),"marked_complete":item.marked_complete,"dismissed":item.dismissed,"html_url":item.html_url})
 }

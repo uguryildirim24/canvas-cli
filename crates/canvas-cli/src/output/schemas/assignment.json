@@ -1,1 +1,58 @@
-{ "assignment": { "id": "1", "course_id": "101", "name": "HW1", "due_at": null, "due_at_local": null, "points_possible": 10, "submission_types": ["online_upload"], "allowed_extensions": [], "allowed_attempts": null, "group_assignment": false, "availability": { "locked": null, "lock_explanation": null, "submittable": true, "external": false, "unlock_at": null, "unlock_at_local": null, "lock_at": null, "lock_at_local": null }, "status": { "submitted": false, "graded": false, "score": null, "grade": null, "late": false, "missing": false, "excused": false, "workflow_state": null, "submitted_at": null, "submitted_at_local": null, "attempt": null, "posted_at": null, "pending": false }, "html_url": "https://example.instructure.com/courses/101/assignments/1", "description_markdown": null, "can_submit": true, "extra_attempts": null, "rubric": [], "rubric_assessed": false, "rubric_assessment": [], "comments_count": 0, "external_tool_name": null } }
+{
+  "assignment": {
+    "allowed_attempts": 3,
+    "allowed_extensions": [
+      "pdf"
+    ],
+    "availability": {
+      "external": false,
+      "lock_at": null,
+      "lock_at_local": null,
+      "lock_explanation": null,
+      "locked": false,
+      "submittable": false,
+      "unlock_at": null,
+      "unlock_at_local": null
+    },
+    "can_submit": false,
+    "comments_count": null,
+    "course_id": "1",
+    "description_markdown": "Explain **chemistry**.",
+    "due_at": "2026-09-10T03:59:00Z",
+    "due_at_local": "2026-09-09T23:59:00-04:00",
+    "external_tool_name": null,
+    "extra_attempts": null,
+    "group_assignment": false,
+    "html_url": "https://canvas.test/courses/1/assignments/2",
+    "id": "2",
+    "name": "Homework 2",
+    "points_possible": 10.0,
+    "rubric": [
+      {
+        "description": "Reasoning",
+        "id": "c1",
+        "points": 10.0
+      }
+    ],
+    "rubric_assessed": false,
+    "rubric_assessment": [],
+    "status": {
+      "attempt": 0,
+      "excused": false,
+      "grade": null,
+      "graded": false,
+      "late": false,
+      "missing": false,
+      "pending": false,
+      "posted_at": null,
+      "score": null,
+      "submitted": false,
+      "submitted_at": null,
+      "submitted_at_local": null,
+      "workflow_state": "unsubmitted"
+    },
+    "submission_types": [
+      "online_upload"
+    ]
+  }
+}

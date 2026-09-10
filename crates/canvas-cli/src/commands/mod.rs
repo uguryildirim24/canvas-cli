@@ -2,6 +2,7 @@
 
 pub mod alias;
 pub mod assignment;
+mod assignment_read;
 pub mod assignments;
 pub mod auth;
 pub mod cache;
