@@ -25,6 +25,8 @@ fs4.workspace = true
 jiff.workspace = true
 keyring.workspace = true
 reqwest.workspace = true
+rpassword = "=7.4.0"
+open.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -34,6 +36,9 @@ tokio = { workspace = true, features = ["rt", "macros", "fs", "io-util", "sync",
 toml.workspace = true
 tracing.workspace = true
 uuid = { version = "=1.18.1", features = ["serde", "v4"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.4", features = ["fs", "process"] }
 
 [dev-dependencies]
 assert_cmd.workspace = true
