@@ -14,6 +14,7 @@ pub mod catalog;
 pub mod resources;
 pub mod result;
 pub mod server;
+pub mod subscribe;
 
 use std::cell::Cell;
 use std::io::{self, Write};

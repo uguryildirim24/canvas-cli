@@ -298,6 +298,31 @@ async fn notify_posts_one_line_per_kind_group_and_never_repeats_a_cursor() {
         "stderr={}",
         plain.stderr
     );
+
+    // A stored position this log cannot replay asks for a resync once. It is
+    // not a position any more, so it is replaced: the run after it posts
+    // again instead of reporting the same gap forever.
+    let open = env.open();
+    open.store
+        .call_blocking(|conns| {
+            canvas_core::events::reset_consumer_cursor(&mut conns.state, "notify", 999_999)
+        })
+        .unwrap();
+    drop(open);
+    let gap = env.run_local(&["notify", "--stdout"]);
+    gap.assert_code(0);
+    assert!(
+        gap.stdout.contains("resync_required"),
+        "stdout={}",
+        gap.stdout
+    );
+    let after = env.run_local(&["notify", "--stdout"]);
+    after.assert_code(0);
+    assert_eq!(
+        after.stdout, "",
+        "the gap was reported twice: {}",
+        after.stdout
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

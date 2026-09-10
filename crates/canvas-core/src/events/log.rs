@@ -259,6 +259,29 @@ pub fn set_consumer_cursor(
     Ok(())
 }
 
+/// Replace a consumer's position after a resync.
+///
+/// [`set_consumer_cursor`] never moves a position back, because a consumer
+/// that already reported an event must not report it twice. A cursor this log
+/// cannot replay is not a position at all: it expired, or it belongs to
+/// another identity generation. Once the consumer is told to resync, the
+/// stored value is replaced, so the same gap is never reported again.
+pub fn reset_consumer_cursor(
+    state: &mut Connection,
+    consumer: &str,
+    cursor: i64,
+) -> Result<(), DbError> {
+    let tx = state.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute(
+        "INSERT INTO consumer_cursor (consumer, cursor, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(consumer) DO UPDATE SET
+            cursor = excluded.cursor, updated_at = excluded.updated_at",
+        params![consumer, cursor, Timestamp::now().to_string()],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Record a journal state transition inside the journal's own transaction.
 ///
 /// SPEC §12.2 keeps the journal and its event atomic: either both land or
