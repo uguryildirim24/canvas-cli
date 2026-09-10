@@ -74,7 +74,7 @@ fn write_man_pages(cmd: &clap::Command, dir: &Path, written: &mut Vec<PathBuf>) 
     // version of its own, so the default header would read `submit `. The date
     // stays empty because any real date would break determinism.
     let man = clap_mangen::Man::new(cmd.clone())
-        .source(format!("canvas {}", env!("CARGO_PKG_VERSION")))
+        .source(format!("canvas {}", dist::VERSION))
         .manual(MANUAL);
     let name = man.get_filename();
     let path = dir.join(&name);
