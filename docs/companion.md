@@ -303,7 +303,12 @@ the attachment. A note is inert:
   no image is ever fetched; and a link survives only when it is `https` on
   the granted origin with no credentials in it. Everything else is shown
   struck through and marked *(link removed)*, so you see that something
-  claimed to be a link rather than seeing a link that lies.
+  claimed to be a link rather than seeing a link that lies. Nesting is
+  bounded in both directions — emphasis at four deep, block quotes at six —
+  because each level is a recursive call and a note well inside 8 KiB can
+  otherwise carry enough of them to overflow the stack. A note that still
+  fails to render costs that one row, which is shown unrendered; the plans
+  waiting for a decision draw either way.
 
 A note is at most 8 KiB and carries at most 16 source refs, each either
 `canvas://…` or an `https` URL on the attached origin. Breaking either bound

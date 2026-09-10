@@ -158,3 +158,18 @@ test("emphasis cannot be nested until it recurses away", () => {
   assert.equal(blocks.length, 1);
   assert.ok(words(blocks).join("").includes("deep"));
 });
+
+test("a block quote cannot be nested until it recurses away", () => {
+  // Each `>` is one level and one recursive call. Unbounded, a note well
+  // inside the 8 KiB limit overflows the stack, and an overflow in this
+  // panel is not a wrong render but no render at all.
+  const blocks = renderMarkdown(`${">".repeat(6000)} boom`, ORIGIN);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].type, "quote");
+  assert.ok(words(blocks).join("").includes("boom"), "the text survives");
+
+  // Ordinary nesting still nests, up to the bound.
+  const three = renderMarkdown("> a\n> > b\n> > > c", ORIGIN);
+  assert.equal(three[0].type, "quote");
+  assert.equal(three[0].children[1].type, "quote");
+});
