@@ -93,6 +93,65 @@ async fn mock_assignment(server: &MockServer, status: u16) {
 async fn mock_history(server: &MockServer, body: Value) {
     Mock::given(path("/api/v1/courses/1/assignments/2/submissions/self")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"attempt":1,"submission_history":[{"id":55,"attempt":1,"submitted_at":"2026-09-09T17:05:12Z","body":body,"attachments":[]}]}))).mount(server).await;
 }
+/// Every M2-b registry fixture describes the fields its live command emits.
+fn assert_fixtures_match_live(snapshots: &[Value], receipt: &Value) {
+    let live = |name: &str| -> Value {
+        snapshots
+            .iter()
+            .find(|s| s["command"] == name)
+            .expect("captured command")["json"]["result"]
+            .clone()
+    };
+    for (schema, fixture, result) in [
+        (
+            "submit@1",
+            include_str!("../src/output/schemas/submit.json"),
+            live("submit"),
+        ),
+        (
+            "verify@1",
+            include_str!("../src/output/schemas/verify.json"),
+            live("verify"),
+        ),
+        (
+            "reconcile@1",
+            include_str!("../src/output/schemas/reconcile.json"),
+            live("reconcile"),
+        ),
+        (
+            "receipts@1",
+            include_str!("../src/output/schemas/receipts.json"),
+            live("list"),
+        ),
+        (
+            "receipt@1",
+            include_str!("../src/output/schemas/receipt.json"),
+            receipt.clone(),
+        ),
+    ] {
+        let fixture: Value = serde_json::from_str(fixture).unwrap();
+        assert_eq!(keys(&fixture), keys(&result), "{schema} result fields");
+        assert_eq!(
+            keys(&fixture["posted"]),
+            keys(&result["posted"]),
+            "{schema} Posted fields"
+        );
+        assert_eq!(
+            keys(&fixture["journals"][0]),
+            keys(&result["journals"][0]),
+            "{schema} Journal fields"
+        );
+    }
+}
+
+/// Field names of a JSON object, for fixture and live-output agreement.
+fn keys(value: &Value) -> Vec<String> {
+    value
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
 fn normalize(value: &mut Value, jid: &str, rid: &str, root: &str) {
     match value {
         Value::Object(map) => {
@@ -182,6 +241,9 @@ async fn live_commands_have_complete_json_and_human_snapshots() {
     let receipt: Value = serde_json::from_slice(&raw.stdout).unwrap();
     assert_eq!(receipt["receipt_id"], rid);
     snapshots.push(json!({"command":"receipt@1 export","json":receipt}));
+
+    assert_fixtures_match_live(&snapshots, &receipt);
+
     let mut snapshot = json!(snapshots);
     normalize(&mut snapshot, jid, rid, f.dir.path().to_str().unwrap());
     let snapshot: Value = serde_json::from_str(
