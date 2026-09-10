@@ -97,3 +97,73 @@ async fn cross_origin_next_link_is_rejected() {
     let first = pages.next().await.expect("one result");
     assert!(matches!(first, Err(Error::CrossOrigin)));
 }
+
+#[tokio::test]
+async fn wrapped_collection_follows_two_pages_and_multiple_link_headers() {
+    use canvas_api::models::GradingPeriod;
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/grading_periods"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(include_str!("fixtures/grading_periods_page1.json"))
+                .append_header("Link", "</previous>; title=\"do not; rel=next\"; rel=prev")
+                .append_header(
+                    "Link",
+                    "</next?cursor=a,b>; title=\"a,b\"; rel = \"next last\"",
+                ),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/next"))
+        .and(query_param("cursor", "a,b"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(include_str!("fixtures/grading_periods_page2.json")),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = common::test_client(&server);
+    let mut pages =
+        std::pin::pin!(client.get_all_wrapped::<GradingPeriod>("/api/v1/grading_periods"));
+    let mut ids = Vec::new();
+    while let Some(page) = pages.next().await {
+        ids.extend(page.unwrap().items.into_iter().map(|item| item.id));
+    }
+    assert_eq!(ids, vec![7, 8, 9, 10]);
+    assert_eq!(client.telemetry().api, 2);
+}
+
+#[tokio::test]
+async fn pagination_resolves_relative_next_against_final_redirect_url() {
+    let server = MockServer::start().await;
+    Mock::given(path("/start"))
+        .respond_with(ResponseTemplate::new(303).insert_header("Location", "/nested/first"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/nested/first"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(vec![serde_json::json!({"id":1})])
+                .insert_header("Link", "<second>; rel=next"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/nested/second"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(vec![serde_json::json!({"id":2})]))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = common::test_client(&server);
+    let result = client.get_all_vec::<Item>("/start").await.unwrap();
+    assert_eq!(
+        result.iter().map(|item| item.id).collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    assert_eq!(client.telemetry().api, 3);
+}
