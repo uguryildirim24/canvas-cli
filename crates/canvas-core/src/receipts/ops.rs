@@ -217,8 +217,14 @@ pub fn export(
     journal_id_or_receipt_id: &str,
     out: Option<&Path>,
 ) -> Result<ExportResult, ReceiptError> {
-    let jid = resolve_journal_id(store, journal_id_or_receipt_id)?;
-    let doc = rebuild_from_journal(store, &jid)?;
+    // An operation journal keeps its receipt in its own table (M8-b), so it
+    // is resolved first; the two id spaces never overlap.
+    let doc = if let Some(row) = operation_by_id(store, journal_id_or_receipt_id)? {
+        operation_receipt(store, &row)?.ok_or(ReceiptError::NotFound)?
+    } else {
+        let jid = resolve_journal_id(store, journal_id_or_receipt_id)?;
+        rebuild_from_journal(store, &jid)?
+    };
     let bytes = serde_json::to_vec_pretty(&doc)?;
     let receipt_id = doc.receipt_id.clone();
 
