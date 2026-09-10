@@ -1309,9 +1309,11 @@ async fn resources_are_private_to_the_identity_generation() {
 
     // Reading the resource attaches nothing. No broker is running here, so
     // the bundle is the `here@1` refusal, not an error and not a bundle.
+    // The handle is this session's own: `consumer_of` spells it from the
+    // client name in `_meta`.
     let context = mcp.primary(
         "resources/read",
-        json!({ "uri": format!("{prefix}context/some-consumer") }),
+        json!({ "uri": format!("{prefix}context/mcp:test-host") }),
     );
     let text = context["result"]["contents"][0]["text"].as_str().unwrap();
     let document: Value = serde_json::from_str(text).unwrap();
@@ -1323,6 +1325,20 @@ async fn resources_are_private_to_the_identity_generation() {
     assert!(document["result"]["browser"].is_null(), "{document}");
     // Browser context is an observation: it is never cacheable.
     assert_eq!(context["result"]["ttlMs"], 0);
+
+    // Another consumer's handle is served the same shape, so the URI cannot
+    // be used to tell one consumer's state from another's.
+    let foreign = mcp.primary(
+        "resources/read",
+        json!({ "uri": format!("{prefix}context/some-consumer") }),
+    );
+    let text = foreign["result"]["contents"][0]["text"].as_str().unwrap();
+    let document: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(document["schema"], "canvas-cli/here@1");
+    assert_eq!(document["outcome"], "refused");
+    assert_eq!(document["exit"], 8);
+    assert_eq!(document["result"]["reason"], "not_attached");
+    assert!(document["result"]["browser"].is_null(), "{document}");
     mcp.stop();
 }
 

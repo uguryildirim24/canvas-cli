@@ -789,9 +789,10 @@ fn only_the_consumer_that_attached_reads_the_bundle() {
         .expect("text");
     let document: Value = serde_json::from_str(text).expect("json");
     assert_eq!(
-        document["result"]["details"]["reason"], "not_attached",
+        document["result"]["reason"], "not_attached",
         "beta read alpha's context: {document}"
     );
+    assert!(document["result"]["browser"].is_null(), "{document}");
     assert!(
         !text.contains("Essay 1"),
         "beta read alpha's page: {document}"
