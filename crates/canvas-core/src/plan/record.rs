@@ -175,7 +175,10 @@ impl Observations {
         Self {
             can_submit: assignment.can_submit.as_value().copied(),
             allowed_attempts: assignment.allowed_attempts.as_value().copied(),
-            extra_attempts: assignment.submission.as_ref().and_then(|s| s.extra_attempts),
+            extra_attempts: assignment
+                .submission
+                .as_ref()
+                .and_then(|s| s.extra_attempts),
             group_category_id: assignment.group_category_id,
             submission_types,
             allowed_extensions,
@@ -193,13 +196,31 @@ impl Observations {
     #[must_use]
     pub fn first_difference(&self, fresh: &Self) -> Option<&'static str> {
         let checks: [(&'static str, bool); 10] = [
-            ("group_category_id", self.group_category_id == fresh.group_category_id),
-            ("submission_types", self.submission_types == fresh.submission_types),
-            ("allowed_extensions", self.allowed_extensions == fresh.allowed_extensions),
+            (
+                "group_category_id",
+                self.group_category_id == fresh.group_category_id,
+            ),
+            (
+                "submission_types",
+                self.submission_types == fresh.submission_types,
+            ),
+            (
+                "allowed_extensions",
+                self.allowed_extensions == fresh.allowed_extensions,
+            ),
             ("can_submit", self.can_submit == fresh.can_submit),
-            ("locked_for_user", self.locked_for_user == fresh.locked_for_user),
-            ("allowed_attempts", self.allowed_attempts == fresh.allowed_attempts),
-            ("extra_attempts", self.extra_attempts == fresh.extra_attempts),
+            (
+                "locked_for_user",
+                self.locked_for_user == fresh.locked_for_user,
+            ),
+            (
+                "allowed_attempts",
+                self.allowed_attempts == fresh.allowed_attempts,
+            ),
+            (
+                "extra_attempts",
+                self.extra_attempts == fresh.extra_attempts,
+            ),
             ("unlock_at", self.unlock_at == fresh.unlock_at),
             ("lock_at", self.lock_at == fresh.lock_at),
             ("due_at", self.due_at == fresh.due_at),

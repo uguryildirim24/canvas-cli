@@ -460,6 +460,62 @@ expression: rendered
       "storage": 0
     },
     "result": {
+      "plan": {
+        "approval": {
+          "at": "2026-09-09T16:04:52Z",
+          "channel": "tty",
+          "consumer": null,
+          "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "assignment_id": "202",
+        "assignment_name": "Essay 1",
+        "baseline_attempt": 0,
+        "comment_chars": 42,
+        "consumer": null,
+        "course_code": "CS-101",
+        "course_id": "101",
+        "created_at": "2026-09-09T16:04:40Z",
+        "due_at": "2026-09-15T23:59:59Z",
+        "estimated_attempt": 1,
+        "expires_at": "2026-09-09T16:19:40Z",
+        "files": [
+          {
+            "name": "essay.pdf",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size": 24576
+          }
+        ],
+        "invalidated_reason": null,
+        "journal_id": null,
+        "kind": "online_upload",
+        "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
+        "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "state": "approved",
+        "text": null,
+        "url": null
+      }
+    },
+    "schema": "canvas-cli/plan@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
       "history": [
         {
           "attachments": [
@@ -556,6 +612,12 @@ expression: rendered
       "storage": 0
     },
     "result": {
+      "approval": {
+        "at": "2026-09-09T16:04:52Z",
+        "channel": "tty",
+        "consumer": null,
+        "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
       "assignment_id": "202",
       "assignment_name": "Essay 1",
       "attribution": "observed",
@@ -580,6 +642,7 @@ expression: rendered
       },
       "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
       "kind": "online_upload",
+      "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
       "posted": {
         "attachments": [
           {
@@ -645,6 +708,12 @@ expression: rendered
       "journals": [
         {
           "acknowledged_at": null,
+          "approval": {
+            "at": "2026-09-09T16:04:52Z",
+            "channel": "tty",
+            "consumer": null,
+            "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
           "assignment_id": "202",
           "assignment_name": "Essay 1",
           "baseline_attempt": 0,
@@ -656,6 +725,7 @@ expression: rendered
           "kind": "online_upload",
           "not_submitted_evidence": null,
           "owner": "n/a",
+          "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
           "post_status": 201,
           "posted": {
             "attachments": [

@@ -958,9 +958,39 @@ fn build_receipt(
     receipt: &ReceiptRecord,
 ) -> Result<String, DbError> {
     use serde_json::{Value, json};
-    let (course, assignment, kind, baseline, created, payload): (i64, i64, String, Option<i64>, String, String) = tx.query_row(
-        "SELECT course_id, assignment_id, kind, baseline_attempt, created_at, intended_payload_json FROM submission_journal WHERE journal_id = ?1", [jid],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?;
+    #[allow(clippy::type_complexity)]
+    let (course, assignment, kind, baseline, created, payload, plan_id, approval_json): (
+        i64,
+        i64,
+        String,
+        Option<i64>,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+    ) = tx.query_row(
+        "SELECT course_id, assignment_id, kind, baseline_attempt, created_at,
+                intended_payload_json, plan_id, approval_json
+         FROM submission_journal WHERE journal_id = ?1",
+        [jid],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+            ))
+        },
+    )?;
+    let approval: Option<Value> = approval_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|_| DbError::Message("invalid approval".into()))?;
     let intent: Value =
         serde_json::from_str(&payload).map_err(|_| DbError::Message("invalid intent".into()))?;
     let identity = |key| {
@@ -989,6 +1019,7 @@ fn build_receipt(
         "attribution": receipt.attribution, "posted": receipt.posted, "readback": receipt.readback,
         "files": files, "text": text, "url": intent.get("url").and_then(Value::as_str),
         "due_at": intent.get("due_at").and_then(Value::as_str), "cli_version": env!("CARGO_PKG_VERSION"),
+        "plan_id": plan_id, "approval": approval,
     }).to_string())
 }
 
