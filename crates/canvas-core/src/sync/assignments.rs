@@ -183,17 +183,30 @@ pub fn assignment_to_entity(assignment: &Assignment, course_hint: Option<i64>) -
         FieldGroup::Detail,
         assignment.lock_explanation.as_deref(),
     );
-    let course_id = assignment.course_id.or(course_hint);
+    let course_id = assignment
+        .course_id
+        .or(course_hint)
+        .or_else(|| assignment.course.as_ref().map(|c| c.id));
+    push_opt_i64(
+        &mut fields,
+        "group_category_id",
+        FieldGroup::Detail,
+        assignment.group_category_id,
+    );
+    if let Some(o) = &assignment.planner_override {
+        push_opt_bool(
+            &mut fields,
+            "marked_complete",
+            FieldGroup::Status,
+            o.marked_complete,
+        );
+        push_opt_bool(&mut fields, "dismissed", FieldGroup::Status, o.dismissed);
+    }
     push_opt_i64(&mut fields, "course_id", FieldGroup::Core, course_id);
     if let Some(sub) = assignment.submission.as_ref() {
         push_submission_status(&mut fields, sub);
     }
-    push_api_str(
-        &mut fields,
-        "workflow_state",
-        FieldGroup::Status,
-        &assignment.workflow_state,
-    );
+
     EntityIngest {
         entity_key: assignment.id.to_string(),
         fields,
@@ -243,17 +256,29 @@ fn push_rubric(fields: &mut Vec<FieldWrite>, supplied: &ApiSupplied<Value>) {
         ApiSupplied::Value(v) => fields.push(FieldWrite {
             name: "rubric_json",
             group: FieldGroup::Detail,
-            value: Some(v.to_string()),
+            value: Some(serde_json::Value::Array(v.as_array().into_iter().flatten().map(|c| serde_json::json!({
+                "id": c.get("id").and_then(|v| v.as_str().map(str::to_owned).or_else(||v.as_i64().map(|n|n.to_string()))),
+                "description": c.get("description").and_then(Value::as_str),
+                "points": c.get("points").and_then(Value::as_f64),
+            })).collect()).to_string()),
         }),
     }
 }
 
-fn push_submission_status(fields: &mut Vec<FieldWrite>, sub: &Submission) {
+pub(super) fn push_submission_status(fields: &mut Vec<FieldWrite>, sub: &Submission) {
     match &sub.workflow_state {
         ApiSupplied::Absent => {}
-        ApiSupplied::Null => {}
+        ApiSupplied::Null => {
+            for name in ["submitted", "graded", "workflow_state"] {
+                fields.push(FieldWrite {
+                    name,
+                    group: FieldGroup::Status,
+                    value: None,
+                });
+            }
+        }
         ApiSupplied::Value(state) => {
-            let submitted = state != "unsubmitted" && state != "pending_review";
+            let submitted = state != "unsubmitted";
             let graded = state == "graded";
             fields.push(FieldWrite {
                 name: "submitted",
@@ -272,6 +297,25 @@ fn push_submission_status(fields: &mut Vec<FieldWrite>, sub: &Submission) {
             });
         }
     }
+    push_api_str(fields, "grade", FieldGroup::Status, &sub.grade);
+    push_api_to_string(
+        fields,
+        "submitted_at",
+        FieldGroup::Status,
+        &sub.submitted_at,
+    );
+    push_opt_str(
+        fields,
+        "posted_at",
+        FieldGroup::Status,
+        sub.posted_at.map(|t| t.to_string()).as_deref(),
+    );
+    push_opt_i64(
+        fields,
+        "extra_attempts",
+        FieldGroup::Detail,
+        sub.extra_attempts,
+    );
     push_api_f64(fields, "score", FieldGroup::Status, &sub.score);
     push_api_to_string(fields, "late", FieldGroup::Status, &sub.late);
     push_api_to_string(fields, "missing", FieldGroup::Status, &sub.missing);
@@ -303,7 +347,18 @@ const COLUMN_FIELDS: &[&str] = &[
     "attempt",
 ];
 
-const EXTRA_FIELDS: &[&str] = &["locked_for_user", "lock_explanation"];
+const EXTRA_FIELDS: &[&str] = &[
+    "locked_for_user",
+    "lock_explanation",
+    "group_category_id",
+    "extra_attempts",
+    "grade",
+    "submitted_at",
+    "posted_at",
+    "external_tool_name",
+    "marked_complete",
+    "dismissed",
+];
 
 /// Upsert an assignment entity into `assignments` (+ field_obs).
 pub fn upsert_assignment(
@@ -454,7 +509,12 @@ fn merge_assignment_extra(
             None => {
                 obj.insert(field.name.into(), Value::Null);
             }
-            Some(v) if field.name == "locked_for_user" => {
+            Some(v)
+                if matches!(
+                    field.name,
+                    "locked_for_user" | "marked_complete" | "dismissed"
+                ) =>
+            {
                 obj.insert(field.name.into(), Value::Bool(v == "true" || v == "1"));
             }
             Some(v) => {

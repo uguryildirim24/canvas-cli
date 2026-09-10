@@ -72,6 +72,11 @@ pub struct TodoStatus {
     pub submitted: Option<bool>,
     pub graded: Option<bool>,
     pub score: Option<f64>,
+    pub grade: Option<String>,
+    pub workflow_state: Option<String>,
+    pub submitted_at: Option<Timestamp>,
+    pub attempt: Option<i64>,
+    pub posted_at: Option<Timestamp>,
     pub late: Option<bool>,
     pub missing: bool,
     pub excused: Option<bool>,
@@ -109,6 +114,21 @@ pub struct TodoItem {
     pub marked_complete: bool,
     pub dismissed: bool,
     pub html_url: Option<String>,
+    pub details: AssignmentDetails,
+}
+
+/// Full-row fields, never invented from planner status.
+#[derive(Debug, Clone, Default)]
+pub struct AssignmentDetails {
+    pub submission_types: Option<Vec<String>>,
+    pub allowed_extensions: Vec<String>,
+    pub allowed_attempts: Option<i64>,
+    pub group_assignment: bool,
+    pub description: Option<String>,
+    pub can_submit: Option<bool>,
+    pub extra_attempts: Option<i64>,
+    pub rubric: Vec<Value>,
+    pub external_tool_name: Option<String>,
 }
 
 /// Window metadata for the todo envelope.
@@ -141,6 +161,7 @@ pub struct TodoFilters {
 /// Planner row as loaded from cache.
 #[derive(Debug, Clone)]
 pub struct PlannerSourceRow {
+    pub assignment: Option<MissingSourceRow>,
     pub id: String,
     pub plannable_id: Option<i64>,
     pub plannable_type: Option<String>,
@@ -185,6 +206,34 @@ pub fn build_todo(
     ttl_assignments: jiff::Span,
     can_submit_observed: &BTreeMap<i64, Timestamp>,
 ) -> (Vec<TodoItem>, TodoCounts) {
+    build_todo_in_zone(
+        planner,
+        missing,
+        course_codes,
+        pending,
+        now,
+        today,
+        window,
+        filters,
+        ttl_assignments,
+        can_submit_observed,
+        &jiff::tz::TimeZone::UTC,
+    )
+}
+
+pub fn build_todo_in_zone(
+    planner: &[PlannerSourceRow],
+    missing: &[MissingSourceRow],
+    course_codes: &BTreeMap<i64, String>,
+    pending: &BTreeMap<i64, bool>,
+    now: Timestamp,
+    today: Date,
+    window: &TodoWindow,
+    filters: &TodoFilters,
+    ttl_assignments: jiff::Span,
+    can_submit_observed: &BTreeMap<i64, Timestamp>,
+    zone: &jiff::tz::TimeZone,
+) -> (Vec<TodoItem>, TodoCounts) {
     let mut by_key: BTreeMap<String, TodoItem> = BTreeMap::new();
 
     for row in planner {
@@ -221,6 +270,16 @@ pub fn build_todo(
     let mut hidden = 0u64;
     let mut items: Vec<TodoItem> = by_key.into_values().collect();
 
+    // Pending status is unknown before status-dependent hiding and buckets.
+    for item in &mut items {
+        if item.status.pending {
+            item.status = TodoStatus {
+                pending: true,
+                missing: item.status.missing,
+                ..TodoStatus::default()
+            };
+        }
+    }
     // Apply filters.
     items.retain(|item| {
         if let Some(cid) = filters.course_id {
@@ -288,7 +347,7 @@ pub fn build_todo(
             counts.missing += 1;
         }
         if let Some(due) = item.scheduled_at.or(item.due_at) {
-            let due_day = due.to_zoned(jiff::tz::TimeZone::UTC).date();
+            let due_day = due.to_zoned(zone.clone()).date();
             if due_day == today {
                 counts.due_today += 1;
             }
@@ -325,13 +384,18 @@ fn planner_to_item(
                 data.get("assignment_id")
                     .and_then(|v| v.as_str()?.parse().ok())
             }),
-        _ => data.get("assignment_id").and_then(Value::as_i64),
+        _ => None,
     };
-    let parent_assignment_id = data.get("parent_assignment_id").and_then(Value::as_i64);
+    let parent_assignment_id = value_id(data.get("parent_assignment_id")).or_else(|| {
+        matches!(kind, TodoKind::Checkpoint | TodoKind::PeerReview)
+            .then(|| value_id(data.get("assignment_id")))
+            .flatten()
+    });
     let key = match kind {
-        TodoKind::Assignment | TodoKind::Quiz | TodoKind::Discussion => {
-            format!("assignment:{}", assignment_id.unwrap_or(plannable_id))
-        }
+        TodoKind::Assignment | TodoKind::Quiz | TodoKind::Discussion => assignment_id.map_or_else(
+            || format!("{raw_type}:{plannable_id}"),
+            |id| format!("assignment:{id}"),
+        ),
         TodoKind::Checkpoint | TodoKind::PeerReview => {
             format!("{}:{plannable_id}", raw_type)
         }
@@ -350,6 +414,7 @@ fn planner_to_item(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let pending_flag = assignment_id
+        .or(parent_assignment_id)
         .and_then(|id| pending.get(&id).copied())
         .unwrap_or(false);
     let mut status = TodoStatus {
@@ -378,7 +443,7 @@ fn planner_to_item(
         lock_at,
         lock_explanation: None,
     };
-    Some(TodoItem {
+    let mut item = TodoItem {
         key,
         kind,
         raw_type,
@@ -399,10 +464,29 @@ fn planner_to_item(
             .get("html_url")
             .and_then(Value::as_str)
             .map(str::to_owned),
-    })
+        details: AssignmentDetails::default(),
+    };
+    if let Some(row) = &row.assignment {
+        let canonical = missing_to_item(
+            row,
+            course_codes,
+            pending,
+            now,
+            ttl_assignments,
+            can_submit_observed,
+        );
+        item.title = canonical.title;
+        item.due_at = canonical.due_at;
+        item.points_possible = canonical.points_possible;
+        item.html_url = canonical.html_url;
+        item.status = canonical.status;
+        item.availability = canonical.availability;
+        item.details = canonical.details;
+    }
+    Some(item)
 }
 
-fn missing_to_item(
+pub(super) fn missing_to_item(
     row: &MissingSourceRow,
     course_codes: &BTreeMap<i64, String>,
     pending: &BTreeMap<i64, bool>,
@@ -432,8 +516,16 @@ fn missing_to_item(
             submitted: row.submitted.map(|v| v != 0),
             graded: row.graded.map(|v| v != 0),
             score: row.score,
+            grade: data.get("grade").and_then(Value::as_str).map(str::to_owned),
+            workflow_state: data
+                .get("workflow_state")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            submitted_at: parse_opt_ts(data.get("submitted_at")),
+            attempt: value_id(data.get("attempt")),
+            posted_at: parse_opt_ts(data.get("posted_at")),
             late: row.late.map(|v| v != 0),
-            missing: true,
+            missing: row.missing.is_some_and(|v| v != 0),
             excused: row.excused.map(|v| v != 0),
             locked,
             pending: pending.get(&row.id).copied().unwrap_or(false),
@@ -449,7 +541,10 @@ fn missing_to_item(
                 ttl_assignments,
                 can_submit_observed,
             ),
-            external: None,
+            external: data
+                .get("submission_types")
+                .and_then(Value::as_array)
+                .map(|v| v.iter().any(|t| t == "external_tool")),
             unlock_at,
             lock_at,
             lock_explanation: data
@@ -457,40 +552,63 @@ fn missing_to_item(
                 .and_then(Value::as_str)
                 .map(str::to_owned),
         },
-        marked_complete: false,
-        dismissed: false,
+        marked_complete: data
+            .get("marked_complete")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        dismissed: data
+            .get("dismissed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         html_url: row.html_url.clone(),
+        details: AssignmentDetails {
+            submission_types: data
+                .get("submission_types")
+                .and_then(|v| serde_json::from_value(v.clone()).ok()),
+            allowed_extensions: data
+                .get("allowed_extensions")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default(),
+            allowed_attempts: value_id(data.get("allowed_attempts")),
+            group_assignment: value_id(data.get("group_category_id")).is_some_and(|id| id > 0),
+            description: data
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            can_submit: submittable_for(
+                Some(row.id),
+                row.can_submit.map(|v| v != 0),
+                None,
+                None,
+                None,
+                now,
+                ttl_assignments,
+                can_submit_observed,
+            ),
+            extra_attempts: value_id(data.get("extra_attempts")),
+            rubric: data
+                .get("rubric")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            external_tool_name: data
+                .get("external_tool_name")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        },
     }
 }
 
 fn merge_missing_into(existing: &mut TodoItem, missing: &TodoItem) {
-    existing.status.missing = true;
-    // Prefer planner override flags already on existing.
-    if existing.title.is_empty() {
-        existing.title.clone_from(&missing.title);
-    }
-    if existing.due_at.is_none() {
-        existing.due_at = missing.due_at;
-    }
-    if existing.points_possible.is_none() {
-        existing.points_possible = missing.points_possible;
-    }
-    if existing.html_url.is_none() {
-        existing.html_url.clone_from(&missing.html_url);
-    }
-    if existing.status.submitted.is_none() {
-        existing.status.submitted = missing.status.submitted;
-    }
-    if existing.status.graded.is_none() {
-        existing.status.graded = missing.status.graded;
-    }
-    if existing.status.score.is_none() {
-        existing.status.score = missing.status.score;
-    }
-    if existing.availability.submittable.is_none() {
-        existing.availability.submittable = missing.availability.submittable;
-    }
-    existing.status.pending = existing.status.pending || missing.status.pending;
+    let missing_flag = existing.status.missing || missing.status.missing;
+    existing.title.clone_from(&missing.title);
+    existing.due_at = missing.due_at;
+    existing.points_possible = missing.points_possible;
+    existing.html_url.clone_from(&missing.html_url);
+    existing.status = missing.status.clone();
+    existing.status.missing = missing_flag;
+    existing.availability = missing.availability.clone();
+    existing.details = missing.details.clone();
 }
 
 fn apply_submissions_blob(status: &mut TodoStatus, value: &Value) {
@@ -534,20 +652,22 @@ fn submittable_for(
     if lock_at.is_some_and(|t| t < now) {
         return Some(false);
     }
-    if unlock_at.is_some_and(|t| t > now) {
-        return Some(false);
-    }
-    let Some(aid) = assignment_id else {
-        return can_submit;
-    };
-    let Some(observed) = can_submit_observed.get(&aid).copied() else {
-        return can_submit;
-    };
-    let fresh = observed
-        .checked_add(ttl_assignments)
-        .is_ok_and(|expiry| now <= expiry);
+    let _ = unlock_at;
+    let aid = assignment_id?;
+    let observed = can_submit_observed.get(&aid).copied()?;
+    let fresh = observed <= now
+        && observed
+            .checked_add(ttl_assignments)
+            .is_ok_and(|expiry| now <= expiry);
     if !fresh {
         return None;
     }
     can_submit
+}
+
+fn value_id(value: Option<&Value>) -> Option<i64> {
+    value.and_then(|v| {
+        v.as_i64()
+            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+    })
 }

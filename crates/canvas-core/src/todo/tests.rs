@@ -37,6 +37,7 @@ fn kind_mapping_covers_spec_aliases() {
 #[test]
 fn missing_wins_and_dismissed_missing_stays_visible() {
     let planner = vec![PlannerSourceRow {
+        assignment: None,
         id: "assignment:1".into(),
         plannable_id: Some(1),
         plannable_type: Some("assignment".into()),
@@ -107,6 +108,7 @@ fn open_bucket_is_union_of_upcoming_overdue_undated() {
         marked_complete: false,
         dismissed: false,
         html_url: None,
+        details: super::merge::AssignmentDetails::default(),
     };
     let now = ts("2026-09-09T00:00:00Z");
     assert!(in_bucket(&overdue, AssignmentBucket::Overdue, now));
@@ -117,6 +119,7 @@ fn open_bucket_is_union_of_upcoming_overdue_undated() {
 #[test]
 fn unknown_kind_is_retained() {
     let planner = vec![PlannerSourceRow {
+        assignment: None,
         id: "custom:9".into(),
         plannable_id: Some(9),
         plannable_type: Some("custom_widget".into()),
@@ -146,4 +149,156 @@ fn unknown_kind_is_retained() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].kind, TodoKind::Unknown);
     assert_eq!(items[0].raw_type, "custom_widget");
+}
+
+fn blank_row(id: i64) -> MissingSourceRow {
+    MissingSourceRow {
+        id,
+        course_id: Some(10),
+        name: Some(format!("Assignment {id}")),
+        due_at: None,
+        points_possible: Some(10.0),
+        html_url: None,
+        submitted: Some(0),
+        graded: Some(0),
+        score: None,
+        late: None,
+        missing: Some(0),
+        excused: Some(0),
+        can_submit: None,
+        unlock_at: None,
+        lock_at: None,
+        data_json: "{}".into(),
+    }
+}
+fn merged(
+    planner: &[PlannerSourceRow],
+    rows: &[MissingSourceRow],
+    pending: &BTreeMap<i64, bool>,
+    filters: &TodoFilters,
+) -> (Vec<super::TodoItem>, super::TodoCounts) {
+    build_todo(
+        planner,
+        rows,
+        &BTreeMap::new(),
+        pending,
+        ts("2026-09-09T12:00:00Z"),
+        "2026-09-09".parse().unwrap(),
+        &TodoWindow {
+            start: "2026-09-08".parse().unwrap(),
+            end: "2026-09-21".parse().unwrap(),
+            days: 14,
+        },
+        filters,
+        jiff::Span::new().minutes(30),
+        &BTreeMap::new(),
+    )
+}
+#[test]
+fn quiz_and_discussion_use_assignment_keys_and_pending_parent_ids() {
+    for raw_type in ["quiz", "discussion_topic"] {
+        let planner=PlannerSourceRow{assignment:None,id:format!("{raw_type}:99"),plannable_id:Some(99),plannable_type:Some(raw_type.into()),course_id:Some(10),title:Some("Old title".into()),data_json:r#"{"assignment_id":"7","dismissed":true,"submissions_json":{"submitted":true,"graded":true}}"#.into()};
+        let mut row = blank_row(7);
+        row.missing = Some(1);
+        row.submitted = Some(1);
+        row.graded = Some(1);
+        row.due_at = Some("2026-09-01T00:00:00Z".into());
+        let (items, counts) = merged(
+            &[planner],
+            &[row],
+            &BTreeMap::new(),
+            &TodoFilters::default(),
+        );
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].key, "assignment:7");
+        assert_eq!(items[0].id, 99);
+        assert!(items[0].dismissed);
+        assert!(items[0].status.missing);
+        assert_eq!(counts.missing, 1);
+    }
+    for raw_type in [
+        "sub_assignment",
+        "peer_review_sub_assignment",
+        "assessment_request",
+    ] {
+        let planner = PlannerSourceRow {
+            assignment: None,
+            id: format!("{raw_type}:99"),
+            plannable_id: Some(99),
+            plannable_type: Some(raw_type.into()),
+            course_id: Some(10),
+            title: None,
+            data_json: r#"{"assignment_id":"7","parent_assignment_id":"7"}"#.into(),
+        };
+        let (items, _) = merged(
+            &[planner],
+            &[],
+            &BTreeMap::from([(7, true)]),
+            &TodoFilters::default(),
+        );
+        assert_eq!(items[0].key, format!("{raw_type}:99"));
+        assert_eq!(items[0].parent_assignment_id, Some(7));
+        assert!(items[0].status.pending);
+        assert_eq!(items[0].assignment_id, None);
+    }
+}
+#[test]
+fn every_bucket_and_pending_hiding() {
+    let mut row = blank_row(1);
+    row.due_at = Some("2026-09-01T00:00:00Z".into());
+    let (items, _) = merged(
+        &[],
+        std::slice::from_ref(&row),
+        &BTreeMap::new(),
+        &TodoFilters::default(),
+    );
+    let mut item = items[0].clone();
+    let now = ts("2026-09-09T12:00:00Z");
+    for bucket in [
+        AssignmentBucket::Overdue,
+        AssignmentBucket::Past,
+        AssignmentBucket::Open,
+        AssignmentBucket::Unsubmitted,
+        AssignmentBucket::All,
+    ] {
+        assert!(in_bucket(&item, bucket, now));
+    }
+    item.status.excused = Some(true);
+    assert!(!in_bucket(&item, AssignmentBucket::Overdue, now));
+    item.due_at = Some(now);
+    assert!(in_bucket(&item, AssignmentBucket::Upcoming, now));
+    assert!(in_bucket(&item, AssignmentBucket::Open, now));
+    item.due_at = None;
+    assert!(in_bucket(&item, AssignmentBucket::Undated, now));
+    assert!(in_bucket(&item, AssignmentBucket::Open, now));
+    item.status.submitted = Some(true);
+    assert!(in_bucket(&item, AssignmentBucket::Ungraded, now));
+    assert!(!in_bucket(&item, AssignmentBucket::Unsubmitted, now));
+    item.availability.unlock_at = Some(ts("2026-09-10T00:00:00Z"));
+    assert!(in_bucket(&item, AssignmentBucket::Future, now));
+    item.status.submitted = Some(false);
+    item.availability.submittable = Some(false);
+    assert!(!in_bucket(&item, AssignmentBucket::Unsubmitted, now));
+    row.submitted = Some(1);
+    row.graded = Some(1);
+    assert!(
+        merged(
+            &[],
+            std::slice::from_ref(&row),
+            &BTreeMap::new(),
+            &TodoFilters::default()
+        )
+        .0
+        .is_empty()
+    );
+    let (pending, _) = merged(
+        &[],
+        &[row],
+        &BTreeMap::from([(1, true)]),
+        &TodoFilters::default(),
+    );
+    assert_eq!(pending.len(), 1);
+    assert!(pending[0].status.pending);
+    assert_eq!(pending[0].status.submitted, None);
+    assert_eq!(pending[0].status.graded, None);
 }

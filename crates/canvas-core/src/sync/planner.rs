@@ -128,7 +128,8 @@ impl Dataset for PlannerDataset {
 pub fn planner_path(window: &PlannerWindow) -> String {
     format!(
         "/api/v1/planner/items?start_date={}&end_date={}&per_page=100",
-        window.start, window.end
+        window.start_timestamp(),
+        window.end_timestamp()
     )
 }
 
@@ -214,7 +215,7 @@ pub fn planner_item_to_entity(item: &PlannerItem) -> Option<EntityIngest> {
         fields.push(FieldWrite {
             name: "submissions_json",
             group: FieldGroup::Status,
-            value: Some(subs.to_string()),
+            value: Some(submission_flags(subs).to_string()),
         });
     }
     if let Some(ref o) = item.planner_override {
@@ -251,6 +252,7 @@ fn upsert_planner_item(
     fetched_at: Timestamp,
 ) -> Result<(), IngestError> {
     validate_fields(&entity.fields)?;
+    upsert_planner_assignment(tx, entity, fetched_at)?;
     tx.execute(
         "INSERT INTO planner_items (id) VALUES (?1) ON CONFLICT(id) DO NOTHING",
         params![entity.entity_key],
@@ -403,4 +405,108 @@ fn touch_planner_observed(
         )?;
     }
     Ok(())
+}
+
+fn submission_flags(raw: &Value) -> Value {
+    let mut obj = Map::new();
+    for name in ["submitted", "graded", "late", "missing", "excused"] {
+        if let Some(value) = raw.get(name).filter(|v| v.is_boolean() || v.is_null()) {
+            obj.insert(name.into(), value.clone());
+        }
+    }
+    Value::Object(obj)
+}
+
+fn upsert_planner_assignment(
+    tx: &Transaction<'_>,
+    entity: &EntityIngest,
+    at: Timestamp,
+) -> Result<(), IngestError> {
+    let value = |name| {
+        entity
+            .fields
+            .iter()
+            .find(|f| f.name == name)
+            .and_then(|f| f.value.as_deref())
+    };
+    let id = match value("plannable_type") {
+        Some("assignment") => value("plannable_id"),
+        Some("quiz" | "discussion_topic") => value("assignment_id"),
+        _ => None,
+    };
+    let Some(id) = id else { return Ok(()) };
+    let mut fields = Vec::new();
+    for (source, name) in [
+        ("title", "name"),
+        ("course_id", "course_id"),
+        ("due_at", "due_at"),
+        ("html_url", "html_url"),
+    ] {
+        if let Some(field) = entity.fields.iter().find(|f| f.name == source) {
+            fields.push(FieldWrite {
+                name,
+                group: FieldGroup::Core,
+                value: field.value.clone(),
+            });
+        }
+    }
+    if let Some(raw) = value("submissions_json").and_then(|v| serde_json::from_str::<Value>(v).ok())
+    {
+        for name in ["submitted", "graded", "late", "missing", "excused"] {
+            if let Some(v) = raw.get(name) {
+                fields.push(FieldWrite {
+                    name,
+                    group: FieldGroup::Status,
+                    value: if v.is_null() {
+                        None
+                    } else {
+                        Some(v.to_string())
+                    },
+                });
+            }
+        }
+    }
+    super::assignments::upsert_assignment(
+        tx,
+        None,
+        &EntityIngest {
+            entity_key: id.to_owned(),
+            fields,
+        },
+        at,
+    )
+}
+
+pub(super) fn observed_planner(raw: &Value) -> Result<Option<EntityIngest>, super::SyncError> {
+    let model: PlannerItem =
+        serde_json::from_value(raw.clone()).map_err(|_| canvas_api::Error::Decode)?;
+    let Some(mut entity) = planner_item_to_entity(&model) else {
+        return Ok(None);
+    };
+    for (source, name) in [
+        (raw, "course_id"),
+        (raw, "plannable_date"),
+        (&raw["plannable"], "assignment_id"),
+        (&raw["plannable"], "parent_assignment_id"),
+        (&raw["plannable"], "todo_date"),
+        (&raw["plannable"], "start_at"),
+    ] {
+        if source.get(name).is_some_and(Value::is_null) {
+            entity.fields.retain(|f| f.name != name);
+            entity.fields.push(FieldWrite {
+                name,
+                group: FieldGroup::Core,
+                value: None,
+            });
+        }
+    }
+    if raw["plannable"].get("title").is_some_and(Value::is_null) {
+        entity.fields.retain(|f| f.name != "title");
+        entity.fields.push(FieldWrite {
+            name: "title",
+            group: FieldGroup::Core,
+            value: None,
+        });
+    }
+    Ok(Some(entity))
 }

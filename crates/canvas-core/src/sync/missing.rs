@@ -75,17 +75,7 @@ pub fn missing_to_ingest_page(items: &[Assignment], fetched_at: Timestamp) -> In
         fetched_at,
         entities: items
             .iter()
-            .map(|a| {
-                let mut entity = assignment_to_entity(a, a.course_id);
-                // Missing list implies missing = true.
-                entity.fields.retain(|f| f.name != "missing");
-                entity.fields.push(crate::store::FieldWrite {
-                    name: "missing",
-                    group: crate::store::FieldGroup::Status,
-                    value: Some("true".into()),
-                });
-                entity
-            })
+            .map(|a| assignment_to_entity(a, a.course_id))
             .collect(),
     }
 }

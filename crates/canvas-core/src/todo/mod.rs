@@ -4,14 +4,16 @@
 
 mod buckets;
 mod merge;
+mod rows;
+pub use rows::{assignment_observations, load_assignment_item, load_assignment_row};
 
 #[cfg(test)]
 mod tests;
 
 pub use buckets::{AssignmentBucket, in_bucket};
 pub use merge::{
-    TodoAvailability, TodoCounts, TodoFilters, TodoItem, TodoKind, TodoStatus, TodoWindow,
-    build_todo, map_plannable_kind,
+    AssignmentDetails, TodoAvailability, TodoCounts, TodoFilters, TodoItem, TodoKind, TodoStatus,
+    TodoWindow, build_todo, build_todo_in_zone, map_plannable_kind,
 };
 
 use jiff::civil::Date;
@@ -33,6 +35,7 @@ pub fn load_planner_rows(
     let rows = stmt
         .query_map([scope], |r| {
             Ok(merge::PlannerSourceRow {
+                assignment: None,
                 id: r.get(0)?,
                 plannable_id: r.get(1)?,
                 plannable_type: r.get(2)?,
@@ -42,43 +45,42 @@ pub fn load_planner_rows(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let mut rows = rows;
+    for row in &mut rows {
+        let data: serde_json::Value = serde_json::from_str(&row.data_json)
+            .map_err(|_| DbError::Message("invalid planner data".into()))?;
+        let aid = match row.plannable_type.as_deref() {
+            Some("assignment") => row.plannable_id,
+            Some("quiz" | "discussion_topic") => data.get("assignment_id").and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            }),
+            _ => None,
+        };
+        if let Some(id) = aid {
+            row.assignment = load_assignment_row(conns, id)?;
+        }
+    }
     Ok(rows)
 }
 
 /// Load missing membership assignment ids.
 pub fn load_missing_rows(conns: &StoreConns) -> Result<Vec<merge::MissingSourceRow>, DbError> {
-    let mut stmt = conns.cache.prepare(
-        "SELECT a.id, a.course_id, a.name, a.due_at, a.points_possible, a.html_url,
-                a.submitted, a.graded, a.score, a.late, a.missing, a.excused,
-                a.can_submit, a.unlock_at, a.lock_at, a.data_json
-         FROM membership m
-         INNER JOIN assignments a ON a.id = CAST(m.entity_id AS INTEGER)
-         WHERE m.dataset = 'missing' AND m.scope = 'all' AND m.entity_kind = 'assignment'
-         ORDER BY m.position ASC",
-    )?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok(merge::MissingSourceRow {
-                id: r.get(0)?,
-                course_id: r.get(1)?,
-                name: r.get(2)?,
-                due_at: r.get(3)?,
-                points_possible: r.get(4)?,
-                html_url: r.get(5)?,
-                submitted: r.get(6)?,
-                graded: r.get(7)?,
-                score: r.get(8)?,
-                late: r.get(9)?,
-                missing: r.get(10)?,
-                excused: r.get(11)?,
-                can_submit: r.get(12)?,
-                unlock_at: r.get(13)?,
-                lock_at: r.get(14)?,
-                data_json: r.get::<_, String>(15).unwrap_or_else(|_| "{}".into()),
-            })
-        })?
+    let mut stmt = conns.cache.prepare("SELECT entity_id FROM membership WHERE dataset='missing' AND scope='all' AND entity_kind='assignment' ORDER BY position")?;
+    let ids = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+    ids.into_iter()
+        .map(|id| {
+            let id = id
+                .parse()
+                .map_err(|_| DbError::Message("invalid assignment membership".into()))?;
+            let mut row = load_assignment_row(conns, id)?
+                .ok_or_else(|| DbError::Message("missing assignment entity".into()))?;
+            row.missing = Some(1);
+            Ok(row)
+        })
+        .collect()
 }
 
 /// Course code lookup for display.

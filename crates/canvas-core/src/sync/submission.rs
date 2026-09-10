@@ -92,13 +92,9 @@ pub fn submission_to_ingest_page(submission: &Submission, fetched_at: Timestamp)
 pub fn submission_to_entity(submission: &Submission) -> EntityIngest {
     let entity_key = submission
         .id
-        .map(|id| id.to_string())
-        .or_else(|| {
-            submission
-                .assignment_id
-                .map(|aid| format!("assignment:{aid}"))
-        })
-        .unwrap_or_else(|| "unknown".into());
+        .or_else(|| submission.assignment_id.and_then(i64::checked_neg))
+        .unwrap_or(0)
+        .to_string();
     let mut fields = Vec::new();
     push_opt_i64(
         &mut fields,
@@ -145,7 +141,8 @@ pub fn submission_to_entity(submission: &Submission) -> EntityIngest {
             .iter()
             .map(|h| {
                 serde_json::json!({
-                    "id": h.id,
+                    "id": h.id.map(|id| id.to_string()),
+                    "attachments": attachments_json(h.attachments.as_deref().unwrap_or_default()),
                     "attempt": match &h.attempt {
                         ApiSupplied::Value(v) => Value::from(*v),
                         ApiSupplied::Null => Value::Null,
@@ -180,7 +177,7 @@ pub fn submission_to_entity(submission: &Submission) -> EntityIngest {
             .iter()
             .map(|c| {
                 serde_json::json!({
-                    "id": c.id,
+                    "id": c.id.map(|id| id.to_string()),
                     "comment": c.comment,
                     "author_name": c.author_name,
                     "created_at": c.created_at.map(|t| t.to_string()),
@@ -197,7 +194,41 @@ pub fn submission_to_entity(submission: &Submission) -> EntityIngest {
         fields.push(FieldWrite {
             name: "rubric_assessment_json",
             group: FieldGroup::Detail,
-            value: Some(rubric.to_string()),
+            value: Some(rubric_json(rubric).to_string()),
+        });
+    }
+    push_opt_i64(&mut fields, "id", FieldGroup::Core, submission.id);
+    super::fields::push_opt_str(
+        &mut fields,
+        "submission_type",
+        FieldGroup::Detail,
+        submission.submission_type.as_deref(),
+    );
+    super::fields::push_opt_str(
+        &mut fields,
+        "url",
+        FieldGroup::Detail,
+        submission.url.as_ref().map(reqwest::Url::as_str),
+    );
+    super::fields::push_opt_str(
+        &mut fields,
+        "posted_at",
+        FieldGroup::Status,
+        submission.posted_at.map(|t| t.to_string()).as_deref(),
+    );
+    if let Some(body) = &submission.body {
+        use sha2::{Digest, Sha256};
+        fields.push(FieldWrite {
+            name: "body_sha256",
+            group: FieldGroup::Detail,
+            value: Some(format!("{:x}", Sha256::digest(body.as_bytes()))),
+        });
+    }
+    if let Some(attachments) = &submission.attachments {
+        fields.push(FieldWrite {
+            name: "attachments_json",
+            group: FieldGroup::Detail,
+            value: Some(attachments_json(attachments).to_string()),
         });
     }
     EntityIngest { entity_key, fields }
@@ -220,6 +251,12 @@ const EXTRA_FIELDS: &[&str] = &[
     "submission_history_json",
     "submission_comments_json",
     "rubric_assessment_json",
+    "id",
+    "submission_type",
+    "url",
+    "posted_at",
+    "body_sha256",
+    "attachments_json",
 ];
 
 fn upsert_submission(
@@ -228,7 +265,10 @@ fn upsert_submission(
     fetched_at: Timestamp,
 ) -> Result<(), IngestError> {
     validate_fields(&entity.fields)?;
-    let id = entity_key_id(&entity.entity_key);
+    let id = entity
+        .entity_key
+        .parse::<i64>()
+        .map_err(|_| DbError::Message("invalid submission key".into()))?;
     tx.execute(
         "INSERT INTO submissions (id) VALUES (?1) ON CONFLICT(id) DO NOTHING",
         params![id],
@@ -251,18 +291,6 @@ fn upsert_submission(
         applied.status,
     )?;
     Ok(())
-}
-
-fn entity_key_id(entity_key: &str) -> i64 {
-    if let Ok(id) = entity_key.parse::<i64>() {
-        return id;
-    }
-    // Synthetic key when Canvas omits submission id: hash into negative space.
-    let mut hash = 0i64;
-    for b in entity_key.bytes() {
-        hash = hash.wrapping_mul(31).wrapping_add(i64::from(b));
-    }
-    hash | i64::MIN
 }
 
 fn validate_fields(fields: &[FieldWrite]) -> Result<(), IngestError> {
@@ -410,4 +438,62 @@ fn touch_submission_observed(
         )?;
     }
     Ok(())
+}
+
+/// Projection shared by current and historical attachments; capability URLs are excluded.
+pub fn attachments_json(attachments: &[canvas_api::models::SubmissionAttachment]) -> Value {
+    Value::Array(attachments.iter().map(|a| serde_json::json!({
+        "id": a.id.to_string(), "display_name": a.display_name.as_ref().or(a.filename.as_ref()),
+        "size": a.size, "content_type": a.content_type,
+    })).collect())
+}
+
+/// Keep only criterion feedback, excluding unknown response fields.
+pub fn rubric_json(raw: &Value) -> Value {
+    Value::Array(
+        raw.as_object()
+            .into_iter()
+            .flat_map(|o| o.iter())
+            .map(|(id, v)| {
+                serde_json::json!({
+                    "criterion_id": id, "points": v.get("points").and_then(Value::as_f64),
+                    "comments": v.get("comments").and_then(Value::as_str),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Preserve absence/null/value while storing only the submission's allowlisted projection.
+pub(super) fn observed_submission(
+    raw: &Value,
+    assignment_id: i64,
+) -> Result<EntityIngest, super::SyncError> {
+    let mut model: Submission =
+        serde_json::from_value(raw.clone()).map_err(|_| canvas_api::Error::Decode)?;
+    if model.assignment_id.is_some_and(|id| id != assignment_id) || assignment_id <= 0 {
+        return Err(canvas_api::Error::Decode.into());
+    }
+    model.assignment_id = Some(assignment_id);
+    let mut entity = submission_to_entity(&model);
+    for (wire, stored) in [
+        ("attachments", "attachments_json"),
+        ("body", "body_sha256"),
+        ("url", "url"),
+        ("submission_type", "submission_type"),
+        ("posted_at", "posted_at"),
+        ("submission_history", "submission_history_json"),
+        ("submission_comments", "submission_comments_json"),
+        ("rubric_assessment", "rubric_assessment_json"),
+    ] {
+        if raw.get(wire).is_some_and(Value::is_null) {
+            entity.fields.retain(|f| f.name != stored);
+            entity.fields.push(FieldWrite {
+                name: stored,
+                group: FieldGroup::Detail,
+                value: None,
+            });
+        }
+    }
+    Ok(entity)
 }
