@@ -23,6 +23,8 @@ use super::harness::{ASSIGNMENT_ID, COURSE_ID, CanvasServer, E2e, Fixtures, NOW,
 /// re-run idempotent. A test that wants a second observation therefore has to
 /// move the frozen clock, exactly as real time would.
 const LATER: &str = "2026-09-09T18:05:12Z";
+/// A third instant, for a run that must observe after [`LATER`].
+const LATEST: &str = "2026-09-09T19:05:12Z";
 
 /// Every TTL at zero, so each tick refreshes and the test controls the pace.
 const NO_TTL: &str = "\
@@ -33,6 +35,7 @@ ttl_assignments = \"0m\"
 ttl_missing = \"0m\"
 ttl_planner = \"0m\"
 ttl_announcements = \"0m\"
+ttl_inbox = \"0m\"
 ";
 
 /// Run `canvas watch` with the fixture token and the given extra variables.
@@ -239,6 +242,144 @@ async fn foreground_interest_stops_polling_and_polling_resumes_when_it_ends() {
     assert!(
         summary["requests"]["api"].as_u64().unwrap_or_default() > 0,
         "polling never reached the network: {summary}"
+    );
+}
+
+/// The unread count is observed by the same path every other dataset uses:
+/// a `watch` tick refreshes it, the first observation is silent, and a changed
+/// count is one `inbox.unread_count` event (M8-a item 4, REPORT §3.6).
+#[tokio::test(flavor = "current_thread")]
+async fn a_changed_unread_count_is_one_event_from_the_watch_tick() {
+    let server = CanvasServer::start().await;
+    let env = E2e::with_server(&server);
+    env.write_config(NO_TTL);
+
+    // The first tick sets every baseline, the count among them.
+    let first = watch(&env, &["watch", "--jsonl", "--once"], &[]);
+    first.assert_code(0);
+    let (events, summary) = stream(&first);
+    assert!(events.is_empty(), "the first tick emitted {events:?}");
+    let refreshed: Vec<&str> = summary["result"]["datasets"]
+        .as_array()
+        .expect("datasets is an array")
+        .iter()
+        .filter_map(|row| row["dataset"].as_str())
+        .collect();
+    assert!(
+        refreshed.contains(&"inbox_unread"),
+        "the tick never refreshed the unread count: {refreshed:?}"
+    );
+
+    // The same count again says nothing.
+    let quiet = watch(
+        &env,
+        &["watch", "--jsonl", "--once"],
+        &[("CANVAS_NOW", LATER)],
+    );
+    quiet.assert_code(0);
+    let (events, _) = stream(&quiet);
+    assert!(
+        events
+            .iter()
+            .all(|e| e["kind"] != json!("inbox.unread_count")),
+        "an unchanged count was reported: {events:?}"
+    );
+
+    // A changed count is one event, and it carries the count and nothing else.
+    // The tick runs at its own instant: an observation is keyed by the cache
+    // row it saw, and two refreshes at one timestamp are one observation.
+    server
+        .override_get(
+            "/api/v1/conversations/unread_count",
+            200,
+            json!({ "unread_count": "5" }),
+        )
+        .await;
+    let third = watch(
+        &env,
+        &["watch", "--jsonl", "--once"],
+        &[("CANVAS_NOW", LATEST)],
+    );
+    third.assert_code(0);
+    let (events, _) = stream(&third);
+    let counted: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["kind"] == json!("inbox.unread_count"))
+        .collect();
+    assert_eq!(counted.len(), 1, "expected one count event: {events:?}");
+    let event = counted[0];
+    assert_eq!(event["schema"], json!("canvas-cli/event@1"));
+    assert_eq!(event["dataset"], json!("inbox_unread"));
+    assert_eq!(event["scope"], json!("all"));
+    assert_eq!(event["before"], json!({ "unread_count": 2 }));
+    assert_eq!(event["after"], json!({ "unread_count": 5 }));
+}
+
+/// The `inbox unread-count` command observes through the same path, so an
+/// agent that never runs `watch` still gets the event — and a tick that
+/// follows the command does not report the same change a second time.
+#[tokio::test(flavor = "current_thread")]
+async fn the_unread_count_command_records_its_own_observation() {
+    let server = CanvasServer::start().await;
+    let env = E2e::with_server(&server);
+    env.write_config(NO_TTL);
+
+    // Two reads, and the count moved between them. The first sets the
+    // baseline in silence.
+    env.run(&["inbox", "unread-count", "--json"]).assert_code(0);
+    server
+        .override_get(
+            "/api/v1/conversations/unread_count",
+            200,
+            json!({ "unread_count": "9" }),
+        )
+        .await;
+    env.run_env(
+        &["inbox", "unread-count", "--json"],
+        &[("CANVAS_TOKEN", TOKEN), ("CANVAS_NOW", LATER)],
+    )
+    .assert_code(0);
+
+    // A tick after the command refreshes the same dataset and compares
+    // against the baseline the command wrote, so the move from 2 to 9 is news
+    // once. Both producers reach one observation path; neither is a second
+    // source of the same event. This watch has no stored position, so it
+    // replays the log from the start: the one line it prints is the command's
+    // event, not a second one the tick made.
+    let tick = watch(
+        &env,
+        &["watch", "--jsonl", "--once"],
+        &[("CANVAS_NOW", LATEST)],
+    );
+    tick.assert_code(0);
+    let (events, _) = stream(&tick);
+    let counted: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["kind"] == json!("inbox.unread_count"))
+        .collect();
+    assert_eq!(counted.len(), 1, "the tick repeated the event: {events:?}");
+    assert_eq!(counted[0]["observed_at"], json!(LATER));
+    assert_eq!(counted[0]["before"], json!({ "unread_count": 2 }));
+    assert_eq!(counted[0]["after"], json!({ "unread_count": 9 }));
+
+    // `notify` reads the log and nothing else, so a line under the `inbox`
+    // group is proof the command wrote the event itself, and its per-kind
+    // count is proof there is exactly one.
+    let posted = env.run_local(&["notify", "--stdout"]);
+    posted.assert_code(0);
+    let inbox = posted
+        .stdout
+        .lines()
+        .find(|line| line.starts_with("inbox:"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the command recorded no unread-count event: {}",
+                posted.stdout
+            )
+        });
+    assert!(
+        inbox.contains("(inbox.unread_count x1)"),
+        "the unread count was not reported exactly once: {inbox}"
     );
 }
 

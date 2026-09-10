@@ -44,6 +44,15 @@ expression: value
     {
       "complete": true,
       "count": 1,
+      "dataset": "inbox_unread",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "all",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
       "dataset": "missing",
       "fetched_at": "2026-09-09T17:05:12Z",
       "scope": "all",
@@ -70,7 +79,7 @@ expression: value
   "partial": [],
   "profile": null,
   "requests": {
-    "api": 6,
+    "api": 7,
     "cost": null,
     "storage": 0
   },
@@ -118,6 +127,17 @@ expression: value
         "fetched_at": "2026-09-09T17:05:12Z",
         "requests": 1,
         "scope": "period:none",
+        "source": "network",
+        "stale": false
+      },
+      {
+        "complete": true,
+        "count": 1,
+        "dataset": "inbox_unread",
+        "error": null,
+        "fetched_at": "2026-09-09T17:05:12Z",
+        "requests": 1,
+        "scope": "all",
         "source": "network",
         "stale": false
       },
