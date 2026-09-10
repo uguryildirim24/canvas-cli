@@ -5,11 +5,12 @@
 //! - **status** enriches. It records what the readback saw and, when the
 //!   readback shows the object the acceptance named, moves attribution from
 //!   `accepted` to `observed`. The state never changes.
-//! - **reconcile** decides. On an `outcome_unknown` journal it either finds a
-//!   message whose digest matches and moves the journal to `matched` with
-//!   attribution `unproven`, or it finds nothing — and then, and only with
-//!   `--assume-not-posted` and after thirty minutes, records that nothing was
-//!   posted.
+//! - **reconcile** decides. It is also a recoverer (SPEC §12.2): it applies
+//!   the owner-absent table first, then, on an `outcome_unknown` journal, it
+//!   either finds a message whose digest matches and moves the journal to
+//!   `matched` with attribution `unproven`, or it finds nothing — and then,
+//!   and only with `--assume-not-posted`, after thirty minutes, and on a
+//!   readback that covered the thread, records that nothing was posted.
 //!
 //! Both take the owner lock and nothing else. A journal a live owner still
 //! holds is left alone.
@@ -74,6 +75,10 @@ impl Verdict {
 }
 
 /// Read one operation journal back, without changing its state.
+///
+/// It records the readback and can move `accepted` to `observed`, because
+/// that is writing down an observation. It never moves the journal's state,
+/// and it never recovers an abandoned journal: `reconcile` does that.
 pub async fn status(
     client: &Client,
     store: &Store,
@@ -93,6 +98,9 @@ pub async fn status(
 }
 
 /// Resolve one operation journal against the thread as it stands now.
+///
+/// Under an absent owner it applies the owner-absent recovery table first, so
+/// what it concludes is concluded about the state the interruption implies.
 pub async fn reconcile(
     client: &Client,
     store: &Store,
@@ -137,10 +145,16 @@ async fn run(
         });
     };
 
-    // The owner was absent: give the row the state its interruption implies
-    // before anything is concluded from a readback.
-    ops::recover_owned(store, &owner, journal_id)?;
-    let row = ops::require(store, journal_id)?;
+    // The owner was absent. `reconcile` is a recoverer (SPEC §12.2 names
+    // them); `status` is not, so it reports the row it found and leaves the
+    // state alone — `docs/writes-v2.md` choice 9, and what the tool
+    // description promises a host.
+    let row = if may_transition {
+        ops::recover_owned(store, &owner, journal_id)?;
+        ops::require(store, journal_id)?
+    } else {
+        row
+    };
 
     let me = ops::identity_user_id(store)?;
     let readback = read_thread(client, &row, me.as_deref()).await?;

@@ -934,7 +934,8 @@ pub fn specs() -> &'static [ToolSpec] {
             name: "operation.status",
             title: "Show one write operation",
             description: "Read one operation journal, and read its thread back. \
-                          It changes no state and posts nothing.",
+                          It records what the readback showed, moves no journal \
+                          state, and posts nothing.",
             schema: SCHEMA_OPERATION,
             variant: None,
             effect: Effect::Read,
