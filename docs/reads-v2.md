@@ -72,9 +72,19 @@ Markdown plus a `BodyRefs` projection. The projection holds no HTML.
   reference whose path ends in `/files/:id` becomes a `files` row; every
   other origin becomes an `external_links` row and is never fetched.
   A fragment, a `mailto:`, and a `javascript:` URL are dropped.
+* Every reference is stripped of its capability-bearing parts before it is
+  stored or shown: the userinfo, and every query parameter §15 names
+  (`access_token`, `verifier`, `sig`, `token`, `Signature`, `Policy`,
+  `Expires`, `X-Amz-*`). The rest of the reference is kept as written,
+  because that is what tells the reader where it points. The rewrite happens
+  before the Markdown is rendered, so a converted body carries no capability
+  either. A persisted `html_url` keeps only its origin and path, the rule
+  `modules` already used.
 * A body over 64 KiB is cut on a character boundary, `truncated` is `true`,
   the envelope gains a `partial[]` row, and the exit is 12. A cut body is
-  never reported as complete.
+  never reported as complete. This holds for every document a command
+  returns: a page, a syllabus, a topic message, one reply, and one
+  conversation message each count on their own.
 
 ## Exits
 
@@ -86,7 +96,7 @@ Markdown plus a `BodyRefs` projection. The projection holds no HTML.
 | Cross-origin URL operand | exit 6, `code: resolution` |
 | `require_initial_post` gate with `--replies` | exit 8, `code: refused`, message starting `initial_post_required` |
 | A reply page failed after earlier pages were stored | `replies_coverage.complete = false`, `blocked: page_failed`, `partial[]` row `discussion_entries:topic:<id>`, exit 12 |
-| A body cut at 64 KiB | `truncated: true`, `partial[]`, exit 12 |
+| A body cut at 64 KiB | `truncated: true`, `partial[]`, exit 12. A cut reply body raises the row under `discussion_entries:topic:<id>`; a cut conversation message under `conversation:<id>`. |
 | `--offline` with no complete coverage | exit 7 (§7) |
 | Bad `--scope`, bad `--announcements`, `--page` without `--replies` | exit 2 |
 
