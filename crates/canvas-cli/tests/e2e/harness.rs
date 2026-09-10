@@ -34,6 +34,43 @@ pub const COURSE_ID: i64 = 100;
 pub const ASSIGNMENT_ID: i64 = 9;
 /// Mount priority for a per-test route override (lower wins in `wiremock`).
 const OVERRIDE_PRIORITY: u8 = 1;
+/// Stand-in ids, the same width as the UUIDs they replace, so a table that
+/// prints one keeps the column layout it really has.
+pub const JOURNAL_PLACEHOLDER: &str = "00000000-0000-4000-8000-00000000000j";
+pub const RECEIPT_PLACEHOLDER: &str = "00000000-0000-4000-8000-00000000000r";
+
+/// Runs `canvas` on a pseudo-terminal, answers one prompt, replays the output.
+///
+/// `argv` is `<await_prompt> <reply> <program> <args...>`.
+const PTY_DRIVER: &str = r"
+import os, pty, select, sys, time
+prompt, reply, program, *args = sys.argv[1:]
+pid, master = pty.fork()
+if pid == 0:
+    os.execv(program, [program] + args)
+seen = bytearray()
+answered = False
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline:
+    ready, _, _ = select.select([master], [], [], 0.2)
+    if not ready:
+        continue
+    try:
+        part = os.read(master, 65536)
+    except OSError:
+        break
+    if not part:
+        break
+    seen.extend(part)
+    if not answered and prompt.encode() in seen:
+        answered = True
+        os.write(master, reply.encode())
+else:
+    os.kill(pid, 9)
+_, status = os.waitpid(pid, 0)
+sys.stdout.buffer.write(seen)
+sys.exit(os.waitstatus_to_exitcode(status))
+";
 
 /// One `crates/canvas-api/tests/fixtures/` document.
 macro_rules! fixture {
@@ -314,10 +351,9 @@ impl CanvasServer {
         .await;
     }
 
-    /// Replace the submission `POST` for the rest of this test.
-    pub async fn override_post(&self, route: &str, template: ResponseTemplate) {
-        Mock::given(method("POST"))
-            .and(path(route.to_owned()))
+    /// Replace one route for every method, with a full response template.
+    pub async fn override_post_or_get(&self, route: &str, template: ResponseTemplate) {
+        Mock::given(path(route.to_owned()))
             .respond_with(template)
             .with_priority(OVERRIDE_PRIORITY)
             .mount(&self.server)
@@ -676,6 +712,78 @@ impl E2e {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, body).unwrap();
         path
+    }
+
+    /// Mask the journal and receipt ids a `submit` in this environment created.
+    ///
+    /// Returns the receipt id when the attempt produced one.
+    pub fn mask_ids_from_journals(&self) -> String {
+        let listed = self.run_local(&["receipts", "list", "--json"]);
+        listed.assert_code(0);
+        let value = listed.json();
+        let entry = value["result"]["journals"]
+            .as_array()
+            .and_then(|rows| rows.first())
+            .cloned()
+            .expect("submit left one journal");
+        if let Some(journal) = entry["journal_id"].as_str() {
+            self.mask(journal, JOURNAL_PLACEHOLDER);
+        }
+        match entry["receipt_id"].as_str() {
+            Some(receipt) => {
+                self.mask(receipt, RECEIPT_PLACEHOLDER);
+                receipt.to_owned()
+            }
+            None => String::new(),
+        }
+    }
+
+    /// Raise the cache database's schema version above what this build knows.
+    ///
+    /// SPEC §14 makes a newer on-disk schema a local persistence abort, and it
+    /// is the one exit-13 cause a test can create without corrupting a file.
+    pub fn write_newer_cache_schema(&self) {
+        let paths = self.paths();
+        let cache = rusqlite::Connection::open(&paths.cache_db).unwrap();
+        let current: i64 = cache
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        cache
+            .pragma_update(None, "user_version", current + 100)
+            .unwrap();
+    }
+
+    /// Run `canvas` attached to a pseudo-terminal and answer its confirmation.
+    ///
+    /// `submit` refuses to prompt without a TTY, so the cancelled path (exit
+    /// 11) is only reachable through one.
+    pub fn run_on_a_terminal(&self, args: &[&str], await_prompt: &str, reply: &str) -> Run {
+        let mut command = Command::new("python3");
+        let base = self.command();
+        for (key, value) in base.get_envs() {
+            match value {
+                Some(value) => command.env(key, value),
+                None => command.env_remove(key),
+            };
+        }
+        command
+            .env("CANVAS_TOKEN", TOKEN)
+            .args(["-c", PTY_DRIVER, await_prompt, reply])
+            .arg(env!("CARGO_BIN_EXE_canvas"))
+            .args(args)
+            .args(["--color", "never"]);
+        let output = command.output().expect("python3 drives the terminal");
+        Run {
+            code: output.status.code().expect("canvas exits with a code"),
+            // A terminal merges the two streams; the driver replays them on
+            // stdout and keeps its own diagnostics on stderr.
+            stdout: String::from_utf8_lossy(&output.stdout)
+                .replace("\r\n", "\n")
+                .split_inclusive('\n')
+                .filter(|line| line.trim_start().starts_with('{'))
+                .collect(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }
     }
 
     /// Replace every environment-specific string with a stable placeholder.

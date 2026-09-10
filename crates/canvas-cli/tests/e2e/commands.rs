@@ -1,6 +1,8 @@
 //! Every v1 command in table and `--json` mode (SPEC §5, §16 row 3 item 1).
 
-use crate::harness::{ASSIGNMENT_ID, COURSE_ID, CanvasServer, E2e};
+use crate::harness::{
+    ASSIGNMENT_ID, COURSE_ID, CanvasServer, E2e, JOURNAL_PLACEHOLDER, RECEIPT_PLACEHOLDER,
+};
 
 /// Snapshot one command in both modes against the fixture server.
 ///
@@ -322,13 +324,6 @@ async fn submit_json() {
     receipt_id_from(&env);
     env.snapshot_json("submit_json", &submit);
 }
-
-/// Stand-in ids, the same width as the UUIDs they replace.
-///
-/// A shorter placeholder would shift every comfy-table column that carries an
-/// id, so the snapshot would no longer show the real layout.
-const JOURNAL_PLACEHOLDER: &str = "00000000-0000-4000-8000-00000000000j";
-const RECEIPT_PLACEHOLDER: &str = "00000000-0000-4000-8000-00000000000r";
 
 /// Record the ids one `submit` generated so later snapshots stay stable.
 fn receipt_id_from(env: &E2e) -> String {

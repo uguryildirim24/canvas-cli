@@ -1,0 +1,8 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 2
+--- stdout ---
+--- stderr ---
+config edit requires a terminal; refuse without a TTY
