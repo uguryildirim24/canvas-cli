@@ -1,6 +1,6 @@
 //! `canvas` command-line entry point.
 
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
 use std::io;
 use std::path::PathBuf;
@@ -27,6 +27,19 @@ enum ColorChoice {
     Auto,
     Always,
     Never,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum AssignmentBucket {
+    Open,
+    Upcoming,
+    Overdue,
+    Past,
+    Undated,
+    Unsubmitted,
+    Ungraded,
+    Future,
+    All,
 }
 
 #[derive(Debug, Parser)]
@@ -119,8 +132,8 @@ enum Commands {
         /// Course id, code, or alias.
         course: String,
         /// Local bucket filter.
-        #[arg(long)]
-        bucket: Option<String>,
+        #[arg(long, value_enum)]
+        bucket: Option<AssignmentBucket>,
         /// Local name substring filter.
         #[arg(long)]
         search: Option<String>,
@@ -133,6 +146,7 @@ enum Commands {
         assignment: Option<String>,
     },
     /// Submit work to an assignment.
+    #[command(group(ArgGroup::new("content").args(["files", "text", "html", "url"]).required(true)))]
     Submit {
         /// Course, assignment URL, or first target.
         target: String,
@@ -194,8 +208,9 @@ enum Commands {
         search: Option<String>,
     },
     /// Download course files.
+    #[command(group(ArgGroup::new("scope").args(["course", "all_courses"]).required(true)))]
     Download {
-        /// Course id/code/alias, or unused when `--all-courses`.
+        /// Course id/code/alias (alternative to `--all-courses`).
         course: Option<String>,
         /// Download every active course.
         #[arg(long)]
@@ -207,7 +222,7 @@ enum Commands {
         #[arg(long)]
         module: Option<String>,
         /// Specific file ids.
-        #[arg(long = "file")]
+        #[arg(long = "file", num_args = 1..)]
         files: Vec<i64>,
         /// Parallel job count.
         #[arg(long)]
@@ -442,6 +457,8 @@ impl Cli {
         // Validate the final values too, so split-level flags still conflict.
         let conflict = if self.fresh && self.offline {
             Some("--fresh cannot be used with --offline")
+        } else if self.json && self.command.has_raw_output() {
+            Some("--json cannot be used with this raw-output command")
         } else {
             match &self.command {
                 Commands::Submission {
@@ -462,6 +479,30 @@ impl Cli {
             return Err(Self::command().error(clap::error::ErrorKind::ArgumentConflict, message));
         }
         Ok(())
+    }
+}
+
+impl Commands {
+    fn has_raw_output(&self) -> bool {
+        match self {
+            Self::Completions { .. }
+            | Self::Auth {
+                command: AuthCommand::Token { reveal: true },
+            }
+            | Self::Config {
+                command: ConfigCommand::Edit,
+            } => true,
+            Self::Calendar {
+                ics: Some(path), ..
+            } => path == "-",
+            Self::Receipts {
+                command:
+                    ReceiptsCommand::Export {
+                        out: Some(path), ..
+                    },
+            } => path.as_os_str() == "-",
+            _ => false,
+        }
     }
 }
 
