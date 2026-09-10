@@ -1283,7 +1283,7 @@ Toolchain: stable 1.98.x in CI; MSRV 1.88; owner machine 1.97.1.
 
 Every version is pinned with `=`, in the workspace manifest or in the crate that uses it. Direct dependencies the table still omits: `getrandom` 0.4.3, `unicode-normalization` 0.1.25, `httpdate` 1.0.3, `rpassword` 7.4.0, and, for tests and `xtask` only, `tokio-rustls` 0.26.5, `tempfile` 3.23.0, and `url` 2.5.8. No post-v1 package added a dependency after `rmcp` and `schemars`. `uuid` names journal ids, plan ids, approval handles, and identity generations.
 
-## Appendix B. Canvas endpoints used (v1)
+## Appendix B. Canvas endpoints used
 
 | Command | Endpoint |
 |---|---|
@@ -1302,6 +1302,23 @@ Every version is pinned with `=`, in the workspace manifest or in the crate that
 | announcements | `GET /api/v1/announcements?context_codes[]=course_N…(≤10)&start_date=…&end_date=…&per_page=100`; `GET /api/v1/courses/:cid/discussion_topics/:id` |
 | calendar | `GET /api/v1/calendar_events?type=event&context_codes[]=…(≤10)&start_date=…&end_date=…&per_page=100` |
 
+Added after v1. Every one is a `GET`. `per_page=100` is appended by the client when a path does not already carry it (§11).
+
+| Command | Endpoint |
+|---|---|
+| pages | `GET /api/v1/courses/:id/pages?sort=title&per_page=100` |
+| page | `GET /api/v1/courses/:id/pages/:url_or_id` |
+| syllabus | none of its own; reads the `course` dataset (§23) |
+| discussions | `GET /api/v1/courses/:id/discussion_topics?only_announcements=false&per_page=100` |
+| discussion | `GET /api/v1/courses/:cid/discussion_topics/:tid`; with `--replies` also `GET /api/v1/courses/:cid/discussion_topics/:tid/entries?per_page=100` and `GET /api/v1/courses/:cid/discussion_topics/:tid/entries/:eid/replies?per_page=100` |
+| inbox | `GET /api/v1/conversations?scope=inbox\|unread\|sent\|archived&auto_mark_as_read=false&per_page=100` |
+| inbox show | `GET /api/v1/conversations/:id?auto_mark_as_read=false` |
+| inbox unread-count | `GET /api/v1/conversations/unread_count` |
+| submit, plan execute | no new endpoint; the pre-flight read `GET …/assignments/:aid?include[]=submission&include[]=can_submit` runs twice, once to freeze the plan and once to revalidate it (§20) |
+| watch, mcp | no new endpoint; both refresh the §10 datasets above |
+
+The materialized discussion endpoint `GET …/discussion_topics/:tid/view` is deliberately not used: it marks entries read as a side effect of reading them (§23).
+
 ## Appendix C. What the research and the reviews changed
 
 - Local grade math, target solver, GraphQL, ETags, hard links, group submissions: out of v1.
@@ -1313,7 +1330,7 @@ Every version is pinned with `=`, in the workspace manifest or in the crate that
 - Complete JSON schemas (Appendix D); single-envelope and exit-precedence rules.
 - Dependency-ordered packages with per-round shared-file owners.
 
-## Appendix D. JSON `result` payloads (v1)
+## Appendix D. JSON `result` payloads
 
 Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `date` = civil `YYYY-MM-DD`; `T?` = nullable; arrays are never `null`. Every listed field is always present.
 
@@ -1330,6 +1347,10 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 - `Availability` = `{ locked?: bool, lock_explanation?: string, submittable?: bool, external?: bool, unlock_at?: ts+local, lock_at?: ts+local }`
 - `Attachment` = `{ id, display_name, size?: number, content_type?: string }`
 - `Freshness` = envelope entry `{ dataset, scope, source: "cache"|"network", fetched_at?: ts, complete: bool, count?: number, stale: bool }`
+- `Listing` = `{ available: bool, http_status?: number }` — the shape `files@1` already used, reused by `pages@1`, `discussions@1`, and `inbox@1` (§23)
+- `Embedded` = `{ kind: "iframe"|"lti"|"video"|"audio"|"unknown", src_origin?: string, reported: "unavailable" }`
+- `FileRef` = `{ file_id, name?: string, url }`; `ExternalLink` = `{ url }` — both stripped of every capability-bearing part (§23)
+- `Participant` = `{ id?, name?: string }`
 
 | Schema | `result` | Sort |
 |---|---|---|
@@ -1361,7 +1382,40 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 | `config@1` | `get`: `{ key, value }`; `set`: `{ key, value, previous? }`; `path`: `{ path }` | — |
 | `doctor@1` | `{ identity_selected: bool, checks: [ { name, status: "ok"|"warn"|"fail"|"skipped", message } ], recovered_journals: [id] }` | fixed order |
 | `version@1` | `{ version, commit?, target }` | — |
-| `error@1` | `{ code, message, http_status?: number, server_errors: [string], details: object }` | — |
+| `plan@1` | `{ plan: { plan_id, state: "prepared"|"approved"|"executed"|"expired"|"invalidated", consumer?: string, course_id, course_code?, assignment_id, assignment_name?, kind, baseline_attempt: number, estimated_attempt: number, files: [ { name, size: number, sha256 } ], text?: { input_sha256, transform, sent_sha256 }, url?: string, comment_chars?: number, due_at?: ts, plan_sha256, created_at: ts, expires_at: ts, approval?: Approval, journal_id?, invalidated_reason?: string } }` (§20) | — |
+| `watch@1` | `{ since?: string, cursor?: string, events: number, ticks: number, resync_required: bool, skipped?: "foreground_interest"\|"journal_in_flight", datasets: [ Freshness & { requests: number, error?: string } ] }` (§22) | dataset, scope |
+| `pages@1` | `{ course_id, listing: Listing, pages: [ { id, title?: string, url?: string, updated_at?: ts, published?: bool, front_page?: bool } ] }` | `title` asc, from `sort=title` |
+| `page@1` | `{ page: { id, course_id, title?: string, url?: string, updated_at?: ts, published?: bool, front_page?: bool, locked_for_user?: bool, html_url?: string, body_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink] } }` | — |
+| `syllabus@1` | `{ course_id, syllabus_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink], updated_at?: ts }` | — |
+| `discussions@1` | `{ course_id, listing: Listing, discussions: [ { id, course_id?, title?: string, posted_at?: ts, last_reply_at?: ts, author?: string, read_state?: string, unread_count?: number, reply_count?: number, locked?: bool, pinned?: bool, is_announcement?: bool, require_initial_post?: bool, assignment_id?, points_possible?: number, group_category_id?, html_url?: string } ] }` | as Canvas returns them |
+| `discussion@1` | `{ discussion: <discussions item> & { discussion_type?: string, group_topic_children: [ { id?, group_id? } ], message_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink], replies: [ { id, parent_id?, user_id?, user_name?: string, created_at?: ts, message_markdown?: string, truncated: bool, read_state?: string, replies_count: number } ], replies_page: number, replies_total?: number, replies_coverage: { pages_fetched: number, complete: bool, blocked?: "initial_post_required"\|"page_failed"\|"not_requested" } } }` | replies by `created_at` then `id` |
+| `inbox@1` | `{ scope, listing: Listing, conversations: [ { id, subject?: string, workflow_state?: string, last_message_at?: ts, message_count?: number, context_name?: string, starred?: bool, participants: [Participant] } ] }` | `last_message_at` desc |
+| `conversation@1` | `{ conversation: { id, subject?: string, workflow_state?: string, last_message_at?: ts, context_name?: string, participants: [Participant], messages: [ { id?, author_id?, created_at?: ts, body?: string, truncated: bool, attachments: [ { file_id?, name?: string, size?: number } ] } ], messages_complete: bool } }` | messages as Canvas returns them |
+| `inbox_unread@1` | `{ unread_count?: number }` | — |
+| `error@1` | `{ code, message, http_status?: number, server_errors: [string], details: object }` (exit 8 adds `details.reason`, §14) | — |
+
+**`canvas-cli/event@1` is not a `result`.** It is one self-describing document per line of the `canvas watch --jsonl` stream, with no §7 envelope around it (§22):
+
+```json
+{ "schema": "canvas-cli/event@1", "cursor": "12", "kind": "due.changed",
+  "observed_at": "2026-09-09T17:05:12Z", "observed_at_local": "2026-09-09T13:05:12-04:00",
+  "identity": { "origin": "…", "user_id": "1", "key": "…" },
+  "generation": "01234567-89ab-4cde-8f01-23456789abcd",
+  "dataset": "assignments", "scope": "course:100", "entity_key": "9",
+  "before": { "due_at": "2026-09-10T03:59:00Z" }, "after": { "due_at": "2026-09-12T03:59:00Z" } }
+```
+
+`before` and `after` carry the allowlisted fields of the shape only (§22). `entity_key` is `null` when the event is not about one entity.
+
+**Fields added after v1, all additive, so every schema keeps `@1`:**
+
+| Schema | Added | Package |
+|---|---|---|
+| `Journal`, `receipt@1` | `plan_id?`, `approval?` | M6-a |
+| `submit@1` | `replayed: bool` | M6-a, §20 |
+| `assignment@1` | rubric criterion gains `long_description?`, `criterion_use_range: bool`, `ratings: [ { id, description?: string, long_description?: string, points?: number } ]`; rubric assessment gains `rating_id?` | M8-a |
+| `submission@1` | rubric assessment gains `rating_id?` | M8-a |
+| `discussion@1` | `replies_page`, `replies_total?` | M8-a2, §19 item 28 |
 
 ## Appendix E. Review response ledger
 
