@@ -907,3 +907,46 @@ async fn discovery_lists_follow_all_pages_and_failed_items_leave_previous_rows()
         })
         .unwrap();
 }
+
+#[test]
+fn only_supported_listing_denials_can_replace_complete_coverage() {
+    let (_dir, open) = setup();
+    seed_discovery_course(&open);
+    open.store
+        .call_blocking(|conns| {
+            for (dataset, error) in [
+                (
+                    &FilesDataset::with_default_ttl(5) as &dyn Dataset,
+                    "decode failed",
+                ),
+                (
+                    &FoldersDataset::with_default_ttl(5) as &dyn Dataset,
+                    "unavailable:500",
+                ),
+                (
+                    &ModulesDataset::with_default_ttl(5) as &dyn Dataset,
+                    "unavailable:403",
+                ),
+            ] {
+                let mut opts = ingest_ok(0);
+                opts.error = Some(error);
+                dataset
+                    .ingest(
+                        &[crate::store::IngestPage {
+                            fetched_at: ts(200),
+                            entities: vec![],
+                        }],
+                        &opts,
+                        conns,
+                    )
+                    .unwrap();
+            }
+            let plan = discovery_plan_input(conns, 5, "CS101")?;
+            assert_eq!(plan.files.len(), 1);
+            assert_eq!(plan.folders.len(), 2);
+            assert_eq!(plan.modules.len(), 1);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(listing_denial_status("unavailable:500"), None);
+}
