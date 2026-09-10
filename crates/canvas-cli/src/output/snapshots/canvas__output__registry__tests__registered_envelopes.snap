@@ -744,9 +744,21 @@ expression: rendered
           "files": [
             {
               "action": "downloaded",
+              "error": null,
               "id": "50",
               "path": "CS-101-101/files/Slides/lec.pdf",
-              "size": 10
+              "previous_path": null,
+              "size": 10,
+              "verify": "ok"
+            },
+            {
+              "action": "moved",
+              "error": null,
+              "id": "51",
+              "path": "CS-101-101/files/Slides/notes.pdf",
+              "previous_path": "CS-101-101/files/notes.pdf",
+              "size": null,
+              "verify": null
             }
           ]
         }
@@ -759,7 +771,7 @@ expression: rendered
         "failed": 0,
         "locked": 0,
         "modified": 0,
-        "moved": 0,
+        "moved": 1,
         "planned": 0,
         "skipped": 0,
         "skipped_external": 0,
