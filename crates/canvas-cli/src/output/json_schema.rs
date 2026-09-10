@@ -153,6 +153,18 @@ pub fn document_for_command(name: &str) -> Option<Value> {
     registry::entry_for_command(name).map(document)
 }
 
+/// The `schema@1` document for a schema id, if one is registered.
+///
+/// `canvas mcp` describes a tool's output this way, so a tool and the CLI
+/// cannot disagree about the shape of the same result.
+#[must_use]
+pub fn document_for_schema(schema_id: &str) -> Option<Value> {
+    registry::all_schemas()
+        .iter()
+        .find(|entry| entry.id == schema_id)
+        .map(document)
+}
+
 /// The command name a schema id belongs to: `canvas-cli/auth_status@1` is
 /// printed by `canvas auth status`.
 #[must_use]

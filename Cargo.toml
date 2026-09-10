@@ -37,7 +37,7 @@ keyring = { version = "=4.2.0", default-features = false, features = ["v1"] }
 open = "=5.4.3"
 predicates = "=3.1.4"
 reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "json", "stream", "gzip", "brotli", "multipart"] }
-rmcp = { version = "=3.2.0", default-features = false, features = ["server", "client", "macros", "elicitation", "transport-io", "transport-async-rw", "schemars"] }
+rmcp = { version = "=3.2.0", default-features = false, features = ["server", "client", "macros", "elicitation", "transport-io", "transport-async-rw", "schemars", "local"] }
 rusqlite = { version = "=0.40.2", features = ["bundled"] }
 schemars = "=1.2.2"
 serde = { version = "=1.0.229", features = ["derive"] }

@@ -14,7 +14,9 @@ pub use envelope::{
     Envelope, ErrorResult, Freshness, FreshnessSource, IdentityRef, Outcome, PartialScope,
     Requests, error_envelope, print_human,
 };
-pub use json_schema::{SCHEMA_SCHEMA, command_name, document_for_command, list as schema_list};
+pub use json_schema::{
+    SCHEMA_SCHEMA, command_name, document_for_command, document_for_schema, list as schema_list,
+};
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
     AliasJson, AliasResult, AnnouncementDetailJson, AnnouncementJson, AnnouncementResult,

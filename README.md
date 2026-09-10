@@ -122,6 +122,7 @@ Every command below runs in this build.
 | `canvas alias remove` | Remove a course alias. |
 | `canvas doctor` | Check config, databases, credentials, and locks. `--network`. |
 | `canvas schema` | Print the JSON Schema of a command's `--json` output. `--list`. |
+| `canvas mcp` | Serve the Model Context Protocol over stdio for one identity. |
 | `canvas completions` | Print a completion script: bash, zsh, fish, powershell, elvish. |
 | `canvas version` | Print the version, build commit, and target triple. |
 
