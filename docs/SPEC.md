@@ -1786,7 +1786,7 @@ The retry guard asks the catalog which tools ask for approval: any `*.execute` i
 |---|---|---|
 | clap (derive, env) | 4.6.6 | CLI |
 | clap_complete / clap_mangen | 4.6.9 / 0.3.3 | completions, man pages |
-| tokio (workspace: rt, macros, fs, time, sync; per crate: io-util, signal, rt-multi-thread, process) | 1.53.1 | runtime. `net` is enabled today only in `canvas-api`'s dev-dependencies; the broker socket that needs it is M7-a (§24) |
+| tokio (workspace: rt, macros, fs, time, sync; per crate: io-util, net, signal, rt-multi-thread, process) | 1.53.1 | runtime. **`net` is a production feature of `canvas-cli` since M7-a**: the broker's Unix socket and named pipe need it (§24). `canvas-api` still enables it in dev-dependencies only, for its own test server |
 | reqwest (rustls, json, stream, gzip, brotli, multipart) | 0.13.5 | HTTP |
 | futures-util | 0.3.34 | streams |
 | serde / serde_json | 1.0.229 / 1.0.151 | models, JSON |
@@ -1813,7 +1813,9 @@ The retry guard asks the catalog which tools ask for approval: any `*.execute` i
 
 Toolchain: stable 1.98.x in CI; MSRV 1.88; owner machine 1.97.1.
 
-Every version is pinned with `=`, in the workspace manifest or in the crate that uses it. Direct dependencies the table still omits: `getrandom` 0.4.3, `unicode-normalization` 0.1.25, `httpdate` 1.0.3, `rpassword` 7.4.0, `rustix` 1.1.4 (`fs`, `process`; `canvas-cli` under `cfg(unix)` only), and, for tests and `xtask` only, `tokio-rustls` 0.26.5, `tempfile` 3.23.0, and `url` 2.5.8. No post-v1 package added a dependency after `rmcp` and `schemars`. `uuid` names journal ids, plan ids, approval handles, and identity generations.
+Every version is pinned with `=`, in the workspace manifest or in the crate that uses it. Direct dependencies the table still omits: `getrandom` 0.4.3, `unicode-normalization` 0.1.25, `httpdate` 1.0.3, `rpassword` 7.4.0, `rustix` 1.1.4 (`fs`, `process`; `canvas-cli` under `cfg(unix)` only, for the socket and pipe permission work of §24), and, for tests and `xtask` only, `tokio-rustls` 0.26.5, `tempfile` 3.23.0, and `url` 2.5.8. **No post-v1 package added a dependency after `rmcp` and `schemars`**, M7-a, M7-b, and M8-b included: the companion ships as plain JavaScript with no npm dependency at all, and M7-a's only manifest change was the tokio `net` feature above. `uuid` names journal ids, plan ids, approval handles, operation journal ids, and identity generations.
+
+Re-verified against `Cargo.lock` for this pass: every version in the table matches the lock file exactly. Two crates appear twice in the lock and only one of each is a direct dependency — `toml` (1.1.5 direct, 0.8.23 transitive) and `sha2` (0.10.9 direct, 0.11.0 transitive) — and `getrandom` appears three times for the same reason.
 
 ## Appendix B. Canvas endpoints used
 
@@ -1848,8 +1850,32 @@ Added after v1. Every one is a `GET`. `per_page=100` is appended by the client t
 | inbox unread-count | `GET /api/v1/conversations/unread_count` |
 | submit, plan execute | no new endpoint; the pre-flight read `GET …/assignments/:aid?include[]=submission&include[]=can_submit` runs twice, once to freeze the plan and once to revalidate it (§20) |
 | watch, mcp | no new endpoint; both refresh the §10 datasets above |
+| here | no new endpoint; the API half calls the `course`, `assignment`, and `announcement` cores above (§24) |
 
 The materialized discussion endpoint `GET …/discussion_topics/:tid/view` is deliberately not used: it marks entries read as a side effect of reading them (§23).
+
+The three writes (§25). Every `GET` here runs at prepare or in a readback; the `POST` runs only after a recorded approval.
+
+| Command | Endpoint |
+|---|---|
+| discussion reply — prepare | `GET /api/v1/courses/:cid/discussion_topics/:tid`; with `--to`, `GET /api/v1/courses/:cid/discussion_topics/:tid/entries?per_page=100` |
+| discussion reply — execute | the prepare read again to revalidate, then `POST /api/v1/courses/:cid/discussion_topics/:tid/entries` with `{ message }`, or `POST …/entries/:eid/replies` with `--to` |
+| inbox send — prepare | `GET /api/v1/search/recipients?user_id=<id>`, once per recipient |
+| inbox send — execute | `POST /api/v1/conversations` with `{ recipients, subject, body, group_conversation: false, attachment_ids }` |
+| inbox reply — prepare, and execute's revalidation | `GET /api/v1/conversations/:id?auto_mark_as_read=false` |
+| inbox reply — execute | `POST /api/v1/conversations/:id/add_message` with `{ body, attachment_ids }` |
+| an inbox attachment | `POST /api/v1/users/self/files` with `parent_folder_path=conversation attachments` and `on_duplicate=rename`, then the returned upload URL (§11) |
+| operation status, operation reconcile | `GET /api/v1/courses/:cid/discussion_topics/:tid/entries?per_page=100`, or `GET …/entries/:eid/replies?per_page=100` for a threaded reply, or `GET /api/v1/conversations/:id?auto_mark_as_read=false` |
+
+`group_conversation` is sent as `false`, always: group writes are out of this package.
+
+The companion (§24) makes exactly one Canvas request, and it does not make it from this machine's HTTP client at all:
+
+| Caller | Endpoint |
+|---|---|
+| the extension's content script, in the attached tab | `GET <origin>/api/v1/users/self`, same-origin, with the browser's own cookies, `redirect: "error"`, and the body reduced to `{ user_id, observed_at }` before it leaves the page |
+
+No token of this CLI is ever sent through the browser, and no Canvas request is ever proxied through it.
 
 ## Appendix C. What the research and the reviews changed
 
@@ -1875,10 +1901,13 @@ The materialized discussion endpoint `GET …/discussion_topics/:tid/view` is de
 | M8-a | `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox *`, the rubric extension | §23 | `docs/reviews/code-M8-a.md` |
 | M8-a2 | the eight M8-a read tools on the agent surface; §19 items 27 and 28 applied | §21, §23 | `docs/reviews/code-M8-a2.md` |
 | M8-a3 | the `inbox.unread_count` event; the per-form `canvas schema` pages | §22, §21 | `docs/reviews/code-M8-a3.md` |
+| M7-a | the Chrome companion, the native host, the broker ownership lock, `bridge-native@1`, `bridge-ipc@1`, zones, the account probe, `canvas bridge`, `canvas here`, the `context.*` tools and the `/context` resource | §24 | `docs/reviews/code-M7-a.md` |
+| M7-b | the side panel, notes, follow, panel approvals, and the plan-decision events | §24 | `docs/reviews/code-M7-b.md` |
+| M8-b | the three plan kinds, the operation journal, `operation status\|reconcile`, the attribution ladder, and the sixth skill workflow | §25 | `docs/reviews/code-M8-b.md` |
 
-Still in flight, and not on `main`: M7-a and M7-b (the companion, §24) and M8-b (discussion and inbox writes, §25). M8-c (GraphQL) and M8-d (OAuth) stay conditional, as REPORT §4 leaves them.
+Every post-v1 package REPORT §4 scheduled is now on `main`. M8-c (GraphQL) and M8-d (OAuth) stay conditional, as REPORT §4 leaves them.
 
-`docs/reads-v2.md` was the M8-a contract document. Its content is now §23, and the file is a pointer.
+`docs/reads-v2.md` was the M8-a contract document, `docs/companion.md` the M7-a and M7-b one, and `docs/writes-v2.md` the M8-b one. Their content is now §23, §24, and §25, and each file is a pointer. `docs/companion.md` keeps one thing of its own that no section replaces: the table of Chrome checks a person runs by hand, because nothing in that package has been run in a real browser (§24.16).
 
 ## Appendix D. JSON `result` payloads
 
@@ -1890,7 +1919,13 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 - `Posted` = `{ evidence: "post-response"|"history-files", submission_id?, attempt: number, submitted_at?: ts+local, workflow_state?: string, late?: bool, missing?: bool, excused?: bool, submission_type?: string, attachments: [Attachment], body_sha256?: string, url?: string, response_sha256?: string }`
 - `Readback` = `{ submitted_at?: ts+local, late?: bool, attachments: [Attachment], body_sha256?: string }`
 - `Candidate` = `{ attempt: number, submitted_at?: ts+local, attachment_ids: [id] }` (`attachment_ids = []` for text and URL entries)
-- `Journal` = `{ journal_id, state, owner: "live"|"absent"|"n/a", superseded: bool, acknowledged_at?: ts, plan_id?: string, approval?: Approval, course_id, course_code?, assignment_id, assignment_name?, kind, baseline_attempt: number, created_at: ts, updated_at: ts, uploaded_file_ids: [id], post_status?: number, response_kind?: "canvas-error"|"other"|"none", not_submitted_evidence?: "never_sent"|"assumed", posted?: Posted, readback?: Readback, server_match?: Candidate, receipt_id?, error?: string }`
+- `Journal` = `{ journal_id, state, owner: "live"|"absent"|"n/a", superseded: bool, acknowledged_at?: ts, plan_id?: string, approval?: Approval, course_id?, course_code?, assignment_id?, assignment_name?, kind, baseline_attempt?: number, created_at: ts, updated_at: ts, uploaded_file_ids: [id], post_status?: number, response_kind?: "canvas-error"|"other"|"none", not_submitted_evidence?: "never_sent"|"assumed", posted?: Posted, readback?: Readback, server_match?: Candidate, receipt_id?, error?: string, operation?: Operation }` — one shape for both journal kinds, and `kind` says which. On an operation journal `assignment_id`, `assignment_name`, `baseline_attempt`, `posted`, `readback`, and `server_match` are `null`, `operation` carries the write, `course_id` is `null` for an inbox write, and `superseded` is always `false` (§25.8, §19 item 40)
+- `Operation` = `{ kind: "discussion_reply"|"inbox_send"|"inbox_reply", course_id?, topic_id?, parent_entry_id?, conversation_id?, recipients: [id], subject?: string, state, input_sha256, transform, sent_sha256, server_body_sha256?: string, attachments: [OperationAttachment], posted?: OperationResponse, readback?: OperationReadback, server_match?: OperationMatch, attribution: "accepted"|"observed"|"unproven"|"none", delivery: "observable"|"not_observable" }` — the operation block on `Journal` and `receipt@1` (§25)
+- `OperationTarget` = `{ kind, course_id?, course_code?, topic_id?, topic_title?: string, parent_entry_id?, conversation_id?, conversation_subject?: string, recipients: [id], recipient_names: [string] }`
+- `OperationAttachment` = `{ name, size: number, sha256, canvas_file_id? }`
+- `OperationResponse` = `{ id?, conversation_id?, created_at?: ts+local, user_id?, body_sha256?: string, attachment_ids: [id], response_sha256?: string }` — the allowlisted record of Canvas' answer; the body is never stored (§25.6)
+- `OperationReadback` = `OperationResponse` without `conversation_id` and `response_sha256`, plus `read_at: ts`, `scanned: number`, and `complete: bool`
+- `OperationMatch` = `{ id, created_at?: ts+local, user_id?, body_sha256 }` — a candidate matched by digest alone, with no id link
 - `Approval` = `{ channel: "tty"|"elicitation"|"panel"|"yes-flag", at: ts, consumer?: string, plan_sha256 }` — the recorded human approval of the plan that produced the journal (REPORT §3.5); `plan_id` and `approval` are `null` for journals created before plans existed (M6-a).
 - `Grade` = `{ current_score?: number, current_grade?: string, final_score?: number, final_grade?: string, period { mode: "all"|"current"|"id", id?: id, title?: string } }`
 - `SubmissionStatus` = `{ submitted?: bool, graded?: bool, score?: number, grade?: string, late?: bool, missing: bool, excused?: bool, workflow_state?: string, submitted_at?: ts+local, attempt?: number, posted_at?: ts, pending: bool }`
@@ -1901,6 +1936,8 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 - `Embedded` = `{ kind: "iframe"|"lti"|"video"|"audio"|"unknown", src_origin?: string, reported: "unavailable" }`
 - `FileRef` = `{ file_id, name?: string, url }`; `ExternalLink` = `{ url }` — both stripped of every capability-bearing part (§23)
 - `Participant` = `{ id?, name?: string }`
+- `Note` = `{ note_id, consumer, text, source_refs: [string], at: ts, generation: number }` — one inert note held for display (§24.11)
+- `Follow` = `{ request_id, url, dispatched: bool, dispatched_at: ts, dispatch_ms: number, generation: number, load: "loaded"|"unknown", load_at?: ts }` — a dispatch acknowledgement and, later, what became of it. `load` is never `failed` (§24.12)
 
 | Schema | `result` | Sort |
 |---|---|---|
@@ -1911,7 +1948,7 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 | `assignment@1` | `{ assignment: <assignments item> & { description_markdown?: string, can_submit?: bool, extra_attempts?: number, rubric: [ { id, description, points?: number } ], rubric_assessed: bool, rubric_assessment: [ { criterion_id, points?: number, comments?: string } ], comments_count?: number, external_tool_name?: string } }` | — |
 | `submit@1` | `{ outcome, state, journal_id, receipt_id?, attribution?: "observed"|"unproven", post_status?: number, response_kind?: "canvas-error"|"other"|"none", posted?: Posted, server_match?: Candidate, candidates: [Candidate], files: [ { name, size: number, sha256, canvas_file_id?: id } ], text?: { input_sha256, transform, sent_sha256 }, url?: string, error?: string }` | candidates by `attempt` asc |
 | `submission@1` | `{ submission: SubmissionStatus & { submission_type?: string, body_sha256?: string, url?: string, attachments: [Attachment], comments: [ { id, author?: string, created_at: ts+local, text } ], rubric_assessed: bool, rubric_assessment: [...] }, history: [ { attempt: number, submitted_at?: ts+local, score?: number, attachments: [Attachment] } ], pending_journals: [id] }` | history by `attempt` asc |
-| `receipt@1` | `{ receipt_id, journal_id, identity { origin, user_id, key }, course_id, course_code?, assignment_id, assignment_name?, kind, baseline_attempt: number, attribution: "observed"|"unproven", posted: Posted, readback?: Readback, files: [ { name, size: number, sha256, canvas_file_id?: id } ], text?: { input_sha256, transform, sent_sha256, server_body_sha256?: string }, url?: string, due_at?: ts, plan_id?: string, approval?: Approval, cli_version, created_at: ts }` (export file = the document; `receipts show --json` = envelope with `result.receipt`) | — |
+| `receipt@1` | `{ receipt_id, journal_id, identity { origin, user_id, key }, course_id, course_code?, assignment_id, assignment_name?, kind, baseline_attempt: number, attribution: "observed"|"unproven", posted: Posted, readback?: Readback, files: [ { name, size: number, sha256, canvas_file_id?: id } ], text?: { input_sha256, transform, sent_sha256, server_body_sha256?: string }, url?: string, due_at?: ts, plan_id?: string, approval?: Approval, operation?: Operation, cli_version, created_at: ts }` (export file = the document; `receipts show --json` = envelope with `result.receipt`) | — |
 | `receipts@1` | `list`: `{ journals: [Journal] }`; `show`: `{ journal: Journal, receipt?: <receipt@1 document> }`; `export`: `{ receipt_id, path?: string, bytes: number }` (`--out -` is raw output, §7); `acknowledge`: `{ journal_id, acknowledged_at: ts }` | `created_at` desc, then `journal_id` |
 | `verify@1` | `{ outcome: "verified"|"verified_body"|"mismatch"|"unavailable"|"refused", receipt_id, attempt?: number, attribution?: "observed"|"unproven", files: [ { canvas_file_id, name?: string, expected_sha256?: string, actual_sha256?: string, status: "ok"|"mismatch"|"unavailable"|"missing"|"extra" } ], body?: { expected_sha256?: string, actual_sha256?: string, status: "ok"|"mismatch"|"unavailable" }, reason?: string }` (`expected_sha256` is `null` for `extra`, `actual_sha256` is `null` for `missing`/`unavailable`) | by `canvas_file_id` |
 | `reconcile@1` | `{ outcome: "ok"|"recovery"|"refused", state, journal_id, owner: "live"|"absent"|"n/a", response_kind?: "canvas-error"|"other"|"none", not_submitted_evidence?: "never_sent"|"assumed", assume_available: bool, attribution?: "observed"|"unproven", receipt_id?, posted?: Posted, server_match?: Candidate, candidates: [Candidate], message: string }` | candidates by `attempt` asc |
@@ -1932,16 +1969,22 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 | `config@1` | `get`: `{ key, value }`; `set`: `{ key, value, previous? }`; `path`: `{ path }` | — |
 | `doctor@1` | `{ identity_selected: bool, checks: [ { name, status: "ok"|"warn"|"fail"|"skipped", message } ], recovered_journals: [id] }` | fixed order |
 | `version@1` | `{ version, commit?, target }` | — |
-| `plan@1` | `{ plan: { plan_id, state: "prepared"|"approved"|"executed"|"expired"|"invalidated", consumer?: string, course_id, course_code?, assignment_id, assignment_name?, kind, baseline_attempt: number, estimated_attempt: number, files: [ { name, size: number, sha256 } ], text?: { input_sha256, transform, sent_sha256 }, url?: string, comment_chars?: number, due_at?: ts, plan_sha256, created_at: ts, expires_at: ts, approval?: Approval, journal_id?, invalidated_reason?: string } }` (§20) | — |
+| `plan@1` | `{ plan: { plan_id, state: "prepared"|"approved"|"executed"|"expired"|"invalidated", consumer?: string, course_id?, course_code?, assignment_id?, assignment_name?, kind: "online_upload"|"online_text_entry"|"online_html"|"online_url"|"discussion_reply"|"inbox_send"|"inbox_reply", baseline_attempt: number, estimated_attempt: number, files: [ { name, size: number, sha256 } ], text?: { input_sha256, transform, sent_sha256 }, url?: string, comment_chars?: number, due_at?: ts, plan_sha256, created_at: ts, expires_at: ts, approval?: Approval, journal_id?, invalidated_reason?: string, operation?: { kind, target: OperationTarget, subject?: string, text: { input_sha256, transform, sent_sha256 }, attachments: [OperationAttachment] } } }` (§20, §25). `course_id` and `assignment_id` are `null` on an operation plan, which names no assignment and, for an inbox write, no course; `operation` is `null` on a submission plan, and `kind` says which half to read | — |
 | `watch@1` | `{ since?: string, cursor?: string, events: number, ticks: number, resync_required: bool, skipped?: "foreground_interest"\|"journal_in_flight", datasets: [ Freshness & { requests: number, error?: string } ] }` (§22) | dataset, scope |
 | `pages@1` | `{ course_id, listing: Listing, pages: [ { id, title?: string, url?: string, updated_at?: ts, published?: bool, front_page?: bool } ] }` | `title` asc, from `sort=title` |
 | `page@1` | `{ page: { id, course_id, title?: string, url?: string, updated_at?: ts, published?: bool, front_page?: bool, locked_for_user?: bool, html_url?: string, body_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink] } }` | — |
 | `syllabus@1` | `{ course_id, syllabus_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink], updated_at?: ts }` | — |
 | `discussions@1` | `{ course_id, listing: Listing, discussions: [ { id, course_id?, title?: string, posted_at?: ts, last_reply_at?: ts, author?: string, read_state?: string, unread_count?: number, reply_count?: number, locked?: bool, pinned?: bool, is_announcement?: bool, require_initial_post?: bool, assignment_id?, points_possible?: number, group_category_id?, html_url?: string } ] }` | as Canvas returns them |
-| `discussion@1` | `{ discussion: <discussions item> & { discussion_type?: string, group_topic_children: [ { id?, group_id? } ], message_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink], replies: [ { id, parent_id?, user_id?, user_name?: string, created_at?: ts, message_markdown?: string, truncated: bool, read_state?: string, replies_count: number } ], replies_page: number, replies_total?: number, replies_coverage: { pages_fetched: number, complete: bool, blocked?: "initial_post_required"\|"page_failed"\|"not_requested" } } }` | replies in the order the reply fetch stored them: every entry page, then the nested replies, then `id` |
-| `inbox@1` | `{ scope, listing: Listing, conversations: [ { id, subject?: string, workflow_state?: string, last_message_at?: ts, message_count?: number, context_name?: string, starred?: bool, participants: [Participant] } ] }` | as Canvas returns them |
-| `conversation@1` | `{ conversation: { id, subject?: string, workflow_state?: string, last_message_at?: ts, context_name?: string, participants: [Participant], messages: [ { id?, author_id?, created_at?: ts, body?: string, truncated: bool, attachments: [ { file_id?, name?: string, size?: number } ] } ], messages_complete: bool } }` | messages as Canvas returns them |
-| `inbox_unread@1` | `{ unread_count?: number }` | — |
+| `discussion@1` | `{ discussion: <discussions item> & { discussion_type?: string, group_topic_children: [ { id?, group_id? } ], message_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink], replies: [ { id, parent_id?, user_id?, user_name?: string, created_at?: ts, message_markdown?: string, truncated: bool, read_state?: string, replies_count: number } ], replies_page: number, replies_total?: number, replies_coverage: { pages_fetched: number, complete: bool, blocked?: "initial_post_required"\|"page_failed"\|"not_requested" }, pending: bool, pending_journals: [id] } }` | replies in the order the reply fetch stored them: every entry page, then the nested replies, then `id` |
+| `inbox@1` | `{ scope, listing: Listing, conversations: [ { id, subject?: string, workflow_state?: string, last_message_at?: ts, message_count?: number, context_name?: string, starred?: bool, participants: [Participant] } ], pending: bool, pending_journals: [id] }` | as Canvas returns them |
+| `conversation@1` | `{ conversation: { id, subject?: string, workflow_state?: string, last_message_at?: ts, context_name?: string, participants: [Participant], messages: [ { id?, author_id?, created_at?: ts, body?: string, truncated: bool, attachments: [ { file_id?, name?: string, size?: number } ] } ], messages_complete: bool }, pending: bool, pending_journals: [id] }` | messages as Canvas returns them |
+| `inbox_unread@1` | `{ unread_count?: number, pending: bool, pending_journals: [id] }` | — |
+| `here@1` | `{ attachment?: id, state: "attached"\|"validating"\|"paused"\|"not_attached", consumer?: string, identity { key, generation }, api { course?: <course@1 envelope>, assignment?: <assignment@1 envelope>, announcement?: <announcement@1 envelope> }, browser?: { origin, account { user_id, observed_at: ts }, zone: "open"\|"graded"\|"assessment"\|"external"\|"unknown", page_kind?: string, course_id?, assignment_id?, topic_id?, quiz_id?, page_url?: string, url?: string, title?: string, document_id, frame_id: number, navigation_generation: number, observed_at: ts, ttl_ms: number, selection?: string, text?: string, selection_bytes: number, text_bytes: number, truncated: bool, content_reason?: string, follow?: Follow, notes: [Note] }, reason?: string }` (§24). `api` holds whole §7 envelopes, each with its own freshness; `ttl_ms` is always `0`; `browser` is `null` on a refusal and `reason` names it | notes oldest first |
+| `note@1` | `{ attachment?: id, consumer?: string, note?: Note, held: number, reason?: string }` (§24) | — |
+| `follow@1` | `{ attachment?: id, consumer?: string, target_kind, id, url, follow?: Follow, side_effects: [string], reason?: string }` (§24). Printed by `open --follow`, so it has no command name of its own | — |
+| `bridge@1` | `status`: `{ endpoint, manifest { browser, path?: string, present: bool, host_name, extension_id? }, owner { live: bool, pid?: number, started_at?: ts }, attachments: [ { state, origin, account_user_id, zone, consumers: [string], attached_at: ts, navigation_generation: number } ] }` — the listing names the state, the origin, the account, the zone, and the consumers, and never the attachment id or the page (§24.8); `install`: `{ browser, host_name, extension_id, binary, manifest_path, written: bool, steps: [string] }`; `detach`: `{ detached: bool, attachment_id?: id, reason?: string }` (§24) | — |
+| `operation@1` | `{ outcome, kind: "discussion_reply"\|"inbox_send"\|"inbox_reply", state: "planned"\|"posting"\|"posted"\|"matched"\|"outcome_unknown"\|"refused"\|"failed", journal_id, plan_id, replayed: bool, receipt_id?, attribution: "accepted"\|"observed"\|"unproven"\|"none", delivery: "observable"\|"not_observable", post_status?: number, response_kind?: string, not_posted_evidence?: "never_sent"\|"assumed", target: OperationTarget, subject?: string, text { input_sha256, transform, sent_sha256 }, attachments: [OperationAttachment], response?: OperationResponse, readback?: OperationReadback, server_match?: OperationMatch, acknowledged_at?: ts, error?: string }` — the result of all three writes and of `operation status` (§25). `plan_id` is never `null` here | — |
+| `operation_reconcile@1` | `{ outcome, journal_id, kind, state, verdict: "observed"\|"matched"\|"not_found"\|"not_read"\|"assumed_not_posted", owner: "live"\|"absent"\|"n/a", attribution, delivery, receipt_id?, readback?: OperationReadback, server_match?: OperationMatch, assume_not_posted_available: bool, message: string }` (§25) | — |
 | `error@1` | `{ code, message, http_status?: number, server_errors: [string], details: object }` (exit 8 adds `details.reason`, §14) | — |
 
 **`canvas-cli/event@1` is not a `result`.** It is one self-describing document per line of the `canvas watch --jsonl` stream, with no §7 envelope around it (§22):
@@ -1966,6 +2009,9 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 | `assignment@1` | rubric criterion gains `long_description?`, `criterion_use_range: bool`, `ratings: [ { id, description?: string, long_description?: string, points?: number } ]`; rubric assessment gains `rating_id?` | M8-a |
 | `submission@1` | rubric assessment gains `rating_id?` | M8-a |
 | `discussion@1` | `replies_page`, `replies_total?` | M8-a2, §19 item 28 |
+| `plan@1` | `operation?`; `course_id` and `assignment_id` become nullable | M8-b, §25 |
+| `Journal`, `receipt@1` | `operation?`; on `Journal`, `course_id`, `assignment_id`, `assignment_name`, and `baseline_attempt` become nullable | M8-b, §25.8 |
+| `discussion@1`, `inbox@1`, `conversation@1`, `inbox_unread@1` | `pending: bool`, `pending_journals: [id]` | M8-b, §10 pending hook |
 
 ## Appendix E. Review response ledger
 
