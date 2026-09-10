@@ -1,0 +1,7 @@
+---
+source: crates/canvas-cli/tests/grades.rs
+expression: stdout
+---
+  CODE        NAME                  PERIOD    GRADE        
+  CS-101      Intro to Computing    all       B+           
+  MATH-201    Linear Algebra        all       unavailable
