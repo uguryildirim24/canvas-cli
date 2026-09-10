@@ -14,7 +14,7 @@ use crate::journal::{
     CandidateRecord, Evidence, IntendedPayload, JournalError, JournalRow, LockError, OwnerLock,
     OwnerStatus, PostedRecord, ReadbackRecord, ReceiptRecord, ResponseKind, State, TransitionPatch,
     allowlist_from_json, assume_not_submitted, commit_matched, enrich_readback, get_journal,
-    owner_status_for, recover_if_owner_absent, transition,
+    recover_owned, transition,
 };
 use crate::receipts::{export, rebuild_from_journal};
 use crate::store::Store;
@@ -94,99 +94,30 @@ pub async fn reconcile(
 ) -> Result<ReconcileResult, ReconcileError> {
     let identity_dir = paths.identity_dir.as_path();
     let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
-    let owner = owner_status_for(identity_dir, journal_id, row.state)?;
-
-    match row.state {
-        State::Submitted | State::Matched => {
-            return enrich_confirmed(client, store, paths, &row).await;
-        }
-        State::UploadIncomplete | State::UploadedNotSubmitted | State::Refused => {
-            return Ok(ReconcileResult {
-                outcome: ReconcileOutcome::Refused,
-                state: row.state,
-                journal_id: journal_id.to_owned(),
-                owner,
-                assume_available: false,
-                attribution: None,
-                receipt_id: None,
-                posted: None,
-                server_match: None,
-                candidates: Vec::new(),
-                message: "re-run submit".into(),
-                response_kind: None,
-                not_submitted_evidence: row.not_submitted_evidence.clone(),
-            });
-        }
-        State::Planned | State::Uploading | State::Uploaded | State::Posting => {
-            if matches!(owner, OwnerStatus::Live) {
-                return Ok(ReconcileResult {
-                    outcome: ReconcileOutcome::Recovery,
-                    state: row.state,
-                    journal_id: journal_id.to_owned(),
-                    owner,
-                    assume_available: false,
-                    attribution: None,
-                    receipt_id: None,
-                    posted: None,
-                    server_match: None,
-                    candidates: Vec::new(),
-                    message: "in_progress".into(),
-                    response_kind: None,
-                    not_submitted_evidence: None,
-                });
-            }
-            let Some(owner_lock) = OwnerLock::try_acquire(identity_dir, journal_id)? else {
-                return Ok(ReconcileResult {
-                    outcome: ReconcileOutcome::Recovery,
-                    state: row.state,
-                    journal_id: journal_id.to_owned(),
-                    owner: OwnerStatus::Live,
-                    assume_available: false,
-                    attribution: None,
-                    receipt_id: None,
-                    posted: None,
-                    server_match: None,
-                    candidates: Vec::new(),
-                    message: "in_progress".into(),
-                    response_kind: None,
-                    not_submitted_evidence: None,
-                });
-            };
-            let recovered = recover_if_owner_absent(store, identity_dir, journal_id)?;
-            drop(owner_lock);
-            let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
-            if row.state != State::OutcomeUnknown {
-                return Ok(ReconcileResult {
-                    outcome: ReconcileOutcome::Recovery,
-                    state: row.state,
-                    journal_id: journal_id.to_owned(),
-                    owner: OwnerStatus::NotApplicable,
-                    assume_available: false,
-                    attribution: None,
-                    receipt_id: None,
-                    posted: None,
-                    server_match: None,
-                    candidates: Vec::new(),
-                    message: format!("recovered to {}", recovered.unwrap_or(row.state)),
-                    response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
-                    not_submitted_evidence: row.not_submitted_evidence.clone(),
-                });
-            }
-        }
-        State::OutcomeUnknown => {}
-    }
-
-    let owner_lock = OwnerLock::try_acquire(identity_dir, journal_id)?
-        .ok_or(JournalError::Lock(crate::journal::LockError::InProgress))?;
-    // Re-read under owner lock.
-    let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
-    if row.state != State::OutcomeUnknown {
+    let Some(owner_lock) = OwnerLock::try_acquire(identity_dir, journal_id)? else {
         return Ok(base_result(
             &row,
-            OwnerStatus::NotApplicable,
+            OwnerStatus::Live,
             ReconcileOutcome::Recovery,
-            "state changed",
+            "in_progress",
         ));
+    };
+    // Re-read and recover under the same lock; never recursively acquire it.
+    recover_owned(store, &owner_lock, journal_id)?;
+    let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
+    match row.state {
+        State::Submitted | State::Matched => {
+            return enrich_confirmed(client, store, paths, &row, &owner_lock).await;
+        }
+        State::OutcomeUnknown => {}
+        _ => {
+            return Ok(base_result(
+                &row,
+                OwnerStatus::NotApplicable,
+                ReconcileOutcome::Refused,
+                "re-run submit",
+            ));
+        }
     }
 
     let history = get_submission_history(client, row.course_id, row.assignment_id).await?;
@@ -256,7 +187,7 @@ struct HistoryEval {
     file_matches: Vec<SubmissionHistoryEntry>,
     newer_attempt_visible: bool,
     assume_available: bool,
-    current_attempt: i64,
+    current_attempt: Option<i64>,
 }
 
 fn evaluate_history(
@@ -272,7 +203,7 @@ fn evaluate_history(
         .parse()
         .map_err(|_| JournalError::StateConflict)?;
     let window_start_ns = started.as_nanosecond() - WINDOW_NS;
-    let current_attempt = history.attempt.as_value().copied().unwrap_or(baseline);
+    let current_attempt = history.attempt.as_value().copied();
     let entries = history.submission_history.as_deref().unwrap_or(&[]);
 
     let mut candidates = Vec::new();
@@ -309,14 +240,28 @@ fn evaluate_history(
         let candidate = CandidateRecord {
             attempt,
             submitted_at: submitted_at.clone(),
-            submitted_at_local: None,
-            attachment_ids: attachment_ids.clone(),
+            submitted_at_local: submitted_at
+                .as_deref()
+                .map(|raw| {
+                    let ts: Timestamp = raw.parse().map_err(|_| JournalError::StateConflict)?;
+                    let zoned = ts.to_zoned(intent.zone()?);
+                    Ok::<_, JournalError>(format!("{}{}", zoned.datetime(), zoned.offset()))
+                })
+                .transpose()?,
+            attachment_ids: if row.kind == "online_upload" {
+                attachment_ids.clone()
+            } else {
+                Vec::new()
+            },
         };
-        candidates.push(candidate.clone());
+        if row.kind != "online_upload" {
+            candidates.push(candidate.clone());
+        }
 
         if row.kind == "online_upload" {
             let set: BTreeSet<_> = attachment_ids.into_iter().collect();
             if !uploaded.is_empty() && set == uploaded {
+                candidates.push(candidate.clone());
                 file_matches.push(entry.clone());
             }
         } else if row.kind == "online_text_entry" {
@@ -345,9 +290,10 @@ fn evaluate_history(
     let newer_attempt_visible = entries
         .iter()
         .any(|e| e.attempt.as_value().is_some_and(|a| *a > baseline))
-        || current_attempt > baseline;
-    let assume_available =
-        !newer_attempt_visible && now.as_nanosecond() - started.as_nanosecond() >= ASSUME_NS;
+        || current_attempt.is_some_and(|a| a > baseline);
+    let assume_available = !newer_attempt_visible
+        && current_attempt == Some(baseline)
+        && now.as_nanosecond() - started.as_nanosecond() >= ASSUME_NS;
 
     Ok(HistoryEval {
         candidates,
@@ -407,7 +353,7 @@ fn apply_positive_evidence(
             }
             0 => {
                 let message = if eval.candidates.is_empty()
-                    && eval.current_attempt == baseline
+                    && eval.current_attempt == Some(baseline)
                     && !eval.newer_attempt_visible
                 {
                     "no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes".into()
@@ -456,20 +402,20 @@ fn apply_positive_evidence(
         }
     }
 
-    // Text / URL: record server_match only; stay unknown.
+    // Replace stale evidence even when this read no longer has a match.
+    let json = serde_json::to_string(&eval.server_match)?;
+    transition(
+        store,
+        owner,
+        &row.journal_id,
+        State::OutcomeUnknown,
+        State::OutcomeUnknown,
+        TransitionPatch {
+            server_match_json: Some(json),
+            ..TransitionPatch::default()
+        },
+    )?;
     if let Some(server_match) = &eval.server_match {
-        let json = serde_json::to_string(&Some(server_match))?;
-        transition(
-            store,
-            owner,
-            &row.journal_id,
-            State::OutcomeUnknown,
-            State::OutcomeUnknown,
-            TransitionPatch {
-                server_match_json: Some(json),
-                ..TransitionPatch::default()
-            },
-        )?;
         let message = format!(
             "Canvas shows matching content at attempt {}; this CLI cannot prove it created that attempt; re-running submit creates a new attempt; receipts acknowledge retires the pending flag",
             server_match.attempt
@@ -491,11 +437,11 @@ fn apply_positive_evidence(
         });
     }
 
-    let message = if eval.candidates.is_empty() {
+    let message = if !eval.newer_attempt_visible && eval.current_attempt == Some(baseline) {
         "no attempt is visible; the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes".into()
     } else {
         format!(
-            "Canvas shows {} newer attempt(s), none matching; this CLI cannot prove it created any of them",
+            "Canvas shows {} newer attempt(s), none matching; this CLI cannot prove it created any of them; re-running submit creates a new attempt; receipts acknowledge retires the pending flag",
             eval.candidates.len()
         )
     };
@@ -562,6 +508,7 @@ async fn enrich_confirmed(
     store: &Store,
     paths: &Paths,
     row: &JournalRow,
+    owner: &OwnerLock,
 ) -> Result<ReconcileResult, ReconcileError> {
     let posted: PostedRecord = serde_json::from_str(
         row.response_record_json
@@ -570,7 +517,6 @@ async fn enrich_confirmed(
     )?;
     let attempt = posted.attempt.ok_or(JournalError::StateConflict)?;
     if row.readback_record_json.is_none()
-        && let Ok(owner) = OwnerLock::acquire(&paths.identity_dir, &row.journal_id)
         && let Ok(history) = get_submission_history(client, row.course_id, row.assignment_id).await
         && let Some(entry) = history
             .submission_history
@@ -580,9 +526,8 @@ async fn enrich_confirmed(
             .find(|e| e.attempt.as_value().copied() == Some(attempt))
     {
         let readback = readback_from_entry(entry);
-        let _ = enrich_readback(store, &owner, &row.journal_id, attempt, &readback);
+        let _ = enrich_readback(store, owner, &row.journal_id, attempt, &readback);
         let _ = export(store, paths, &row.journal_id, None);
-        drop(owner);
     }
     let row = get_journal(store, &row.journal_id)?.ok_or(JournalError::NotFound)?;
     let doc = rebuild_from_journal(store, &row.journal_id).ok();

@@ -640,6 +640,19 @@ pub fn recover_if_owner_absent(
     let Some(owner) = OwnerLock::try_acquire(identity_dir, journal_id)? else {
         return Ok(None);
     };
+    recover_owned(store, &owner, journal_id).map(Some)
+}
+
+/// Recover a stale operation after the caller acquired its absent owner's lock.
+pub fn recover_owned(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+) -> Result<State, JournalError> {
+    verify_store_directory(store, owner.identity_dir())?;
+    if !owner.matches(journal_id) {
+        return Err(JournalError::StateConflict);
+    }
     let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
     let (to, patch) = match row.state {
         State::Planned => (
@@ -664,10 +677,10 @@ pub fn recover_if_owner_absent(
                 ..TransitionPatch::default()
             },
         ),
-        other => return Ok(Some(other)),
+        other => return Ok(other),
     };
-    transition(store, &owner, journal_id, row.state, to, patch)?;
-    Ok(Some(to))
+    transition(store, owner, journal_id, row.state, to, patch)?;
+    Ok(to)
 }
 
 /// Load a journal row.

@@ -20,6 +20,8 @@ use thiserror::Error;
 use crate::journal::JournalError;
 
 #[cfg(test)]
+mod review_tests;
+#[cfg(test)]
 mod tests;
 
 /// Unified submit-domain error for callers that do not need finer mapping.
