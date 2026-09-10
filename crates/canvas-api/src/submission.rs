@@ -83,7 +83,8 @@ pub async fn post_submission(
 ) -> Result<(StatusCode, HeaderMap, Vec<u8>, Url), Error> {
     let path = format!("/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions");
     let url = client.api_url(&path)?;
-    let request = ApiRequest::new(Method::POST, url).json(&body.to_json())?;
+    let mut request = ApiRequest::new(Method::POST, url).json(&body.to_json())?;
+    request.preserve_error_response = true;
     client.execute_api(request).await
 }
 
@@ -207,5 +208,49 @@ mod tests {
         .to_json();
         assert_eq!(text["submission"]["body"], "<p>hi</p>");
         assert!(text.get("comment").is_none());
+    }
+}
+
+#[cfg(test)]
+mod response_tests {
+    use super::*;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    #[tokio::test]
+    async fn submission_retains_final_throttle_and_refused_redirect_responses() {
+        for status in [429, 302] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(status)
+                        .insert_header("Location", "https://elsewhere.test/")
+                        .set_body_json(json!({"error":"try later"})),
+                )
+                .expect(if status == 429 { 5 } else { 1 })
+                .mount(&server)
+                .await;
+            let client = Client::with_governor(
+                server.uri().parse().unwrap(),
+                crate::Secret::new("test"),
+                "test",
+                crate::GovernorConfig {
+                    jitter: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let response = post_submission(
+                &client,
+                1,
+                2,
+                &SubmissionBody::OnlineUrl {
+                    url: "https://example.test".into(),
+                    comment: None,
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.0.as_u16(), status);
+            assert!(is_canvas_error_body(&response.2));
+        }
     }
 }
