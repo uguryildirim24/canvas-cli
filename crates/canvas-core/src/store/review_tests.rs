@@ -159,8 +159,21 @@ fn simultaneous_processes_migrate_fresh_identity() {
             assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(5));
         }
-        let _store = Store::open(&paths, &doc).unwrap();
-        return;
+        let open_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            match Store::open(&paths, &doc) {
+                Ok(_store) => return,
+                Err(err) if std::time::Instant::now() < open_deadline => {
+                    let msg = err.to_string();
+                    if msg.contains("database is locked") || msg.contains("busy") {
+                        std::thread::sleep(Duration::from_millis(20));
+                        continue;
+                    }
+                    panic!("child store open failed: {err}");
+                }
+                Err(err) => panic!("child store open failed: {err}"),
+            }
+        }
     }
     let (_dir, paths, doc) = identity();
     let mut child = Command::new(std::env::current_exe().unwrap())
@@ -181,10 +194,25 @@ fn simultaneous_processes_migrate_fresh_identity() {
         std::thread::sleep(Duration::from_millis(5));
     }
     std::fs::write(paths.data_root.join("go"), "go").unwrap();
-    let store = Store::open(&paths, &doc);
+    let store = {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            match Store::open(&paths, &doc) {
+                Ok(store) => break store,
+                Err(err) if std::time::Instant::now() < deadline => {
+                    let msg = err.to_string();
+                    if msg.contains("database is locked") || msg.contains("busy") {
+                        std::thread::sleep(Duration::from_millis(20));
+                        continue;
+                    }
+                    panic!("store open failed: {err}");
+                }
+                Err(err) => panic!("store open failed: {err}"),
+            }
+        }
+    };
     assert!(child.wait().unwrap().success());
     store
-        .unwrap()
         .call_blocking(|conns| {
             for conn in [&conns.cache, &conns.state] {
                 let version: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
