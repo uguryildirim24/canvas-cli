@@ -37,7 +37,7 @@ pub fn sanitize_component(raw: &str, kind: ComponentKind, id: i64) -> String {
         out.clear();
     }
 
-    if out.starts_with('.') {
+    while out.starts_with('.') {
         out = out[out.chars().next().map_or(0, char::len_utf8)..].to_string();
         while out.ends_with(' ') || out.ends_with('.') {
             out.pop();
@@ -150,17 +150,34 @@ fn truncate_utf8_leaving_id_room(s: &mut String, id: i64) {
 /// Insert `-<file_id>` before the final extension (if any).
 #[must_use]
 pub fn with_file_id_suffix(name: &str, file_id: i64) -> String {
-    match name.rsplit_once('.') {
-        Some((stem, ext))
-            if !stem.is_empty()
-                && !ext.is_empty()
-                && !ext.contains('/')
-                && ext.chars().all(|c| c.is_ascii_alphanumeric()) =>
-        {
-            format!("{stem}-{file_id}.{ext}")
-        }
-        _ => format!("{name}-{file_id}"),
+    let (stem, ext) = name
+        .rsplit_once('.')
+        .filter(|(stem, ext)| !stem.is_empty() && !ext.is_empty())
+        .map_or((name, String::new()), |(stem, ext)| {
+            (stem, format!(".{ext}"))
+        });
+    let suffix = format!("-{file_id}");
+    let mut ext = ext;
+    truncate_to(&mut ext, 180 - suffix.len() - 1);
+    let mut base = stem;
+    while let Some(tail) = base.strip_suffix(&suffix) {
+        base = tail;
     }
+    let previous = &stem[base.len()..];
+    let mut base = base.to_owned();
+    truncate_to(
+        &mut base,
+        180usize.saturating_sub(suffix.len() + previous.len() + ext.len()),
+    );
+    format!("{base}{previous}{suffix}{ext}")
+}
+
+fn truncate_to(s: &mut String, max: usize) {
+    let mut end = s.len().min(max);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.truncate(end);
 }
 
 /// Case-insensitive NFC key for uniqueness comparison.
@@ -182,7 +199,8 @@ pub struct PathDraft {
 #[must_use]
 pub fn uniquify_paths(drafts: &[PathDraft]) -> Vec<String> {
     let mut paths: Vec<String> = drafts.iter().map(|d| d.path.clone()).collect();
-    let mut reserved: HashSet<String> = HashSet::new();
+    let mut reserved: HashSet<String> = drafts.iter().map(|d| uniqueness_key(&d.path)).collect();
+    let mut rounds = vec![0usize; drafts.len()];
 
     loop {
         let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
@@ -196,12 +214,26 @@ pub fn uniquify_paths(drafts: &[PathDraft]) -> Vec<String> {
             .filter(|idxs| idxs.len() > 1)
             .flatten()
             .collect();
+        let keys: Vec<_> = paths.iter().map(|p| uniqueness_key(p)).collect();
+        for (i, key) in keys.iter().enumerate() {
+            if keys
+                .iter()
+                .any(|other| other.starts_with(&format!("{key}/")))
+            {
+                collision_idxs.push(i);
+            }
+        }
         collision_idxs.sort_unstable();
+        collision_idxs.dedup();
 
         for i in collision_idxs {
             let file_id = drafts[i].file_id;
-            let (parent, name) = split_parent_name(&paths[i]);
-            let mut candidate_name = with_file_id_suffix(name, file_id);
+            rounds[i] += 1;
+            let (parent, name) = split_parent_name(&drafts[i].path);
+            let mut candidate_name = name.to_owned();
+            for _ in 0..rounds[i] {
+                candidate_name = with_file_id_suffix(&candidate_name, file_id);
+            }
             let mut candidate = join_parent(parent, &candidate_name);
             // If still collides with a reserved or another path's current key after this
             // round's intended set, keep the id suffix (already applied); further rounds
@@ -345,5 +377,73 @@ mod tests {
         ];
         let paths = uniquify_paths(&drafts);
         assert_ne!(uniqueness_key(&paths[0]), uniqueness_key(&paths[1]));
+    }
+    #[test]
+    fn truncation_unicode_extension_and_cascading_collisions() {
+        let long = sanitize_component(&format!("{}.資料", "é".repeat(200)), ComponentKind::File, 1);
+        assert!(long.len() <= 178);
+        let drafts = vec![
+            PathDraft {
+                path: "c/a.pdf".into(),
+                file_id: 1,
+            },
+            PathDraft {
+                path: "c/A.pdf".into(),
+                file_id: 2,
+            },
+            PathDraft {
+                path: "c/a-1.pdf".into(),
+                file_id: 3,
+            },
+            PathDraft {
+                path: "c/a-1-1.pdf".into(),
+                file_id: 4,
+            },
+        ];
+        let out = uniquify_paths(&drafts);
+        assert_eq!(
+            out.iter()
+                .map(|p| uniqueness_key(p))
+                .collect::<HashSet<_>>()
+                .len(),
+            4
+        );
+        assert_eq!(out, uniquify_paths(&drafts));
+        assert_eq!(with_file_id_suffix("notes.資料", 8), "notes-8.資料");
+        let drafts = vec![
+            PathDraft {
+                path: long.clone(),
+                file_id: 1,
+            },
+            PathDraft {
+                path: long,
+                file_id: 2,
+            },
+        ];
+        assert!(uniquify_paths(&drafts).iter().all(|p| p.len() <= 180));
+        assert!(!sanitize_component("..hidden", ComponentKind::File, 1).starts_with('.'));
+        for prefix in ["COM", "LPT"] {
+            for n in 0..=9 {
+                assert!(
+                    sanitize_component(&format!("{prefix}{n}"), ComponentKind::File, 1)
+                        .ends_with('_')
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_cannot_occupy_another_files_parent() {
+        let out = uniquify_paths(&[
+            PathDraft {
+                path: "c/a".into(),
+                file_id: 1,
+            },
+            PathDraft {
+                path: "c/a/b".into(),
+                file_id: 2,
+            },
+        ]);
+        assert_eq!(out, ["c/a-1", "c/a/b"]);
     }
 }

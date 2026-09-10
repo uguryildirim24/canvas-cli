@@ -110,9 +110,8 @@ pub struct PlannedFile {
 }
 
 /// Plan all paths for a course. Independent of `--module` / `--file` filters.
-#[must_use]
 #[allow(clippy::too_many_lines)]
-pub fn plan_course(input: &PlanInput) -> Vec<PlannedFile> {
+pub fn plan_course(input: &PlanInput) -> Result<Vec<PlannedFile>, PlanError> {
     let course_root = format!(
         "{}-{}",
         sanitize_component(&input.course_code, ComponentKind::Folder, input.course_id),
@@ -127,8 +126,12 @@ pub fn plan_course(input: &PlanInput) -> Vec<PlannedFile> {
         std::collections::HashMap::new();
     let mut externals: Vec<PlannedFile> = Vec::new();
 
-    for module in &input.modules {
-        for item in &module.items {
+    let mut modules: Vec<_> = input.modules.iter().collect();
+    modules.sort_by_key(|m| (m.position, m.id));
+    for module in modules {
+        let mut items: Vec<_> = module.items.iter().collect();
+        items.sort_by_key(|i| (i.position, i.id));
+        for item in items {
             if item.item_type.eq_ignore_ascii_case("ExternalTool") {
                 externals.push(PlannedFile {
                     file_id: item.content_id.unwrap_or(item.id),
@@ -154,9 +157,13 @@ pub fn plan_course(input: &PlanInput) -> Vec<PlannedFile> {
             if replace {
                 owner_key.insert(file_id, key);
                 let nn = format!("{:02}", module.position);
-                let slug = sanitize_component(&module.name, ComponentKind::Module, module.id);
+                let slug = sanitize_component(
+                    &format!("{nn}-{}", module.name),
+                    ComponentKind::Module,
+                    module.id,
+                );
                 let display = sanitize_component(&item.title, ComponentKind::File, file_id);
-                let path = format!("{course_root}/modules/{nn}-{slug}/{display}");
+                let path = format!("{course_root}/modules/{slug}/{display}");
                 module_owner.insert(file_id, (file_id, module.id, path, None, None));
             }
         }
@@ -167,12 +174,17 @@ pub fn plan_course(input: &PlanInput) -> Vec<PlannedFile> {
         input.files.iter().map(|f| (f.id, f)).collect();
     for (fid, entry) in &mut module_owner {
         if let Some(f) = listing_by_id.get(fid) {
+            let parent = entry.2.rsplit_once('/').expect("planned parent").0;
+            entry.2 = format!(
+                "{parent}/{}",
+                sanitize_component(&f.display_name, ComponentKind::File, f.id)
+            );
             entry.3 = f.size;
             entry.4.clone_from(&f.updated_at);
         }
     }
 
-    let folder_paths = build_folder_paths(&input.folders);
+    let folder_paths = build_folder_paths(&input.folders)?;
 
     let mut drafts: Vec<PathDraft> = Vec::new();
     let mut meta: Vec<(i64, PlannedSource, Option<u64>, Option<String>)> = Vec::new();
@@ -192,8 +204,9 @@ pub fn plan_course(input: &PlanInput) -> Vec<PlannedFile> {
         ));
     }
 
+    let mut seen_files = std::collections::HashSet::new();
     for file in &input.files {
-        if module_owner.contains_key(&file.id) {
+        if module_owner.contains_key(&file.id) || !seen_files.insert(file.id) {
             continue;
         }
         let folder_rel = folder_paths
@@ -243,49 +256,41 @@ pub fn plan_course(input: &PlanInput) -> Vec<PlannedFile> {
         })
         .collect();
     out.extend(externals);
-    out
+    Ok(out)
 }
 
-fn build_folder_paths(folders: &[PlanFolder]) -> std::collections::HashMap<i64, String> {
-    let by_id: std::collections::HashMap<i64, &PlanFolder> =
-        folders.iter().map(|f| (f.id, f)).collect();
-    let mut cache: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum PlanError {
+    #[error("cycle in folder tree at folder {0}")]
+    FolderCycle(i64),
+}
 
+fn build_folder_paths(
+    folders: &[PlanFolder],
+) -> Result<std::collections::HashMap<i64, String>, PlanError> {
+    let by_id: std::collections::HashMap<_, _> = folders.iter().map(|f| (f.id, f)).collect();
+    let mut paths = std::collections::HashMap::new();
     for folder in folders {
-        let _ = resolve_folder_path(folder.id, &by_id, &mut cache);
-    }
-    cache
-}
-
-fn resolve_folder_path(
-    id: i64,
-    by_id: &std::collections::HashMap<i64, &PlanFolder>,
-    cache: &mut std::collections::HashMap<i64, String>,
-) -> String {
-    if let Some(existing) = cache.get(&id) {
-        return existing.clone();
-    }
-    let Some(folder) = by_id.get(&id).copied() else {
-        return String::new();
-    };
-    if folder.is_root {
-        cache.insert(id, String::new());
-        return String::new();
-    }
-    let name = sanitize_component(&folder.name, ComponentKind::Folder, folder.id);
-    let path = match folder.parent_folder_id {
-        Some(parent) => {
-            let parent_path = resolve_folder_path(parent, by_id, cache);
-            if parent_path.is_empty() {
-                name
-            } else {
-                format!("{parent_path}/{name}")
+        let mut seen = std::collections::HashSet::new();
+        let mut components = Vec::new();
+        let mut current = Some(folder.id);
+        while let Some(id) = current {
+            if !seen.insert(id) {
+                return Err(PlanError::FolderCycle(id));
             }
+            let Some(f) = by_id.get(&id) else {
+                break;
+            };
+            if f.is_root {
+                break;
+            }
+            components.push(sanitize_component(&f.name, ComponentKind::Folder, f.id));
+            current = f.parent_folder_id;
         }
-        None => name,
-    };
-    cache.insert(id, path.clone());
-    path
+        components.reverse();
+        paths.insert(folder.id, components.join("/"));
+    }
+    Ok(paths)
 }
 
 #[cfg(test)]
@@ -326,7 +331,7 @@ mod tests {
             folders: vec![],
             files: vec![],
         };
-        let planned = plan_course(&input);
+        let planned = plan_course(&input).unwrap();
         assert_eq!(planned.len(), 1);
         assert!(planned[0].path.contains("modules/01-Week A") || planned[0].path.contains("01-"));
         assert!(matches!(
@@ -363,8 +368,34 @@ mod tests {
                 updated_at: None,
             }],
         };
-        let planned = plan_course(&input);
+        let planned = plan_course(&input).unwrap();
         assert_eq!(planned.len(), 1);
         assert!(planned[0].path.ends_with("files/Slides/lec.pdf"));
+    }
+    #[test]
+    fn cycle_is_an_error_and_listing_duplicates_are_one_file() {
+        let mut input = PlanInput {
+            course_code: "CS".into(),
+            course_id: 1,
+            modules: vec![],
+            folders: vec![PlanFolder {
+                id: 1,
+                name: "loop".into(),
+                parent_folder_id: Some(1),
+                is_root: false,
+            }],
+            files: vec![],
+        };
+        assert_eq!(plan_course(&input), Err(PlanError::FolderCycle(1)));
+        input.folders.clear();
+        let file = PlanFile {
+            id: 1,
+            display_name: "x".into(),
+            folder_id: 1,
+            size: None,
+            updated_at: None,
+        };
+        input.files = vec![file.clone(), file];
+        assert_eq!(plan_course(&input).unwrap().len(), 1);
     }
 }
