@@ -1,11 +1,13 @@
 //! Canvas LMS HTTP client, secrets, and API models.
 
+pub mod download;
 pub mod error;
 pub mod governor;
 pub mod models;
 pub mod redact;
 pub mod request;
 pub mod serde_util;
+pub mod upload;
 
 use std::fmt;
 use std::sync::Arc;
@@ -65,6 +67,7 @@ struct ClientInner {
     token: Secret,
     user_agent: String,
     http: HttpClient,
+    transfer_http: HttpClient,
     governor: Governor,
 }
 
@@ -91,14 +94,40 @@ impl Client {
         user_agent: &str,
         mut governor: GovernorConfig,
     ) -> Result<Self, Error> {
+        if !matches!(origin.scheme(), "http" | "https")
+            || origin.host_str().is_none()
+            || !origin.username().is_empty()
+            || origin.password().is_some()
+            || origin.query().is_some()
+            || origin.fragment().is_some()
+            || origin.path() != "/"
+        {
+            return Err(Error::CrossOrigin);
+        }
+        HeaderValue::from_str(&format!("Bearer {}", token.expose()))
+            .map_err(|_| Error::Unauthorized)?;
         governor.api_concurrency = governor.api_concurrency.clamp(1, 8);
         let http = HttpClient::builder()
             .use_rustls_tls()
+            .no_proxy()
             .gzip(true)
             .brotli(true)
             .redirect(Policy::none())
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
+            .user_agent(user_agent)
+            .build()
+            .map_err(|_| Error::Network)?;
+
+        // Transfer lane: connect 10s, idle-read 60s, no total timeout; no auto decompress.
+        let transfer_http = HttpClient::builder()
+            .use_rustls_tls()
+            .no_proxy()
+            .no_gzip()
+            .no_brotli()
+            .redirect(Policy::none())
+            .connect_timeout(Duration::from_secs(10))
+            .read_timeout(Duration::from_secs(60))
             .user_agent(user_agent)
             .build()
             .map_err(|_| Error::Network)?;
@@ -109,6 +138,7 @@ impl Client {
                 token,
                 user_agent: user_agent.to_owned(),
                 http,
+                transfer_http,
                 governor: Governor::new(governor),
             }),
         })
@@ -251,6 +281,10 @@ impl Client {
 
     pub(crate) fn http(&self) -> &HttpClient {
         &self.inner.http
+    }
+
+    pub(crate) fn transfer_http(&self) -> &HttpClient {
+        &self.inner.transfer_http
     }
 
     pub(crate) fn same_origin(&self, url: &Url) -> bool {
