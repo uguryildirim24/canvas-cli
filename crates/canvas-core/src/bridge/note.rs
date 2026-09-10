@@ -7,7 +7,7 @@
 //! and the socket protocol has no approval message at all, so a note whose
 //! text or refs are shaped like an approval payload changes exactly nothing.
 //!
-//! Two bounds are applied here, before a note is stored:
+//! Three bounds are applied here, before a note is stored:
 //!
 //! - the text is at most [`MAX_NOTE_BYTES`] of UTF-8, and an oversize note is
 //!   refused rather than silently cut, because a note the person reads must
@@ -15,7 +15,9 @@
 //! - every source ref is `https://<the granted origin>/…` or `canvas://…`.
 //!   Anything else is refused. Links **inside** the text are a separate
 //!   matter: the panel's renderer decides those, and it never builds a link
-//!   to anywhere but the same two places.
+//!   to anywhere but the same two places;
+//! - one attachment holds at most [`MAX_NOTES`], because every push of the
+//!   panel carries all of them and a native message is bounded at 1 MiB.
 
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +31,22 @@ pub const MAX_NOTE_BYTES: usize = 8 * 1024;
 /// A note is a paragraph with citations, not a link dump. The bound exists so
 /// one note cannot fill the panel with rows.
 pub const MAX_SOURCE_REFS: usize = 16;
+
+/// The largest number of notes one attachment holds at a time.
+///
+/// Every push of the panel carries every held note, and a native message is
+/// bounded at 1 MiB ([`crate::bridge::framing::MAX_MESSAGE_BYTES`]). Without
+/// a bound here, a consumer writing notes at the 8 KiB limit would eventually
+/// make that message unsendable — and the host treats a write it cannot send
+/// as a lost pipe and stops. So the count is bounded well inside the frame:
+/// 32 notes at their own limit are 256 KiB, which leaves the journals, the
+/// plans, and the API envelopes their room.
+///
+/// The note over the bound is **refused**, not dropped in favour of the new
+/// one, for the same reason an oversize note is refused rather than cut: the
+/// person keeps what they were shown, and the agent is told (exit 8,
+/// `note_rejected`) instead of writing into a feed that quietly forgets.
+pub const MAX_NOTES: usize = 32;
 
 /// The scheme this project's own references use.
 pub const CANVAS_SCHEME: &str = "canvas://";
@@ -85,9 +103,14 @@ pub fn is_allowed_ref(value: &str, origin: &str) -> bool {
 
 /// Check one note's text and refs against the bounds above.
 ///
-/// The refusals are separate so a caller can say which bound was crossed
-/// without the person having to guess.
-pub fn check(text: &str, source_refs: &[String], origin: &str) -> Result<(), Reason> {
+/// `held` is how many notes the attachment already holds, so the count bound
+/// is checked in the same place as the size bound. The refusals are separate
+/// so a caller can say which bound was crossed without the person having to
+/// guess.
+pub fn check(text: &str, source_refs: &[String], origin: &str, held: usize) -> Result<(), Reason> {
+    if held >= MAX_NOTES {
+        return Err(Reason::NoteRejected);
+    }
     if text.trim().is_empty() {
         return Err(Reason::NoteRejected);
     }
@@ -138,25 +161,45 @@ mod tests {
     #[test]
     fn an_oversize_note_is_refused_rather_than_cut() {
         let big = "x".repeat(MAX_NOTE_BYTES + 1);
-        assert_eq!(check(&big, &[], ORIGIN), Err(Reason::NoteTooLarge));
+        assert_eq!(check(&big, &[], ORIGIN, 0), Err(Reason::NoteTooLarge));
         let exact = "x".repeat(MAX_NOTE_BYTES);
-        assert_eq!(check(&exact, &[], ORIGIN), Ok(()));
+        assert_eq!(check(&exact, &[], ORIGIN, 0), Ok(()));
     }
 
     #[test]
     fn an_empty_note_and_a_bad_ref_are_refused() {
-        assert_eq!(check("   \n ", &[], ORIGIN), Err(Reason::NoteRejected));
+        assert_eq!(check("   \n ", &[], ORIGIN, 0), Err(Reason::NoteRejected));
         assert_eq!(
-            check("hello", &["javascript:alert(1)".to_owned()], ORIGIN),
+            check("hello", &["javascript:alert(1)".to_owned()], ORIGIN, 0),
             Err(Reason::SourceRefRejected)
         );
         assert_eq!(
             check(
                 "hello",
                 &vec!["canvas://a".to_owned(); MAX_SOURCE_REFS + 1],
-                ORIGIN
+                ORIGIN,
+                0
             ),
             Err(Reason::NoteRejected)
+        );
+    }
+
+    /// The panel push carries every held note, so the count is bounded too:
+    /// notes at their own limit must not add up to a native message the host
+    /// cannot send.
+    #[test]
+    fn an_attachment_holds_only_so_many_notes() {
+        assert_eq!(check("hello", &[], ORIGIN, MAX_NOTES - 1), Ok(()));
+        assert_eq!(
+            check("hello", &[], ORIGIN, MAX_NOTES),
+            Err(Reason::NoteRejected)
+        );
+        // Whatever the bound is, the notes it permits must fit in one frame
+        // with room left for the rest of the panel.
+        let worst = MAX_NOTES * MAX_NOTE_BYTES;
+        assert!(
+            worst * 2 < crate::bridge::framing::MAX_MESSAGE_BYTES as usize,
+            "{MAX_NOTES} notes of {MAX_NOTE_BYTES} bytes leave no room for the panel"
         );
     }
 }

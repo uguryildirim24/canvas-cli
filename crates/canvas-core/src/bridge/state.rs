@@ -630,7 +630,8 @@ impl Broker {
         self.may_read(attachment_id, consumer)?;
         self.check_generation(generation)?;
         let origin = self.origin().to_owned();
-        note::check(text, source_refs, &origin)?;
+        let held = self.attachment.as_ref().map_or(0, |c| c.notes.len());
+        note::check(text, source_refs, &origin, held)?;
         let current = self.attachment.as_mut().ok_or(Reason::NotAttached)?;
         let note = Note {
             note_id: new_attachment_id(),
@@ -1548,6 +1549,29 @@ mod tests {
         // field exists on this protocol to carry.
         let encoded = serde_json::to_string(&context).expect("encode");
         assert!(!encoded.contains("\"approved\""), "{encoded}");
+    }
+
+    /// The panel push carries every held note, so the broker stops holding
+    /// them before that message grows past what native messaging can carry.
+    ///
+    /// The note over the bound is refused, and the notes already held are
+    /// untouched: the person keeps every note they were shown.
+    #[test]
+    fn an_attachment_stops_holding_notes_before_the_panel_push_grows_too_large() {
+        let (mut broker, id) = attached();
+        let at = "2026-09-10T10:01:00Z";
+        for n in 0..note::MAX_NOTES {
+            broker
+                .note(Some(&id), None, 1, &format!("note {n}"), &[], at)
+                .unwrap_or_else(|e| panic!("note {n} was refused: {e}"));
+        }
+        assert_eq!(broker.notes().len(), note::MAX_NOTES);
+        assert_eq!(
+            broker.note(Some(&id), None, 1, "one more", &[], at),
+            Err(Reason::NoteRejected)
+        );
+        assert_eq!(broker.notes().len(), note::MAX_NOTES, "nothing was dropped");
+        assert_eq!(broker.notes()[0].text, "note 0", "the oldest is still held");
     }
 
     // ------------------------------------------------------ M7-b: follow
