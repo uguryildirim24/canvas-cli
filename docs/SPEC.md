@@ -1344,7 +1344,7 @@ There is no `host_permissions`, no `content_scripts`, no `externally_connectable
 
 `activeTab` is the whole access model. The extension is injected only by `chrome.scripting.executeScript` inside a gesture — a click on the toolbar action or `Alt+Shift+C` — and only into the tab that gesture named. A declarative `content_scripts` entry would need `host_permissions` and would inject into every Canvas page unasked.
 
-**The lifecycle.** A gesture on an unattached tab opens the side panel, connects the native port, injects the isolated-world scripts, and offers one observation. A second gesture on the same tab detaches: the toolbar button is the way to stop sharing as well as to start. A committed navigation of the attached tab increments a **navigation generation** when the origin is unchanged and ends the attachment when it is not. Sharing pauses on a hidden tab after `bridge.pause_hidden_after`, on entering an assessment, on a tab close, and on host loss. Every message the extension sends carries the tab id and the navigation generation the service worker holds.
+**The lifecycle.** A gesture on an unattached tab opens the side panel, connects the native port, injects the isolated-world scripts, and offers one observation. A second gesture on the same tab detaches: the toolbar button is the way to stop sharing as well as to start. A committed navigation of the attached tab increments a **navigation generation** when the origin is unchanged and ends the attachment when it is not. Sharing **pauses** on a hidden tab after `bridge.pause_hidden_after` and on entering an assessment; it **ends** on a tab close, on a second gesture, on a cross-origin navigation, and on host loss, which the service worker sees as a disconnected port and reports to nobody, because the host is what is gone. Every message the extension sends carries the tab id and the navigation generation the service worker holds.
 
 The service worker performs no fetch and reads no page. It relays; it composes nothing that the panel shows, and the panel's one message back — a decision on a plan — travels to the host unchanged, for the host to check.
 
@@ -1416,7 +1416,7 @@ Chrome's native-messaging framing: a 4-byte **native-endian** length, then UTF-8
 | `decision` — the person approved, declined, or cancelled a plan | `panel` — everything the panel shows |
 | `panel_hello` — the panel opened, or reloaded | |
 
-A pause carries its cause: `hidden`, `assessment`, `tab_closed`, `user_detached`, or `cross_origin`.
+`pause` and `detach` draw their cause from one list — `hidden`, `assessment`, `tab_closed`, `user_detached`, `cross_origin` — and the message says which half it is: the extension pauses for `hidden` and `assessment`, and detaches for the other three.
 
 **What `Broker::update` does with an observation.** A different origin ends the attachment. A different tab is a protocol error. A different browser-profile instance ends it. A **lower** navigation generation is `stale_generation`. An unverified account erases the stored observation, pauses, and refuses. `zone == assessment` erases and pauses. A new document id moves the attachment to `validating`, and nothing is released until the extension confirms it. An **equal** generation with a different document id is accepted as a new document; §19 item 32 owns that reading. One identity holds one attachment: a newer tab replaces an older one.
 
