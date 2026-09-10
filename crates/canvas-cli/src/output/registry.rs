@@ -332,18 +332,44 @@ mod tests {
     fn every_registered_schema_has_a_parseable_fixture() {
         use crate::output::now::with_canvas_now;
         with_canvas_now("2026-09-09T17:05:12Z", || {
+            let mut rendered = Vec::new();
+            let mut ids = std::collections::HashSet::new();
             for entry in all_schemas() {
+                assert!(ids.insert(entry.id), "duplicate schema {}", entry.id);
                 let result: serde_json::Value =
                     serde_json::from_str(entry.fixture).unwrap_or_else(|e| {
                         panic!("fixture for {} is not JSON: {e}", entry.id);
                     });
-                let env = Envelope::new(entry.id, None, None).with_result(result);
+                let local = matches!(
+                    entry.id,
+                    SCHEMA_CONFIG | SCHEMA_IDENTITY | SCHEMA_VERSION | SCHEMA_DOCTOR | SCHEMA_ERROR
+                );
+                let mut env = Envelope::new(
+                    entry.id,
+                    if local { None } else { Some("default".into()) },
+                    if local {
+                        None
+                    } else {
+                        Some(IdentityRef {
+                            origin: "https://example.instructure.com".into(),
+                            user_id: "1".into(),
+                            key: "example.instructure.com-1-deadbeef".into(),
+                        })
+                    },
+                )
+                .with_result(result);
+                if entry.id == SCHEMA_ERROR {
+                    env.outcome = crate::output::Outcome::Error;
+                    env.exit = 3;
+                }
                 let mut buf = Vec::new();
                 env.write_json(&mut buf).unwrap();
                 let parsed: serde_json::Value = serde_json::from_slice(&buf).unwrap();
                 assert_eq!(parsed["schema"], entry.id);
                 assert!(parsed.get("result").is_some(), "{}", entry.id);
+                rendered.push(parsed);
             }
+            insta::assert_json_snapshot!("registered_envelopes", rendered);
         });
     }
 
