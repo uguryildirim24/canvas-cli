@@ -129,47 +129,48 @@ impl TransferRequest {
     }
 }
 
+pub(crate) type ApiResponse = (StatusCode, HeaderMap, Vec<u8>, Url);
+
 pub(crate) async fn execute_api(
     client: &Client,
     request: ApiRequest,
-) -> Result<(StatusCode, HeaderMap, Vec<u8>), Error> {
-    let mut attempt = 0_u32;
-    loop {
-        let result = execute_api_once(client, &request).await;
-        match result {
-            Ok((status, headers, body)) if is_rate_limited(status, &body) && attempt < 4 => {
-                let retry_after = parse_retry_after(&headers);
-                let _delay = retry_delays(attempt, retry_after, client.governor().jitter()).await;
-                attempt += 1;
-            }
-            other => return other,
+) -> Result<ApiResponse, Error> {
+    for attempt in 0..=4 {
+        let (status, headers, body, url) = execute_api_once(client, &request).await?;
+        if !is_rate_limited(status, &body) {
+            return Ok((status, headers, body, url));
         }
+        if attempt == 4 {
+            return Err(Error::RateLimited);
+        }
+        retry_delays(
+            attempt,
+            parse_retry_after(&headers),
+            client.governor().jitter(),
+        )
+        .await;
     }
+    unreachable!("bounded retries return on the final attempt")
 }
 
-async fn execute_api_once(
-    client: &Client,
-    request: &ApiRequest,
-) -> Result<(StatusCode, HeaderMap, Vec<u8>), Error> {
-    let permit = client.governor().admit(Lane::Api, &request.route_key).await;
-    let issue = permit.issue();
-
+async fn execute_api_once(client: &Client, request: &ApiRequest) -> Result<ApiResponse, Error> {
     let mut method = request.method.clone();
     let mut url = request.url.clone();
     let mut body = request.body.clone();
-    let original_was_get = request.method == Method::GET;
-
     for hop in 0..=5 {
-        if hop > 5 {
-            return Err(Error::UnexpectedRedirect);
-        }
         if !client.same_origin(&url) {
             return Err(Error::CrossOrigin);
         }
-
+        // Each hop is an actual request with its own issue number and cost.
+        let route = if hop == 0 {
+            request.route_key.clone()
+        } else {
+            route_key_for(&method, &url)
+        };
+        let permit = client.governor().admit(Lane::Api, &route).await;
         let mut builder = client.http().request(method.clone(), url.clone());
-        for (name, value) in &request.headers {
-            builder = builder.header(name, value);
+        if body.is_some() {
+            builder = builder.headers(request.headers.clone());
         }
         if let Some(auth) = client.auth_header_for(&url) {
             builder = builder.header(reqwest::header::AUTHORIZATION, auth);
@@ -177,48 +178,37 @@ async fn execute_api_once(
         if let Some(ref bytes) = body {
             builder = builder.body(bytes.clone());
         }
-
         let response = builder.send().await.map_err(|e| map_reqwest_error(&e))?;
         let status = response.status();
         let headers = response.headers().clone();
-        observe_headers(client, issue, &headers);
-
+        observe_headers(client, permit.issue(), &headers);
         if is_redirect(status) {
-            if hop == 5 {
-                return Err(Error::UnexpectedRedirect);
-            }
             let location = location_url(&url, &headers)?;
             if !client.same_origin(&location) {
                 return Err(Error::CrossOrigin);
+            }
+            if hop == 5 {
+                return Err(Error::UnexpectedRedirect);
             }
             match status.as_u16() {
                 303 => {
                     method = Method::GET;
                     body = None;
                 }
-                301 | 302 => {
-                    if !original_was_get && method != Method::GET {
-                        return Err(Error::UnexpectedRedirect);
-                    }
-                    // 301/302 → GET only when the original was GET.
-                    if original_was_get {
-                        method = Method::GET;
-                        body = None;
-                    } else {
-                        return Err(Error::UnexpectedRedirect);
-                    }
+                301 | 302 if request.method == Method::GET => {
+                    method = Method::GET;
+                    body = None;
                 }
-                307 | 308 => {
-                    // same method and body
-                }
+                307 | 308 => {}
                 _ => return Err(Error::UnexpectedRedirect),
             }
             url = location;
-            continue;
+        } else if status.is_redirection() {
+            return Err(Error::UnexpectedRedirect);
+        } else {
+            let bytes = response.bytes().await.map_err(|e| map_reqwest_error(&e))?;
+            return Ok((status, headers, bytes.to_vec(), url));
         }
-
-        let bytes = response.bytes().await.map_err(|e| map_reqwest_error(&e))?;
-        return Ok((status, headers, bytes.to_vec()));
     }
     Err(Error::UnexpectedRedirect)
 }
@@ -227,120 +217,144 @@ pub(crate) async fn execute_transfer(
     client: &Client,
     request: TransferRequest,
 ) -> Result<TransferResponse, Error> {
-    if !matches!(request.url.scheme(), "http" | "https") {
-        return Err(Error::Network);
-    }
-
-    let mut attempt = 0_u32;
-    loop {
-        let result = execute_transfer_once(client, &request).await;
-        match result {
-            Ok(resp) if is_rate_limited(resp.status, &resp.body) && attempt < 4 => {
-                let retry_after = parse_retry_after(&resp.headers);
-                let _delay = retry_delays(attempt, retry_after, client.governor().jitter()).await;
-                attempt += 1;
+    validate_transfer_url(&request.url)?;
+    for attempt in 0..=4 {
+        let response = execute_transfer_once(client, &request).await?;
+        if is_rate_limited(response.status, &response.body) {
+            // The upload stream must never be replayed. Its caller owns recovery.
+            if request.kind == TransferKind::Upload || attempt == 4 {
+                return Err(Error::RateLimited);
             }
-            other => return other,
+            retry_delays(
+                attempt,
+                parse_retry_after(&response.headers),
+                client.governor().jitter(),
+            )
+            .await;
+            continue;
         }
+        if request.kind == TransferKind::Download && !response.status.is_success() {
+            if client.same_origin(&response.final_url) {
+                return Err(Error::Denied {
+                    status: response.status.as_u16(),
+                });
+            }
+            if response.status == StatusCode::FORBIDDEN {
+                return Err(Error::StorageExpired);
+            }
+            return Err(Error::Denied {
+                status: response.status.as_u16(),
+            });
+        }
+        return Ok(response);
     }
+    unreachable!("bounded retries return on the final attempt")
 }
 
 async fn execute_transfer_once(
     client: &Client,
     request: &TransferRequest,
 ) -> Result<TransferResponse, Error> {
-    let permit = client
-        .governor()
-        .admit(Lane::Storage, &request.route_key)
-        .await;
-    let issue = permit.issue();
-
-    match request.kind {
-        TransferKind::Upload => {
-            // Multipart upload POST: never attach token; never auto-follow.
-            // 3xx responses are returned to the caller for completion handoff.
-            let mut builder = client
-                .transfer_http()
-                .request(request.method.clone(), request.url.clone());
-            for (name, value) in &request.headers {
-                builder = builder.header(name, value);
-            }
-            if let Some(ref bytes) = request.body {
-                builder = builder.body(bytes.clone());
-            }
-            let response = builder.send().await.map_err(|e| map_reqwest_error(&e))?;
-            let status = response.status();
-            let headers = response.headers().clone();
-            observe_headers(client, issue, &headers);
-            let body = if is_redirect(status) {
-                Vec::new()
-            } else {
-                response
-                    .bytes()
-                    .await
-                    .map_err(|e| map_reqwest_error(&e))?
-                    .to_vec()
-            };
-            Ok(TransferResponse {
-                status,
-                headers,
-                body,
-                final_url: request.url.clone(),
-            })
+    let mut url = request.url.clone();
+    for hop in 0..=5 {
+        validate_transfer_url(&url)?;
+        let permit = client
+            .governor()
+            .admit(Lane::Storage, &request.route_key)
+            .await;
+        let headers = transfer_headers(client, request, &url);
+        let mut builder = client
+            .transfer_http()
+            .request(request.method.clone(), url.clone())
+            .headers(headers);
+        if request.kind == TransferKind::Upload
+            && let Some(ref bytes) = request.body
+        {
+            builder = builder.body(bytes.clone());
         }
-        TransferKind::Download => {
-            let mut url = request.url.clone();
-            for hop in 0..=5 {
-                if hop > 5 {
-                    return Err(Error::UnexpectedRedirect);
-                }
-                if !matches!(url.scheme(), "http" | "https") {
-                    return Err(Error::Network);
-                }
-                let mut builder = client.transfer_http().request(Method::GET, url.clone());
-                for (name, value) in &request.headers {
-                    builder = builder.header(name, value);
-                }
-                builder = builder.header(
-                    reqwest::header::ACCEPT_ENCODING,
-                    HeaderValue::from_static("identity"),
-                );
-                if let Some(auth) = client.auth_header_for(&url) {
-                    builder = builder.header(reqwest::header::AUTHORIZATION, auth);
-                }
-                let response = builder.send().await.map_err(|e| map_reqwest_error(&e))?;
-                let status = response.status();
-                let headers = response.headers().clone();
-                observe_headers(client, issue, &headers);
-
-                if is_redirect(status) {
-                    if hop == 5 {
-                        return Err(Error::UnexpectedRedirect);
-                    }
-                    let location = location_url(&url, &headers)?;
-                    if !matches!(location.scheme(), "http" | "https") {
-                        return Err(Error::Network);
-                    }
-                    url = location;
-                    continue;
-                }
-
-                let body = response.bytes().await.map_err(|e| map_reqwest_error(&e))?;
-                return Ok(TransferResponse {
-                    status,
-                    headers,
-                    body: body.to_vec(),
-                    final_url: url,
-                });
+        let response = builder.send().await.map_err(|e| map_reqwest_error(&e))?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        observe_headers(client, permit.issue(), &headers);
+        if request.kind == TransferKind::Upload {
+            // Surface the validated completion handoff without following or replaying.
+            validate_upload_handoff(client, &url, status, &headers)?;
+        } else if is_redirect(status) {
+            if hop == 5 {
+                return Err(Error::UnexpectedRedirect);
             }
-            Err(Error::UnexpectedRedirect)
+            url = location_url(&url, &headers)?;
+            continue;
+        } else if status.is_redirection() {
+            return Err(Error::UnexpectedRedirect);
+        }
+        let body = response.bytes().await.map_err(|e| map_reqwest_error(&e))?;
+        return Ok(TransferResponse {
+            status,
+            headers,
+            body: body.to_vec(),
+            final_url: url,
+        });
+    }
+    Err(Error::UnexpectedRedirect)
+}
+
+fn validate_transfer_url(url: &Url) -> Result<(), Error> {
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return Err(Error::Network);
+    }
+    Ok(())
+}
+
+fn transfer_headers(client: &Client, request: &TransferRequest, url: &Url) -> HeaderMap {
+    let mut headers = request.headers.clone();
+    // Caller-supplied credentials must not bypass phase rules or survive hops.
+    headers.remove(reqwest::header::AUTHORIZATION);
+    headers.remove(reqwest::header::PROXY_AUTHORIZATION);
+    headers.remove(reqwest::header::COOKIE);
+    headers.remove(reqwest::header::HOST);
+    if request.kind == TransferKind::Download {
+        headers.insert(
+            reqwest::header::ACCEPT_ENCODING,
+            HeaderValue::from_static("identity"),
+        );
+        if let Some(auth) = client.auth_header_for(url) {
+            headers.insert(reqwest::header::AUTHORIZATION, auth);
         }
     }
+    headers
+}
+
+fn validate_upload_handoff(
+    client: &Client,
+    current: &Url,
+    status: StatusCode,
+    headers: &HeaderMap,
+) -> Result<(), Error> {
+    if status.is_redirection() {
+        if !is_redirect(status) {
+            return Err(Error::UploadIncomplete {
+                status: status.as_u16(),
+            });
+        }
+        let location = location_url(current, headers).map_err(|_| Error::UploadIncomplete {
+            status: status.as_u16(),
+        })?;
+        if !client.same_origin(&location) {
+            return Err(Error::UploadIncomplete {
+                status: status.as_u16(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn observe_headers(client: &Client, issue: u64, headers: &HeaderMap) {
     let remaining = header_f64(headers, "x-rate-limit-remaining");
     let cost = header_f64(headers, "x-request-cost");
+    if let Some(cost) = cost {
+        tracing::debug!(cost, "Canvas request cost");
+    }
     if let Some(remaining) = remaining {
         client.governor().observe(issue, remaining, cost);
     } else if let Some(cost) = cost {
@@ -349,7 +363,8 @@ fn observe_headers(client: &Client, issue: u64, headers: &HeaderMap) {
 }
 
 fn header_f64(headers: &HeaderMap, name: &str) -> Option<f64> {
-    headers.get(name)?.to_str().ok()?.parse().ok()
+    let value: f64 = headers.get(name)?.to_str().ok()?.parse().ok()?;
+    (value.is_finite() && value >= 0.0).then_some(value)
 }
 
 fn is_redirect(status: StatusCode) -> bool {
@@ -372,7 +387,11 @@ fn parse_retry_after(headers: &HeaderMap) -> Option<Duration> {
     if let Ok(secs) = value.parse::<u64>() {
         return Some(Duration::from_secs(secs));
     }
-    None
+    let date = httpdate::parse_http_date(value).ok()?;
+    Some(
+        date.duration_since(std::time::SystemTime::now())
+            .unwrap_or_default(),
+    )
 }
 
 fn location_url(current: &Url, headers: &HeaderMap) -> Result<Url, Error> {
@@ -412,5 +431,110 @@ impl std::fmt::Debug for TransferRequest {
         f.debug_struct("TransferRequest")
             .field("kind", &self.kind)
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Secret;
+
+    fn client() -> Client {
+        Client::new(
+            Url::parse("https://canvas.test").unwrap(),
+            Secret::new("SECRET"),
+            "test",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn transfer_credentials_are_recomputed_for_each_hop() {
+        let client = client();
+        let own = Url::parse("https://canvas.test/file").unwrap();
+        let other = Url::parse("https://storage.test/file").unwrap();
+        let request = TransferRequest::download(own.clone())
+            .header(
+                reqwest::header::AUTHORIZATION,
+                HeaderValue::from_static("INJECTED"),
+            )
+            .header(reqwest::header::COOKIE, HeaderValue::from_static("SECRET"));
+        let initial = transfer_headers(&client, &request, &own);
+        assert_eq!(initial[reqwest::header::AUTHORIZATION], "Bearer SECRET");
+        assert!(initial[reqwest::header::AUTHORIZATION].is_sensitive());
+        assert_eq!(initial[reqwest::header::ACCEPT_ENCODING], "identity");
+        let redirected = transfer_headers(&client, &request, &other);
+        assert!(!redirected.contains_key(reqwest::header::AUTHORIZATION));
+        assert!(!redirected.contains_key(reqwest::header::COOKIE));
+        for url in [own, other] {
+            let upload = TransferRequest::upload(url.clone()).header(
+                reqwest::header::AUTHORIZATION,
+                HeaderValue::from_static("INJECTED"),
+            );
+            assert!(
+                !transfer_headers(&client, &upload, &url)
+                    .contains_key(reqwest::header::AUTHORIZATION)
+            );
+        }
+    }
+
+    #[test]
+    fn transfer_urls_and_upload_handoffs_enforce_phase_rules() {
+        let client = client();
+        let upload = Url::parse("https://storage.test/upload").unwrap();
+        for bad in [
+            "http://storage.test/file",
+            "https://user:SECRET@storage.test/file",
+        ] {
+            assert!(validate_transfer_url(&Url::parse(bad).unwrap()).is_err());
+        }
+        let mut headers = HeaderMap::new();
+        assert!(matches!(
+            validate_upload_handoff(&client, &upload, StatusCode::SEE_OTHER, &headers),
+            Err(Error::UploadIncomplete { status: 303 })
+        ));
+        headers.insert(
+            LOCATION,
+            HeaderValue::from_static("https://canvas.test/api/v1/files/1"),
+        );
+        assert!(validate_upload_handoff(&client, &upload, StatusCode::SEE_OTHER, &headers).is_ok());
+        assert!(matches!(
+            validate_upload_handoff(&client, &upload, StatusCode::NOT_MODIFIED, &headers),
+            Err(Error::UploadIncomplete { status: 304 })
+        ));
+        headers.insert(
+            LOCATION,
+            HeaderValue::from_static("https://other.test/file"),
+        );
+        assert!(matches!(
+            validate_upload_handoff(&client, &upload, StatusCode::SEE_OTHER, &headers),
+            Err(Error::UploadIncomplete { status: 303 })
+        ));
+        assert!(
+            validate_upload_handoff(&client, &upload, StatusCode::CREATED, &HeaderMap::new())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn retry_after_accepts_http_dates_and_ignores_invalid_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::RETRY_AFTER,
+            HeaderValue::from_static("Thu, 01 Jan 1970 00:00:00 GMT"),
+        );
+        assert_eq!(parse_retry_after(&headers), Some(Duration::ZERO));
+        let date = httpdate::fmt_http_date(std::time::SystemTime::now() + Duration::from_secs(30));
+        headers.insert(
+            reqwest::header::RETRY_AFTER,
+            HeaderValue::from_str(&date).unwrap(),
+        );
+        let delay = parse_retry_after(&headers).unwrap();
+        assert!(delay > Duration::from_secs(28) && delay <= Duration::from_secs(30));
+        headers.insert(
+            reqwest::header::RETRY_AFTER,
+            HeaderValue::from_static("invalid"),
+        );
+        assert_eq!(parse_retry_after(&headers), None);
     }
 }
