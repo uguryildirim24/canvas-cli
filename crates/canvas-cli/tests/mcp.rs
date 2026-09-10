@@ -80,6 +80,8 @@ impl Fixture {
             .env("TZ", "America/New_York")
             .env("COLUMNS", "100")
             .env("CANVAS_TOKEN", TOKEN)
+            // `open` is the one command that would spawn a browser window.
+            .env("CANVAS_TEST_NO_LAUNCH", "1")
             .env_remove("CANVAS_HOST")
             .env_remove("CANVAS_PROFILE");
         command
@@ -720,6 +722,121 @@ async fn a_tool_result_is_the_same_envelope_the_cli_prints() {
         receipts["result"]["structuredContent"],
         f.cli(&["--offline", "receipts", "list"], 0).await
     );
+    mcp.stop();
+}
+
+/// Every tool in the catalog, with the `canvas` invocation behind it.
+///
+/// The tool and the command must report the same envelope for the same
+/// arguments, whatever that envelope says: an answer, a refusal, or the usage
+/// error a command that needs the network gives while `--offline`.
+///
+/// `submission.execute` is the one tool with no command behind it. It names a
+/// stored plan rather than a course, and the plan flow it drives has its own
+/// tests above.
+const EQUIVALENTS: &[(&str, &str, &[&str])] = &[
+    ("courses.list", r"{}", &["courses"]),
+    ("course.get", r#"{"course":"1"}"#, &["course", "1"]),
+    ("todo.list", r"{}", &["todo"]),
+    (
+        "assignments.list",
+        r#"{"course":"1"}"#,
+        &["assignments", "1"],
+    ),
+    (
+        "assignment.get",
+        r#"{"course":"1","assignment":"500"}"#,
+        &["assignment", "1", "500"],
+    ),
+    ("grades.get", r#"{"course":"1"}"#, &["grades", "1"]),
+    ("files.list", r#"{"course":"1"}"#, &["files", "1"]),
+    ("modules.list", r#"{"course":"1"}"#, &["modules", "1"]),
+    ("announcements.list", r"{}", &["announcements"]),
+    (
+        "announcement.get",
+        r#"{"course":"1","id":"9001"}"#,
+        &["announcement", "1", "9001"],
+    ),
+    ("calendar.list", r"{}", &["calendar"]),
+    (
+        "submission.get",
+        r#"{"course":"1","assignment":"500"}"#,
+        &["submission", "1", "500"],
+    ),
+    ("receipts.list", r"{}", &["receipts", "list"]),
+    (
+        "receipts.show",
+        r#"{"id":"no-such-receipt"}"#,
+        &["receipts", "show", "no-such-receipt"],
+    ),
+    ("sync.run", r"{}", &["sync"]),
+    (
+        "download.plan",
+        r#"{"course":"1"}"#,
+        &["download", "1", "--dry-run"],
+    ),
+    ("download.run", r#"{"course":"1"}"#, &["download", "1"]),
+    (
+        "submission.prepare",
+        r#"{"course":"1","assignment":"500","text":"answer.txt"}"#,
+        &["submit", "1", "500", "--text", "answer.txt"],
+    ),
+    (
+        "submission.reconcile",
+        r#"{"journal_id":"no-such-journal"}"#,
+        &["submission", "reconcile", "no-such-journal"],
+    ),
+    (
+        "receipts.acknowledge",
+        r#"{"journal_id":"no-such-journal"}"#,
+        &["receipts", "acknowledge", "no-such-journal"],
+    ),
+    ("open.url", r#"{"target":"CHEM"}"#, &["open", "CHEM"]),
+];
+
+/// One implementation per command: every tool returns the CLI's envelope.
+#[tokio::test]
+async fn every_tool_returns_the_envelope_the_cli_prints() {
+    let server = MockServer::start().await;
+    let f = primed(&server).await;
+    let mut mcp = f.mcp(&["--offline"]);
+
+    let covered: Vec<&str> = EQUIVALENTS.iter().map(|(tool, ..)| *tool).collect();
+    let mut expected: Vec<&str> = CATALOG.to_vec();
+    expected.retain(|name| *name != "submission.execute");
+    assert_eq!(covered, expected, "a tool has no command behind it");
+
+    for (tool, arguments, args) in EQUIVALENTS {
+        let arguments: Value = serde_json::from_str(arguments).expect("arguments");
+        let mut cli = vec!["--offline"];
+        cli.extend_from_slice(args);
+        let (want, code) = f.cli_any(&cli).await;
+        let answer = mcp.primary(
+            "tools/call",
+            json!({ "name": tool, "arguments": arguments }),
+        );
+        let result = &answer["result"];
+        assert_eq!(
+            result["structuredContent"],
+            want,
+            "{tool} and `canvas {}` disagree",
+            args.join(" ")
+        );
+        // Both sides answered with a §7 envelope, not with nothing.
+        let schema = want["schema"].as_str().unwrap_or_default();
+        assert!(schema.starts_with("canvas-cli/"), "{tool} returned {want}");
+        assert!(want["outcome"].is_string(), "{tool} returned {want}");
+        // A domain failure is marked, and a success is not.
+        assert_eq!(result["isError"], json!(code != 0), "{tool} exit {code}");
+        // The text block is the same document, for a host that shows text.
+        let text = result["content"][0]["text"].as_str().expect("text content");
+        assert_eq!(
+            serde_json::from_str::<Value>(text).expect("text is the document"),
+            want,
+            "{tool}"
+        );
+        assert!(!text.contains(TOKEN), "{tool} leaked the token");
+    }
     mcp.stop();
 }
 
