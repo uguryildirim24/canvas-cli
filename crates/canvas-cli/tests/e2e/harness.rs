@@ -656,6 +656,15 @@ impl E2e {
         }
     }
 
+    /// Run `canvas` with the fake keyring answering `kind` to every call.
+    ///
+    /// The file store is always the active backend in tests, so this is how a
+    /// keyring that is present but refuses — `backend`, `denied`, `locked` —
+    /// is reached (SPEC §8 credential store).
+    pub fn run_with_keyring_error(&self, args: &[&str], kind: &str) -> Run {
+        self.run_env(args, &[("CANVAS_TEST_KEYRING_ERROR", kind)])
+    }
+
     /// Run `canvas` with extra environment variables.
     pub fn run_env(&self, args: &[&str], vars: &[(&str, &str)]) -> Run {
         let owned: Vec<(String, String)> = vars
