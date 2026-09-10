@@ -65,25 +65,37 @@ pub fn run(globals: &Globals, cmd: ReceiptsCmd) -> ExitCode {
 }
 
 fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCode {
-    let session = match globals.open_session() {
+    let session = match globals.open_local_session() {
         Ok(s) => s,
         Err(e) => return session_error(globals.json, e, globals.profile.clone()),
     };
-    let course_id = match course {
-        Some(c) => match c.parse::<i64>() {
-            Ok(id) => Some(id),
-            Err(_) => {
+    let course_id = if let Some(course) = course {
+        let course = course.to_owned();
+        let origin = session.identity.origin.clone();
+        let resolved = session.open.store.call_blocking(move |conns| {
+            use canvas_core::resolve::{CommandClass, ResolveError, resolve_course};
+            match resolve_course(conns, &course, &origin, CommandClass::B) {
+                Ok(c) => Ok(Ok(c.id)),
+                Err(ResolveError::Db(e)) => Err(e),
+                Err(e) => Ok(Err(e)),
+            }
+        });
+        match resolved {
+            Ok(Ok(id)) => Some(id),
+            Ok(Err(e)) => return super::emit::resolve_error(globals, &session, &e),
+            Err(e) => {
                 return emit_error(
                     globals.json,
-                    "usage",
-                    "use a numeric ID or a URL",
-                    6,
+                    "local",
+                    &e.to_string(),
+                    13,
                     session.profile.clone(),
                     Some(session.identity_ref()),
                 );
             }
-        },
-        None => None,
+        }
+    } else {
+        None
     };
     let state = match state {
         Some(s) => match s.parse::<State>() {
@@ -129,7 +141,21 @@ fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCod
         for j in &env.result.journals {
             if let Some(id) = j.get("journal_id").and_then(|v| v.as_str()) {
                 let state = j.get("state").and_then(|v| v.as_str()).unwrap_or("?");
-                writeln!(io::stdout(), "{id}  {state}")?;
+                let label = if state == "outcome_unknown" {
+                    j["server_match"]["attempt"].as_i64().map_or_else(
+                        || j["error"].as_str().unwrap_or("unknown").to_owned(),
+                        |a| format!("unknown (server match: attempt {a})"),
+                    )
+                } else {
+                    state.to_owned()
+                };
+                writeln!(
+                    io::stdout(),
+                    "{id}  {label}  owner={}  superseded={}  acknowledged={}",
+                    j["owner"].as_str().unwrap_or("n/a"),
+                    j["superseded"],
+                    !j["acknowledged_at"].is_null()
+                )?;
             }
         }
         Ok(())
@@ -137,7 +163,7 @@ fn list(globals: &Globals, course: Option<&str>, state: Option<&str>) -> ExitCod
 }
 
 fn show_cmd(globals: &Globals, id: &str) -> ExitCode {
-    let session = match globals.open_session() {
+    let session = match globals.open_local_session() {
         Ok(s) => s,
         Err(e) => return session_error(globals.json, e, globals.profile.clone()),
     };
@@ -163,21 +189,42 @@ fn show_cmd(globals: &Globals, id: &str) -> ExitCode {
     };
     let env = base_envelope(SCHEMA_RECEIPTS, &session, payload);
     emit(globals.json, &env, || {
-        writeln!(
-            io::stdout(),
-            "journal {}",
-            env.result
-                .journal
-                .get("journal_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or(id)
-        )?;
+        let mut table = crate::output::new_table();
+        for field in [
+            "journal_id",
+            "state",
+            "owner",
+            "course_id",
+            "assignment_id",
+            "kind",
+            "superseded",
+            "acknowledged_at",
+            "error",
+        ] {
+            table.add_row([
+                field.to_owned(),
+                env.result.journal[field]
+                    .as_str()
+                    .map_or_else(|| env.result.journal[field].to_string(), str::to_owned),
+            ]);
+        }
+        crate::output::apply_two_space_padding(&mut table);
+        writeln!(io::stdout(), "{table}")?;
+        if let Some(receipt) = &env.result.receipt {
+            writeln!(
+                io::stdout(),
+                "receipt {}  attempt {}  attribution={}",
+                receipt["receipt_id"].as_str().unwrap_or(""),
+                receipt["posted"]["attempt"],
+                receipt["attribution"].as_str().unwrap_or("")
+            )?;
+        }
         Ok(())
     })
 }
 
 fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> ExitCode {
-    let session = match globals.open_session() {
+    let session = match globals.open_local_session() {
         Ok(s) => s,
         Err(e) => return session_error(globals.json, e, globals.profile.clone()),
     };
@@ -200,8 +247,13 @@ fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> Exi
         }
     };
     if let Some(body) = result.body {
-        let _ = io::stdout().write_all(&body);
-        return ExitCode::SUCCESS;
+        return match io::stdout().write_all(&body) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                let _ = writeln!(io::stderr(), "{e}");
+                ExitCode::from(1)
+            }
+        };
     }
     let payload = ExportJson {
         receipt_id: result.receipt_id,
@@ -218,7 +270,7 @@ fn export_cmd(globals: &Globals, id: &str, out: Option<&std::path::Path>) -> Exi
 }
 
 fn ack_cmd(globals: &Globals, journal_id: &str) -> ExitCode {
-    let session = match globals.open_session() {
+    let session = match globals.open_local_session() {
         Ok(s) => s,
         Err(e) => return session_error(globals.json, e, globals.profile.clone()),
     };

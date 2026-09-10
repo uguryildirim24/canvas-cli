@@ -11,9 +11,16 @@ pub use freeze::{
     FreezeError, FrozenInput, InputKind, TextSource, freeze_files, freeze_html, freeze_text,
     freeze_url, validate_comment,
 };
-pub use preflight::{Plan, PreflightError, PreflightOutcome, create_from_plan, preflight};
-pub use reconcile::{ReconcileOutcome, ReconcileResult, reconcile, reconcile_history};
-pub use verify::{VerifyOutcome, VerifyResult, load_receipt_for_verify, verify};
+pub use preflight::{
+    Plan, PreflightError, PreflightOutcome, create_from_plan, preflight, preflight_with_input,
+};
+pub use reconcile::{
+    ReconcileError, ReconcileOutcome, ReconcileResult, reconcile, reconcile_history,
+};
+pub use verify::{
+    VerifyError, VerifyOutcome, VerifyResult, load_receipt_for_verify,
+    validate_local as validate_receipt, verify,
+};
 
 use thiserror::Error;
 

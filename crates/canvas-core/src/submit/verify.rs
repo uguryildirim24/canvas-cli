@@ -152,7 +152,8 @@ pub fn load_receipt_for_verify(
     rebuild_from_journal(store, &shown.journal.journal_id).map_err(Into::into)
 }
 
-fn validate_local(
+/// Validate the local receipt binding before authentication or history requests.
+pub fn validate_local(
     store: &Store,
     identity_key: &str,
     receipt: &ReceiptDocument,

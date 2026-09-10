@@ -8,7 +8,7 @@ use canvas_core::journal::{State, get_journal};
 use canvas_core::submit::{
     ExecuteError, ExecuteOutcome, FreezeError, FrozenInput, InputKind, Plan, PreflightError,
     SubmitError, TextSource, create_from_plan, execute, freeze_files, freeze_html, freeze_text,
-    freeze_url, preflight,
+    freeze_url, preflight_with_input,
 };
 use jiff::Timestamp;
 
@@ -71,36 +71,33 @@ pub async fn run(
         return sync_error(globals, &session, &e);
     }
 
-    let frozen = match freeze_inputs(
-        &files,
-        text.as_deref(),
-        html.as_deref(),
-        url.as_deref(),
-        comment.as_deref(),
-    ) {
-        Ok(f) => f,
-        Err(e) => {
-            return emit_error(
-                globals.json,
-                "usage",
-                &e.to_string(),
-                2,
-                session.profile.clone(),
-                Some(session.identity_ref()),
-            );
-        }
+    let kind = if !files.is_empty() {
+        InputKind::OnlineUpload
+    } else if html.is_some() {
+        InputKind::OnlineHtml
+    } else if url.is_some() {
+        InputKind::OnlineUrl
+    } else {
+        InputKind::OnlineTextEntry
     };
-
-    let now = Timestamp::now();
-    let outcome = match preflight(
+    let outcome = match preflight_with_input(
         client,
         &session.open.store,
         &session.paths.identity_dir,
         session.identity.key.as_str(),
         course_id,
         assignment_id,
-        frozen,
-        now,
+        kind,
+        move || {
+            freeze_inputs(
+                &files,
+                text.as_deref(),
+                html.as_deref(),
+                url.as_deref(),
+                comment.as_deref(),
+            )
+        },
+        Timestamp::now(),
     )
     .await
     {
@@ -112,31 +109,17 @@ pub async fn run(
         let _ = writeln!(io::stderr(), "recovered journal {jid} → {state}");
     }
 
+    print_plan(&outcome.plan);
     if !yes {
-        print_plan(&outcome.plan);
-        match confirm_tty() {
+        match confirm_tty().await {
             Ok(true) => {}
             Ok(false) => {
                 drop(outcome.admission);
-                return emit_error(
-                    globals.json,
-                    "cancelled",
-                    "submission cancelled",
-                    11,
-                    session.profile.clone(),
-                    Some(session.identity_ref()),
-                );
+                return selected_error(globals, &session, "cancelled", "submission cancelled", 11);
             }
             Err(message) => {
                 drop(outcome.admission);
-                return emit_error(
-                    globals.json,
-                    "usage",
-                    &message,
-                    2,
-                    session.profile.clone(),
-                    Some(session.identity_ref()),
-                );
+                return selected_error(globals, &session, "usage", &message, 2);
             }
         }
     }
@@ -167,7 +150,15 @@ pub async fn run(
     )
     .await
     {
-        Ok(exec) => emit_submit_ok(globals, &session, &exec, &frozen),
+        Ok(mut exec) => {
+            if outcome.plan.past_due {
+                exec.warning = Some(exec.warning.map_or_else(
+                    || "assignment is past due".into(),
+                    |w| format!("assignment is past due; {w}"),
+                ));
+            }
+            emit_submit_ok(globals, &session, &exec, &frozen)
+        }
         Err(e) => map_execute_error(globals, &session, &journal_id, e),
     }
 }
@@ -202,7 +193,7 @@ fn freeze_inputs(
     if let Some(text) = text {
         if text == "-" {
             let mut buf = Vec::new();
-            io::stdin().read_to_end(&mut buf)?;
+            io::stdin().take(1_048_577).read_to_end(&mut buf)?;
             return freeze_text(&TextSource::Bytes(&buf), comment);
         }
         return freeze_text(&TextSource::Path(std::path::Path::new(text)), comment);
@@ -270,18 +261,33 @@ fn print_plan(plan: &Plan) {
     if let Some(c) = &plan.frozen.payload.comment {
         let _ = writeln!(io::stderr(), "  comment ({} chars)", c.chars().count());
     }
-    let _ = write!(io::stderr(), "Submit? [y/N] ");
-    let _ = io::stderr().flush();
 }
 
-fn confirm_tty() -> Result<bool, String> {
+async fn confirm_tty() -> Result<bool, String> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = send.send(read_confirmation());
+    });
+    tokio::select! {
+        result = receive => result.map_err(|_| "confirmation worker stopped".to_owned())?,
+        signal = tokio::signal::ctrl_c() => { signal.map_err(|e| e.to_string())?; Ok(false) }
+    }
+}
+
+fn read_confirmation() -> Result<bool, String> {
+    #[cfg(windows)]
+    let terminal = "CONIN$";
+    #[cfg(not(windows))]
+    let terminal = "/dev/tty";
     let tty = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open("/dev/tty")
+        .open(terminal)
         .map_err(|_| {
             "confirmation required but no controlling terminal; re-run with --yes".to_string()
         })?;
+    let _ = write!(io::stderr(), "Submit? [y/N] ");
+    let _ = io::stderr().flush();
     let mut reader = io::BufReader::new(tty);
     let mut line = String::new();
     reader
@@ -307,6 +313,16 @@ fn emit_submit_ok(
     };
 
     let mut result = build_submit_result(exec, frozen);
+    if let Err(e) = hydrate_submit_result(&session.open.store, &mut result) {
+        return emit_error(
+            globals.json,
+            "local",
+            &e.to_string(),
+            13,
+            session.profile.clone(),
+            Some(session.identity_ref()),
+        );
+    }
     if let Some(rec) = &exec.reconcile {
         result.server_match = rec.server_match.as_ref().map(|c| SubmitCandidateJson {
             attempt: c.attempt,
@@ -344,19 +360,16 @@ fn emit_submit_ok(
     envelope.outcome = outcome;
     envelope.exit = exit;
     envelope.requests = session.requests();
+    if let Some(rec) = &exec.reconcile {
+        envelope.warnings.push(rec.message.clone());
+    } else if exec.state == State::OutcomeUnknown {
+        envelope.warnings.push("the original request may still complete; submission reconcile re-checks; --assume-not-submitted becomes available after 30 minutes".into());
+    }
     if let Some(w) = &exec.warning {
         envelope.warnings.push(w.clone());
     }
     emit(globals.json, &envelope, || {
-        let r = &envelope.result;
-        writeln!(
-            io::stdout(),
-            "submit {} journal={} receipt={:?} attribution={:?}",
-            r.state,
-            r.journal_id,
-            r.receipt_id,
-            r.attribution
-        )
+        render_submit(io::stdout(), &envelope.result)
     })
 }
 
@@ -399,225 +412,200 @@ fn map_preflight_error(globals: &Globals, session: &Session, err: PreflightError
     map_submit_error(globals, session, err.into())
 }
 
-#[allow(clippy::too_many_lines)]
 fn map_execute_error(
     globals: &Globals,
     session: &Session,
     journal_id: &str,
     err: ExecuteError,
 ) -> ExitCode {
-    match err {
-        ExecuteError::Refused(message) => {
-            let state = get_journal(&session.open.store, journal_id)
-                .ok()
-                .flatten()
-                .map_or(State::Refused, |r| r.state);
-            let exit = if matches!(state, State::UploadIncomplete) {
-                9
-            } else {
-                8
-            };
-            let outcome = if exit == 9 {
-                Outcome::Recovery
-            } else {
-                Outcome::Refused
-            };
-            let result = SubmitResult {
-                outcome: if exit == 9 {
-                    "recovery".into()
-                } else {
-                    "refused".into()
-                },
-                state: state.as_str().to_owned(),
-                journal_id: journal_id.to_owned(),
-                receipt_id: None,
-                attribution: None,
-                post_status: None,
-                response_kind: None,
-                posted: None,
-                server_match: None,
-                candidates: Vec::new(),
-                files: Vec::new(),
-                text: None,
-                url: None,
-                error: Some(message),
-            };
-            let mut envelope = base_envelope(SCHEMA_SUBMIT, session, result);
-            envelope.outcome = outcome;
-            envelope.exit = exit;
-            envelope.requests = session.requests();
-            emit(globals.json, &envelope, || {
-                writeln!(
-                    io::stderr(),
-                    "{}",
-                    envelope.result.error.as_deref().unwrap_or("")
-                )
-            })
-        }
-        ExecuteError::Network(e) => {
-            let state = get_journal(&session.open.store, journal_id)
-                .ok()
-                .flatten()
-                .map(|r| r.state);
-            if matches!(
-                state,
-                Some(State::UploadIncomplete | State::OutcomeUnknown | State::UploadedNotSubmitted)
-            ) {
-                let result = SubmitResult {
-                    outcome: "recovery".into(),
-                    state: state.unwrap().as_str().to_owned(),
-                    journal_id: journal_id.to_owned(),
-                    receipt_id: None,
-                    attribution: None,
-                    post_status: None,
-                    response_kind: None,
-                    posted: None,
-                    server_match: None,
-                    candidates: Vec::new(),
-                    files: Vec::new(),
-                    text: None,
-                    url: None,
-                    error: Some(e.to_string()),
-                };
-                let mut envelope = base_envelope(SCHEMA_SUBMIT, session, result);
-                envelope.outcome = Outcome::Recovery;
-                envelope.exit = 9;
-                envelope.requests = session.requests();
-                return emit(globals.json, &envelope, || writeln!(io::stderr(), "{e}"));
-            }
-            emit_error(
-                globals.json,
-                "network",
-                &e.to_string(),
-                4,
-                session.profile.clone(),
-                Some(session.identity_ref()),
-            )
-        }
-        ExecuteError::Journal(e) => emit_error(
-            globals.json,
-            "local",
-            &e.to_string(),
-            13,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        ExecuteError::Io(e) => emit_error(
-            globals.json,
-            "local",
-            &e.to_string(),
-            13,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        ExecuteError::Json(e) => emit_error(
-            globals.json,
-            "local",
-            &e.to_string(),
-            13,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
+    let row = get_journal(&session.open.store, journal_id).ok().flatten();
+    if let Some(row) = &row
+        && matches!(
+            row.state,
+            State::Refused
+                | State::UploadIncomplete
+                | State::UploadedNotSubmitted
+                | State::OutcomeUnknown
+        )
+        && !matches!(err, ExecuteError::Journal(_) | ExecuteError::Json(_))
+    {
+        let exec = ExecuteOutcome {
+            state: row.state,
+            journal_id: journal_id.into(),
+            receipt_id: None,
+            attribution: None,
+            post_status: row.post_status,
+            response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
+            reconcile: None,
+            warning: None,
+        };
+        let frozen = FrozenInput {
+            kind: InputKind::OnlineUpload,
+            payload: canvas_core::journal::IntendedPayload::default(),
+            file_paths: vec![],
+        };
+        return emit_submit_ok(globals, session, &exec, &frozen);
     }
+    let details = row.map_or_else(|| serde_json::json!({"journal_id":journal_id}), |row| serde_json::json!({
+        "journal_id":journal_id,"state":row.state.as_str(),
+        "posted":row.response_record_json.as_deref().and_then(|s|serde_json::from_str::<serde_json::Value>(s).ok()),
+        "files":serde_json::from_str::<serde_json::Value>(&row.intended_payload_json).ok().and_then(|v|v.get("files").cloned()).unwrap_or_else(||serde_json::json!([]))
+    }));
+    let mut env = crate::output::error_envelope("local", err.to_string(), None, details, 13);
+    env.profile.clone_from(&session.profile);
+    env.identity = Some(session.identity_ref());
+    env.requests = session.requests();
+    emit(globals.json, &env, || {
+        writeln!(io::stderr(), "{}", env.result.message)
+    })
+}
+
+fn hydrate_submit_result(
+    store: &canvas_core::store::Store,
+    result: &mut SubmitResult,
+) -> Result<(), canvas_core::submit::SubmitError> {
+    let row = get_journal(store, &result.journal_id)?
+        .ok_or(canvas_core::journal::JournalError::NotFound)?;
+    let intent: canvas_core::journal::IntendedPayload =
+        serde_json::from_str(&row.intended_payload_json)?;
+    result.files = intent
+        .files
+        .into_iter()
+        .map(|f| SubmitFileJson {
+            name: f.name,
+            size: f.size,
+            sha256: f.sha256,
+            canvas_file_id: f.canvas_file_id,
+        })
+        .collect();
+    result.text = intent.text.map(|t| SubmitTextJson {
+        input_sha256: t.input_sha256,
+        transform: t.transform,
+        sent_sha256: t.sent_sha256,
+    });
+    result.url = intent.url;
+    result.error = row.error_text;
+    result.posted = row
+        .response_record_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()?;
+    result.server_match = row
+        .server_match_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()?;
+    Ok(())
+}
+
+pub(super) fn render_submit(mut out: impl Write, result: &SubmitResult) -> io::Result<()> {
+    writeln!(
+        out,
+        "submit {}  journal={}",
+        result.state, result.journal_id
+    )?;
+    if let Some(id) = &result.receipt_id {
+        writeln!(
+            out,
+            "receipt {id}  attribution={}",
+            result.attribution.as_deref().unwrap_or("unknown")
+        )?;
+    }
+    if let Some(posted) = &result.posted {
+        writeln!(
+            out,
+            "attempt {}  submitted_at {}",
+            posted["attempt"],
+            posted["submitted_at_local"].as_str().unwrap_or("unknown")
+        )?;
+    }
+    let mut table = crate::output::new_table();
+    table.set_header(["File", "Bytes", "SHA-256", "Canvas ID"]);
+    for file in &result.files {
+        table.add_row(vec![
+            file.name.clone(),
+            file.size.to_string(),
+            file.sha256.clone(),
+            file.canvas_file_id
+                .clone()
+                .unwrap_or_else(|| "unknown".into()),
+        ]);
+    }
+    crate::output::apply_two_space_padding(&mut table);
+    if !result.files.is_empty() {
+        writeln!(out, "{table}")?;
+    }
+    if let Some(text) = &result.text {
+        writeln!(
+            out,
+            "text transform={}  input_sha256={}  sent_sha256={}",
+            text.transform, text.input_sha256, text.sent_sha256
+        )?;
+    }
+    if let Some(url) = &result.url {
+        writeln!(out, "url {url}")?;
+    }
+    for candidate in &result.candidates {
+        writeln!(
+            out,
+            "candidate attempt {}  submitted_at {}",
+            candidate.attempt,
+            candidate.submitted_at_local.as_deref().unwrap_or("unknown")
+        )?;
+    }
+    if let Some(error) = &result.error {
+        writeln!(out, "{error}")?;
+    }
+    Ok(())
 }
 
 fn map_submit_error(globals: &Globals, session: &Session, err: SubmitError) -> ExitCode {
-    match err {
-        SubmitError::Validation(message) => emit_error(
-            globals.json,
-            "usage",
-            &message,
-            2,
-            session.profile.clone(),
-            Some(session.identity_ref()),
+    let (code, exit, message) = match err {
+        SubmitError::Validation(message) => ("usage", 2, message),
+        SubmitError::Network(error) => return sync_error(globals, session, &error.into()),
+        SubmitError::InProgress { journal_id } => (
+            "refused",
+            8,
+            journal_id.map_or_else(
+                || "in_progress".into(),
+                |id| format!("in_progress journal {id}"),
+            ),
         ),
-        SubmitError::Network(e) => emit_error(
-            globals.json,
-            "network",
-            &e.to_string(),
-            4,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        SubmitError::InProgress { journal_id } => {
-            let message = match journal_id {
-                Some(id) => format!("in_progress journal {id}"),
-                None => "in_progress".into(),
-            };
-            let mut env =
-                crate::output::error_envelope("refused", message, None, serde_json::json!({}), 8);
-            env.profile.clone_from(&session.profile);
-            env.identity = Some(session.identity_ref());
-            env.requests = session.requests();
-            emit(globals.json, &env, || {
-                writeln!(io::stderr(), "{}", env.result.message)
-            })
-        }
-        SubmitError::Refused(message) => {
-            let mut env =
-                crate::output::error_envelope("refused", message, None, serde_json::json!({}), 8);
-            env.profile.clone_from(&session.profile);
-            env.identity = Some(session.identity_ref());
-            env.requests = session.requests();
-            emit(globals.json, &env, || {
-                writeln!(io::stderr(), "{}", env.result.message)
-            })
-        }
-        SubmitError::Recovery(message) => emit_error(
-            globals.json,
-            "recovery",
-            &message,
-            9,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        SubmitError::Mismatch(message) => emit_error(
-            globals.json,
-            "mismatch",
-            &message,
-            10,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        SubmitError::Unavailable(message) => emit_error(
-            globals.json,
-            "unavailable",
-            &message,
-            12,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        SubmitError::StateConflict => emit_error(
-            globals.json,
-            "local",
-            "state conflict",
-            13,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        SubmitError::Journal(e) => emit_error(
-            globals.json,
-            "local",
-            &e.to_string(),
-            13,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        SubmitError::Io(e) => emit_error(
-            globals.json,
-            "local",
-            &e.to_string(),
-            13,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
-        SubmitError::Json(e) => emit_error(
-            globals.json,
-            "local",
-            &e.to_string(),
-            13,
-            session.profile.clone(),
-            Some(session.identity_ref()),
-        ),
+        SubmitError::Refused(message) => ("refused", 8, message),
+        SubmitError::Recovery(message) => ("recovery", 9, message),
+        SubmitError::Mismatch(message) => ("mismatch", 10, message),
+        SubmitError::Unavailable(message) => ("unavailable", 12, message),
+        SubmitError::StateConflict => ("local", 13, "state conflict".into()),
+        SubmitError::Journal(e) => ("local", 13, e.to_string()),
+        SubmitError::Io(e) => ("local", 13, e.to_string()),
+        SubmitError::Json(e) => ("local", 13, e.to_string()),
+    };
+    selected_error(globals, session, code, &message, exit)
+}
+
+fn selected_error(
+    globals: &Globals,
+    session: &Session,
+    code: &str,
+    message: &str,
+    exit: u8,
+) -> ExitCode {
+    let mut env = crate::output::error_envelope(code, message, None, serde_json::json!({}), exit);
+    env.profile.clone_from(&session.profile);
+    env.identity = Some(session.identity_ref());
+    env.requests = session.requests();
+    emit(globals.json, &env, || {
+        writeln!(io::stderr(), "{}", env.result.message)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn file_submit_human_snapshot() {
+        let result = serde_json::from_str(include_str!("../output/schemas/submit.json")).unwrap();
+        let mut out = Vec::new();
+        super::render_submit(&mut out, &result).unwrap();
+        insta::assert_snapshot!("submit_files_human", String::from_utf8(out).unwrap());
     }
 }
