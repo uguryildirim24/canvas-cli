@@ -47,17 +47,6 @@ impl From<ColorChoice> for ColorMode {
     }
 }
 
-fn not_implemented(json: bool) -> ExitCode {
-    commands::emit::emit_error(
-        json,
-        "not_implemented",
-        "not implemented yet",
-        1,
-        None,
-        None,
-    )
-}
-
 /// Peer-lane Round-3 stub: exit 2 with `not implemented`.
 fn not_implemented_r3(json: bool) -> ExitCode {
     commands::emit::emit_error(json, "not_implemented", "not implemented", 2, None, None)
@@ -190,10 +179,36 @@ async fn main() -> ExitCode {
                 Commands::Open { command, target } => {
                     commands::open::run(&m1b_globals(&globals), command, target).await
                 }
-                Commands::Grades { .. }
-                | Commands::Announcements { .. }
-                | Commands::Announcement { .. }
-                | Commands::Calendar { .. } => not_implemented(globals.json),
+                Commands::Announcements {
+                    course,
+                    since,
+                    unread,
+                } => {
+                    commands::announcements::run(&m1b_globals(&globals), course, since, unread)
+                        .await
+                }
+                Commands::Announcement { target, id } => {
+                    commands::announcement::run(&m1b_globals(&globals), target, id).await
+                }
+                Commands::Calendar {
+                    days,
+                    course,
+                    ics,
+                    alarm,
+                } => {
+                    commands::calendar::run(
+                        &m1b_globals(&globals),
+                        commands::calendar::CalendarArgs {
+                            days,
+                            course,
+                            ics,
+                            alarm,
+                        },
+                    )
+                    .await
+                }
+                // Round-4 peer-lane stub (M4-a, lane w1).
+                Commands::Grades { .. } => commands::not_implemented(globals.json),
                 // Round-3 peer-lane stubs (M2-b): exit 2.
                 Commands::Submit { .. }
                 | Commands::Submission { .. }
