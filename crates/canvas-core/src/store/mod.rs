@@ -6,6 +6,8 @@ mod migrate;
 mod ops;
 
 #[cfg(test)]
+mod review_tests;
+#[cfg(test)]
 mod tests;
 
 pub use dataset::{
@@ -38,7 +40,7 @@ pub enum StoreError {
 /// Opened identity: shared lock + store handles.
 pub struct OpenIdentity {
     /// Shared identity lock held for the process lifetime.
-    pub lock: IdentityLock,
+    pub lock: std::sync::Arc<IdentityLock>,
     /// Verified identity document (generation kept in memory).
     pub identity: IdentityDocument,
     /// Cache and state databases.
@@ -49,8 +51,8 @@ impl OpenIdentity {
     /// Take the shared identity lock, re-verify, and open both databases.
     pub fn open(paths: &Paths, identity: &IdentityDocument) -> Result<Self, StoreError> {
         identity.verify()?;
-        let lock = IdentityLock::acquire_shared(paths, identity)?;
         let store = Store::open(paths, identity)?;
+        let lock = std::sync::Arc::clone(&store.lock);
         Ok(Self {
             lock,
             identity: identity.clone(),

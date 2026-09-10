@@ -43,6 +43,49 @@ impl Paths {
         }
     }
 
+    /// Enforce the identity layout before opening or removing any files.
+    pub fn verify(&self, key: &IdentityKey) -> Result<(), IdentityError> {
+        if key.as_str().is_empty()
+            || !key
+                .as_str()
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+        {
+            return Err(IdentityError::Mismatch {
+                reason: "unsafe identity key".into(),
+            });
+        }
+        let expected = Self::for_identity(&self.data_root, key);
+        if self.identity_dir != expected.identity_dir
+            || self.lock_path != expected.lock_path
+            || self.cache_db != expected.cache_db
+            || self.state_db != expected.state_db
+        {
+            return Err(IdentityError::Mismatch {
+                reason: "paths do not belong to identity".into(),
+            });
+        }
+        for path in [
+            self.data_root.clone(),
+            self.data_root.join("locks"),
+            self.identity_dir.clone(),
+            self.lock_path.clone(),
+            self.identity_json(),
+            self.cache_db.clone(),
+            self.state_db.clone(),
+        ] {
+            reject_symlink(&path)?;
+        }
+        for db in [&self.cache_db, &self.state_db] {
+            for suffix in ["-wal", "-shm", "-journal"] {
+                let mut path = db.as_os_str().to_os_string();
+                path.push(suffix);
+                reject_symlink(Path::new(&path))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Path to `identity.json` inside the identity directory.
     #[must_use]
     pub fn identity_json(&self) -> PathBuf {
@@ -172,6 +215,7 @@ impl IdentityDocument {
 pub struct IdentityLock {
     _file: File,
     kind: LockKind,
+    path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +230,8 @@ impl IdentityLock {
         paths: &Paths,
         expected: &IdentityDocument,
     ) -> Result<Self, IdentityError> {
+        expected.verify()?;
+        paths.verify(&expected.key)?;
         ensure_lock_file(paths)?;
         let file = OpenOptions::new()
             .read(true)
@@ -196,6 +242,7 @@ impl IdentityLock {
         let lock = Self {
             _file: file,
             kind: LockKind::Shared,
+            path: paths.lock_path.clone(),
         };
         reverify_after_acquire(paths, expected)?;
         Ok(lock)
@@ -203,6 +250,8 @@ impl IdentityLock {
 
     /// Take an exclusive lock with a 5 s timeout (removal protocol).
     pub fn acquire_exclusive(paths: &Paths) -> Result<Self, IdentityError> {
+        let doc = IdentityDocument::read(&paths.identity_json())?;
+        paths.verify(&doc.key)?;
         ensure_lock_file(paths)?;
         let file = OpenOptions::new()
             .read(true)
@@ -215,6 +264,7 @@ impl IdentityLock {
                     return Ok(Self {
                         _file: file,
                         kind: LockKind::Exclusive,
+                        path: paths.lock_path.clone(),
                     });
                 }
                 Ok(false) => {
@@ -251,13 +301,14 @@ pub fn remove_identity(
     lock: IdentityLock,
     callbacks: &mut RemovalCallbacks<'_>,
 ) -> Result<(), IdentityError> {
-    if !lock.is_exclusive() {
+    if !lock.is_exclusive() || lock.path != paths.lock_path {
         return Err(IdentityError::Mismatch {
             reason: "identity removal requires an exclusive lock".into(),
         });
     }
     // Re-read before destructive work.
-    let _doc = IdentityDocument::read(&paths.identity_json())?;
+    let doc = IdentityDocument::read(&paths.identity_json())?;
+    paths.verify(&doc.key)?;
     (callbacks.delete_credentials)()?;
     if paths.identity_dir.exists() {
         fs::remove_dir_all(&paths.identity_dir)?;
@@ -322,30 +373,41 @@ fn reverify_after_acquire(paths: &Paths, expected: &IdentityDocument) -> Result<
     Ok(())
 }
 
+fn reject_symlink(path: &Path) -> Result<(), IdentityError> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(IdentityError::Mismatch {
+            reason: "identity paths must not be symbolic links".into(),
+        }),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let tmp = parent.join(format!(
-        ".{}.tmp",
-        path.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("identity")
-    ));
-    {
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&tmp)?;
+    let tmp = parent.join(format!(".identity-{}.tmp", Uuid::new_v4()));
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
         }
-        f.write_all(bytes)?;
-        f.sync_all()?;
+        let mut file = options.open(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&tmp, path)?;
+        #[cfg(unix)]
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
     }
-    fs::rename(&tmp, path)?;
-    Ok(())
+    result
 }
 
 fn parse_origin_host_port(origin: &str) -> (String, Option<u16>) {

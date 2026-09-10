@@ -104,7 +104,7 @@ pub trait Dataset {
         opts: &IngestOpts<'_>,
         conns: &mut super::db::StoreConns,
     ) -> Result<(), IngestError> {
-        let super::db::StoreConns { cache, state } = conns;
+        let super::db::StoreConns { cache, state, .. } = conns;
         let tx = cache.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         // Epoch check at commit time against state (disjoint borrow).
         let current = ops::read_scope_epoch(state, self.scope_key())?;
