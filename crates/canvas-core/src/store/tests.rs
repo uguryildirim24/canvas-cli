@@ -286,22 +286,37 @@ fn cache_clear_with_concurrent_reader() {
     let reader = thread::spawn(move || {
         let conn = rusqlite::Connection::open(&store_path).unwrap();
         conn.busy_timeout(Duration::from_secs(5)).unwrap();
+        conn.execute_batch("BEGIN").unwrap();
+        let before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fake_entities", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(before, 1);
         barrier_r.wait();
-        let _ = conn.query_row("SELECT COUNT(*) FROM fake_entities", [], |r| {
-            r.get::<_, i64>(0)
-        });
+        barrier_r.wait();
+        let during: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fake_entities", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            during, 1,
+            "reader retains its snapshot across clear and vacuum"
+        );
+        conn.execute_batch("ROLLBACK").unwrap();
+        let after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fake_entities", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(after, 0);
     });
 
     barrier.wait();
-    open.store
-        .call_blocking(|conns| {
-            cache_clear(&mut conns.cache)?;
-            let stats = cache_stats(&conns.cache)?;
-            assert_eq!(stats.total_rows, 0);
-            Ok(())
-        })
-        .unwrap();
+    let cleared = open.store.call_blocking(|conns| {
+        cache_clear(&mut conns.cache)?;
+        let stats = cache_stats(&conns.cache)?;
+        assert_eq!(stats.total_rows, 0);
+        Ok(())
+    });
+    barrier.wait();
     reader.join().unwrap();
+    cleared.unwrap();
     assert!(paths.cache_db.exists());
 }
 
