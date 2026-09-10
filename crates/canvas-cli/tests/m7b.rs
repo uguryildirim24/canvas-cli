@@ -340,6 +340,40 @@ fn a_stale_follow_is_refused_before_the_browser_is_asked() {
     host.stop();
 }
 
+// ----------------------------------------------------------- the status feed
+
+/// M7-b acceptance: the panel is told when the event log moves, and the
+/// extension polls Canvas for nothing.
+#[test]
+fn the_panel_follows_the_event_log_without_polling_canvas() {
+    let f = Fixture::new();
+    let mut host = attached(&f);
+    let (plan_id, _, _) = prepared(&f, None);
+
+    // The panel opens and is shown the plan waiting for a decision.
+    host.send(&json!({ "type": "panel_hello", "protocol": "bridge-native@1" }));
+    let first = panel_of(&mut host);
+    assert_eq!(first["approvals"][0]["plan_id"], plan_id.as_str());
+    let cursor = first["cursor"].as_i64().expect("a cursor");
+
+    // Something else moves the log: the plan is declined out of band, the way
+    // another process would do it.
+    let paths = canvas_core::identity::Paths::for_identity(f.data_root(), &f.doc.key);
+    let open = OpenIdentity::open(&paths, &f.doc).expect("open");
+    canvas_core::plan::decline(&open.store, &plan_id).expect("decline");
+
+    // The host notices and pushes, with the feed moved on and the plan gone.
+    let next = panel_of(&mut host);
+    assert!(
+        next["cursor"].as_i64().expect("a cursor") > cursor,
+        "{next}"
+    );
+    assert_eq!(next["approvals"], json!([]), "{next}");
+    assert_eq!(next["resync_required"], false);
+
+    host.stop();
+}
+
 // ------------------------------------------------------------ the decision
 
 /// M7-b acceptance: the panel decides, and each of the three decisions lands.
