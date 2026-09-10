@@ -29,6 +29,7 @@ pub use registry::{
 };
 pub use render::{
     StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,
-    format_local_datetime_at, format_relative_suffix, format_relative_suffix_at, new_table, paint,
-    status_label, style_dim, style_due_soon, style_missing, style_overdue, style_submitted,
+    format_local_datetime_at, format_local_instant, format_relative_suffix,
+    format_relative_suffix_at, new_table, paint, status_label, style_dim, style_due_soon,
+    style_missing, style_overdue, style_submitted,
 };

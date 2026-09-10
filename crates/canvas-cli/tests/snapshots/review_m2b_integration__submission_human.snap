@@ -3,10 +3,10 @@ source: crates/canvas-cli/tests/review_m2b_integration.rs
 expression: "f.human(&[\"submission\", \"1\", \"2\", \"--history\", \"--offline\"], 0).await"
 ---
 course 1  CHEM
-state graded  attempt 2  submitted 2026-09-09T12:05:00-04:00  score 8.5
+state graded  attempt 2  submitted Wed Sep 9, 12:05 PM  score 8.5
   Canvas ID    File         Size     Type             
   55001        essay.pdf    24576    application/pdf  
-comment 2026-09-09T12:40:00-04:00 Prof. Ada: Nice work.
-  Attempt    Submitted                    Score    Files  
-  1          2026-09-08T08:00:00-04:00    —        1      
-  2          2026-09-09T12:05:00-04:00    8.5      1
+comment Wed Sep 9, 12:40 PM Prof. Ada: Nice work.
+  Attempt    Submitted              Score    Files  
+  1          Tue Sep 8, 8:00 AM     —        1      
+  2          Wed Sep 9, 12:05 PM    8.5      1

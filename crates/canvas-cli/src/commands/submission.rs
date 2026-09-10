@@ -475,7 +475,7 @@ async fn show_cmd(
         .extend(outcomes.into_iter().filter_map(|o| o.error));
     envelope.requests = session.requests();
     emit(globals.json, &envelope, || {
-        render_submission(io::stdout(), &envelope.result, &course)
+        render_submission(io::stdout(), &envelope.result, &course, &zone)
     })
 }
 
@@ -671,8 +671,16 @@ fn render_submission(
     mut out: impl Write,
     result: &serde_json::Value,
     course: &canvas_core::resolve::ResolvedCourse,
+    zone: &jiff::tz::TimeZone,
 ) -> io::Result<()> {
     let s = &result["submission"];
+    // §7 human dates: the identity zone, `Tue Sep 15, 11:59 PM`. These are
+    // times things happened at, so they carry no `overdue`/`in` suffix.
+    let when = |v: &serde_json::Value| {
+        v.as_str()
+            .and_then(|raw| raw.parse::<Timestamp>().ok())
+            .map(|ts| crate::output::format_local_instant(ts, zone))
+    };
     // Table cells use the em dash the other list renderers use; the status
     // line spells out `unknown`, where absence is the point.
     let cell = |v: &serde_json::Value| {
@@ -713,7 +721,7 @@ fn render_submission(
         "state {}  attempt {}  submitted {}  score {}",
         unknown(&s["workflow_state"]),
         unknown(&s["attempt"]),
-        unknown(&s["submitted_at_local"]),
+        when(&s["submitted_at"]).unwrap_or_else(|| "unknown".into()),
         unknown(&s["score"])
     )?;
     if s["pending"] == serde_json::Value::Bool(true) {
@@ -745,7 +753,7 @@ fn render_submission(
         writeln!(
             out,
             "comment {} {}: {}",
-            cell(&c["created_at_local"]),
+            when(&c["created_at"]).unwrap_or_else(|| "\u{2014}".into()),
             cell(&c["author"]),
             cell(&c["text"])
         )?;
@@ -757,7 +765,7 @@ fn render_submission(
         for h in &history {
             table.add_row(vec![
                 cell(&h["attempt"]),
-                cell(&h["submitted_at_local"]),
+                when(&h["submitted_at"]).unwrap_or_else(|| "\u{2014}".into()),
                 cell(&h["score"]),
                 h["attachments"].as_array().map_or(0, Vec::len).to_string(),
             ]);
