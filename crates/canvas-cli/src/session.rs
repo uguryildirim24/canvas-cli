@@ -3,7 +3,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use canvas_api::{Client, Secret};
+use canvas_api::{Client, GovernorConfig, Secret};
+use canvas_core::coord::CoordConfig;
 use canvas_core::identity::{IdentityDocument, Paths};
 use canvas_core::store::OpenIdentity;
 use etcetera::{BaseStrategy, choose_base_strategy};
@@ -46,6 +47,32 @@ struct ConfigFile {
     profiles: std::collections::BTreeMap<String, ProfileEntry>,
     #[serde(default)]
     cache: CacheConfig,
+    #[serde(default)]
+    network: NetworkConfig,
+}
+
+/// `[network]` concurrency (§9). The same numbers bound the cross-process
+/// request permits and this process's governor, so one is never larger than
+/// the other.
+#[derive(Debug, Deserialize)]
+struct NetworkConfig {
+    #[serde(default = "default_concurrency")]
+    api_concurrency: usize,
+    #[serde(default = "default_concurrency")]
+    storage_concurrency: usize,
+}
+
+fn default_concurrency() -> usize {
+    4
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            api_concurrency: default_concurrency(),
+            storage_concurrency: default_concurrency(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -156,7 +183,18 @@ impl Session {
             Ok(token) if !token.is_empty() => Some(token),
             _ => None,
         };
-        let open = match OpenIdentity::open(&paths, &identity) {
+        let coord = CoordConfig::default()
+            .with_concurrency(
+                config.network.api_concurrency,
+                config.network.storage_concurrency,
+            )
+            .with_test_overrides();
+        let governor = GovernorConfig {
+            api_concurrency: coord.api_concurrency,
+            storage_concurrency: coord.storage_concurrency,
+            ..GovernorConfig::default()
+        };
+        let open = match OpenIdentity::open_with_coord(&paths, &identity, coord) {
             Ok(open) => open,
             Err(error) => {
                 if !offline && env_token.is_none() {
@@ -175,7 +213,15 @@ impl Session {
             Some(token) if !offline => {
                 let origin = Url::parse(&identity.origin)
                     .map_err(|e| SessionError::Local(format!("invalid identity origin: {e}")))?;
-                match Client::new(origin, Secret::new(token), USER_AGENT) {
+                // Every process that binds this identity shares one request
+                // budget: the slot files and the `governor` row (REPORT §3.6).
+                match Client::with_seams(
+                    origin,
+                    Secret::new(token),
+                    USER_AGENT,
+                    governor,
+                    &open.store.coordinator().seams(),
+                ) {
                     Ok(client) => Some(client),
                     Err(error) => {
                         client_init_error = Some(error);
