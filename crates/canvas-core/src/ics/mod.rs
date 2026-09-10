@@ -35,31 +35,111 @@ pub struct CalendarItem {
     pub alarm: Option<String>,
 }
 
-/// Write a `VCALENDAR` document for `items`. `dtstamp` is the generation time.
-#[must_use]
-pub fn write_ics(items: &[CalendarItem], dtstamp: Timestamp) -> String {
+/// Validated calendar text and one-day conversion warnings.
+#[derive(Debug)]
+pub struct IcsDocument {
+    pub text: String,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum IcsError {
+    #[error("calendar item {0} is missing its start or civil date")]
+    MissingStart(i64),
+    #[error("calendar item {0} has an invalid property value")]
+    InvalidValue(i64),
+}
+
+/// Write validated RFC 5545 text. Callers must display returned warnings.
+pub fn write_ics(items: &[CalendarItem], dtstamp: Timestamp) -> Result<IcsDocument, IcsError> {
     let mut out = String::new();
+    let mut warnings = Vec::new();
     push_line(&mut out, "BEGIN:VCALENDAR");
     push_line(&mut out, "VERSION:2.0");
     push_line(&mut out, "PRODID:-//canvas-cli//EN");
     push_line(&mut out, "CALSCALE:GREGORIAN");
     for item in items {
+        validate(item)?;
+        if item.all_day && item.start_at.zip(item.end_at).is_some_and(|(a, b)| a != b) {
+            warnings.push(format!(
+                "{}: all-day event with a longer span is shown as one day in v1",
+                item.title
+            ));
+        }
         write_vevent(&mut out, item, dtstamp);
     }
     push_line(&mut out, "END:VCALENDAR");
-    out
+    Ok(IcsDocument {
+        text: out,
+        warnings,
+    })
+}
+
+fn validate(item: &CalendarItem) -> Result<(), IcsError> {
+    if if item.all_day {
+        item.all_day_date.is_none()
+    } else if item.is_deadline {
+        item.due_at.is_none()
+    } else {
+        item.start_at.is_none()
+    } {
+        return Err(IcsError::MissingStart(item.id));
+    }
+    if item
+        .url
+        .as_ref()
+        .is_some_and(|s| s.chars().any(char::is_control))
+        || item.alarm.as_ref().is_some_and(|s| !valid_alarm(s))
+    {
+        return Err(IcsError::InvalidValue(item.id));
+    }
+    Ok(())
+}
+
+// RFC duration grammar for a positive offset before a deadline.
+fn valid_alarm(s: &str) -> bool {
+    let Some(mut rest) = s.strip_prefix('P') else {
+        return false;
+    };
+    let mut any = false;
+    let mut nonzero = false;
+    for unit in ['W', 'D', 'T', 'H', 'M', 'S'] {
+        if unit == 'T' {
+            if let Some(tail) = rest.strip_prefix('T') {
+                rest = tail;
+                if rest.is_empty() {
+                    return false;
+                }
+            } else {
+                return rest.is_empty() && any && nonzero;
+            }
+            continue;
+        }
+        let n = rest.bytes().take_while(u8::is_ascii_digit).count();
+        if n > 0 && rest[n..].starts_with(unit) {
+            nonzero |= rest[..n].bytes().any(|c| c != b'0');
+            rest = &rest[n + 1..];
+            any = true;
+            if unit == 'W' {
+                return rest.is_empty() && nonzero;
+            }
+        }
+    }
+    rest.is_empty() && any && nonzero
 }
 
 fn write_vevent(out: &mut String, item: &CalendarItem, dtstamp: Timestamp) {
     push_line(out, "BEGIN:VEVENT");
     let uid = format!("canvas-{}-{}@{}", item.kind, item.id, item.identity_key);
-    push_prop(out, "UID", &uid);
+    push_prop(out, "UID", &escape_text(&uid));
     push_prop(out, "DTSTAMP", &format_utc(dtstamp));
 
     if item.all_day {
         let date = item
             .all_day_date
-            .map_or_else(|| "19700101".into(), |d| d.to_string().replace('-', ""));
+            .expect("validated civil date")
+            .to_string()
+            .replace('-', "");
         push_line(out, &format!("DTSTART;VALUE=DATE:{date}"));
         // No DTEND for all-day (one civil day).
     } else if item.is_deadline {
@@ -102,22 +182,14 @@ fn write_vevent(out: &mut String, item: &CalendarItem, dtstamp: Timestamp) {
 }
 
 fn format_utc(ts: Timestamp) -> String {
-    // YYYYMMDDTHHMMSSZ
-    let s = ts.to_string(); // RFC 3339
-    let cleaned: String = s.chars().filter(char::is_ascii_digit).collect();
-    // timestamp string like 2026-09-09T12:00:00Z → digits 20260909120000
-    if cleaned.len() >= 14 {
-        format!("{}Z", &cleaned[..14])
-    } else {
-        format!("{cleaned}Z")
-    }
+    ts.strftime("%Y%m%dT%H%M%SZ").to_string()
 }
 
 /// RFC 5545 §3.3.11 text escaping.
 #[must_use]
 pub fn escape_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
+    for c in s.replace("\r\n", "\n").replace('\r', "\n").chars() {
         match c {
             '\\' => out.push_str("\\\\"),
             ';' => out.push_str("\\;"),
@@ -210,7 +282,9 @@ mod tests {
             description: None,
             alarm: None,
         };
-        let ics = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap());
+        let ics = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap())
+            .unwrap()
+            .text;
         assert!(ics.contains("DTSTART;VALUE=DATE:20260308"));
         assert!(!ics.contains("DTEND"));
     }
@@ -234,7 +308,9 @@ mod tests {
             description: Some("note; with, special\\chars".into()),
             alarm: None,
         };
-        let ics = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap());
+        let ics = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap())
+            .unwrap()
+            .text;
         assert!(ics.contains("DTSTART;VALUE=DATE:20260308"));
         assert!(!ics.lines().any(|l| l.starts_with("DTEND")));
         assert!(ics.contains("DESCRIPTION:note\\; with\\, special\\\\chars"));
@@ -258,9 +334,41 @@ mod tests {
             description: None,
             alarm: Some("PT24H".into()),
         };
-        let ics = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap());
+        let ics = write_ics(&[item], "2026-01-01T00:00:00Z".parse().unwrap())
+            .unwrap()
+            .text;
+        assert!(ics.contains("DTSTAMP:20260101T000000Z\r\n"));
+        assert!(ics.contains("DTSTART:20260909T235900Z\r\n"));
         assert!(ics.contains("BEGIN:VALARM"));
         assert!(ics.contains("TRIGGER:-PT24H"));
         assert!(ics.contains("SUMMARY:[CS] HW"));
+    }
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    #[test]
+    fn unicode_folding_roundtrips_and_alarm_grammar() {
+        let text = format!("DESCRIPTION:{}", "😀é".repeat(60));
+        let lines = fold_line(&text);
+        assert!(lines.iter().all(|s| s.len() <= 75));
+        assert_eq!(lines.join("\r\n").replace("\r\n ", ""), text);
+        for good in ["PT24H", "P1D", "P2W", "P1DT30M", "PT1H30M"] {
+            assert!(valid_alarm(good));
+        }
+        for bad in [
+            "",
+            "PT",
+            "PT0S",
+            "-PT1H",
+            "PT1H\r\nEND:VEVENT",
+            "P1W2D",
+            "P1H",
+        ] {
+            assert!(!valid_alarm(bad));
+        }
+        assert_eq!(escape_text("a\rb\r\nc"), "a\\nb\\nc");
     }
 }
