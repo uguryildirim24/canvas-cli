@@ -88,9 +88,9 @@ and exits with `not implemented`.
 | `canvas identity remove` | Delete an identity: credentials, then data, then profiles. | available |
 | `canvas courses` | List your courses. `--all`, `--term`, `--favorites`. | available |
 | `canvas course` | Show one course: term, teachers, and reported scores. | available |
-| `canvas todo` | What is due and what is missing. `--days`, `--all`, `--missing`, `--course`. | planned |
-| `canvas assignments` | List a course's assignments. `--bucket`, `--search`. | planned |
-| `canvas assignment` | Show one assignment prompt, dates, and your submission. | planned |
+| `canvas todo` | What is due and what is missing. `--days`, `--all`, `--missing`, `--course`. | available |
+| `canvas assignments` | List a course's assignments. `--bucket`, `--search`. | available |
+| `canvas assignment` | Show one assignment prompt, dates, and your submission. | available |
 | `canvas submit` | Submit files, text, HTML, or a URL, journaled and receipted. | planned |
 | `canvas submission` | Show your submission for an assignment. `--history`. | planned |
 | `canvas submission verify` | Re-check a receipt against what Canvas reports now. | planned |
@@ -106,10 +106,10 @@ and exits with `not implemented`.
 | `canvas announcements` | Recent announcements. `--since`, `--unread`. | planned |
 | `canvas announcement` | Show one announcement as Markdown. | planned |
 | `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. | planned |
-| `canvas open` | Open a course, or any Canvas URL, in the browser. | planned |
-| `canvas open assignment` | Open an assignment page in the browser. | planned |
-| `canvas open file` | Open a file by id in the browser. | planned |
-| `canvas open announcement` | Open an announcement page in the browser. | planned |
+| `canvas open` | Open a course, or any Canvas URL, in the browser. | available |
+| `canvas open assignment` | Open an assignment page in the browser. | available |
+| `canvas open file` | Open a file by id in the browser. | available |
+| `canvas open announcement` | Open an announcement page in the browser. | available |
 | `canvas sync` | Refresh the cached datasets. `--full` adds files and modules. | available |
 | `canvas cache stats` | Row counts and size per cached dataset. | available |
 | `canvas cache clear` | Drop the cache database. State and receipts survive. | available |
