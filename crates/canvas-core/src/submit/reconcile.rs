@@ -83,6 +83,7 @@ pub enum ReconcileError {
 }
 
 /// Run reconcile for a journal id.
+#[allow(clippy::too_many_lines)]
 pub async fn reconcile(
     client: &Client,
     store: &Store,
@@ -167,10 +168,7 @@ pub async fn reconcile(
                     server_match: None,
                     candidates: Vec::new(),
                     message: format!("recovered to {}", recovered.unwrap_or(row.state)),
-                    response_kind: row
-                        .response_kind
-                        .as_deref()
-                        .and_then(|s| s.parse().ok()),
+                    response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
                     not_submitted_evidence: row.not_submitted_evidence.clone(),
                 });
             }
@@ -183,7 +181,12 @@ pub async fn reconcile(
     // Re-read under owner lock.
     let row = get_journal(store, journal_id)?.ok_or(JournalError::NotFound)?;
     if row.state != State::OutcomeUnknown {
-        return Ok(base_result(&row, OwnerStatus::NotApplicable, ReconcileOutcome::Recovery, "state changed"));
+        return Ok(base_result(
+            &row,
+            OwnerStatus::NotApplicable,
+            ReconcileOutcome::Recovery,
+            "state changed",
+        ));
     }
 
     let history = get_submission_history(client, row.course_id, row.assignment_id).await?;
@@ -207,10 +210,7 @@ pub async fn reconcile(
                 } else {
                     "cannot assume: wait 30 minutes after posting_started_at".into()
                 },
-                response_kind: row
-                    .response_kind
-                    .as_deref()
-                    .and_then(|s| s.parse().ok()),
+                response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
                 not_submitted_evidence: None,
             });
         }
@@ -295,8 +295,7 @@ fn evaluate_history(
         let submitted_ns = entry
             .submitted_at
             .as_value()
-            .map(|t| t.as_nanosecond())
-            .unwrap_or(i128::MIN);
+            .map_or(i128::MIN, |t| t.as_nanosecond());
         if submitted_ns < window_start_ns {
             continue;
         }
@@ -332,7 +331,7 @@ fn evaluate_history(
             }
         } else if row.kind == "online_url"
             && let Some(url) = &intent.url
-            && entry.url.as_ref().map(|u| u.as_str()) == Some(url.as_str())
+            && entry.url.as_ref().is_some_and(|u| u.as_str() == url)
             && best_server_match
                 .as_ref()
                 .is_none_or(|m| attempt > m.attempt)
@@ -360,6 +359,7 @@ fn evaluate_history(
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn apply_positive_evidence(
     store: &Store,
     owner: &OwnerLock,
@@ -429,10 +429,7 @@ fn apply_positive_evidence(
                     server_match: None,
                     candidates: eval.candidates.clone(),
                     message,
-                    response_kind: row
-                        .response_kind
-                        .as_deref()
-                        .and_then(|s| s.parse().ok()),
+                    response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
                     not_submitted_evidence: None,
                 });
             }
@@ -452,10 +449,7 @@ fn apply_positive_evidence(
                         "multiple history entries share this journal's uploaded file ids ({})",
                         eval.file_matches.len()
                     ),
-                    response_kind: row
-                        .response_kind
-                        .as_deref()
-                        .and_then(|s| s.parse().ok()),
+                    response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
                     not_submitted_evidence: None,
                 });
             }
@@ -492,10 +486,7 @@ fn apply_positive_evidence(
             server_match: Some(server_match.clone()),
             candidates: eval.candidates.clone(),
             message,
-            response_kind: row
-                .response_kind
-                .as_deref()
-                .and_then(|s| s.parse().ok()),
+            response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
             not_submitted_evidence: None,
         });
     }
@@ -520,10 +511,7 @@ fn apply_positive_evidence(
         server_match: None,
         candidates: eval.candidates.clone(),
         message,
-        response_kind: row
-            .response_kind
-            .as_deref()
-            .and_then(|s| s.parse().ok()),
+        response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
         not_submitted_evidence: None,
     })
 }
@@ -541,10 +529,7 @@ fn unknown_result(row: &JournalRow, eval: &HistoryEval, message: &str) -> Reconc
         server_match: eval.server_match.clone(),
         candidates: eval.candidates.clone(),
         message: message.into(),
-        response_kind: row
-            .response_kind
-            .as_deref()
-            .and_then(|s| s.parse().ok()),
+        response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
         not_submitted_evidence: None,
     }
 }
@@ -567,10 +552,7 @@ fn base_result(
         server_match: None,
         candidates: Vec::new(),
         message: message.into(),
-        response_kind: row
-            .response_kind
-            .as_deref()
-            .and_then(|s| s.parse().ok()),
+        response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
         not_submitted_evidence: row.not_submitted_evidence.clone(),
     }
 }
@@ -695,8 +677,4 @@ pub(crate) fn readback_from_entry(entry: &SubmissionHistoryEntry) -> ReadbackRec
         attachments,
         body_sha256,
     }
-}
-
-pub(crate) fn submission_value_from_bytes(bytes: &[u8]) -> Option<Value> {
-    serde_json::from_slice(bytes).ok()
 }
