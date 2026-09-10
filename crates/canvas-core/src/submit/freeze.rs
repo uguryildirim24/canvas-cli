@@ -1,5 +1,6 @@
 //! Freeze submit inputs (§12.2 step 5).
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -81,7 +82,23 @@ pub fn freeze_files(paths: &[PathBuf], comment: Option<&str>) -> Result<FrozenIn
     let mut files = Vec::with_capacity(paths.len());
     let mut file_paths = Vec::with_capacity(paths.len());
     for path in paths {
-        let bytes = std::fs::read(path)?;
+        let mut reader = std::fs::File::open(path)?;
+        if !reader.metadata()?.is_file() {
+            return Err(FreezeError::Validation(
+                "input must be a regular file".into(),
+            ));
+        }
+        let mut digest = Sha256::new();
+        let mut size = 0_u64;
+        let mut buffer = vec![0; 65536];
+        loop {
+            let n = reader.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+            size += n as u64;
+            digest.update(&buffer[..n]);
+        }
         let name = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -91,8 +108,8 @@ pub fn freeze_files(paths: &[PathBuf], comment: Option<&str>) -> Result<FrozenIn
             .to_owned();
         files.push(IntendedFile {
             name,
-            size: bytes.len() as u64,
-            sha256: hex_sha256(&bytes),
+            size,
+            sha256: format!("{:x}", digest.finalize()),
             canvas_file_id: None,
         });
         file_paths.push(path.clone());
@@ -141,7 +158,7 @@ pub fn freeze_text(
 /// Freeze `--html` input verbatim.
 pub fn freeze_html(path: &Path, comment: Option<&str>) -> Result<FrozenInput, FreezeError> {
     let comment = validate_comment(comment)?;
-    let bytes = std::fs::read(path)?;
+    let bytes = read_bounded(path)?;
     if bytes.len() > MAX_TEXT_BYTES {
         return Err(FreezeError::Validation(format!(
             "html input exceeds {MAX_TEXT_BYTES} bytes"
@@ -173,16 +190,12 @@ pub fn freeze_html(path: &Path, comment: Option<&str>) -> Result<FrozenInput, Fr
 pub fn freeze_url(url: &str, comment: Option<&str>) -> Result<FrozenInput, FreezeError> {
     let comment = validate_comment(comment)?;
     let trimmed = url.trim();
-    let rest = trimmed
-        .strip_prefix("https://")
-        .or_else(|| trimmed.strip_prefix("http://"));
-    let Some(rest) = rest else {
+    let parsed =
+        reqwest::Url::parse(trimmed).map_err(|_| FreezeError::Validation("invalid URL".into()))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
         return Err(FreezeError::Validation(
-            "URL scheme must be http or https".into(),
+            "URL scheme must be http or https with a host".into(),
         ));
-    };
-    if rest.is_empty() || rest.contains(char::is_whitespace) {
-        return Err(FreezeError::Validation("invalid URL".into()));
     }
     Ok(FrozenInput {
         kind: InputKind::OnlineUrl,
@@ -206,7 +219,7 @@ pub enum TextSource<'a> {
 
 fn read_text_source(source: &TextSource<'_>) -> Result<String, FreezeError> {
     let bytes = match source {
-        TextSource::Path(path) => std::fs::read(path)?,
+        TextSource::Path(path) => read_bounded(path)?,
         TextSource::Bytes(b) => b.to_vec(),
     };
     if bytes.len() > MAX_TEXT_BYTES {
@@ -218,15 +231,25 @@ fn read_text_source(source: &TextSource<'_>) -> Result<String, FreezeError> {
         .map_err(|_| FreezeError::Validation("text input is not valid UTF-8".into()))
 }
 
+fn read_bounded(path: &Path) -> Result<Vec<u8>, FreezeError> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take((MAX_TEXT_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_TEXT_BYTES {
+        return Err(FreezeError::Validation("input exceeds 1 MiB".into()));
+    }
+    Ok(bytes)
+}
+
 fn normalize_newlines(input: &str) -> String {
-    input.replace("\r\n", "\n").replace('\r', "\n")
+    input.replace("\r\n", "\n")
 }
 
 /// Escape `& < > "`; blank-line blocks → `<p>`; single LF → `<br>`.
 pub fn text_to_html(normalized_lf: &str) -> String {
     let blocks: Vec<&str> = normalized_lf
         .split("\n\n")
-        .map(str::trim)
         .filter(|b| !b.is_empty())
         .collect();
     let mut out = String::new();
@@ -292,6 +315,20 @@ mod tests {
         assert_eq!(text.outbound_bytes, "<p>a</p><p>b<br>c</p>");
         assert_eq!(text.input_sha256, hex_sha256(b"a\n\nb\nc"));
         assert_eq!(text.sent_sha256, hex_sha256(text.outbound_bytes.as_bytes()));
+    }
+
+    #[test]
+    fn transform_preserves_whitespace_and_only_normalizes_crlf() {
+        let input =
+            freeze_text(&TextSource::Bytes(b"  a & < > \" \r\nline\r end  "), None).unwrap();
+        assert_eq!(
+            input.payload.text.unwrap().outbound_bytes,
+            "<p>  a &amp; &lt; &gt; &quot; <br>line\r end  </p>"
+        );
+        let long = vec![b'x'; MAX_TEXT_BYTES + 1];
+        assert!(freeze_text(&TextSource::Bytes(&long), None).is_err());
+        assert!(freeze_url("https://?query", None).is_err());
+        assert!(freeze_url("HTTPS://example.test/work", None).is_ok());
     }
 
     #[test]
