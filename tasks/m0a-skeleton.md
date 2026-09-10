@@ -52,7 +52,10 @@ Appendix A (versions). Build the empty-but-green workspace. No feature code.
 ## Rules
 - Owner files: everything under the repo; it is empty. Do not touch `docs/` or
   `tasks/`.
-- Do NOT `git commit`. Leave the tree for review.
+- Work on the current branch `lane/m0a` (already checked out). Commit as you
+  go with conventional messages (`chore: workspace skeleton`, `ci: gates`,
+  ...). Do not push. Do not merge into `main`.
+- `.gitignore` must include `target/`, `.target/`, and `.worktrees/`.
 - Use the exact crate versions from SPEC Appendix A. If one does not resolve,
   use the nearest and note it in your final message.
 - If `cargo` needs a network you cannot reach, stop and report.
