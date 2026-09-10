@@ -1,15 +1,35 @@
 [package]
-name = "canvas-cli"
+# crates.io name (SPEC §4); the binary stays `canvas`.
+name = "canvas-lms-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Command-line client for Canvas LMS"
+repository.workspace = true
+homepage.workspace = true
+description = "Command-line client for Canvas LMS, for students"
+keywords = ["canvas", "lms", "instructure", "cli", "student"]
+categories = ["command-line-utilities"]
+# crates.io publication waits on `canvas-api` and `canvas-core` becoming
+# publishable; see docs/release.md.
 publish = false
 
 [[bin]]
 name = "canvas"
 path = "src/main.rs"
+
+[lib]
+name = "canvas_cli"
+path = "src/lib.rs"
+
+# `cargo binstall canvas-lms-cli` fetches the same archives `dist` uploads.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.{ archive-format }"
+bin-dir = "{ name }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "txz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
 
 [dependencies]
 anstream.workspace = true
