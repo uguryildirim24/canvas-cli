@@ -16,12 +16,15 @@ fn version_prints_crate_version() {
 
 #[test]
 fn todo_is_stub() {
+    // M1-c implements todo; without identity it exits auth (3).
+    let empty = tempfile::TempDir::new().unwrap();
     Command::cargo_bin("canvas")
         .unwrap()
+        .env("CANVAS_DATA_ROOT", empty.path())
+        .env_remove("CANVAS_IDENTITY_KEY")
         .arg("todo")
         .assert()
-        .code(1)
-        .stderr("not implemented yet\n");
+        .code(3);
 }
 
 #[test]
@@ -167,6 +170,8 @@ fn mixed_commands_accept_typed_and_positional_forms() {
     ] {
         assert_m2b_callable(&args);
     }
+    // open is implemented (class B); without identity it exits auth.
+    let empty = tempfile::TempDir::new().unwrap();
     for args in [
         vec!["open", "chem", "--offline"],
         vec!["open", "https://canvas.example.test/courses/1", "--offline"],
@@ -176,7 +181,13 @@ fn mixed_commands_accept_typed_and_positional_forms() {
         vec!["open", "announcement", "chem", "123"],
         vec!["open", "--", "assignment"],
     ] {
-        assert_stub(&args);
+        Command::cargo_bin("canvas")
+            .unwrap()
+            .env("CANVAS_DATA_ROOT", empty.path())
+            .env_remove("CANVAS_IDENTITY_KEY")
+            .args(&args)
+            .assert()
+            .code(3);
     }
 }
 
@@ -298,6 +309,7 @@ fn command_choices_reject_invalid_combinations() {
 
 #[test]
 fn command_choices_accept_documented_forms() {
+    let empty = tempfile::TempDir::new().unwrap();
     for bucket in [
         "open",
         "upcoming",
@@ -309,7 +321,13 @@ fn command_choices_accept_documented_forms() {
         "future",
         "all",
     ] {
-        assert_stub(&["assignments", "chem", "--bucket", bucket]);
+        Command::cargo_bin("canvas")
+            .unwrap()
+            .env("CANVAS_DATA_ROOT", empty.path())
+            .env_remove("CANVAS_IDENTITY_KEY")
+            .args(["assignments", "chem", "--bucket", bucket])
+            .assert()
+            .code(3);
     }
     for args in [
         vec!["download", "chem"],
@@ -325,7 +343,12 @@ fn command_choices_accept_documented_forms() {
             "3",
         ],
     ] {
-        assert_stub(&args);
+        // M3-b is implemented: without an identity these exit 3 (auth).
+        Command::cargo_bin("canvas")
+            .unwrap()
+            .args(&args)
+            .assert()
+            .code(3);
     }
     for args in [
         vec![
@@ -416,18 +439,11 @@ fn nested_help_lists_registered_commands() {
 
 #[test]
 fn every_v1_stub_is_callable() {
-    // Implemented by M0-c (auth/identity/config/doctor) and M1-b
-    // (courses/course/alias/sync/cache) are covered elsewhere.
+    // Implemented by M0-c (auth/identity/config/doctor), M1-b
+    // (courses/course/alias/sync/cache), M1-c (todo/assignments/assignment/open),
+    // M3-a (files/modules), and M3-b (download) are covered elsewhere.
     let own_stubs: &[&[&str]] = &[
-        &["todo"],
-        &["assignments", "chem"],
-        &["assignment", "chem", "123"],
-        &[
-            "assignment",
-            "https://canvas.example.test/courses/1/assignments/2",
-        ],
         &["grades"],
-        &["download", "chem"],
         &["announcements"],
         &["announcement", "chem", "123"],
         &[
@@ -435,11 +451,6 @@ fn every_v1_stub_is_callable() {
             "https://canvas.example.test/courses/1/discussion_topics/2",
         ],
         &["calendar"],
-        &["open", "chem"],
-        &["open", "https://canvas.example.test/courses/1"],
-        &["open", "assignment", "chem", "123"],
-        &["open", "file", "123"],
-        &["open", "announcement", "chem", "123"],
     ];
     for args in own_stubs {
         assert_stub(args);
@@ -467,7 +478,7 @@ fn every_v1_stub_is_callable() {
     }
 }
 
-/// M1-b commands need an identity; without one they exit 3 with an error envelope.
+/// M1-b / M3-a / M3-b commands need an identity; without one they exit 3 with an error envelope.
 #[test]
 fn m1b_commands_exit_auth_without_identity() {
     let empty = tempfile::TempDir::new().unwrap();
@@ -481,6 +492,9 @@ fn m1b_commands_exit_auth_without_identity() {
         vec!["cache", "stats"],
         vec!["cache", "clear"],
         vec!["cache", "path"],
+        vec!["files", "chem"],
+        vec!["modules", "chem"],
+        vec!["download", "chem", "--dest", "/tmp/out"],
     ] {
         let assert = Command::cargo_bin("canvas")
             .unwrap()

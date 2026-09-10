@@ -55,11 +55,6 @@ fn not_implemented(json: bool) -> ExitCode {
     )
 }
 
-/// Peer-lane Round-3 stub: exit 2 with `not implemented`.
-fn not_implemented_r3(json: bool) -> ExitCode {
-    commands::emit::emit_error(json, "not_implemented", "not implemented", 2, None, None)
-}
-
 fn m1b_globals(globals: &Globals) -> commands::Globals {
     commands::Globals {
         json: globals.json,
@@ -148,15 +143,64 @@ async fn main() -> ExitCode {
                     };
                     commands::cache::run(&m1b_globals(&globals), cmd).await
                 }
-                Commands::Todo { .. }
-                | Commands::Assignments { .. }
-                | Commands::Assignment { .. }
-                | Commands::Grades { .. }
-                | Commands::Download { .. }
+                Commands::Files {
+                    course,
+                    tree,
+                    search,
+                } => commands::files::run(&m1b_globals(&globals), course, tree, search).await,
+                Commands::Modules { course, items } => {
+                    commands::modules::run(&m1b_globals(&globals), course, items).await
+                }
+                Commands::Download {
+                    course,
+                    all_courses,
+                    dest,
+                    module,
+                    files,
+                    jobs,
+                    dry_run,
+                    force,
+                    verify,
+                } => {
+                    commands::download::run(
+                        &m1b_globals(&globals),
+                        commands::download::DownloadArgs {
+                            course,
+                            all_courses,
+                            dest,
+                            module,
+                            files,
+                            jobs,
+                            dry_run,
+                            force,
+                            verify,
+                        },
+                    )
+                    .await
+                }
+                Commands::Todo {
+                    days,
+                    all,
+                    missing,
+                    course,
+                } => commands::todo::run(&m1b_globals(&globals), days, all, missing, course).await,
+                Commands::Assignments {
+                    course,
+                    bucket,
+                    search,
+                } => {
+                    commands::assignments::run(&m1b_globals(&globals), course, bucket, search).await
+                }
+                Commands::Assignment { target, assignment } => {
+                    commands::assignment::run(&m1b_globals(&globals), target, assignment).await
+                }
+                Commands::Open { command, target } => {
+                    commands::open::run(&m1b_globals(&globals), command, target).await
+                }
+                Commands::Grades { .. }
                 | Commands::Announcements { .. }
                 | Commands::Announcement { .. }
-                | Commands::Calendar { .. }
-                | Commands::Open { .. } => not_implemented(globals.json),
+                | Commands::Calendar { .. } => not_implemented(globals.json),
                 Commands::Submit {
                     target,
                     assignment,
@@ -224,10 +268,6 @@ async fn main() -> ExitCode {
                         }
                     };
                     commands::receipts::run(&m1b_globals(&globals), cmd)
-                }
-                // Round-3 peer-lane stubs (M3-a): exit 2.
-                Commands::Files { .. } | Commands::Modules { .. } => {
-                    not_implemented_r3(globals.json)
                 }
             }
         })

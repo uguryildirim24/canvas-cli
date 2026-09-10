@@ -1,0 +1,6 @@
+---
+source: crates/canvas-cli/tests/files_modules.rs
+expression: stdout
+---
+  ID    NAME      POS    STATE       ITEMS  
+  8     Week 1    1      unlocked    1

@@ -53,12 +53,19 @@ struct ProfileEntry {
     key: Option<String>,
     origin: Option<String>,
     user_id: Option<i64>,
+    time_zone: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(clippy::struct_field_names)]
 struct CacheConfig {
     ttl_courses: Option<String>,
     ttl_grades: Option<String>,
+    ttl_assignments: Option<String>,
+    ttl_missing: Option<String>,
+    ttl_planner: Option<String>,
+    ttl_files: Option<String>,
+    ttl_modules: Option<String>,
 }
 
 impl Session {
@@ -203,6 +210,25 @@ impl Session {
         Ok(())
     }
 
+    pub fn time_zone(&self) -> jiff::tz::TimeZone {
+        read_config()
+            .ok()
+            .and_then(|config| {
+                self.profile
+                    .as_ref()
+                    .and_then(|name| config.profiles.get(name))
+                    .or_else(|| {
+                        config
+                            .profiles
+                            .values()
+                            .find(|p| p.key.as_deref() == Some(self.identity.key.as_str()))
+                    })
+                    .and_then(|p| p.time_zone.clone())
+            })
+            .and_then(|zone| jiff::tz::TimeZone::get(&zone).ok())
+            .unwrap_or_else(jiff::tz::TimeZone::system)
+    }
+
     pub fn requests(&self) -> crate::output::Requests {
         self.client
             .as_ref()
@@ -329,6 +355,72 @@ pub fn ttl_grades() -> jiff::Span {
             .as_deref(),
         10,
         false,
+    )
+}
+
+/// Default assignments TTL (30m).
+#[must_use]
+pub fn ttl_assignments() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_assignments
+            .as_deref(),
+        30,
+        false,
+    )
+}
+
+/// Default missing TTL (10m).
+#[must_use]
+pub fn ttl_missing() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_missing
+            .as_deref(),
+        10,
+        false,
+    )
+}
+
+/// Default planner TTL (10m).
+#[must_use]
+pub fn ttl_planner() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_planner
+            .as_deref(),
+        10,
+        false,
+    )
+}
+
+/// Default files/folders TTL (1h), optionally overridden by config.
+#[must_use]
+pub fn ttl_files() -> jiff::Span {
+    parse_ttl(
+        read_config().unwrap_or_default().cache.ttl_files.as_deref(),
+        1,
+        true,
+    )
+}
+
+/// Default modules TTL (1h), optionally overridden by config.
+#[must_use]
+pub fn ttl_modules() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_modules
+            .as_deref(),
+        1,
+        true,
     )
 }
 
