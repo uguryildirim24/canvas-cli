@@ -12,10 +12,7 @@ pub enum Error {
     Unauthorized,
 
     /// Access forbidden; may be a rate-limit body.
-    #[error(
-        "forbidden (rate_limited={rate_limited}): {body}",
-        body = crate::redact::redact(.body)
-    )]
+    #[error("forbidden (rate_limited={rate_limited})")]
     Forbidden {
         /// True when the body indicates a rate limit.
         rate_limited: bool,

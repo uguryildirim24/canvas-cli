@@ -11,7 +11,7 @@ use crate::governor::{Lane, retry_delays};
 use crate::{Client, Error, TransferResponse};
 
 /// Builder for a Canvas API request (`/api/v1` and related).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ApiRequest {
     pub(crate) method: Method,
     pub(crate) url: Url,
@@ -70,7 +70,7 @@ pub enum TransferKind {
 }
 
 /// Builder for a transfer-phase request.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TransferRequest {
     pub(crate) kind: TransferKind,
     pub(crate) method: Method,
@@ -398,4 +398,20 @@ fn map_reqwest_error(err: &reqwest::Error) -> Error {
 
 fn route_key_for(method: &Method, url: &Url) -> String {
     format!("{method} {}", url.path())
+}
+
+impl std::fmt::Debug for ApiRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiRequest")
+            .field("method", &self.method)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for TransferRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TransferRequest")
+            .field("kind", &self.kind)
+            .finish_non_exhaustive()
+    }
 }

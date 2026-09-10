@@ -348,7 +348,6 @@ impl Client {
 }
 
 /// Raw transfer response after phase rules are applied.
-#[derive(Debug)]
 pub struct TransferResponse {
     /// Final HTTP status.
     pub status: StatusCode,
@@ -459,4 +458,12 @@ fn link_next(headers: &HeaderMap) -> Option<Result<Url, Error>> {
         return Some(Url::parse(url).map_err(|_| Error::Decode));
     }
     None
+}
+
+impl fmt::Debug for TransferResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransferResponse")
+            .field("status", &self.status)
+            .finish_non_exhaustive()
+    }
 }
