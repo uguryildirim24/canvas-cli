@@ -730,7 +730,7 @@ canvas-cli/
 
 Runtime: `#[tokio::main(flavor = "current_thread")]` plus the blocking pool above. Credential-store access happens only when a network call needs the token, except for the class-B commands listed in §5 that inspect or change the store.
 
-Performance targets are measured by `xtask bench` (M5): cached `todo` first output p50 < 50 ms, p95 < 150 ms; full cached `todo` p95 < 250 ms; cold-start (empty page cache) p95 < 400 ms; all with a 5-course fixture and once more while one download stream is active. Numbers are recorded in `docs/bench.md`. `cargo xtask bench --watch` measures the same targets again with a resident `canvas watch` on the same identity and records one tick's cost; `cargo xtask bench --mcp` measures a warm `todo.list` round trip over a real stdio pipe and the size of the `tools/list` catalog (§21). Neither has a §13 target of its own.
+Performance targets are measured by `xtask bench` (M5): cached `todo` first output p50 < 50 ms, p95 < 150 ms; full cached `todo` p95 < 250 ms; cold-start (empty page cache) p95 < 400 ms; all with a 5-course fixture and once more while one download stream is active. Numbers are recorded in `docs/bench.md`. `cargo xtask bench --watch` measures the same targets again with a resident `canvas watch` on the same identity and records one tick's cost; `cargo xtask bench --mcp` measures a warm `getclitools` round trip over a real stdio pipe, the size of `tools/list`, and the size of the command reference that one tool answers with (§21). Neither has a §13 target of its own.
 
 ## 14. Errors and exit codes
 
@@ -872,7 +872,7 @@ The table above stops at R5, which is the v1 plan. The rounds after it (R6 onwar
 16. **Blocking wait on a contended admission lock (§12.2 step 2 versus REPORT §3.5, same review).** §12.2 takes admission non-blocking and reports `in_progress`; `plan::execute` waits up to 5 s for the same plan's concurrent execute to publish its journal, then returns that journal (never a second one). A different submit still gets `in_progress` at once. Decide whether §12.2 should describe the wait or whether the two cases must be told apart without blocking.
 17. **Outcome for "this plan already has a journal" (REPORT §3.2 exit table, same review).** §3.5 says a replayed acceptance returns the existing journal, but no outcome, reason, or exit is defined. Coordinator reading applied for M6-b until the owner rules: `submission.execute` on an executed plan returns the linked journal's `submit@1` envelope with that journal's own `outcome` and exit, plus `replayed: true`; the human `submit` cannot reach it.
 18. **`chrono` arrives transitively through `rmcp` (Appendix A, raised by the M6-b code review 2026-09-10).** §7 timestamps use `jiff`; the workspace otherwise has no `chrono`. Accept two time libraries in the lock file as an appendix exception, or ask upstream for a feature that drops it.
-19. **MCP catalog size (REPORT §3.2, same review).** `tools/list` costs about 41 900 tokens because every tool's output schema inlines the whole §7 envelope in both shapes (a host validator reads a definition on its own). `docs/bench.md` records it as the number to beat. Options: `$ref`s a host may not resolve, a smaller catalog, or a compact envelope schema per tool. **Still open after the M9 narrowing (item 48).** One of the three options was taken and it worked as far as it goes: the catalog fell from 43 tools and 344 878 bytes (about 86 235 tokens) to 22 tools and 167 955 bytes, about 41 997 tokens. But that is the number this item was raised about — the surface is back to the M6-b cost, not below it — so the smaller catalog resolves the growth since M6-b and resolves nothing about the per-tool envelope. Roughly 42 000 tokens before a model has read anything is still the concern, and only the two schema options left can move it.
+19. **MCP catalog size (REPORT §3.2, same review).** `tools/list` costs about 41 900 tokens because every tool's output schema inlines the whole §7 envelope in both shapes (a host validator reads a definition on its own). `docs/bench.md` records it as the number to beat. Options: `$ref`s a host may not resolve, a smaller catalog, or a compact envelope schema per tool. The M9 narrowing took one of the three options and it worked only as far as it goes: the catalog fell from 43 tools and 344 878 bytes (about 86 235 tokens) to 22 tools and 167 955 bytes, about 41 997 tokens — the number this item was raised about, so the surface was back to the M6-b cost and not below it. **Resolved by `bccce10` (M9-b, item 50).** There is one tool and it declares no output schema, so there is no per-tool envelope left to inline: `tools/list` is 656 bytes, about 164 tokens. The reference that tool answers with is 32 420 bytes (about 8 105 tokens) and is paid once per session, on a call the model chose to make, not before it has read anything.
 20. **`schema@1` has no registry row (REPORT §3.2, same review).** The `canvas schema` document is raw output with no §7 envelope, so `all_schemas()` cannot carry a `schema@1` row and `canvas schema schema` exits 6; REPORT §3.2's table implies a row. Decide whether the table entry is documentation only (reviewer's reading) or the document must be self-describing through the registry.
 21. **Agent-surface annotations and bounds (REPORT §3.2, same review).** `download.plan` and `open.url` carry `readOnlyHint: true` because their effect is a dry run and a resolution (REPORT: annotations describe effects), though the same sentence lists downloads and navigation among non-reads; and `download.run` keeps the unbounded v1 `jobs` argument. Confirm the effect reading and say whether agent-facing `jobs` should be clamped. **Moot since 2026-09-10 (item 48):** the owner answered the effect reading by removing all three tools, so there is no agent-facing annotation to confirm and no agent-facing `jobs` to clamp. `canvas download --jobs` is a person's own flag and is unchanged.
 22. **The coordinator opens a second `state.sqlite` connection outside the single SQLite thread (§10, raised by the M6-c code review 2026-09-10).** The shared governor row is written on the request path through its own connection so it never queues behind a command's database work; WAL and `busy_timeout` keep it correct, but a contended `BEGIN IMMEDIATE` can block the `current_thread` runtime for up to 5 s. Options: an async `GovernorState` seam, a second dedicated database thread, or amend §10's one-thread rule for the coordinator.
@@ -903,10 +903,24 @@ The table above stops at R5, which is the v1 plan. The rounds after it (R6 onwar
 47. **The broker did not survive the extension's background service worker unloading, observed in a real Chrome (owner's machine, 2026-09-10).** After a working attach and one successful `canvas bridge status`/`canvas here` round trip, navigating the attached tab left `bridge status` reporting `owner.live: false` and an empty attachment list, and `canvas here` refused with `bridge_unavailable` (exit 8); the socket and its ownership lock stayed on disk with no process behind them. The likely cause is Chrome unloading the MV3 service worker after its idle timeout, which drops the native-messaging port and sends the host process EOF on stdin, and `background.js` does not appear to reconnect automatically when the worker wakes. §24.16 previously listed only untested items; this is the first observed failure. Needs investigation: either the service worker must re-establish `connectNative` and re-attach on wake, or the host must tolerate a dropped port without leaving a stale socket.
 48. **The MCP catalog is reads only, by the owner's direction (2026-09-10).** The owner: "mcp should only list get tools thats it". `canvas mcp` now serves 22 tools, every one of which fetches Canvas data or local read data with no side effect. Twenty-one left the catalog: `sync.run`, `download.plan`, `download.run`, `submission.prepare`, `submission.execute`, `submission.reconcile`, `discussion.reply.prepare`, `discussion.reply.execute`, `inbox.send.prepare`, `inbox.send.execute`, `inbox.reply.prepare`, `inbox.reply.execute`, `operation.status`, `operation.reconcile`, `receipts.acknowledge`, `open.url`, `context.attach`, `context.here`, `context.detach`, `context.note`, and `context.follow`. Four of them were annotated `Read` — `download.plan`, `operation.status`, `open.url`, and `context.here` — and went anyway: the owner's reading is that a tool which plans a transfer, records a readback, resolves a URL, or observes a browser is not a get, whatever its effect label says. This is a decision, not a question; it is recorded here because it reverses what §21.2 said from M6-b to M8-b, and because the surfaces below moved with it. **No CLI command changed.** `canvas submit`, `canvas discussion reply`, `canvas inbox send|reply`, `canvas operation status|reconcile`, `canvas download`, `canvas sync`, `canvas receipts acknowledge`, `canvas here`, `canvas note`, `canvas open --follow`, and every `canvas bridge` subcommand behave exactly as before, and the §20 plan layer and its approval are untouched. What the narrowing cost is in item 49.
 
+    *Superseded by `bccce10` (M9-b, 2026-09-10) — see item 50: the catalog is not 22 tools, it is one, and the 22 reads left with the 21 writes. The text above stands as the record of the first cut; what it says about the CLI being untouched is still true.*
+
 49. **What the M9 narrowing left unreachable (raised by the M9 package itself, 2026-09-10).** Three things follow from item 48 and are the owner's to rule on:
     - **The `context/{consumer_handle}` resource can no longer become attached.** `context.attach` was the only caller of `here::attach`, so nothing in the shipped binary sends the broker an `Attach` op for an MCP consumer. The resource template is still listed and still answers, but it answers `not_attached` for every handle, for the life of the build. Options: drop the template from the resource surface, or give the CLI a way to attach a named consumer so an agent that shells out can opt in. Nothing was changed here: the resource surface was not in this package's scope.
     - **The stale-generation refusal on a follow is unreachable.** `open::follow` still takes a navigation generation and still refuses a stale one, but its one remaining caller — `canvas open --follow` — passes `None`. The guard is correct and dead. Options: add `--generation` to `canvas open --follow`, or accept that a follow from a terminal is the person's own act and needs no generation check.
     - **SPEC §19 item 17's replay rule has no surface.** The rule — an execute on a plan that already admitted a journal returns that journal with `replayed: true` — was reachable only through `submission.execute` and the three operation executes. `canvas submit` and the §25 write commands refuse such a plan with exit 8 instead, which is what they always did. The replay code was removed with the tools; item 17 itself is left open, because the rule is still the right one if an approved-plan surface ever returns.
+
+    *Superseded by `bccce10` (M9-b, 2026-09-10) — see item 50. The first point is settled the way it was raised: the `context/{consumer_handle}` resource is deleted, along with the whole resource namespace and `here::foreign_consumer`, which served nothing else. The second and third points are unchanged and still the owner's to rule on: `open::follow`'s stale-generation guard is still correct and still dead, and item 17's replay rule still has no surface.*
+
+50. **`canvas mcp` is one tool, by the owner's direction (2026-09-10).** The owner, told that M9 still exposed 22 separate tools: "claude see i don't think you understood i want mcp to be one tool getclitools and it shows how to use the cli tools." Then, asked about the browser-context resource and the event subscriptions: "drop both, mcp is just the one tool for the cli thats it."
+
+    `canvas mcp` now serves exactly one tool, named `getclitools` verbatim. It performs nothing: it returns the complete `canvas` command reference — every command, its operands and flags, and the envelope each one returns — and the agent runs the commands itself. The 22 reads of item 48 are gone with it: `courses.list`, `course.get`, `todo.list`, `assignments.list`, `assignment.get`, `grades.get`, `files.list`, `modules.list`, `pages.list`, `page.get`, `syllabus.get`, `announcements.list`, `announcement.get`, `discussions.list`, `discussion.get`, `inbox.list`, `inbox.get`, `inbox.unread_count`, `calendar.list`, `submission.get`, `receipts.list`, and `receipts.show`. So is the resource namespace — `todo`, `receipts`, `course/{id}/assignments`, and `context/{consumer_handle}` — and so is `subscriptions/listen`.
+
+    This reframes §21: MCP is no longer a curated catalog of agent-facing actions beside the CLI, it is a discovery tool for a CLI the agent runs itself. The premise is that an agent which can call an MCP tool can also run a binary, which a terminal coding agent can. **A host with no execution capability can now do nothing but show the user a command line**, where before it could at least read. That is the cost, and it is recorded here as the owner's accepted trade rather than as a question.
+
+    **No CLI command changed.** Every command of item 48's list behaves exactly as before, `canvas watch` and `canvas notify` and the whole §22 event log are untouched, and the §20 plan layer and its approval are untouched. One thing in the CLI's own description was *extended* rather than changed: `canvas schema` now resolves nine command names that previously exited 6 — `discussion reply`, `inbox send`, `inbox reply`, `alias set`, `alias remove`, `open assignment`, `open file`, `open announcement`, and `auth token` — each through the registry entry that already owns the shape it prints. No fixture, no result shape, and no command output changed; `canvas schema --list` has nine more rows. This is the "extend what it covers rather than inventing a second, parallel description format" the package was asked for, and §19 item 36's resolution is what made it possible.
+
+    This also answers **item 19**: the schema cost of the agent surface. `tools/list` is 656 bytes for one tool definition, against 167 955 for the 22-tool catalog and 344 878 for the 43-tool one. The reference the tool returns is 32 420 bytes, and an agent pays it once per session rather than once per tool definition. Item 19 asked whether the per-tool envelope inlining was worth its cost; there are no per-tool envelopes left.
 
 
 
@@ -1032,9 +1046,19 @@ Every one of these is decided before any upload and before the submission `POST`
 
 ## 21. Agent surface
 
-Built by M6-b (`docs/reviews/code-M6-b.md`) and extended by M8-a2 (`docs/reviews/code-M8-a2.md`), from `docs/agent-ux/REPORT.md` §3.2. Three surfaces share one implementation: `canvas schema` publishes the contracts, `canvas mcp` serves them over the Model Context Protocol, and the shipped skill tells a model how to use them.
+Built by M6-b (`docs/reviews/code-M6-b.md`), extended by M8-a2 (`docs/reviews/code-M8-a2.md`), and cut to its present shape by M9 and M9-b, from `docs/agent-ux/REPORT.md` §3.2.
 
-Every command has one core that returns the §7 envelope and a thin wrapper that prints it. `canvas mcp` calls the same core the CLI calls, so there is one implementation per command and nothing shells out to `canvas`.
+**The agent surface is the command line.** This section used to describe a curated catalog of agent-facing actions, served over MCP beside the CLI. It is not that any more. `canvas mcp` is **a discovery tool for a CLI the agent runs itself** (owner directive, 2026-09-10; §19 item 50): it serves one tool, that tool performs nothing, and everything an agent does afterwards is a `canvas` command run through whatever shell or execution capability it has.
+
+Three things describe that one command line, and they describe it the same way because they read the same registry and the same clap tree:
+
+| Surface | What it is |
+|---|---|
+| `canvas schema` (§21.1) | the `--json` contract of one command, or the whole registry, for a person or a script |
+| `canvas mcp` (§21.2) | one MCP tool, `getclitools`, which hands an agent the whole command reference in one answer |
+| the shipped skill (§21.3) | how to use the commands: the envelope reading order, the exit table, six workflows |
+
+There is no second implementation of anything. `getclitools` is built from `dist::command()` — the clap tree the binary parses, which also backs the man pages and the completion scripts — joined with the schema registry `canvas schema` prints, so a command cannot be described to an agent differently from the way it behaves.
 
 ### 21.1 `canvas schema`
 
@@ -1065,56 +1089,49 @@ A `--jsonl` line is self-describing and is never wrapped, so its page describes 
 
 Any other revision fails explicitly with a JSON-RPC error rather than being downgraded silently.
 
-**The tool catalog.** Exactly 22 tools, in a stable order a test pins, and **every one of them is a read** (owner directive, 2026-09-10; §19 item 48). The catalog fetches Canvas data or local read data, and does nothing else:
+**One tool.** Exactly one, named `getclitools` — the owner's own word, used verbatim rather than bent into a dotted convention:
 
-| Effect | Tools | `readOnlyHint` |
-|---|---|---|
-| Read (22) | `courses.list`, `course.get`, `todo.list`, `assignments.list`, `assignment.get`, `grades.get`, `files.list`, `modules.list`, `pages.list`, `page.get`, `syllabus.get`, `announcements.list`, `announcement.get`, `discussions.list`, `discussion.get`, `inbox.list`, `inbox.get`, `inbox.unread_count`, `calendar.list`, `submission.get`, `receipts.list`, `receipts.show` | true |
+| Tool | Arguments | Returns | Hints |
+|---|---|---|---|
+| `getclitools` | none; unknown fields are refused | one text block: the whole `canvas` command reference, as Markdown | `readOnlyHint` true, `destructiveHint` false, `idempotentHint` true, `openWorldHint` false |
 
-The effect grouping collapses to one row, and that is the invariant rather than an observation about the current list: `mcp::catalog::Effect` has a single variant, so a tool that is not a read has no spelling in `ToolSpec` at all. `destructiveHint` is false for every tool, `readOnlyHint` is true for every tool, and `idempotentHint` and `openWorldHint` are still set per tool. `openWorldHint` is false for `receipts.list` and `receipts.show`, which read only the local record.
+It has no `outputSchema`, because the answer is prose and not a §7 envelope. `openWorldHint` is false and `idempotentHint` is true because the answer is built from the binary's own command tree: no session, no network, no cache, and the same bytes every time.
 
-Two tests keep it that way, and each one fails on a write tool added back rather than only on a changed list: `mcp::catalog::tests::every_tool_in_the_catalog_is_a_read` checks the effect, the annotation, and the name shape — no `.prepare`, `.execute`, `.acknowledge`, `.reconcile`, `.run`, or `.plan` suffix, and no `context.` prefix — and `mcp::the_tool_list_is_the_report_catalog_and_every_tool_is_a_read` checks the same three things on the wire.
+**What the answer contains.** A preamble that tells the caller to run `canvas <command> ...` itself, the §7 envelope and its reading order, the §14 exit table, the rule that a write asks a person at the terminal and `--yes` is never an agent's to pass, and the global flags. Then one entry per command of the clap tree — the command path, what it is for, its operands, its flags with their accepted values and defaults, and what it returns: the schema id, the flag that prints it, the `result` field names, and the `canvas schema <command>` that prints the whole document. A command with no §7 envelope says so rather than promising one. The answer closes with the `canvas schema --list` listing, unchanged.
 
-**What the catalog does not contain.** Everything that writes. No tool prepares or executes a submission, a discussion reply, or an inbox message; none downloads, refreshes the cache, retires a journal or a receipt, resolves a URL, or reaches the browser companion. Those twenty-one tools were served until 2026-09-10 and are named in §19 item 48; each is still a `canvas` command, unchanged, approved at the terminal (§20, §25). Credentials, token reveal, identity administration, arbitrary HTTP or shell, `--yes`, cache clearing, and `download --force` are absent as they always were. Absence is enforced by name and by argument: every argument struct rejects unknown fields, `calendar.list` hard-codes `ics: None` because `--ics` writes a file, and no tool takes `assume_not_submitted`, `assume_not_posted`, or a navigation `generation`. A request naming a removed tool is `METHOD_NOT_FOUND`, never a silent success.
+`crates/canvas-cli/tests/mcp.rs` compares that closing listing against the `canvas schema --list` the same build prints, so the reference and the CLI cannot drift apart.
 
-**Results.** A tool result carries the whole §7 envelope: `structuredContent` is the document `--json` prints, and the text block is the same document serialized. A domain failure keeps the envelope with its `outcome` and `exit`, and is marked `isError` for `error`, `refused`, `mismatch`, and `recovery`; `partial` stays a success with gaps. Only a protocol or argument failure becomes a JSON-RPC error. Every tool's `outputSchema` is the union of its result envelope and the `error@1` envelope, declared `"type": "object"` beside the `oneOf` so a strict host validator loads it.
+**What the surface does not contain.** Everything else. There is no tool that reads Canvas and no tool that writes to it: the 22 reads and the 21 writes the server carried at one time or another are all `METHOD_NOT_FOUND`, and each is named in §19 items 48 and 50. There are no resources, no resource templates, and no subscriptions — `initialize` and `server/discover` advertise `tools` and nothing more, `resources/read` and `subscriptions/listen` are unroutable, and the two list methods the SDK answers by default have nothing to list. Credentials, token reveal, identity administration, arbitrary HTTP or shell, cache clearing, `download --force`, and every browser action are absent because nothing has a tool.
 
-**`ttlMs` and `cacheScope`.** The revision puts these on discovery, list, and `resources/read` results and nowhere else, so a tool result reports the same two values under this server's own `_meta` keys, `dev.canvas-cli/ttlMs` and `dev.canvas-cli/cacheScope`, rather than inventing wire fields. Every result of this server is one identity's private data, so `cacheScope` is `private` on all of them. The `ttlMs` budget is the smallest remaining TTL over every `freshness` row of the envelope, and it is **zero** for an empty list, a stale or incomplete row, an unparseable or future `fetched_at`, or a dataset with no TTL group. §7 coverage stays authoritative.
+Three tests keep it that way, and each fails on a second tool added rather than only on a changed list: `mcp::catalog::tests::the_only_tool_is_getclitools`, `mcp::server::tests::the_server_declares_tools_and_nothing_else`, and `mcp::the_tool_list_is_one_tool_named_getclitools_and_it_is_small` on the wire.
 
-**Resources.** Namespaced by identity and generation: `canvas://<identity-key>/<generation>/<path>`. A foreign key, another generation, and an unknown path all address nothing here.
+**Results.** One text block. A domain failure cannot arise: nothing routes to a command. Only a protocol or argument failure is possible, and it is a JSON-RPC error, because then the tool never ran. The `dev.canvas-cli/ttlMs` and `dev.canvas-cli/cacheScope` hints M6-b put on a tool result are gone with the envelopes they described; `ttlMs` and `cacheScope` are still sent on discovery and on `tools/list`, where the revision puts them, and `cacheScope` is `private` because one instance serves one identity.
 
-| Path | Kind | Reads |
-|---|---|---|
-| `todo` | listed | the default `todo.list` window |
-| `receipts` | listed | local receipts and unresolved journals |
-| `course/{course_id}/assignments` | template | one course's assignments, as `assignments.list` returns them |
-| `context/{consumer_handle}` | template | the §24 bridge. The handle must be the reading session's own; naming another consumer's handle reads exactly what an unattached consumer reads, and an unattached consumer reads `refused` with `details.reason: "not_attached"`. Since the catalog became read-only there is no tool that opts a consumer in, so this template answers `not_attached` for every handle; a person reads their own working context with `canvas here` (§19 item 49) |
-
-A read goes through the same command core the matching tool uses, so a resource and a tool cannot answer differently.
-
-**No approval round trip.** Nothing here asks a person for a decision, because nothing here acts. This server never answers `input_required`, never sends an `elicitation/create`, and never issues an approval handle; a request that carries a `requestState` is refused as an argument error whatever tool it names, so a replayed state cannot record a decision against a read. M6-b through M8-b served that round trip for the `*.execute` tools, and it went with them.
+**No approval round trip.** Nothing here asks a person for a decision, because nothing here acts. This server never answers `input_required`, never sends an `elicitation/create`, and never issues an approval handle; a request that carries a `requestState` is refused as an argument error, so a replayed state cannot record a decision against anything. M6-b through M8-b served that round trip for the `*.execute` tools, and it went with them.
 
 The approval mechanism itself is unchanged and still required: it lives in the plan layer (§20) and is recorded at the terminal by `canvas submit` and the §25 write commands. MCP does not expose those commands and cannot start, approve, decline, or cancel a plan.
 
-**Subscriptions.** §22.
+**Subscriptions.** None. §22.5.
 
-**Catalog size.** `cargo xtask bench --mcp` measures the catalog at **22 tools, 167 955 bytes, about 41 997 estimated tokens** per `tools/list`. The byte column is exact; the token column is one token per four bytes of UTF-8, a rule of thumb and not a tokenizer run. Most of each row is the output schema, which inlines the whole §7 envelope in both shapes because a host validator reads a tool definition on its own. §19 item 19 owns the question and records what the narrowing did to it.
+**Size.** `cargo xtask bench --mcp` measures `tools/list` at **one tool, 656 bytes, about 164 estimated tokens**; the whole `tools/list` result, with its cache hints, is 729 bytes. The answer `getclitools` returns is 32 420 bytes, about 8 105 tokens, describing 75 commands, and an agent pays it once per session rather than once per tool definition. The byte columns are exact; the token columns are one token per four bytes of UTF-8, a rule of thumb and not a tokenizer run. For comparison: the 43-tool catalog cost 344 878 bytes (~86 235 tokens) and the 22-tool catalog 167 955 (~41 997), because every tool inlined the whole §7 envelope twice for a host validator to read on its own. §19 item 19 owns the question and is answered by this round.
 
 ### 21.3 The shipped skill
 
-`skill/canvas-cli/` ships `SKILL.md` and six workflows: `read-an-assignment.md`, `organize-the-week.md`, `download-course-files.md`, `prepare-and-submit.md`, `reconcile-an-unknown-outcome.md`, and `reply-and-message-with-approval.md`. The skill names exactly the tool catalog — a test diffs the two in both directions — and a second test refuses any mention, in prose or in a call block, of a tool the catalog dropped.
+`skill/canvas-cli/` ships `SKILL.md` and six workflows: `read-an-assignment.md`, `organize-the-week.md`, `download-course-files.md`, `prepare-and-submit.md`, `reconcile-an-unknown-outcome.md`, and `reply-and-message-with-approval.md`.
 
-Four of the six have a write as their subject, and since the catalog became read-only each routes that write through the command behind it rather than through a tool: `canvas submit`, the three §25 write commands with `canvas operation status`, `canvas submission reconcile` with `canvas receipts acknowledge`, and `canvas download`. A test pins that each names its command. SKILL.md states the read-only rule in its first screen and tells a model never to pass `--yes`, because the confirmation those commands ask for is the person's.
+Every step of every workflow is a `canvas` command, reads as well as writes. M9 gave the four write workflows their commands when the catalog became read-only; M9-b gave the reads theirs, because there is no tool left to read with. A test pins the commands each workflow must name, and a second test refuses any mention, anywhere in the package, of the 43 tool names the server has served at one time or another.
 
-It states the envelope reading order, the §14 exit table including 11, and the coverage fields a model must not paper over (`replies_coverage`, `replies_total`, `messages_complete`, `embedded`). A forbidden flag appears only as an explicit statement that it does not exist.
+SKILL.md leads with the one MCP-specific step there is: an agent connected over MCP calls `getclitools` once at the start of the session and runs commands from then on. It states the envelope reading order, the §14 exit table including 11, the rule that a write asks a person and `--yes` is never the agent's to pass, and the coverage fields a model must not paper over (`replies_coverage`, `replies_total`, `messages_complete`, `embedded`). A forbidden flag appears only as an explicit statement that it does not exist.
 
 ### 21.4 Host matrix
 
-`docs/agent-hosts.md` records which hosts were actually run against a build on the owner's machine, what each negotiated, and what stayed untested. It is evidence, not a claim: a host that is not in its table was not exercised. The two third-party hosts that connected both negotiated `2025-11-25`, and the primary revision is exercised only by the project's own clients. No row claims an approval round trip: there is no tool that can start one.
+`docs/agent-hosts.md` records which hosts were actually run against a build on the owner's machine, what each negotiated, and what stayed untested. It is evidence, not a claim: a host that is not in its table was not exercised. The two third-party hosts that connected both negotiated `2025-11-25`, and the primary revision is exercised only by the project's own clients. **Both third-party rows predate this round**: they loaded a 22-tool catalog that no longer exists, and neither was re-run. No row claims an approval round trip, and none claims that a host renders the command reference correctly or that a model reading it goes on to run the commands.
 
 ## 22. Coordinator, events, `watch`, `notify`
 
 Built by M6-c (`docs/reviews/code-M6-c.md`), M6-c2 (`docs/reviews/code-M6-c2.md`), and M8-a3 (`docs/reviews/code-M8-a3.md`), from `docs/agent-ux/REPORT.md` §3.6 and §3.4. Every CLI, `watch`, and `mcp` process that binds one identity shares its network work through the identity directory and `state.sqlite`. There is no daemon.
+
+**Nothing in this section was removed by M9-b.** The event log, the coordinator, the leases, `canvas watch`, and `canvas notify` are all unchanged and fully supported, exactly as described below. What went away is the MCP path *into* this log: `subscriptions/listen` (§22.5). Events themselves did not go anywhere, and a person or an agent reads them the way everything else is read now — by running `canvas watch --jsonl`.
 
 ### 22.1 The coordinator
 
@@ -1224,26 +1241,11 @@ It reads the events after its cursor, groups them by event-kind group (`assignme
 
 ### 22.5 MCP subscriptions
 
-`canvas mcp` implements `subscriptions/listen` over the same log (M6-c2). A host may name a cursor in `_meta` under `dev.canvas-cli/cursor`; without one, the durable consumer position is used, which is what a reconnecting host wants.
+**There are none.** `canvas mcp` served `subscriptions/listen` over this log from M6-c2 until 2026-09-10, with a cursor in `_meta` under `dev.canvas-cli/cursor`, a per-dataset invalidation map, and a `resync_required` rule that matched `watch --since`. The owner removed it with the rest of the MCP surface: "drop both, mcp is just the one tool for the cli thats it" (§19 item 50). `crates/canvas-cli/src/mcp/subscribe.rs` is deleted, the server declares no resource or subscription capability, and `subscriptions/listen` is `METHOD_NOT_FOUND`.
 
-Every notification comes from the log in `state.sqlite`. There is no in-memory event source. The position advances only after a batch's notifications are sent, so a stream that dies mid-batch replays that batch rather than dropping it.
+The reason is that the subscription existed to invalidate *resources*, and there are no resources. Without a tool or a resource that holds a cached answer, there is nothing for a notification to invalidate.
 
-A row invalidates a resource of this binding only when it names that resource's scope — either because the scope changed, or because a `resync_required` row says an observation of it was lost:
-
-| Dataset | Invalidates |
-|---|---|
-| `assignments`, scope `course:<id>` | `course/<id>/assignments` and `todo` |
-| `missing` | `todo` |
-| `submission_journal` | `receipts` |
-| everything else | nothing |
-
-A batch invalidates each URI once. A row from another identity key or generation invalidates nothing.
-
-`context/<consumer-handle>` is readable but **not subscribable**: REPORT §3.2 forbids implicit sharing from resource subscriptions, and a host holding one would be told on a resync that a consumer context it does not own changed. A filter entry naming a foreign key, another generation, an unknown path, or a name no event can reach is dropped rather than refused, so the host keeps the part of its subscription that can be served.
-
-A resync invalidates every subscribed resource once and then follows the log from its high water mark. A cursor the **host** named is the host's own position and never replaces the stored one; only an unreplayable stored position is reset.
-
-The subscription holds a shared identity lease for the life of the stream, which makes a subscribed host a resident consumer under §3.4. It writes nothing but cursor rows and needs no token and no network. The SDK answers the first request of a connection inline, so a connection whose *first* request is `subscriptions/listen` gets no other answer while the stream is open.
+**Nothing else in §22 changed.** The log, the cursors, the consumer positions, the replay and resync rules, `canvas watch --jsonl --since`, and `canvas notify` all behave exactly as §22.1 to §22.4 describe. An agent that wants to follow the log runs `canvas watch --jsonl`, which is a command like every other one, and `getclitools` describes it with its flags and the `event@1` line it streams.
 
 ## 23. Richer reads
 
@@ -1336,8 +1338,9 @@ Built by M7-a (`docs/reviews/code-M7-a.md`) and M7-b (`docs/reviews/code-M7-b.md
 ```text
 the tab a person attached          this machine
  content script  ── bridge-native@1 ──  canvas bridge host  ── bridge-ipc@1 ──  canvas here
-                                                                                canvas mcp (context.*)
 ```
+
+`canvas mcp` is not on that diagram any more. Nothing on the MCP surface has reached the companion since 2026-09-10 (§19 items 48 and 50); an agent reaches it the way it reaches everything else, by running `canvas here`.
 
 Nothing is shared until the person acts. `activeTab` grants one tab for as long as it stays on the origin the gesture happened on; a cross-origin navigation revokes the grant, and with it the attachment.
 
@@ -1390,7 +1393,7 @@ The broker joins browser and API facts only when that probe's `user_id` equals t
 
 Metadata is served from the broker's own memory. It triggers no probe and no page read.
 
-Text — the selected passage and the visible editor excerpt — is released only when a consumer asks for it (`canvas here --text`; no MCP tool can ask, §19 item 48), and only after the extension probes the account again and the broker verifies it against the identity. An opaque zone releases none.
+Text — the selected passage and the visible editor excerpt — is released only when a consumer asks for it (`canvas here --text`; there is no MCP tool that could ask, §19 item 50), and only after the extension probes the account again and the broker verifies it against the identity. An opaque zone releases none.
 
 Hidden inputs, credential-looking field names, and capability-bearing query parameters are stripped before anything leaves the page. The stripped parameters are `verifier`, `signature`, `token`, `access_token`, `sig`, `policy`, `expires`, and `session_token`, matched case-insensitively, plus every parameter whose name begins `x-amz-`. A sanitized URL keeps http and https only and loses its fragment, its username, and its password. The whole payload is bounded at **64 KiB of UTF-8**, cut on a character boundary, with `truncated: true` when it was cut.
 
@@ -1474,9 +1477,9 @@ A consumer is a name: `mcp` for an anonymous MCP client, `mcp:<client name>` whe
 
 What the boundary does hold is everything above the socket:
 
-- **A consumer handle is set by the adapter, never by a model.** A `context/<handle>` resource read from `canvas mcp` always carries the calling host's own handle, so one MCP consumer cannot read another's attachment even with a stolen attachment id.
+- **A consumer handle was set by the adapter, never by a model.** A `context/<handle>` resource read from `canvas mcp` always carried the calling host's own handle, so one MCP consumer could not read another's attachment even with a stolen attachment id. That resource is deleted (§19 item 50); the rule is kept here because the broker's per-consumer routing still works this way for every caller of the socket.
 - **`attachments.list` carries no attachment id and no page content.** The attachment id is the capability, so a listing must not hand it out. `bridge status` therefore names the state, the origin, the account id, the zone, the consumers, and the generation, and never the page.
-- **Opting in and reading are two decisions.** An attach returns the handle and the state, never the page, and giving up one consumer's share never ends the attachment for everyone — that is `canvas bridge detach`, a human act. Since M9 no MCP consumer can take either decision: the five `context.*` tools left the catalog (§19 item 48), and the broker's own per-consumer rules are unchanged beneath.
+- **Opting in and reading are two decisions.** An attach returns the handle and the state, never the page, and giving up one consumer's share never ends the attachment for everyone — that is `canvas bridge detach`, a human act. Since M9 no MCP consumer can take either decision — the five `context.*` tools left the catalog (§19 item 48) — and since M9-b the `context/{consumer_handle}` resource that reported the outcome is deleted too (§19 item 50). The broker's own per-consumer rules are unchanged beneath.
 
 ### 24.9 Commands
 
@@ -1520,7 +1523,7 @@ The API side travels as whole §7 envelopes, the same documents `canvas course -
 
 ### 24.11 Notes
 
-`canvas note --text …`, or `context.note` from an agent, holds one note for the attachment. A note is inert:
+`canvas note --text …` holds one note for the attachment. (`context.note` did the same until 2026-09-10; there is no tool now, and an agent runs the command.) A note is inert:
 
 - **it is not a Canvas write.** Nothing about it reaches Canvas;
 - **it is not an approval.** No note, whatever its text or its refs say, can approve, decline, or cancel a plan;
@@ -1542,7 +1545,7 @@ Notes are held for the attachment's lifetime, survive a navigation and a pause, 
 
 ### 24.12 Follow
 
-`canvas open <target> --follow`, or `context.follow`, asks the attached tab to go somewhere inside the granted origin. The target goes through the ordinary `canvas open` resolver first, so a target outside this identity's Canvas fails at exit 6 and never reaches the browser. `may_follow` is checked before anything is dispatched.
+`canvas open <target> --follow` asks the attached tab to go somewhere inside the granted origin. (`context.follow` did the same until 2026-09-10; there is no tool now.) The target goes through the ordinary `canvas open` resolver first, so a target outside this identity's Canvas fails at exit 6 and never reaches the browser. `may_follow` is checked before anything is dispatched.
 
 The answer is a **dispatch acknowledgement**: the companion took the request. It is not a page load. What became of the page arrives later and lands on `here@1` as `browser.follow.load` — `loaded` or `unknown`. **This build never reports `failed`**: seeing a load failure needs `webNavigation`, which would grant standing visibility of every navigation in the browser. Ten seconds after a navigation with nothing observed, the answer is `unknown`, which is what is actually known. A late outcome that names a request the bundle no longer reports changes nothing.
 
@@ -1573,11 +1576,9 @@ A page script cannot reach any of this. It runs in the extension's own surface, 
 
 ### 24.14 The agent surface
 
-**No tool reaches the companion.** M7-a and M7-b added five — `context.attach`, `context.here`, `context.detach`, `context.note`, `context.follow` — and the owner's directive of 2026-09-10 removed all five (§19 item 48). An agent reads the working context, writes a panel note, and moves the tab through the commands of §24.9: `canvas here`, `canvas here --text`, `canvas note --generation N`, `canvas open --follow`, and `canvas bridge status|detach`. Each is the same core the tools called, and each is the person's own machine answering.
+**Nothing on the MCP surface reaches the companion.** M7-a and M7-b added five tools — `context.attach`, `context.here`, `context.detach`, `context.note`, `context.follow` — and the owner's directive of 2026-09-10 removed all five (§19 item 48); the `context/{consumer_handle}` resource that survived them was deleted with the whole resource namespace (§19 item 50). An agent reads the working context, writes a panel note, and moves the tab through the commands of §24.9: `canvas here`, `canvas here --text`, `canvas note --generation N`, `canvas open --follow`, and `canvas bridge status|detach`. Each is the same core the tools called, and each is the person's own machine answering.
 
-One resource template stays readable. `canvas://<identity-key>/<generation>/context/{consumer_handle}` reads the bundle the calling session's own handle names, and **the handle in the URI must be the reading session's own**: naming another consumer's handle reads exactly what an unattached consumer reads — the same `here@1` refusal, the same reason, the same exit — so the resource never reports whether that other handle attached, or even whether a broker is running. It stays readable but not subscribable (§22.5).
-
-Reading it attaches nobody, and with no tool that can opt a consumer in there is nothing it can become: it answers `not_attached` for every handle. §19 item 49 records that and leaves the choice — drop the template, or give the CLI a way to attach a named consumer — to the owner.
+**No resource either.** `canvas://<identity-key>/<generation>/context/{consumer_handle}` stayed readable through M9 and answered `not_attached` for every handle, because the tool that opted a consumer in had gone. §19 item 49 raised it and offered two ways out; the owner took the first — "drop both" — so the template, the whole resource namespace, and `here::foreign_consumer` behind it are deleted (§19 item 50). `resources/read` on any `canvas://` URI is `METHOD_NOT_FOUND`.
 
 **Browser context is never cacheable.** `ttl_ms` is `0` and the bundle carries no `freshness` row of its own, so nothing downstream can serve a stale observation as a fact. The API and browser sides stay separate documents: `api` holds whole §7 envelopes, each with its own freshness, and a browser extract never updates one of them.
 
@@ -1591,7 +1592,7 @@ This is the record, and nothing here claims a flow that was not executed.
 
 **Run, against the shipped host.** `tests/bridge.rs` and `tests/m7b.rs` start the real `canvas bridge host` the way Chrome starts it and drive it with hand-written native-messaging frames. Between them they cover the `ready` handshake; `hello` and `attach`; `bridge status` and `here --json` over the real socket; a wrong extension id, a non-extension origin, and no origin at all, each exit 8; a stale socket cleared under ownership and a live endpoint never unlinked; a second host reporting the first; `identity remove` completing after the cooperative release, with the ownership lock gone and the root identity lock untouched; notes and follows bound to the generation in both directions; a stale and a cross-origin follow that never reach the browser; a dispatch acknowledgement separated from its load outcome, and a late outcome for a replaced navigation changing nothing; approve, decline, and cancel through the panel path, each with its recorded event; and every forgery path — a note shaped like an approval, the socket asked to approve, a guessed handle, the digest used as a handle, a rewritten digest, another plan's id, and a fourth decision word — each refused with the plan still `prepared`, followed by the real decision working. One assertion reads every byte that crossed either pipe and fails on a token or cookie name, with a capability parameter and a planted secret put on a URL the companion reports so the assertion has something to catch.
 
-Two consumers are exercised over a real `canvas mcp`: only the consumer that attached reads the bundle, a stolen attachment id does not serve the other one, reading the other consumer's resource by name does not either, and one consumer letting go leaves the tab attached for the person. `canvas-core::bridge` unit-tests the framing bounds, account mismatch, a failed or redirected probe, stale document and navigation generations, opaque zones, and the 64 KiB ceiling. `cd extension && npm test` runs the route classifier, the zone classifier, the sanitizer, the byte bounds, the note renderer, and the panel view model against fixture HTML and hostile fixture notes, importing the shipped files rather than a copy.
+Two consumers were exercised over a real `canvas mcp` until M9-b removed the surface that let an MCP client attach or read at all. What `tests/bridge.rs` drives now is the state that replaced it: `tools/list` is one tool, every `context.*` name is `METHOD_NOT_FOUND`, `resources/read` on a `context/<handle>` URI is unroutable for any handle, `resources/list` is empty, the reference the one tool hands out names `canvas here` and carries no page content, and the person's own `canvas here` still reads the attached tab. The broker's per-consumer rules below the socket — a stolen attachment id serving nobody else, one consumer letting go leaving the tab attached — are unchanged and covered by `an_attached_tab_is_served_to_the_cli_and_only_to_an_opted_in_consumer`. `canvas-core::bridge` unit-tests the framing bounds, account mismatch, a failed or redirected probe, stale document and navigation generations, opaque zones, and the 64 KiB ceiling. `cd extension && npm test` runs the route classifier, the zone classifier, the sanitizer, the byte bounds, the note renderer, and the panel view model against fixture HTML and hostile fixture notes, importing the shipped files rather than a copy.
 
 **Not run: a real Chrome.** The companion has never been loaded into a browser on the owner's machine. Installing the manifest writes into the user's own Chrome profile directory, and both the probe and the API side need a real Canvas account. So the following are untested and unverified: load unpacked, the toolbar gesture, a same-origin navigation keeping the grant, a cross-origin navigation revoking it, an account switch producing `account_mismatch`, two tabs, a broker restart driven by Chrome, the side panel opening on the gesture, a note rendered on screen, hostile markup proving inert in a real document rather than in the node tree the tests read, `chrome.tabs.update` moving a tab, a `loaded` outcome from a real navigation, a stale follow refused with a real tab behind it, the approve, decline, and cancel buttons, and a forged approval refused with a real page in the tab. Every Chrome-facing rule above rests on Chrome's documentation plus the tests, not on observation. `docs/companion.md` carries the check table for running them.
 
@@ -1769,9 +1770,9 @@ The §10 **pending hook** covers operation journals. A journal is pending while 
 
 ### 25.10 The agent surface and the skill
 
-**No tool performs any of these writes.** M8-b added eight tools to the §21.2 catalog — `discussion.reply.prepare`/`.execute`, `inbox.send.prepare`/`.execute`, `inbox.reply.prepare`/`.execute`, `operation.status`, and `operation.reconcile` — and the owner's directive of 2026-09-10 removed all eight (§19 item 48). The catalog is reads only. There is no prepare tool, no execute tool, no `input_required` round trip on this server, and no argument anywhere that asserts an approval.
+**No tool performs any of these writes, and no tool reads them back either.** M8-b added eight tools to the §21.2 catalog — `discussion.reply.prepare`/`.execute`, `inbox.send.prepare`/`.execute`, `inbox.reply.prepare`/`.execute`, `operation.status`, and `operation.reconcile` — and the owner's directive of 2026-09-10 removed all eight (§19 item 48), then removed the reads as well (§19 item 50). There is no prepare tool, no execute tool, no `input_required` round trip on this server, and no argument anywhere that asserts an approval.
 
-What an agent can do over MCP is read the thread it is answering: `discussions.list`, `discussion.get` with `replies`, `inbox.list`, `inbox.get`, and `inbox.unread_count`, each of which reports `pending` while a write of this identity's own is unresolved (§25.7). Everything else is a command:
+Reading the thread an answer belongs to is a command too: `canvas discussions`, `canvas discussion --replies`, `canvas inbox`, `canvas inbox show`, and `canvas inbox unread-count`, each of which reports `pending` while a write of this identity's own is unresolved (§25.7). So is everything else:
 
 | What | Command |
 |---|---|
@@ -1812,7 +1813,7 @@ Each prints the frozen plan — the exact thread or recipients, the exact bytes,
 | uuid (serde, v4) | 1.18.1 | journal ids, plan ids, approval handles, identity generations |
 | thiserror / anyhow | 2.0.20 / 1.0.104 | errors |
 | rmcp (`=3.2.0`, no default features; `server`, `client`, `macros`, `elicitation`, `transport-io`, `transport-async-rw`, `schemars`, `local`) | 3.2.0 | `canvas mcp` (M6-b). `local` is load-bearing: the command cores are `!Send`, so the service runs in a `LocalSet`. Brings `chrono` transitively, see §19 item 18 |
-| schemars (`=1.2.2`) | 1.2.2 | JSON Schema for `canvas schema` and the MCP tool schemas (M6-b) |
+| schemars (`=1.2.2`) | 1.2.2 | JSON Schema for `canvas schema` and the one MCP tool's argument schema (M6-b) |
 | dev: wiremock, assert_cmd, predicates, insta | 0.6.5, 2.2.2, 3.1.4, 1.48.0 | tests |
 | tools: cargo-nextest, cargo-deny, cargo-dist, release-plz | 0.9.143, 0.20.2, 0.32.0, 0.3.164 | CI, release |
 
@@ -1902,11 +1903,11 @@ No token of this CLI is ever sent through the browser, and no Canvas request is 
 | M6-a | operation plans, approval handles, the approval audit, the human `submit` refactor | §20 | `docs/reviews/code-M6-a.md` |
 | M6-b | `canvas schema`, `canvas mcp`, the shipped skill, the host matrix | §21 | `docs/reviews/code-M6-b.md` |
 | M6-c | cross-process permits, the shared governor, refresh single-flight, foreground interest, the event log, `canvas watch`, `canvas notify` | §22 | `docs/reviews/code-M6-c.md` |
-| M6-c2 | `subscriptions/listen` over the event log | §22.5 | `docs/reviews/code-M6-c2.md` |
+| M6-c2 | `subscriptions/listen` over the event log (removed by M9-b; §22.5) | §22.5 | `docs/reviews/code-M6-c2.md` |
 | M8-a | `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox *`, the rubric extension | §23 | `docs/reviews/code-M8-a.md` |
 | M8-a2 | the eight M8-a read tools on the agent surface; §19 items 27 and 28 applied | §21, §23 | `docs/reviews/code-M8-a2.md` |
 | M8-a3 | the `inbox.unread_count` event; the per-form `canvas schema` pages | §22, §21 | `docs/reviews/code-M8-a3.md` |
-| M7-a | the Chrome companion, the native host, the broker ownership lock, `bridge-native@1`, `bridge-ipc@1`, zones, the account probe, `canvas bridge`, `canvas here`, the `context.*` tools and the `/context` resource | §24 | `docs/reviews/code-M7-a.md` |
+| M7-a | the Chrome companion, the native host, the broker ownership lock, `bridge-native@1`, `bridge-ipc@1`, zones, the account probe, `canvas bridge`, `canvas here`, the `context.*` tools and the `/context` resource (the tools removed by M9, the resource by M9-b) | §24 | `docs/reviews/code-M7-a.md` |
 | M7-b | the side panel, notes, follow, panel approvals, and the plan-decision events | §24 | `docs/reviews/code-M7-b.md` |
 | M8-b | the three plan kinds, the operation journal, `operation status\|reconcile`, the attribution ladder, and the sixth skill workflow | §25 | `docs/reviews/code-M8-b.md` |
 
