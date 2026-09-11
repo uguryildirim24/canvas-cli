@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 /// The catalog `canvas mcp` serves, in the server's order.
 ///
 /// `crates/canvas-cli/src/mcp/catalog.rs` is the source; its own test pins
-/// this list against REPORT §3.2, and this file keeps the skill honest
-/// without making the binary's private modules public.
+/// this list against §21.2, and this file keeps the skill honest without
+/// making the binary's private modules public.
 const CATALOG: &[&str] = &[
     "courses.list",
     "course.get",
@@ -35,6 +35,13 @@ const CATALOG: &[&str] = &[
     "submission.get",
     "receipts.list",
     "receipts.show",
+];
+
+/// The 21 names the catalog no longer serves (§19 item 48).
+///
+/// A skill that still named one would send a host to a tool that is not
+/// there. Each of these is a `canvas` command now, and the workflows say so.
+const REMOVED: &[&str] = &[
     "sync.run",
     "download.plan",
     "download.run",
@@ -58,23 +65,27 @@ const CATALOG: &[&str] = &[
     "context.follow",
 ];
 
-/// The two tools that can send a submission to Canvas.
+/// The four workflows whose subject is a write, and the command each one
+/// must route through now that no tool can perform it.
 ///
-/// They belong to one workflow, because a submission is one procedure: freeze
-/// a plan, show it to a person, then execute what was approved.
-const SUBMISSION: &[&str] = &["submission.prepare", "submission.execute"];
-
-/// The six tools that can write a reply or a message (M8-b).
-///
-/// Same rule, same reason: one procedure, one workflow, so no other file can
-/// imply that any of them sends something on its own.
-const WRITES: &[&str] = &[
-    "discussion.reply.prepare",
-    "discussion.reply.execute",
-    "inbox.send.prepare",
-    "inbox.send.execute",
-    "inbox.reply.prepare",
-    "inbox.reply.execute",
+/// A workflow that describes a write without naming the command behind it
+/// leaves a model with no way to do what the user asked.
+const WRITE_WORKFLOWS: &[(&str, &[&str])] = &[
+    ("prepare-and-submit.md", &["canvas submit"]),
+    (
+        "reply-and-message-with-approval.md",
+        &[
+            "canvas discussion reply",
+            "canvas inbox send",
+            "canvas inbox reply",
+            "canvas operation status",
+        ],
+    ),
+    (
+        "reconcile-an-unknown-outcome.md",
+        &["canvas submission reconcile", "canvas receipts acknowledge"],
+    ),
+    ("download-course-files.md", &["canvas download"]),
 ];
 
 fn skill_dir() -> PathBuf {
@@ -189,39 +200,46 @@ fn every_catalog_tool_appears_in_the_skill() {
     assert!(missing.is_empty(), "no workflow mentions {missing:?}");
 }
 
-/// A submission is described in one place, so no other workflow can imply
-/// that it sends anything.
+/// No workflow names a tool the catalog dropped (§19 item 48).
+///
+/// `every_tool_the_skill_names_exists` catches a tool-shaped token; this
+/// catches the name anywhere in the file, including prose, so a sentence
+/// left behind cannot tell a model to call something that is gone.
 #[test]
-fn the_submission_tools_are_only_named_by_the_approval_workflow() {
-    let approval = skill_dir().join("prepare-and-submit.md");
-    let text = std::fs::read_to_string(&approval).expect("the approval workflow ships");
-    for name in SUBMISSION {
-        assert!(text.contains(name), "{name} has no workflow");
-    }
+fn no_workflow_names_a_removed_tool() {
     for path in files() {
-        if path == approval {
-            continue;
-        }
-        let other = std::fs::read_to_string(&path).expect("read a skill file");
-        for name in SUBMISSION {
+        let text = std::fs::read_to_string(&path).expect("read a skill file");
+        for name in REMOVED {
             assert!(
-                !other.contains(name),
-                "{} names {name} outside the approval workflow",
+                !text.contains(name),
+                "{} still names {name}, which left the catalog",
                 path.display()
             );
         }
     }
 }
 
-/// A reply and a message are described in one place too, and that place
-/// carries the course-policy boundary REPORT §3.5 states in plain words.
+/// Every workflow whose subject is a write routes through the command line.
+///
+/// The MCP catalog cannot perform any of them, so a workflow that does not
+/// name the command behind it leaves a model stuck.
 #[test]
-fn the_write_tools_are_only_named_by_the_reply_workflow() {
+fn every_write_workflow_routes_through_the_cli() {
+    for (file, commands) in WRITE_WORKFLOWS {
+        let path = skill_dir().join(file);
+        let text = std::fs::read_to_string(&path).expect("the workflow ships");
+        for command in *commands {
+            assert!(text.contains(command), "{file} does not name `{command}`");
+        }
+    }
+}
+
+/// The reply workflow still carries the course-policy boundary REPORT §3.5
+/// states in plain words, whichever surface performs the write.
+#[test]
+fn the_reply_workflow_states_the_course_policy_boundary() {
     let workflow = skill_dir().join("reply-and-message-with-approval.md");
     let text = std::fs::read_to_string(&workflow).expect("the reply workflow ships");
-    for name in WRITES {
-        assert!(text.contains(name), "{name} has no workflow");
-    }
     for required in [
         "not permission for AI-generated academic work",
         "Never write a placeholder",
@@ -233,18 +251,19 @@ fn the_write_tools_are_only_named_by_the_reply_workflow() {
             "the reply workflow does not state: {required}"
         );
     }
-    for path in files() {
-        if path == workflow {
-            continue;
-        }
-        let other = std::fs::read_to_string(&path).expect("read a skill file");
-        for name in WRITES {
-            assert!(
-                !other.contains(name),
-                "{} names {name} outside the reply workflow",
-                path.display()
-            );
-        }
+}
+
+/// SKILL.md says the catalog is read-only, and says it where a model reads
+/// it before anything else.
+#[test]
+fn the_skill_states_that_the_catalog_is_read_only() {
+    let text = std::fs::read_to_string(skill_dir().join("SKILL.md")).expect("SKILL.md ships");
+    for required in [
+        "The MCP catalog is read-only",
+        "Never pass `--yes`",
+        "22 tools",
+    ] {
+        assert!(text.contains(required), "SKILL.md never states: {required}");
     }
 }
 

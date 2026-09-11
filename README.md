@@ -183,9 +183,11 @@ stdout carries data only. Progress, logs, and confirmations go to stderr.
 
 `canvas mcp` serves the Model Context Protocol on stdin and stdout. One
 instance serves one identity: pick it with `--profile`. The catalog is
-read-first, and it holds no tool that reveals a credential, changes an
-identity, runs arbitrary HTTP or shell, clears the cache, overwrites a file,
-or opens a browser. A submission still needs a recorded human approval.
+**read-only**: its 22 tools fetch, and nothing there submits, replies, sends,
+downloads, refreshes the cache, retires a receipt, or touches the browser. It
+holds no tool that reveals a credential, changes an identity, runs arbitrary
+HTTP or shell, or clears the cache either. Every write is a `canvas` command
+a person runs in a terminal, where it prints what it is about to do and asks.
 
 ```json
 {
@@ -196,7 +198,7 @@ or opens a browser. A submission still needs a recorded human approval.
 ```
 
 [`skill/canvas-cli/`](skill/canvas-cli/SKILL.md) is the shipped skill: the
-identity model, five workflows, the exit-code and recovery table, and the MCP
+identity model, six workflows, the exit-code and recovery table, and the MCP
 setup for Claude Code, Codex, and Cursor. The release archives carry it.
 `docs/agent-hosts.md` records which hosts were actually exercised.
 

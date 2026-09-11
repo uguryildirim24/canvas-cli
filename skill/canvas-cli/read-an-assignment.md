@@ -18,8 +18,9 @@ or what they have already handed in.
    `history: true` for every attempt.
 4. `grades.get` with the course if the user asks what the assignment is worth
    in the whole course. It reports the group weights Canvas reports.
-5. `open.url` when the user wants to look at the page themselves. It returns
-   the canonical Canvas URL and opens nothing.
+5. Give the user the assignment's Canvas URL when they want to look at the
+   page themselves. `assignment.get` already carries it; there is no tool
+   that opens a browser.
 
 ## The course material behind the assignment
 
@@ -85,5 +86,4 @@ page.get { "course": "CHEM", "page": "lab-safety" }
 discussions.list { "course": "CHEM" }
 discussion.get { "course": "CHEM", "discussion": "55", "replies": true }
 discussion.get { "course": "CHEM", "discussion": "55", "replies": true, "page": 2 }
-open.url { "target": "https://school.instructure.com/courses/1/assignments/500" }
 ```
