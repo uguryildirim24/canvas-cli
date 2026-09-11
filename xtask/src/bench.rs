@@ -719,7 +719,7 @@ impl Harness {
             command.args(["--offline", "--color", "never"]);
             command
         };
-        bench_mcp::measure(&factory, runs, DOWNLOAD_COURSE, DOWNLOAD_COURSE * 100 + 1)
+        bench_mcp::measure(&factory, runs)
     }
 
     /// Measure the broker over a real `bridge-ipc@1` socket.
@@ -896,7 +896,7 @@ fn report(
         }
         println!(
             "{:<28} {:<10} {:>9.1} {:>9.1} {:>12.0} {:>7}",
-            "warm todo.list over stdio",
+            "warm getclitools over stdio",
             "mcp",
             agent.latency.p50,
             agent.latency.p95,
@@ -904,10 +904,12 @@ fn report(
             if agent.missed() { "MISS" } else { "ok" }
         );
         println!(
-            "\ncatalog: {} tools, {} bytes, ~{} tokens per `tools/list`",
+            "\ntools/list: {} tool(s), {} bytes, ~{} tokens; the answer is {} bytes, ~{} tokens",
             agent.catalog.len(),
             agent.catalog_bytes(),
-            agent.catalog_tokens()
+            agent.catalog_tokens(),
+            agent.reference.bytes,
+            agent.reference.tokens
         );
     }
     if let Some(companion) = companion {
@@ -1129,7 +1131,7 @@ fn document(
         writeln!(out, "|---|---:|---:|---:|---|")?;
         writeln!(
             out,
-            "| warm `todo.list` round trip | {:.1} | {:.1} | {:.0} | {} |",
+            "| warm `getclitools` round trip | {:.1} | {:.1} | {:.0} | {} |",
             agent.latency.p50,
             agent.latency.p95,
             bench_mcp::ROUND_TRIP_P95_MS,
@@ -1145,20 +1147,20 @@ fn document(
             bench_mcp::WARMUP
         )?;
 
-        writeln!(out, "### Schema cost per tool\n")?;
+        writeln!(out, "### What `tools/list` costs\n")?;
         writeln!(
             out,
-            "The bytes each tool definition puts on the wire in `tools/list`, \
-             which a host pays once per session before the model has read \
-             anything. The token column is an estimate: one token per {} \
-             bytes of UTF-8. That is a rule of thumb for JSON with English \
-             identifiers, not a tokenizer run; the byte column is exact.\n\n\
-             Most of each row is the output schema, which is the whole §7 \
-             envelope in both shapes: the command's result and the `error@1` \
-             branch. Both are self-contained, with every sub-schema inlined, \
-             because a host validator reads a tool definition on its own. \
-             That is why the total is what it is, and it is the number to \
-             beat if the catalog is ever trimmed.\n",
+            "The bytes the whole tool list puts on the wire, which a host \
+             pays once per session before the model has read anything. The \
+             token column is an estimate: one token per {} bytes of UTF-8. \
+             That is a rule of thumb for JSON with English identifiers, not a \
+             tokenizer run; the byte column is exact.\n\n\
+             The surface is one tool and it declares no output schema, so \
+             there is nothing here but a name, a title, a description, and an \
+             empty argument object. The 22-tool catalog this replaced cost \
+             167 955 bytes, because every tool inlined the whole §7 envelope \
+             twice — the command's result and the `error@1` branch — for a \
+             host validator to read on its own.\n",
             bench_mcp::BYTES_PER_TOKEN
         )?;
         writeln!(out, "| Tool | Bytes | ~Tokens |")?;
@@ -1172,53 +1174,43 @@ fn document(
         }
         writeln!(
             out,
-            "| **{} tools** | **{}** | **~{}** |",
+            "| **{} tool** | **{}** | **~{}** |",
             agent.catalog.len(),
             agent.catalog_bytes(),
             agent.catalog_tokens()
         )?;
 
+        writeln!(out, "\n### What the one call answers with\n")?;
+        writeln!(
+            out,
+            "`getclitools` returns the whole `canvas` command reference: \
+             every command, its operands and flags, what each one returns, \
+             and the `canvas schema --list` listing. A model reads it once \
+             and runs commands from then on, so this is paid per session, not \
+             per workflow.\n"
+        )?;
+        writeln!(out, "| | |")?;
+        writeln!(out, "|---|---:|")?;
+        writeln!(out, "| Commands described | {} |", agent.reference.commands)?;
+        writeln!(out, "| Bytes | {} |", agent.reference.bytes)?;
+        writeln!(out, "| ~Tokens | {} |", agent.reference.tokens)?;
+
         writeln!(out, "\n### Round trips per workflow\n")?;
         writeln!(
             out,
-            "One row per workflow of the shipped skill \
-             (`skill/canvas-cli/`). Each round trip is one host turn, so the \
-             call count is what a workflow costs in conversation. `outcome \
-             (exit)` is what each call reported against this fixture.\n"
+            "One, for every workflow of the shipped skill \
+             (`skill/canvas-cli/`). An MCP agent calls `getclitools` once at \
+             the start of the session; every step after that — reads as well \
+             as writes — is a `canvas` command it runs itself, which costs no \
+             MCP round trip at all. There is nothing left to tabulate here."
         )?;
-        writeln!(out, "| Workflow | Calls | Measured ms | Sequence |")?;
-        writeln!(out, "|---|---:|---:|---|")?;
-        for workflow in &agent.workflows {
-            let sequence: Vec<String> = workflow
-                .calls
-                .iter()
-                .map(|(tool, outcome)| format!("`{tool}` {outcome}"))
-                .collect();
-            writeln!(
-                out,
-                "| {} | {} | {:.1} | {} |",
-                workflow.name,
-                workflow.total_calls(),
-                workflow.total_ms,
-                sequence.join(" → ")
-            )?;
-        }
-        for workflow in &agent.workflows {
-            if workflow.unmeasured > 0 {
-                writeln!(
-                    out,
-                    "\n- **{}** costs {} more call(s) this run did not issue: {}.",
-                    workflow.name, workflow.unmeasured, workflow.unmeasured_note
-                )?;
-            }
-        }
     } else {
         writeln!(out, "\n## Agent surface (`canvas mcp`)\n")?;
         writeln!(
             out,
             "Not measured in this run. `cargo xtask bench --mcp` adds the \
-             schema cost per tool, the warm `todo.list` round trip over \
-             stdio, and the round trips per skill workflow."
+             cost of `tools/list`, the warm `getclitools` round trip over \
+             stdio, and the size of the command reference it answers with."
         )?;
     }
 
