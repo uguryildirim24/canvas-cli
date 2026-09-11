@@ -206,10 +206,11 @@ struct Workflow {
 
 /// The six workflows the shipped skill documents.
 ///
-/// Each entry is the sequence this harness can issue offline, plus the count
-/// of calls the workflow needs that it cannot: a submission needs the network
-/// and a person, a reconciliation has no journal to resolve, and a transfer
-/// needs the network.
+/// Each entry is the sequence of tool calls this harness can issue offline,
+/// plus the count of turns the workflow needs that are not tool calls at all.
+/// Since the catalog became read-only (SPEC §19 item 48) every write in a
+/// workflow is a `canvas` command run at a terminal, so it costs a host turn
+/// and measures nothing here.
 fn workflows(course: i64, assignment: i64) -> Vec<Workflow> {
     let course = course.to_string();
     let assignment = assignment.to_string();
@@ -247,10 +248,9 @@ fn workflows(course: i64, assignment: i64) -> Vec<Workflow> {
                     json!({ "course": course, "assignment": assignment }),
                 ),
             ],
-            unmeasured: 3,
-            unmeasured_note: "`submission.prepare`, then `submission.execute` twice: the \
-                              first returns `input_required`, the retry carries the \
-                              approval. All three need the network and a real file",
+            unmeasured: 1,
+            unmeasured_note: "`canvas submit`, which is a command, not a tool: it needs \
+                              the network, a real file, and a person at the terminal",
         },
         Workflow {
             name: "reconcile an unknown outcome",
@@ -262,7 +262,8 @@ fn workflows(course: i64, assignment: i64) -> Vec<Workflow> {
                 ),
             ],
             unmeasured: 1,
-            unmeasured_note: "`submission.reconcile`, which needs an unresolved journal",
+            unmeasured_note: "`canvas submission reconcile`, a command, which needs an \
+                              unresolved journal",
         },
         Workflow {
             name: "reply and message with approval",
@@ -270,20 +271,21 @@ fn workflows(course: i64, assignment: i64) -> Vec<Workflow> {
                 ("discussions.list", json!({ "course": course })),
                 ("inbox.list", json!({})),
             ],
-            unmeasured: 4,
-            unmeasured_note: "a prepare, then an execute twice (the first returns \
-                              `input_required`, the retry carries the approval), and \
-                              `operation.status`: all four need the network and a person",
+            unmeasured: 2,
+            unmeasured_note: "the write command itself — `canvas discussion reply`, \
+                              `canvas inbox send`, or `canvas inbox reply` — and then \
+                              `canvas operation status`: both need the network and a \
+                              person at the terminal",
         },
         Workflow {
             name: "download course files",
             calls: vec![
                 ("files.list", json!({ "course": course, "tree": true })),
                 ("modules.list", json!({ "course": course, "items": true })),
-                ("download.plan", json!({ "course": course })),
             ],
-            unmeasured: 1,
-            unmeasured_note: "`download.run`, which needs the network",
+            unmeasured: 2,
+            unmeasured_note: "`canvas download --dry-run` and then `canvas download`, \
+                              both commands, which need the network",
         },
     ]
 }
