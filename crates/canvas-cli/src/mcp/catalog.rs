@@ -9,7 +9,6 @@
 //! documentation only. Enforcement lives in the plan and approval core.
 
 use std::borrow::Cow;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use rmcp::model::{JsonObject, Tool, ToolAnnotations};
@@ -19,31 +18,28 @@ use serde_json::Value;
 
 use crate::cli::AssignmentBucket;
 use crate::commands::{
-    Globals, announcement, announcements, assignment, assignments, bridge, calendar, course,
-    courses, discussions, download, files, grades, handled::Handled, here, inbox, modules, note,
-    open, operation, pages, receipts, submission, submit, sync, todo,
+    Globals, announcement, announcements, assignment, assignments, calendar, course, courses,
+    discussions, files, grades, handled::Handled, inbox, modules, pages, receipts, submission, todo,
 };
 use crate::output::{
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
-    SCHEMA_BRIDGE, SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES,
-    SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_FILES, SCHEMA_FOLLOW,
-    SCHEMA_GRADES, SCHEMA_HERE, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_NOTE,
-    SCHEMA_OPEN, SCHEMA_OPERATION, SCHEMA_OPERATION_RECONCILE, SCHEMA_PAGE, SCHEMA_PAGES,
-    SCHEMA_PLAN, SCHEMA_RECEIPTS, SCHEMA_RECONCILE, SCHEMA_SUBMISSION, SCHEMA_SUBMIT,
-    SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_TODO,
+    SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DISCUSSION,
+    SCHEMA_DISCUSSIONS, SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD,
+    SCHEMA_MODULES, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_RECEIPTS, SCHEMA_SUBMISSION,
+    SCHEMA_SYLLABUS, SCHEMA_TODO,
 };
 
-/// What a tool does to its environment (§3.5).
+/// What a tool does to its environment (§21.2).
+///
+/// One variant, and that is the point: the MCP catalog exposes reads and
+/// nothing else (owner directive, 2026-09-10). The write tiers the CLI
+/// carries — organize, retire, remote write (§20, §25) — have no spelling
+/// here, so a tool that is not a read cannot be described at all without
+/// reopening this enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Effect {
     /// An authorized read: nothing changes.
     Read,
-    /// Local organization: the cache, a manifest, or a plan changes.
-    Organize,
-    /// A durable local decision that retires evidence.
-    Retire,
-    /// Bytes reach Canvas.
-    RemoteWrite,
 }
 
 impl Effect {
@@ -354,256 +350,6 @@ pub struct ReceiptsShowArgs {
     pub id: String,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SyncRunArgs {
-    /// Also refresh folders, files, modules, and calendar events.
-    #[serde(default)]
-    pub full: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct DownloadArgs {
-    /// One course, or every active course with `all_courses`.
-    #[serde(default)]
-    pub course: Option<String>,
-    /// Every active course.
-    #[serde(default)]
-    pub all_courses: bool,
-    /// Only files in modules whose name contains this text.
-    #[serde(default)]
-    pub module: Option<String>,
-    /// Only these file ids.
-    #[serde(default)]
-    pub files: Vec<i64>,
-    /// Parallel transfers. The configured value is the default.
-    #[serde(default)]
-    pub jobs: Option<u32>,
-    /// Verify the bytes of files that are already present.
-    #[serde(default)]
-    pub verify: bool,
-}
-
-/// `submission.prepare` takes the `canvas submit` operands, without `--yes`.
-///
-/// One of `files`, `text`, `html`, or `url` is required, exactly as §5 says.
-/// The plan this freezes still needs a recorded human approval, so nothing
-/// here can send anything.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SubmissionPrepareArgs {
-    /// A numeric id, an alias, a URL, or a code substring (§6).
-    pub course: String,
-    /// The assignment inside that course.
-    pub assignment: String,
-    /// Local files to upload, in order.
-    #[serde(default)]
-    pub files: Vec<String>,
-    /// A local file holding the text entry. `-` is not accepted: stdin is the
-    /// protocol channel.
-    #[serde(default)]
-    pub text: Option<String>,
-    /// A local HTML file to submit as an HTML entry.
-    #[serde(default)]
-    pub html: Option<String>,
-    /// A website URL to submit.
-    #[serde(default)]
-    pub url: Option<String>,
-    /// A comment to send with the attempt.
-    #[serde(default)]
-    pub comment: Option<String>,
-}
-
-/// `submission.execute` names one prepared plan and nothing else.
-///
-/// An approval cannot be asserted by an argument: it is a recorded decision
-/// against a server-issued handle (REPORT §3.5).
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SubmissionExecuteArgs {
-    /// The plan `submission.prepare` returned.
-    pub plan_id: String,
-}
-
-/// `discussion.reply.prepare` freezes one public reply to one topic.
-///
-/// The reply is a public post in a course: REPORT §3.5 puts it in the same
-/// tier as a submission, so nothing here sends anything on its own.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct DiscussionReplyPrepareArgs {
-    /// A numeric id, an alias, a URL, or a code substring (§6).
-    pub course: String,
-    /// The discussion id, or a Canvas discussion URL in this course.
-    pub discussion: String,
-    /// Reply to this entry instead of to the topic.
-    #[serde(default)]
-    pub to: Option<String>,
-    /// The reply text. Canvas is sent HTML built from it.
-    pub text: String,
-    /// Local files to attach. Refused at prepare in this version.
-    #[serde(default)]
-    pub attachments: Vec<String>,
-}
-
-/// `inbox.send.prepare` freezes one new conversation.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct InboxSendPrepareArgs {
-    /// Canvas user ids to send to, in order. Each one is resolved at prepare.
-    pub recipients: Vec<String>,
-    /// The subject line.
-    #[serde(default)]
-    pub subject: Option<String>,
-    /// The message text.
-    pub text: String,
-    /// Local files to attach.
-    #[serde(default)]
-    pub attachments: Vec<String>,
-}
-
-/// `inbox.reply.prepare` freezes one message added to one conversation.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct InboxReplyPrepareArgs {
-    /// The conversation to add a message to.
-    pub conversation_id: String,
-    /// The message text.
-    pub text: String,
-    /// Local files to attach.
-    #[serde(default)]
-    pub attachments: Vec<String>,
-}
-
-/// Every operation execute names one prepared plan and nothing else.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct OperationExecuteArgs {
-    /// The plan the matching prepare returned.
-    pub plan_id: String,
-}
-
-/// `operation.status` reads one operation journal back.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct OperationStatusArgs {
-    /// The operation journal to read.
-    pub journal_id: String,
-}
-
-/// `operation.reconcile` resolves one operation journal.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct OperationReconcileArgs {
-    /// The operation journal to resolve.
-    pub journal_id: String,
-    /// Record that nothing was posted. Refused while the outcome is not
-    /// unknown, while a matching object is visible, or before the §12.2 wait.
-    #[serde(default)]
-    pub assume_not_posted: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ReconcileArgs {
-    /// The journal to resolve.
-    pub journal_id: String,
-    /// Retire the evidence and record that nothing was submitted. This is the
-    /// only argument in the catalog that retires evidence, and §12.2 still
-    /// refuses it while an attempt is visible or the journal is too young.
-    #[serde(default)]
-    pub assume_not_submitted: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AcknowledgeArgs {
-    /// The journal whose unknown outcome is accepted.
-    pub journal_id: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct OpenUrlArgs {
-    /// A course, a Canvas URL, or `assignment`/`file`/`announcement` target.
-    pub target: String,
-}
-
-/// `context.attach` opts this consumer in. The consumer handle is the
-/// surface's own, set by the adapter, so a model cannot name another.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ContextAttachArgs {
-    /// The attachment to opt into. Omit it when only one tab is attached.
-    #[serde(default)]
-    pub attachment_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ContextHereArgs {
-    /// The attachment to read. Omit it to read the one this consumer holds.
-    #[serde(default)]
-    pub attachment_id: Option<String>,
-    /// Ask for the selected passage and the visible excerpt as well. The
-    /// account is verified again before any text is released, and an opaque
-    /// zone releases none.
-    #[serde(default)]
-    pub include_text: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ContextDetachArgs {
-    /// The attachment to give up. Omit it to give up the one this consumer
-    /// holds.
-    #[serde(default)]
-    pub attachment_id: Option<String>,
-}
-
-/// `context.note` shows the person one note in the companion's side panel.
-///
-/// The note is inert. It cannot approve, decline, or cancel a plan, whatever
-/// its text says, because there is no approval operation on the broker
-/// protocol at all (REPORT §3.5).
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ContextNoteArgs {
-    /// The attachment to show it on. Omit it to use the one this consumer
-    /// holds.
-    #[serde(default)]
-    pub attachment_id: Option<String>,
-    /// The `navigation_generation` of the bundle this note was written from.
-    /// A note for a page the person has already left is refused, exit 8,
-    /// reason `stale_generation`.
-    pub generation: u64,
-    /// The note, at most 8 KiB, as Markdown source. A sanitized subset is
-    /// rendered: no HTML, no scripts, no images, and no link that is not a
-    /// page of the attached Canvas or a `canvas://` reference.
-    pub text: String,
-    /// Where the note's facts came from. Each must be a page of the attached
-    /// Canvas or a `canvas://` reference; anything else is refused.
-    #[serde(default)]
-    pub source_refs: Vec<String>,
-}
-
-/// `context.follow` navigates the attached tab inside the granted origin.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ContextFollowArgs {
-    /// The attachment to navigate. Omit it to use the one this consumer
-    /// holds.
-    #[serde(default)]
-    pub attachment_id: Option<String>,
-    /// The `navigation_generation` of the bundle this request was made from.
-    /// A stale generation is refused, exit 8, reason `stale_generation`.
-    pub generation: u64,
-    /// A course, a Canvas URL, or an `assignment`/`file`/`announcement`
-    /// target, resolved exactly as `open.url` resolves it.
-    pub target: String,
-}
-
 // ------------------------------------------------------------------ dispatch
 
 /// Every tool this server exposes, in a stable order.
@@ -856,272 +602,6 @@ pub fn specs() -> &'static [ToolSpec] {
             open_world: false,
             input_schema: schema_of::<ReceiptsShowArgs>,
         },
-        ToolSpec {
-            name: "sync.run",
-            title: "Refresh the cache",
-            description: "Refresh the cached datasets. It writes the cache, never Canvas.",
-            schema: SCHEMA_SYNC,
-            variant: None,
-            effect: Effect::Organize,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<SyncRunArgs>,
-        },
-        ToolSpec {
-            name: "download.plan",
-            title: "Plan a download",
-            description: "What a download would transfer, per file. It writes nothing.",
-            schema: SCHEMA_DOWNLOAD,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<DownloadArgs>,
-        },
-        ToolSpec {
-            name: "download.run",
-            title: "Download course files",
-            description: "Download course files into the configured destination. \
-                          It never overwrites a file it does not own.",
-            schema: SCHEMA_DOWNLOAD,
-            variant: None,
-            effect: Effect::Organize,
-            idempotent: false,
-            open_world: true,
-            input_schema: schema_of::<DownloadArgs>,
-        },
-        ToolSpec {
-            name: "submission.prepare",
-            title: "Prepare a submission",
-            description: "Freeze a submission as a plan and return it. Nothing is sent: the plan \
-                          needs a recorded human approval, and `submission.execute` asks for it.",
-            schema: SCHEMA_PLAN,
-            variant: None,
-            effect: Effect::Organize,
-            // Each call freezes a new plan.
-            idempotent: false,
-            open_world: true,
-            input_schema: schema_of::<SubmissionPrepareArgs>,
-        },
-        ToolSpec {
-            name: "submission.execute",
-            title: "Execute an approved submission",
-            description: "Submit an approved plan to Canvas. On a plan that is not approved yet \
-                          this asks a person first and dispatches nothing.",
-            schema: SCHEMA_SUBMIT,
-            variant: None,
-            effect: Effect::RemoteWrite,
-            // A plan admits at most one journal, so a second call returns the
-            // journal the first one created (SPEC §19 item 17).
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<SubmissionExecuteArgs>,
-        },
-        ToolSpec {
-            name: "submission.reconcile",
-            title: "Reconcile a journal",
-            description: "Resolve a journal an interrupted submit left behind. \
-                          Ordinary reconciliation never posts to Canvas.",
-            schema: SCHEMA_RECONCILE,
-            variant: None,
-            effect: Effect::Retire,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<ReconcileArgs>,
-        },
-        ToolSpec {
-            name: "discussion.reply.prepare",
-            title: "Prepare a discussion reply",
-            description: "Freeze a public reply to a discussion topic as a plan and return it. \
-                          Nothing is sent: the plan needs a recorded human approval, and \
-                          `discussion.reply.execute` asks for it.",
-            schema: SCHEMA_PLAN,
-            variant: None,
-            effect: Effect::Organize,
-            idempotent: false,
-            open_world: true,
-            input_schema: schema_of::<DiscussionReplyPrepareArgs>,
-        },
-        ToolSpec {
-            name: "discussion.reply.execute",
-            title: "Post an approved discussion reply",
-            description: "Post an approved reply to Canvas. On a plan that is not approved yet \
-                          this asks a person first and dispatches nothing.",
-            schema: SCHEMA_OPERATION,
-            variant: None,
-            effect: Effect::RemoteWrite,
-            // A plan admits at most one journal (SPEC §19 item 17).
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<OperationExecuteArgs>,
-        },
-        ToolSpec {
-            name: "inbox.send.prepare",
-            title: "Prepare a new conversation",
-            description: "Freeze a new conversation to named recipients as a plan and return it. \
-                          Nothing is sent: the plan needs a recorded human approval, and \
-                          `inbox.send.execute` asks for it.",
-            schema: SCHEMA_PLAN,
-            variant: None,
-            effect: Effect::Organize,
-            idempotent: false,
-            open_world: true,
-            input_schema: schema_of::<InboxSendPrepareArgs>,
-        },
-        ToolSpec {
-            name: "inbox.send.execute",
-            title: "Send an approved conversation",
-            description: "Send an approved conversation to Canvas. Canvas accepting it is not \
-                          proof that anyone received it.",
-            schema: SCHEMA_OPERATION,
-            variant: None,
-            effect: Effect::RemoteWrite,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<OperationExecuteArgs>,
-        },
-        ToolSpec {
-            name: "inbox.reply.prepare",
-            title: "Prepare a conversation reply",
-            description: "Freeze a message added to one conversation as a plan and return it. \
-                          Nothing is sent: the plan needs a recorded human approval, and \
-                          `inbox.reply.execute` asks for it.",
-            schema: SCHEMA_PLAN,
-            variant: None,
-            effect: Effect::Organize,
-            idempotent: false,
-            open_world: true,
-            input_schema: schema_of::<InboxReplyPrepareArgs>,
-        },
-        ToolSpec {
-            name: "inbox.reply.execute",
-            title: "Send an approved conversation reply",
-            description: "Add an approved message to a conversation. Canvas accepting it is not \
-                          proof that anyone received it.",
-            schema: SCHEMA_OPERATION,
-            variant: None,
-            effect: Effect::RemoteWrite,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<OperationExecuteArgs>,
-        },
-        ToolSpec {
-            name: "operation.status",
-            title: "Show one write operation",
-            description: "Read one operation journal, and read its thread back. \
-                          It records what the readback showed, moves no journal \
-                          state, and posts nothing.",
-            schema: SCHEMA_OPERATION,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<OperationStatusArgs>,
-        },
-        ToolSpec {
-            name: "operation.reconcile",
-            title: "Reconcile a write operation",
-            description: "Resolve an operation journal an interrupted write left behind. \
-                          It never reposts.",
-            schema: SCHEMA_OPERATION_RECONCILE,
-            variant: None,
-            effect: Effect::Retire,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<OperationReconcileArgs>,
-        },
-        ToolSpec {
-            name: "receipts.acknowledge",
-            title: "Acknowledge an unknown outcome",
-            description: "Accept a journal whose outcome stays unknown. Local, and final.",
-            schema: SCHEMA_RECEIPTS,
-            variant: Some("acknowledge"),
-            effect: Effect::Retire,
-            idempotent: true,
-            open_world: false,
-            input_schema: schema_of::<AcknowledgeArgs>,
-        },
-        ToolSpec {
-            name: "open.url",
-            title: "Resolve a Canvas URL",
-            description: "Resolve a target to its canonical Canvas URL. It never opens a browser.",
-            schema: SCHEMA_OPEN,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: false,
-            input_schema: schema_of::<OpenUrlArgs>,
-        },
-        ToolSpec {
-            name: "context.attach",
-            title: "Attach to the companion",
-            description: "Opt this consumer into the Canvas tab the person attached in the \
-                          browser. It returns the attachment handle and its state, never page \
-                          content, and it attaches nothing on its own: the person clicks first.",
-            schema: SCHEMA_HERE,
-            variant: None,
-            effect: Effect::Organize,
-            idempotent: true,
-            open_world: false,
-            input_schema: schema_of::<ContextAttachArgs>,
-        },
-        ToolSpec {
-            name: "context.here",
-            title: "Where the person is",
-            description: "Read the attached page: the API facts its route resolves to, and, \
-                          separately, one bounded observation of the browser. Assessment, \
-                          external-tool and unrecognized pages carry no content at all. Text is \
-                          released only with include_text, after the account is verified again.",
-            schema: SCHEMA_HERE,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<ContextHereArgs>,
-        },
-        ToolSpec {
-            name: "context.detach",
-            title: "Give up the attachment",
-            description: "Give up this consumer's share of the attachment. The tab stays \
-                          attached for the person and for every other consumer.",
-            schema: SCHEMA_BRIDGE,
-            variant: Some("detach"),
-            effect: Effect::Organize,
-            idempotent: true,
-            open_world: false,
-            input_schema: schema_of::<ContextDetachArgs>,
-        },
-        ToolSpec {
-            name: "context.note",
-            title: "Show a note in the panel",
-            description: "Show the person one inert note in the companion's side panel. It is \
-                          rendered as text through a sanitized subset of Markdown, it reaches no \
-                          Canvas page, and it can never approve, decline, or cancel a plan. A \
-                          note written against a page the person has already left is refused.",
-            schema: SCHEMA_NOTE,
-            variant: None,
-            effect: Effect::Organize,
-            // Two identical notes are two rows in the panel, not one.
-            idempotent: false,
-            open_world: false,
-            input_schema: schema_of::<ContextNoteArgs>,
-        },
-        ToolSpec {
-            name: "context.follow",
-            title: "Take the person to a page",
-            description: "Navigate the attached Canvas tab to a target, inside the origin the \
-                          person granted. This is not one of the API previews: the browser loads \
-                          the page and Canvas' own controllers run, so a discussion page marks \
-                          itself read. The result is the dispatch acknowledgement; whether the \
-                          page loaded arrives later, on context.here.",
-            schema: SCHEMA_FOLLOW,
-            variant: None,
-            effect: Effect::Organize,
-            // It moves the person's tab, and the page it lands on may write.
-            idempotent: false,
-            open_world: true,
-            input_schema: schema_of::<ContextFollowArgs>,
-        },
     ]
 }
 
@@ -1131,52 +611,25 @@ pub fn spec(name: &str) -> Option<&'static ToolSpec> {
     specs().iter().find(|spec| spec.name == name)
 }
 
-/// Whether this tool asks a person for a decision before it acts.
-///
-/// Only such a tool can be the second half of an approval round trip. Every
-/// `*.execute` runs a plan under an approval, and nothing else ever asks, so
-/// the rule stays true as more writes are added.
-#[must_use]
-pub fn asks_for_approval(name: &str) -> bool {
-    spec(name).is_some_and(|spec| spec.name.ends_with(".execute"))
-}
-
 /// Parse `arguments` for a tool, rejecting anything its schema does not name.
 fn parse<T: for<'de> Deserialize<'de>>(arguments: Option<JsonObject>) -> Result<T, String> {
     let value = Value::Object(arguments.unwrap_or_default());
     serde_json::from_value(value).map_err(|e| e.to_string())
 }
 
-/// What one dispatched tool produced.
-pub enum Dispatched {
-    /// A finished command and its §7 envelope.
-    Done(Handled),
-    /// The tool needs a recorded human decision before it can run. Nothing
-    /// has been dispatched.
-    Approval(Box<submit::Pending>),
-}
-
-impl From<Handled> for Dispatched {
-    fn from(handled: Handled) -> Self {
-        Self::Done(handled)
-    }
-}
-
 /// Run one tool through the command core behind it.
 ///
 /// `Err` is an argument failure: the caller turns it into a JSON-RPC error,
 /// because the tool never ran. Every outcome the command itself produces —
-/// including a refusal — comes back as `Ok(Dispatched::Done)` with its
-/// envelope.
+/// including a refusal — comes back as `Ok` with its envelope.
 ///
-/// `consumer` names the host on the surface: it is recorded with a plan and
-/// with every approval handle issued for it.
+/// Every tool in the catalog is a read, so a dispatch never needs a person's
+/// decision and never returns anything but a finished command (§21.2).
 pub async fn dispatch(
     globals: &Globals,
-    consumer: &str,
     name: &str,
     arguments: Option<JsonObject>,
-) -> Result<Dispatched, String> {
+) -> Result<Handled, String> {
     Ok(match name {
         "courses.list" => {
             let args: CoursesListArgs = parse(arguments)?;
@@ -1326,226 +779,7 @@ pub async fn dispatch(
             let args: ReceiptsShowArgs = parse(arguments)?;
             receipts::handle(globals, receipts::ReceiptsCmd::Show { id: args.id }).into()
         }
-        "sync.run" => {
-            let args: SyncRunArgs = parse(arguments)?;
-            sync::handle(globals, args.full).await.into()
-        }
-        "download.plan" | "download.run" => {
-            let args: DownloadArgs = parse(arguments)?;
-            download::handle(
-                globals,
-                download::DownloadArgs {
-                    course: args.course,
-                    all_courses: args.all_courses,
-                    // The configured destination only: an agent cannot choose
-                    // where bytes land, and it cannot overwrite with --force.
-                    dest: None,
-                    module: args.module,
-                    files: args.files,
-                    jobs: args.jobs,
-                    dry_run: name == "download.plan",
-                    force: false,
-                    verify: args.verify,
-                },
-            )
-            .await
-            .into()
-        }
-        "submission.prepare" => {
-            let args: SubmissionPrepareArgs = parse(arguments)?;
-            submit::agent_prepare(globals, submit_args(args)?, consumer)
-                .await
-                .into()
-        }
-        "submission.execute" => {
-            let args: SubmissionExecuteArgs = parse(arguments)?;
-            match submit::agent_execute(globals, &args.plan_id, consumer).await {
-                submit::Admitted::Done(handled) => Dispatched::Done(handled),
-                submit::Admitted::NeedsApproval(pending) => Dispatched::Approval(pending),
-            }
-        }
-        "submission.reconcile" => {
-            let args: ReconcileArgs = parse(arguments)?;
-            submission::handle(
-                globals,
-                submission::SubmissionCmd::Reconcile {
-                    journal_id: args.journal_id,
-                    assume_not_submitted: args.assume_not_submitted,
-                },
-            )
-            .await
-            .into()
-        }
-        "discussion.reply.prepare" => {
-            let args: DiscussionReplyPrepareArgs = parse(arguments)?;
-            operation::agent_prepare(
-                globals,
-                operation::WriteArgs::DiscussionReply(Box::new(operation::DiscussionReplyArgs {
-                    course: args.course,
-                    discussion: args.discussion,
-                    to: args.to,
-                    text: Some(literal(args.text)?),
-                    text_file: None,
-                    attach: paths(args.attachments),
-                    yes: false,
-                })),
-                consumer,
-            )
-            .await
-            .into()
-        }
-        "inbox.send.prepare" => {
-            let args: InboxSendPrepareArgs = parse(arguments)?;
-            operation::agent_prepare(
-                globals,
-                operation::WriteArgs::InboxSend(Box::new(operation::InboxSendArgs {
-                    to: args.recipients,
-                    subject: args.subject,
-                    text: Some(literal(args.text)?),
-                    text_file: None,
-                    attach: paths(args.attachments),
-                    yes: false,
-                })),
-                consumer,
-            )
-            .await
-            .into()
-        }
-        "inbox.reply.prepare" => {
-            let args: InboxReplyPrepareArgs = parse(arguments)?;
-            operation::agent_prepare(
-                globals,
-                operation::WriteArgs::InboxReply(Box::new(operation::InboxReplyArgs {
-                    conversation_id: args.conversation_id,
-                    text: Some(literal(args.text)?),
-                    text_file: None,
-                    attach: paths(args.attachments),
-                    yes: false,
-                })),
-                consumer,
-            )
-            .await
-            .into()
-        }
-        "discussion.reply.execute" | "inbox.send.execute" | "inbox.reply.execute" => {
-            let args: OperationExecuteArgs = parse(arguments)?;
-            match operation::agent_execute(globals, &args.plan_id, consumer).await {
-                submit::Admitted::Done(handled) => Dispatched::Done(handled),
-                submit::Admitted::NeedsApproval(pending) => Dispatched::Approval(pending),
-            }
-        }
-        "operation.status" => {
-            let args: OperationStatusArgs = parse(arguments)?;
-            operation::handle_status(globals, args.journal_id)
-                .await
-                .into()
-        }
-        "operation.reconcile" => {
-            let args: OperationReconcileArgs = parse(arguments)?;
-            operation::handle_reconcile(globals, args.journal_id, args.assume_not_posted)
-                .await
-                .into()
-        }
-        "receipts.acknowledge" => {
-            let args: AcknowledgeArgs = parse(arguments)?;
-            receipts::handle(
-                globals,
-                receipts::ReceiptsCmd::Acknowledge {
-                    journal_id: args.journal_id,
-                },
-            )
-            .into()
-        }
-        "open.url" => {
-            let args: OpenUrlArgs = parse(arguments)?;
-            open::handle(globals, None, Some(args.target), open::Launch::No)
-                .await
-                .into()
-        }
-        "context.attach" => {
-            let args: ContextAttachArgs = parse(arguments)?;
-            here::attach(globals, args.attachment_id, consumer).into()
-        }
-        "context.here" => {
-            let args: ContextHereArgs = parse(arguments)?;
-            here::handle(
-                globals,
-                args.attachment_id,
-                Some(consumer.to_owned()),
-                args.include_text,
-            )
-            .await
-            .into()
-        }
-        "context.detach" => {
-            let args: ContextDetachArgs = parse(arguments)?;
-            bridge::detach_consumer(globals, args.attachment_id, consumer).into()
-        }
-        "context.note" => {
-            let args: ContextNoteArgs = parse(arguments)?;
-            note::handle(
-                globals,
-                args.attachment_id,
-                Some(consumer.to_owned()),
-                // An agent always names the generation it read: it is working
-                // from a bundle, and the bundle may be behind the person.
-                Some(args.generation),
-                args.text,
-                args.source_refs,
-            )
-            .await
-            .into()
-        }
-        "context.follow" => {
-            let args: ContextFollowArgs = parse(arguments)?;
-            open::follow(
-                globals,
-                None,
-                Some(args.target),
-                args.attachment_id,
-                Some(consumer.to_owned()),
-                Some(args.generation),
-            )
-            .await
-            .into()
-        }
         other => return Err(format!("unknown tool {other}")),
-    })
-}
-
-/// A literal body from a tool argument.
-///
-/// `-` is refused: on this surface stdin carries the protocol, so it can never
-/// mean "read the message from stdin".
-fn literal(text: String) -> Result<String, String> {
-    if text.trim() == "-" {
-        return Err("text must be the message itself: stdin carries the protocol here".to_owned());
-    }
-    Ok(text)
-}
-
-fn paths(raw: Vec<String>) -> Vec<PathBuf> {
-    raw.into_iter().map(PathBuf::from).collect()
-}
-
-/// Turn the tool arguments into the operands `canvas submit` takes.
-///
-/// `-` is refused: on this surface stdin carries the protocol, so a text
-/// entry must name a file.
-fn submit_args(args: SubmissionPrepareArgs) -> Result<submit::SubmitArgs, String> {
-    if args.text.as_deref() == Some("-") {
-        return Err("text must name a file: stdin carries the protocol here".to_owned());
-    }
-    Ok(submit::SubmitArgs {
-        target: args.course,
-        assignment: Some(args.assignment),
-        files: args.files.into_iter().map(PathBuf::from).collect(),
-        text: args.text,
-        html: args.html.map(PathBuf::from),
-        url: args.url,
-        comment: args.comment,
-        // `--yes` is absent by design (§3.2): the approval is a round trip.
-        yes: false,
     })
 }
 
@@ -1553,7 +787,8 @@ fn submit_args(args: SubmissionPrepareArgs) -> Result<submit::SubmitArgs, String
 mod tests {
     use super::*;
 
-    /// REPORT §3.2 names the catalog exactly. This test is the allowlist.
+    /// The catalog is reads only, and §21.2 names it exactly. This test is
+    /// the allowlist.
     #[test]
     fn the_catalog_is_the_report_catalog() {
         let expected = [
@@ -1579,55 +814,64 @@ mod tests {
             "submission.get",
             "receipts.list",
             "receipts.show",
-            "sync.run",
-            "download.plan",
-            "download.run",
-            "submission.prepare",
-            "submission.execute",
-            "submission.reconcile",
-            "discussion.reply.prepare",
-            "discussion.reply.execute",
-            "inbox.send.prepare",
-            "inbox.send.execute",
-            "inbox.reply.prepare",
-            "inbox.reply.execute",
-            "operation.status",
-            "operation.reconcile",
-            "receipts.acknowledge",
-            "open.url",
-            "context.attach",
-            "context.here",
-            "context.detach",
-            "context.note",
-            "context.follow",
         ];
         let names: Vec<&str> = specs().iter().map(|spec| spec.name).collect();
         assert_eq!(names, expected);
     }
 
-    /// Absent by design (§3.2): credentials, token reveal, identity
+    /// The invariant the allowlist above only samples: this surface fetches,
+    /// and nothing else (owner directive, 2026-09-10; §19 item 48).
+    ///
+    /// A tool that prepares, executes, retires, resolves, refreshes, or
+    /// reaches the browser companion fails here whatever its name, because
+    /// the effect and the read-only hint are checked too. A future change
+    /// that puts a write tool back in the catalog has to delete this test
+    /// to pass, which is the point.
+    #[test]
+    fn every_tool_in_the_catalog_is_a_read() {
+        for spec in specs() {
+            assert_eq!(
+                spec.effect,
+                Effect::Read,
+                "{} is not a read: the MCP catalog exposes reads only",
+                spec.name
+            );
+            let annotations = spec.tool().annotations.expect("annotations");
+            assert_eq!(
+                annotations.read_only_hint,
+                Some(true),
+                "{} is not annotated read-only",
+                spec.name
+            );
+            for suffix in [
+                ".prepare",
+                ".execute",
+                ".acknowledge",
+                ".reconcile",
+                ".run",
+                ".plan",
+            ] {
+                assert!(
+                    !spec.name.ends_with(suffix),
+                    "{} ends with {suffix}: that is a write surface",
+                    spec.name
+                );
+            }
+            assert!(
+                !spec.name.starts_with("context."),
+                "{} reaches the browser companion",
+                spec.name
+            );
+        }
+    }
+
+    /// Absent by design (§21.2): credentials, token reveal, identity
     /// administration, arbitrary HTTP or shell, cache clearing, and any
     /// browser action.
     ///
     /// Arbitrary execution is named by `shell`, `eval`, and `spawn` here.
-    /// `exec` is not in the list, because `submission.execute` runs one
-    /// approved plan and nothing else; the write surface is pinned below.
     #[test]
     fn no_tool_reaches_a_forbidden_surface() {
-        let writers: Vec<&str> = specs()
-            .iter()
-            .filter(|spec| spec.effect == Effect::RemoteWrite)
-            .map(|spec| spec.name)
-            .collect();
-        assert_eq!(
-            writers,
-            [
-                "submission.execute",
-                "discussion.reply.execute",
-                "inbox.send.execute",
-                "inbox.reply.execute",
-            ]
-        );
         for spec in specs() {
             let name = spec.name;
             for forbidden in [
@@ -1644,6 +888,13 @@ mod tests {
                 "browser",
                 "launch",
                 "quiz",
+                "submit",
+                "send",
+                "reply",
+                "download",
+                "sync",
+                "open",
+                "note",
             ] {
                 assert!(
                     !name.contains(forbidden),
@@ -1653,12 +904,10 @@ mod tests {
         }
     }
 
-    /// No tool takes `--yes`, a destination, a force flag, or a raw-output
-    /// switch, and `assume_not_submitted` is the only evidence-retiring
-    /// argument in the catalog.
+    /// No tool takes `--yes`, a destination, a force flag, a raw-output
+    /// switch, or an argument that retires evidence.
     #[test]
     fn no_tool_takes_a_forbidden_argument() {
-        let mut retiring = Vec::new();
         for spec in specs() {
             let schema = (spec.input_schema)();
             let properties = schema
@@ -1668,8 +917,20 @@ mod tests {
                 .unwrap_or_default();
             for name in properties.keys() {
                 for forbidden in [
-                    "yes", "force", "dest", "out", "ics", "reveal", "token", "host", "replace",
-                    "alarm", "path",
+                    "yes",
+                    "force",
+                    "dest",
+                    "out",
+                    "ics",
+                    "reveal",
+                    "token",
+                    "host",
+                    "replace",
+                    "alarm",
+                    "path",
+                    "assume_not_submitted",
+                    "assume_not_posted",
+                    "generation",
                 ] {
                     assert!(
                         name != forbidden,
@@ -1677,41 +938,18 @@ mod tests {
                         spec.name
                     );
                 }
-                if name == "assume_not_submitted" {
-                    retiring.push(spec.name);
-                }
             }
         }
-        assert_eq!(retiring, ["submission.reconcile"]);
-        // `assume_not_posted` is the operation-journal counterpart, and
-        // `operation.reconcile` is the only tool that takes it.
-        let mut assuming = Vec::new();
-        for spec in specs() {
-            let schema = (spec.input_schema)();
-            if schema
-                .get("properties")
-                .and_then(Value::as_object)
-                .is_some_and(|properties| properties.contains_key("assume_not_posted"))
-            {
-                assuming.push(spec.name);
-            }
-        }
-        assert_eq!(assuming, ["operation.reconcile"]);
     }
 
-    /// Hints describe effects (§3.2): only a pure read is read-only, and
+    /// Hints describe effects (§21.2): every tool here is a pure read, and
     /// nothing is destructive.
     #[test]
     fn annotations_describe_effects() {
         for spec in specs() {
             let tool = spec.tool();
             let annotations = tool.annotations.expect("annotations");
-            assert_eq!(
-                annotations.read_only_hint,
-                Some(spec.effect == Effect::Read),
-                "{}",
-                spec.name
-            );
+            assert_eq!(annotations.read_only_hint, Some(true), "{}", spec.name);
             assert_eq!(annotations.destructive_hint, Some(false), "{}", spec.name);
             assert_eq!(
                 annotations.idempotent_hint,
@@ -1720,29 +958,10 @@ mod tests {
                 spec.name
             );
         }
-        // The write and organize tools are not advertised as pure reads.
-        for name in [
-            "sync.run",
-            "download.run",
-            "submission.prepare",
-            "submission.execute",
-            "submission.reconcile",
-            "discussion.reply.prepare",
-            "discussion.reply.execute",
-            "inbox.send.prepare",
-            "inbox.send.execute",
-            "inbox.reply.prepare",
-            "inbox.reply.execute",
-            "operation.reconcile",
-            "receipts.acknowledge",
-        ] {
-            let spec = spec(name).expect(name);
-            assert_ne!(spec.effect, Effect::Read, "{name}");
-        }
     }
 
     /// Every tool's output schema admits the success envelope and the domain
-    /// error, because a domain failure keeps the envelope (§3.2).
+    /// error, because a domain failure keeps the envelope (§21.2).
     ///
     /// The union also declares `type`. A host validator may require one
     /// before it reads `oneOf`: Cursor rejects the whole catalog without it
@@ -1795,52 +1014,18 @@ mod tests {
         };
         assert_eq!(required("receipts.list"), ["journals"]);
         assert_eq!(required("receipts.show"), ["journal", "receipt"]);
-        assert_eq!(
-            required("receipts.acknowledge"),
-            ["acknowledged_at", "journal_id"]
-        );
     }
 
     #[test]
     fn arguments_that_the_schema_does_not_name_are_refused() {
-        let refused = parse::<DownloadArgs>(Some(
+        let refused = parse::<CoursesListArgs>(Some(
             serde_json::json!({ "force": true })
                 .as_object()
                 .cloned()
                 .expect("object"),
         ));
         assert!(refused.is_err(), "force must not deserialize");
-        let accepted: DownloadArgs = parse(None).expect("every field has a default");
-        assert!(!accepted.all_courses && !accepted.verify);
-    }
-
-    /// stdin carries the protocol here, so `--text -` has no meaning.
-    #[test]
-    fn a_text_entry_cannot_read_the_protocol_channel() {
-        let args = |text: &str| SubmissionPrepareArgs {
-            course: "1".to_owned(),
-            assignment: "2".to_owned(),
-            files: Vec::new(),
-            text: Some(text.to_owned()),
-            html: None,
-            url: None,
-            comment: None,
-        };
-        assert!(submit_args(args("-")).is_err());
-        let accepted = submit_args(args("answer.txt")).expect("a file is fine");
-        assert_eq!(accepted.text.as_deref(), Some("answer.txt"));
-        assert!(!accepted.yes, "the agent surface has no --yes");
-    }
-
-    #[test]
-    fn reconcile_does_not_assume_anything_by_default() {
-        let args: ReconcileArgs = parse(Some(
-            serde_json::json!({ "journal_id": "journal-1" })
-                .as_object()
-                .cloned()
-                .expect("object"),
-        ))
-        .expect("journal id only");
-        assert!(!args.assume_not_submitted);
+        let accepted: CoursesListArgs = parse(None).expect("every field has a default");
+        assert!(!accepted.all && !accepted.favorites);
     }
 }
