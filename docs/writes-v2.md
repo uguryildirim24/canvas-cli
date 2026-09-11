@@ -13,15 +13,21 @@ states, the recovery table, the ambiguous-outcome rules and
 delivered" rule, the response allowlist, the exit table, receipts and the
 pending hook, the schemas, and the sixth skill workflow.
 
-**These writes are CLI-only.** This file once named eight MCP tools for
-them. There are none: the owner narrowed the `canvas mcp` catalog to reads
-on 2026-09-10, and it exposes no tool that prepares, executes, or reconciles
-any write. The commands — `canvas discussion reply`, `canvas inbox send`,
-`canvas inbox reply`, `canvas operation status|reconcile` — are unchanged,
-and each asks for its approval at the terminal. The read-only catalog is
-[§21](SPEC.md#21-agent-surface); what the writes themselves do is
-[§25](SPEC.md#25-discussion-and-inbox-writes); the decision is SPEC §19
-item 48.
+**These writes are CLI-only, and so is everything else.** This file once
+named eight MCP tools for them. There are none, and there is no MCP tool for
+a read either: the owner narrowed the `canvas mcp` catalog to reads on
+2026-09-10 and then cut it to a single `getclitools` tool the same day. That
+one tool performs nothing — it returns the `canvas` command reference and the
+agent runs the commands itself. The commands — `canvas discussion reply`,
+`canvas inbox send`, `canvas inbox reply`, `canvas operation
+status|reconcile` — are unchanged, and each asks for its approval at the
+terminal. The one-tool surface is [§21](SPEC.md#21-agent-surface); what the
+writes themselves do is [§25](SPEC.md#25-discussion-and-inbox-writes); the
+decisions are SPEC §19 items 48 and 50.
+
+`canvas schema` now describes these three writes under their own names —
+`canvas schema "discussion reply"`, `"inbox send"`, `"inbox reply"` — each
+through the `operation@1` entry that owns the shape they print.
 
 The rest of the surface is elsewhere in the same document: the plan layer
 these kinds share is [§20](SPEC.md#20-operation-plans-and-approval),
@@ -36,6 +42,7 @@ migration `0004_operations`, the cache epochs and the pending hook are
 
 The decisions this file used to list are in those sections, and the open
 ones are SPEC §19 items 37, 39, 40, and 45. Item 38 is moot: it asked about
-an MCP annotation on a tool that no longer exists.
+an MCP annotation on a tool that no longer exists, and there is no annotation
+system left to ask it of.
 
 Review: [`reviews/code-M8-b.md`](reviews/code-M8-b.md).
