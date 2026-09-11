@@ -369,15 +369,6 @@ impl Mcp {
         }
     }
 
-    /// The §7 envelope inside one tool result.
-    pub(crate) fn tool(&mut self, name: &str, arguments: &Value) -> Value {
-        let answer = self.call(
-            "tools/call",
-            json!({ "name": name, "arguments": arguments }),
-        );
-        answer["result"]["structuredContent"].clone()
-    }
-
     pub(crate) fn stderr(&mut self) -> String {
         let mut text = String::new();
         if let Some(mut pipe) = self.child.stderr.take() {

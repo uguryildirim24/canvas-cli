@@ -50,14 +50,15 @@ impl ToolSpec {
             Arc::new((self.input_schema)()),
         )
         .with_title(self.title)
-        .with_annotations(annotations())
+        .with_annotations(annotations(self.title))
     }
 }
 
 /// The tool reads a reference the binary already holds: nothing changes, it
 /// is the same answer every time, and it reaches nothing outside the process.
-fn annotations() -> ToolAnnotations {
+fn annotations(title: &str) -> ToolAnnotations {
     let mut annotations = ToolAnnotations::new();
+    annotations.title = Some(title.to_owned());
     annotations.read_only_hint = Some(true);
     annotations.destructive_hint = Some(false);
     annotations.idempotent_hint = Some(true);

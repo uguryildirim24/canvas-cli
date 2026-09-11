@@ -487,11 +487,31 @@ mod tests {
         let list = list();
         assert_eq!(
             list.lines().count(),
-            registry::all_schemas().len(),
+            registry::all_schemas().len() + registry::command_aliases().len(),
             "list={list}"
         );
         assert!(list.contains("todo\tcanvas-cli/todo@1\tcommand"));
+        // A command that prints another entry's shape is listed too, or a
+        // caller has no way to learn that `canvas schema` answers for it.
+        assert!(list.contains("discussion reply\tcanvas-cli/operation@1\tcommand"));
         assert!(list.ends_with('\n'));
+    }
+
+    /// Every alias resolves, to the entry that owns the shape it prints, and
+    /// the document it answers with names the command that was asked for.
+    #[test]
+    fn an_alias_resolves_to_the_shape_it_prints_and_answers_under_its_own_name() {
+        for (alias, id) in registry::command_aliases() {
+            let entry = registry::entry_for_command(alias)
+                .unwrap_or_else(|| panic!("{alias} does not resolve"));
+            assert_eq!(entry.id, *id, "{alias} resolves to another schema");
+            let document = document_for_command(alias).expect(alias);
+            assert_eq!(document["command"], json!(alias));
+            assert_eq!(document["schema"], json!(id));
+        }
+        // A name an entry owns is never rewritten by the alias table.
+        let document = document_for_command("operation status").expect("operation status");
+        assert_eq!(document["command"], json!("operation status"));
     }
 
     /// Every name the listing prints must resolve, and every command it calls
@@ -532,6 +552,9 @@ mod tests {
             if let Some(command) = entry.command {
                 assert!(path_exists(command), "`canvas {command}` is not a command");
             }
+        }
+        for (alias, _) in registry::command_aliases() {
+            assert!(path_exists(alias), "`canvas {alias}` is not a command");
         }
     }
 
