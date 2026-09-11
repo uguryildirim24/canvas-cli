@@ -93,7 +93,7 @@ Follow the install steps above, then:
 | Cross-origin navigation | Go to another site in that tab | `canvas here` reports `not_attached` |
 | Account switch | Sign in to Canvas as another user, reattach | `account_mismatch`, and no text released |
 | Two tabs | Attach a second Canvas tab | One attachment; the newer tab replaces the older |
-| Two consumers | Attach from two MCP hosts | Each reads only after its own `context.attach` |
+| Two consumers | Run `canvas here` from two terminals under different profiles | Each reads only after its own attach; no MCP host can attach at all since 2026-09-10 (SPEC §19 items 48 and 50) |
 | Broker restart | Quit Chrome, reopen it, reattach | A new host takes ownership; no stale socket remains |
 | Panel opens | Click the toolbar button | The side panel opens beside the tab, showing the origin and `attached` |
 | Note display | `canvas note --text "the rubric asks for two sources"` | The note appears in the panel, under the consumer and the time |
