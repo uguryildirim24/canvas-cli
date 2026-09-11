@@ -34,7 +34,9 @@ arbitrary HTTP or shell, or clear the cache on your behalf.
 
 ## Reading an answer
 
-Add `--json` to any command below and it prints one envelope (SPEC §7):
+Every command whose `Returns` line names a schema prints one envelope \
+(SPEC §7) when you add the flag that line names — `--json` for almost all of \
+them, `--jsonl` for `canvas watch`:
 
 ```json
 {
@@ -92,7 +94,7 @@ decision away from them.
 
 ## Global flags
 
-These work on every command below:
+These work on every command below, and are not repeated for each one:
 
     --json                Machine-readable output: one SPEC §7 envelope.
     --profile <NAME>      Which stored identity to use.
@@ -101,6 +103,11 @@ These work on every command below:
     --color <WHEN>        auto, always, or never.
     -q, --quiet           No progress, no info logs.
     -v, --verbose         Debug logs on stderr.
+
+`--json` is the one exception. A command whose `Returns` line says \
+`raw output` has no envelope to print and refuses `--json` with exit 2, and \
+`canvas watch` takes `--jsonl` instead. Read the `Returns` line before you \
+add the flag.
 
 ## Commands
 ";
@@ -493,6 +500,27 @@ mod tests {
                 "the reference never says {required}"
             );
         }
+    }
+
+    /// The preamble does not promise `--json` where the binary refuses it.
+    ///
+    /// `canvas notify`, `canvas completions`, `canvas schema`,
+    /// `canvas config edit`, `canvas bridge host` and `canvas mcp` reject
+    /// `--json` with exit 2 (SPEC §7), and `canvas watch` takes `--jsonl`.
+    /// A blanket "add `--json` to any command below" earned a usage error on
+    /// seven of the seventy-five.
+    #[test]
+    fn the_preamble_sends_the_reader_to_the_returns_line_for_the_flag() {
+        let text = reference();
+        assert!(
+            !text.contains("Add `--json` to any command below"),
+            "the preamble promises `--json` everywhere"
+        );
+        assert!(text.contains("`--jsonl` for `canvas watch`"), "{text}");
+        assert!(
+            text.contains("refuses `--json` with exit 2"),
+            "the global flag block does not name the exception"
+        );
     }
 
     /// A raw-output command says so rather than promising an envelope.
