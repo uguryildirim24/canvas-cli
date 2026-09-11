@@ -258,3 +258,32 @@ fn json_is_a_usage_error_and_an_unknown_command_is_a_resolution_error() {
     // The operand is required unless `--list` asks for the registry.
     canvas().arg("schema").assert().code(2);
 }
+
+/// `canvas schema` describes the commands an agent actually runs (§21.1).
+///
+/// The three M8-b writes print the operation journal `operation status`
+/// prints, and until M9-b `canvas schema "discussion reply"` exited 6 with
+/// nothing to say. The shape is shared; the answer names the command that
+/// was asked for, so a caller is never told to look somewhere else.
+#[test]
+fn a_command_that_shares_a_shape_answers_under_its_own_name() {
+    for (command, id) in [
+        ("discussion reply", "canvas-cli/operation@1"),
+        ("inbox send", "canvas-cli/operation@1"),
+        ("inbox reply", "canvas-cli/operation@1"),
+        ("alias set", "canvas-cli/alias@1"),
+        ("open assignment", "canvas-cli/open@1"),
+        ("auth token", "canvas-cli/auth_status@1"),
+    ] {
+        let assert = canvas().args(["schema", command]).assert().success();
+        let document: serde_json::Value =
+            serde_json::from_slice(&assert.get_output().stdout).expect("a schema document");
+        assert_eq!(document["command"], command);
+        assert_eq!(document["schema"], id);
+        assert!(document["envelope"]["oneOf"][0]["properties"]["result"].is_object());
+    }
+    // A raw-output command still has nothing to describe, and says so.
+    for raw in ["notify", "completions", "config edit", "bridge host"] {
+        canvas().args(["schema", raw]).assert().code(6);
+    }
+}

@@ -434,6 +434,59 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
     ]
 }
 
+/// Commands that print a document another entry already describes.
+///
+/// One schema can serve several commands: the three M8-b writes all print the
+/// operation journal `operation status` prints, every `alias` subcommand
+/// prints the same listing, and every `open` subcommand prints the same
+/// launch result. The registry holds one entry per *result shape*, so these
+/// names resolve through the entry that owns the shape instead of repeating
+/// its fixture. `canvas schema "discussion reply"` therefore answers, and
+/// `canvas schema --list` names it.
+///
+/// A name belongs here only when the command really prints that document. A
+/// command with no §7 envelope at all — `completions`, `notify`, `schema`,
+/// `config edit`, `auth token --reveal`, `bridge host` — is absent on
+/// purpose, and exits 6 as it always did.
+const COMMAND_ALIASES: &[(&str, &str)] = &[
+    ("discussion reply", SCHEMA_OPERATION),
+    ("inbox send", SCHEMA_OPERATION),
+    ("inbox reply", SCHEMA_OPERATION),
+    ("alias set", SCHEMA_ALIAS),
+    ("alias remove", SCHEMA_ALIAS),
+    ("open assignment", SCHEMA_OPEN),
+    ("open file", SCHEMA_OPEN),
+    ("open announcement", SCHEMA_OPEN),
+    // `auth token` without `--reveal` is `auth status`; with it, the raw
+    // token is the whole output and `--json` is refused.
+    ("auth token", SCHEMA_AUTH_STATUS),
+];
+
+/// The command names that resolve through another entry's shape.
+#[must_use]
+pub fn command_aliases() -> &'static [(&'static str, &'static str)] {
+    COMMAND_ALIASES
+}
+
+/// The canonical spelling of an alias, when `name` is one.
+///
+/// A name a registry entry owns is not an alias, however it is spelled, so a
+/// document about `receipts show` keeps saying `receipts show`.
+#[must_use]
+pub fn alias_command(name: &str) -> Option<&'static str> {
+    let wanted = normalize_command(name);
+    if all_schemas().iter().any(|entry| {
+        normalize_command(&crate::output::entry_command(entry)) == wanted
+            || normalize_command(&crate::output::command_name(entry.id)) == wanted
+    }) {
+        return None;
+    }
+    COMMAND_ALIASES
+        .iter()
+        .find(|(alias, _)| normalize_command(alias) == wanted)
+        .map(|(alias, _)| *alias)
+}
+
 /// The registered schema a command name belongs to.
 ///
 /// The name is the command path with any separator: `auth status`,
@@ -442,7 +495,8 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
 /// A schema with several result shapes has one entry per shape, named after
 /// the subcommand that emits it, so `receipts show` finds the `show` entry.
 /// A bare `receipts` finds the first entry, which is what the bare command
-/// prints.
+/// prints. A name in [`COMMAND_ALIASES`] finds the entry that owns the shape
+/// that command prints.
 #[must_use]
 pub fn entry_for_command(name: &str) -> Option<&'static SchemaEntry> {
     let wanted = normalize_command(name);
@@ -453,6 +507,12 @@ pub fn entry_for_command(name: &str) -> Option<&'static SchemaEntry> {
             all_schemas()
                 .iter()
                 .find(|entry| normalize_command(&crate::output::command_name(entry.id)) == wanted)
+        })
+        .or_else(|| {
+            COMMAND_ALIASES
+                .iter()
+                .find(|(alias, _)| normalize_command(alias) == wanted)
+                .and_then(|(_, id)| entry_for_schema(id, None))
         })
 }
 
@@ -706,9 +766,10 @@ pub struct SubmitResult {
     pub journal_id: String,
     /// True when this envelope reports a journal that already existed.
     ///
-    /// `submission.execute` on a plan that is already executed returns the
-    /// linked journal rather than a second one (SPEC §19 item 17). The human
-    /// `submit` never reaches that path, so it always reports `false`.
+    /// `submission.execute` returned the linked journal rather than a second
+    /// one when a plan was already executed (SPEC §19 item 17). That tool left
+    /// the catalog in M9, so nothing reaches the path now and the field is
+    /// always `false`; §19 items 17 and 49 own the rule (SPEC §12.2).
     #[serde(default)]
     pub replayed: bool,
     #[serde(default)]
@@ -2231,7 +2292,7 @@ pub struct HereBrowserJson {
     /// Why `selection` and `text` are absent, when they are: `zone_opaque`,
     /// `validating`, or `account_mismatch`.
     pub content_reason: Option<String>,
-    /// The last `context.follow` this consumer asked for, with the load
+    /// The last `canvas open --follow` this consumer asked for, with the load
     /// outcome as it stands now. `null` when none was asked for.
     ///
     /// It lives in `browser` because it is an observation of the browser, and
@@ -2243,7 +2304,7 @@ pub struct HereBrowserJson {
     pub notes: Vec<NoteJson>,
 }
 
-/// One `context.follow`, from dispatch to load.
+/// One `canvas open --follow`, from dispatch to load.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowJson {
     pub request_id: String,

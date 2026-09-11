@@ -208,21 +208,23 @@ fn a_note_is_bound_to_the_generation_it_was_written_against() {
         f.json(&["--offline", "here"]).0["result"]["browser"]["navigation_generation"] == json!(2)
     });
 
-    let mcp = &mut f.mcp("claude-code");
-    mcp.tool("context.attach", &json!({}));
-    for generation in [1, 3] {
-        let envelope = mcp.tool(
-            "context.note",
-            &json!({ "generation": generation, "text": "hi", "source_refs": [] }),
-        );
-        assert_eq!(envelope["exit"], 8, "generation {generation}: {envelope}");
+    // `context.note` left the catalog with the read-only directive (§19 item
+    // 48), so the binding is exercised through `canvas note --generation`,
+    // which reaches the same `note::handle`.
+    for generation in ["1", "3"] {
+        let (envelope, code) = f.json(&[
+            "--offline",
+            "note",
+            "--text",
+            "hi",
+            "--generation",
+            generation,
+        ]);
+        assert_eq!(code, 8, "generation {generation}: {envelope}");
         assert_eq!(envelope["result"]["reason"], "stale_generation");
     }
-    let ok = mcp.tool(
-        "context.note",
-        &json!({ "generation": 2, "text": "hi", "source_refs": [] }),
-    );
-    assert_eq!(ok["exit"], 0, "{ok}");
+    let (ok, code) = f.json(&["--offline", "note", "--text", "hi", "--generation", "2"]);
+    assert_eq!(code, 0, "{ok}");
 
     host.stop();
 }
@@ -302,31 +304,27 @@ fn a_follow_is_acknowledged_before_it_is_loaded() {
     host.stop();
 }
 
-/// M7-b acceptance: a follow against a generation the tab has left is exit 8,
-/// and the browser is never asked.
+/// M7-b acceptance, as M9 leaves it: a follow the tool layer refuses never
+/// reaches the browser.
+///
+/// `context.follow` left the catalog with the read-only directive (§19 item
+/// 48), and `canvas open --follow` is the one caller left. It names no
+/// navigation generation, so the `stale_generation` refusal is no longer
+/// reachable from any surface and is not exercised here; the resolution
+/// refusal is, and it is the same guard in front of the same dispatch.
 #[test]
-fn a_stale_follow_is_refused_before_the_browser_is_asked() {
+fn a_refused_follow_never_reaches_the_browser() {
     let f = Fixture::new();
     let mut host = attached(&f);
 
-    let mcp = &mut f.mcp("claude-code");
-    mcp.tool("context.attach", &json!({}));
-    let refused = mcp.tool(
-        "context.follow",
-        &json!({ "generation": 9, "target": TARGET }),
-    );
-    assert_eq!(refused["exit"], 8, "{refused}");
-    assert_eq!(refused["result"]["reason"], "stale_generation");
-    assert_eq!(refused["result"]["follow"], Value::Null);
-    // The target is still named, so the person can act on it themselves.
-    assert_eq!(refused["result"]["url"], TARGET);
-
     // A cross-origin target fails resolution, the way `canvas open` fails.
-    let foreign = mcp.tool(
-        "context.follow",
-        &json!({ "generation": 1, "target": "https://evil.test/courses/1" }),
-    );
-    assert_eq!(foreign["exit"], 6, "{foreign}");
+    let (foreign, code) = f.json(&[
+        "--offline",
+        "open",
+        "--follow",
+        "https://evil.test/courses/1",
+    ]);
+    assert_eq!(code, 6, "{foreign}");
 
     // Nothing above reached the companion. A `panel_hello` is answered, so
     // the host is alive and this is not silence from a dead process; the

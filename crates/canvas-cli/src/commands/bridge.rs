@@ -327,18 +327,6 @@ fn human_status(result: &serde_json::Value) -> String {
 
 // ------------------------------------------------------------------- detach
 
-/// `context.detach`: one consumer gives up its own opt-in.
-///
-/// The tab stays attached for the person and for every other consumer, so an
-/// agent cannot end a session it did not start (REPORT §3.2).
-pub fn detach_consumer(
-    globals: &Globals,
-    attachment_id: Option<String>,
-    consumer: &str,
-) -> Handled {
-    detach(globals, attachment_id, Some(consumer.to_owned()))
-}
-
 fn detach(globals: &Globals, attachment_id: Option<String>, consumer: Option<String>) -> Handled {
     let session = match globals.open_local_session() {
         Ok(session) => session,

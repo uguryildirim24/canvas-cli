@@ -1,18 +1,21 @@
-//! The shipped skill and the tool catalog must name the same tools.
+//! The shipped skill must describe the product that exists.
 //!
-//! A skill that names a tool the server does not have sends a host down a
-//! path that fails, and a tool no workflow mentions is a surface nobody was
-//! told about. This test diffs the two in both directions.
+//! `canvas mcp` serves one tool (§21.2), so a workflow's steps are `canvas`
+//! commands. A skill that still named a tool would send a host down a path
+//! that fails, and a workflow that names no command leaves a model with no
+//! way to do what the user asked. This file diffs the skill against both.
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// The catalog `canvas mcp` serves, in the server's order.
+/// The only tool `canvas mcp` serves (§19 item 50).
+const TOOL: &str = "getclitools";
+
+/// Every tool name the server used to serve, and serves no longer.
 ///
-/// `crates/canvas-cli/src/mcp/catalog.rs` is the source; its own test pins
-/// this list against REPORT §3.2, and this file keeps the skill honest
-/// without making the binary's private modules public.
-const CATALOG: &[&str] = &[
+/// The 22 reads M9-b removed and the 21 writes M9 removed. A workflow that
+/// still names one of them — in a call block or in a sentence — tells a model
+/// to call something that answers `METHOD_NOT_FOUND`.
+const GONE: &[&str] = &[
     "courses.list",
     "course.get",
     "todo.list",
@@ -58,23 +61,79 @@ const CATALOG: &[&str] = &[
     "context.follow",
 ];
 
-/// The two tools that can send a submission to Canvas.
+/// What each workflow must route through, now that every step is a command.
 ///
-/// They belong to one workflow, because a submission is one procedure: freeze
-/// a plan, show it to a person, then execute what was approved.
-const SUBMISSION: &[&str] = &["submission.prepare", "submission.execute"];
-
-/// The six tools that can write a reply or a message (M8-b).
-///
-/// Same rule, same reason: one procedure, one workflow, so no other file can
-/// imply that any of them sends something on its own.
-const WRITES: &[&str] = &[
-    "discussion.reply.prepare",
-    "discussion.reply.execute",
-    "inbox.send.prepare",
-    "inbox.send.execute",
-    "inbox.reply.prepare",
-    "inbox.reply.execute",
+/// The reads are here as well as the writes: M9 gave the four write workflows
+/// their commands, and M9-b gives the reads theirs, because there is no tool
+/// left to read with.
+const WORKFLOWS: &[(&str, &[&str])] = &[
+    (
+        "organize-the-week.md",
+        &[
+            "canvas courses",
+            "canvas course ",
+            "canvas todo",
+            "canvas calendar",
+            "canvas announcements",
+            "canvas announcement ",
+            "canvas grades",
+            "canvas inbox unread-count",
+            "canvas inbox --scope",
+            "canvas inbox show",
+            "canvas discussions",
+            "canvas discussion ",
+            "canvas sync",
+        ],
+    ),
+    (
+        "read-an-assignment.md",
+        &[
+            "canvas assignments",
+            "canvas assignment ",
+            "canvas submission ",
+            "canvas grades",
+            "canvas syllabus",
+            "canvas pages",
+            "canvas page ",
+            "canvas discussions",
+            "canvas discussion ",
+        ],
+    ),
+    (
+        "prepare-and-submit.md",
+        &[
+            "canvas submit",
+            "canvas submission ",
+            "canvas receipts list",
+            "canvas receipts show",
+        ],
+    ),
+    (
+        "reply-and-message-with-approval.md",
+        &[
+            "canvas discussion ",
+            "canvas inbox show",
+            "canvas discussion reply",
+            "canvas inbox send",
+            "canvas inbox reply",
+            "canvas operation status",
+            "canvas operation reconcile",
+        ],
+    ),
+    (
+        "reconcile-an-unknown-outcome.md",
+        &[
+            "canvas receipts list",
+            "canvas receipts show",
+            "canvas submission ",
+            "canvas submission reconcile",
+            "canvas receipts acknowledge",
+        ],
+    ),
+    (
+        "download-course-files.md",
+        &["canvas files", "canvas modules", "canvas download"],
+    ),
 ];
 
 fn skill_dir() -> PathBuf {
@@ -91,63 +150,6 @@ fn files() -> Vec<PathBuf> {
         .collect();
     files.sort();
     files
-}
-
-/// Whether a token is shaped like a tool name: `<noun>.<verb>`, or the
-/// three-part form the M8-b writes use (`inbox.send.prepare`).
-fn tool_shaped(token: &str) -> bool {
-    let parts: Vec<&str> = token.split('.').collect();
-    // Two parts, or three when the last one is a plan step: that is the only
-    // three-part shape the catalog has, and it keeps a dotted field path such
-    // as `result.details.reason` from being read as a tool name.
-    let shape = match parts.as_slice() {
-        [_, _] => true,
-        [_, _, last] => matches!(*last, "prepare" | "execute"),
-        _ => false,
-    };
-    if !shape {
-        return false;
-    }
-    let word = |part: &str| {
-        !part.is_empty()
-            && part.starts_with(|c: char| c.is_ascii_lowercase())
-            && part.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
-    };
-    parts.iter().all(|part| word(part))
-}
-
-/// Every tool name the skill names.
-///
-/// A skill names a tool two ways: as a whole inline code span, and as the
-/// first token of a call line in a fenced block. Nothing else counts, so a
-/// path or a config key that happens to carry a dot is not mistaken for one.
-fn mentioned() -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    for path in files() {
-        let text = std::fs::read_to_string(&path).expect("read a skill file");
-        let mut fenced = false;
-        for line in text.lines() {
-            if line.trim_start().starts_with("```") {
-                fenced = !fenced;
-                continue;
-            }
-            if fenced {
-                if let Some(first) = line.split_whitespace().next()
-                    && tool_shaped(first)
-                {
-                    names.insert(first.to_owned());
-                }
-                continue;
-            }
-            for (index, span) in line.split('`').enumerate() {
-                if index % 2 == 1 && tool_shaped(span) {
-                    names.insert(span.to_owned());
-                }
-            }
-        }
-        assert!(!fenced, "{} has an unclosed code fence", path.display());
-    }
-    names
 }
 
 #[test]
@@ -170,58 +172,47 @@ fn the_skill_ships_one_file_per_workflow() {
     );
 }
 
+/// Nothing in the skill names a tool that left the server (§19 items 48, 50).
+///
+/// The whole file is searched, prose included, so a sentence left behind
+/// cannot tell a model to call something that is gone.
 #[test]
-fn every_tool_the_skill_names_exists() {
-    let known: BTreeSet<&str> = CATALOG.iter().copied().collect();
-    for name in mentioned() {
-        assert!(known.contains(name.as_str()), "the skill names {name}");
-    }
-}
-
-#[test]
-fn every_catalog_tool_appears_in_the_skill() {
-    let mentioned = mentioned();
-    let missing: Vec<&str> = CATALOG
-        .iter()
-        .copied()
-        .filter(|name| !mentioned.contains(*name))
-        .collect();
-    assert!(missing.is_empty(), "no workflow mentions {missing:?}");
-}
-
-/// A submission is described in one place, so no other workflow can imply
-/// that it sends anything.
-#[test]
-fn the_submission_tools_are_only_named_by_the_approval_workflow() {
-    let approval = skill_dir().join("prepare-and-submit.md");
-    let text = std::fs::read_to_string(&approval).expect("the approval workflow ships");
-    for name in SUBMISSION {
-        assert!(text.contains(name), "{name} has no workflow");
-    }
+fn no_file_names_a_removed_tool() {
     for path in files() {
-        if path == approval {
-            continue;
-        }
-        let other = std::fs::read_to_string(&path).expect("read a skill file");
-        for name in SUBMISSION {
+        let text = std::fs::read_to_string(&path).expect("read a skill file");
+        for name in GONE {
             assert!(
-                !other.contains(name),
-                "{} names {name} outside the approval workflow",
+                !text.contains(name),
+                "{} still names {name}, which the server no longer serves",
                 path.display()
             );
         }
     }
 }
 
-/// A reply and a message are described in one place too, and that place
-/// carries the course-policy boundary REPORT §3.5 states in plain words.
+/// Every workflow routes through the command line, reads as well as writes.
 #[test]
-fn the_write_tools_are_only_named_by_the_reply_workflow() {
+fn every_workflow_routes_through_the_cli() {
+    for (file, commands) in WORKFLOWS {
+        let path = skill_dir().join(file);
+        let text = std::fs::read_to_string(&path).expect("the workflow ships");
+        for command in *commands {
+            assert!(text.contains(command), "{file} does not name `{command}`");
+        }
+        // Every workflow ends in a block a model can copy.
+        assert!(
+            text.contains("```sh\ncanvas "),
+            "{file} carries no runnable command block"
+        );
+    }
+}
+
+/// The reply workflow still carries the course-policy boundary REPORT §3.5
+/// states in plain words, whichever surface performs the write.
+#[test]
+fn the_reply_workflow_states_the_course_policy_boundary() {
     let workflow = skill_dir().join("reply-and-message-with-approval.md");
     let text = std::fs::read_to_string(&workflow).expect("the reply workflow ships");
-    for name in WRITES {
-        assert!(text.contains(name), "{name} has no workflow");
-    }
     for required in [
         "not permission for AI-generated academic work",
         "Never write a placeholder",
@@ -233,17 +224,35 @@ fn the_write_tools_are_only_named_by_the_reply_workflow() {
             "the reply workflow does not state: {required}"
         );
     }
+}
+
+/// SKILL.md says what the MCP surface is, where a model reads it first.
+#[test]
+fn the_skill_states_the_one_tool_surface() {
+    let text = std::fs::read_to_string(skill_dir().join("SKILL.md")).expect("SKILL.md ships");
+    for required in [
+        "one tool, `getclitools`",
+        "no resource, and no subscription",
+        "Never pass `--yes`",
+        "run `canvas <command> ...` yourself",
+    ] {
+        assert!(text.contains(required), "SKILL.md never states: {required}");
+    }
+    // One tool means one tool name in the whole package.
     for path in files() {
-        if path == workflow {
-            continue;
-        }
-        let other = std::fs::read_to_string(&path).expect("read a skill file");
-        for name in WRITES {
-            assert!(
-                !other.contains(name),
-                "{} names {name} outside the reply workflow",
-                path.display()
-            );
+        let text = std::fs::read_to_string(&path).expect("read a skill file");
+        for line in text.lines() {
+            for (index, span) in line.split('`').enumerate() {
+                let dotted = span.split('.').count() == 2
+                    && span.split('.').all(|part| {
+                        !part.is_empty() && part.chars().all(|c| c.is_ascii_lowercase())
+                    });
+                assert!(
+                    !(index % 2 == 1 && dotted),
+                    "{} names {span}, which is not {TOOL}",
+                    path.display()
+                );
+            }
         }
     }
 }

@@ -182,10 +182,14 @@ stdout carries data only. Progress, logs, and confirmations go to stderr.
 ## Agents
 
 `canvas mcp` serves the Model Context Protocol on stdin and stdout. One
-instance serves one identity: pick it with `--profile`. The catalog is
-read-first, and it holds no tool that reveals a credential, changes an
-identity, runs arbitrary HTTP or shell, clears the cache, overwrites a file,
-or opens a browser. A submission still needs a recorded human approval.
+instance serves one identity: pick it with `--profile`. It serves **one tool,
+`getclitools`**, and that tool performs nothing: it returns the complete
+`canvas` command reference — every command, its operands and flags, and the
+envelope each one returns — and the agent runs the commands itself. There is
+no second tool, no resource, and no subscription, so nothing on this surface
+reads Canvas, writes to it, reveals a credential, changes an identity, or
+touches the browser. Every read and every write is a `canvas` command, and
+every write prints what it is about to do and asks at the terminal.
 
 ```json
 {
@@ -196,7 +200,7 @@ or opens a browser. A submission still needs a recorded human approval.
 ```
 
 [`skill/canvas-cli/`](skill/canvas-cli/SKILL.md) is the shipped skill: the
-identity model, five workflows, the exit-code and recovery table, and the MCP
+identity model, six workflows, the exit-code and recovery table, and the MCP
 setup for Claude Code, Codex, and Cursor. The release archives carry it.
 `docs/agent-hosts.md` records which hosts were actually exercised.
 
@@ -225,8 +229,9 @@ exercised in a real Chrome on this machine.
 `result`, and `canvas schema --list` prints the registry: three tab-separated
 columns, the name, the schema id, and whether that name is a command you can
 run or a document no command prints (`error@1`, `plan@1`, `receipt@1`). Every
-name in the first column resolves. The MCP tools use the same documents as
-their output schemas.
+name in the first column resolves. `getclitools` is built on the same
+registry, and carries that listing verbatim, so the reference an agent reads
+and the schema a person prints cannot disagree.
 
 ## Where things live
 

@@ -12,85 +12,64 @@
 //! would otherwise answer an unknown `initialize` version with its newest
 //! legacy version, which would silently pretend to speak something the host
 //! did not ask for.
+//!
+//! The surface behind the handshake is one tool (§21.2). There are no
+//! resources and no subscriptions, so this handler implements `tools/list`
+//! and `tools/call` and nothing else.
 
 use std::borrow::Cow;
 use std::future::Future;
 
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CacheScope, CallToolRequestParams, CallToolResponse, ClientCapabilities, DiscoverResult,
-    ElicitRequest, ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema,
-    ErrorCode, ErrorData, Implementation, InitializeRequestParams, InitializeResult, InputRequest,
-    InputRequests, InputRequiredResult, InputResponses, ListResourceTemplatesResult,
-    ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
-    ReadResourceRequestParams, ReadResourceResponse, ServerCapabilities, ServerInfo,
-    SubscriptionFilter,
+    CacheScope, CallToolRequestParams, CallToolResponse, DiscoverResult, ErrorCode, ErrorData,
+    Implementation, InitializeRequestParams, InitializeResult, ListToolsResult,
+    PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerInfo,
 };
-use rmcp::service::{RequestContext, RoleServer, SubscriptionContext};
+use rmcp::service::{RequestContext, RoleServer};
 
-use crate::commands::submit::{Pending, Refusal};
-use crate::commands::{Globals, submit};
-use crate::mcp::catalog::Dispatched;
-use crate::mcp::resources::Binding;
-use crate::mcp::{catalog, resources, result, subscribe};
-use crate::output::now_timestamp;
+use crate::mcp::catalog;
 
 /// The revisions this server implements, newest first.
 pub const SUPPORTED: &[ProtocolVersion] =
     &[ProtocolVersion::V_2026_07_28, ProtocolVersion::V_2025_11_25];
 
-/// The `inputRequests` key the approval round trip uses.
-///
-/// One key, because one decision is asked for. The host echoes it in
-/// `inputResponses` on the retry.
-const APPROVAL_KEY: &str = "approval";
-
-/// The consumer id recorded when a host does not name itself.
-const ANONYMOUS_CONSUMER: &str = "mcp";
-
 /// How long a host may cache the shape of this server, in milliseconds.
 ///
-/// The catalog and the resource list are fixed when the binary is built, and
-/// the instance stops when its identity generation changes, so the surface
-/// cannot change under a host that is holding a connection. One minute keeps
-/// a restart visible quickly all the same.
+/// The tool is fixed when the binary is built, and the instance stops when its
+/// identity generation changes, so the surface cannot change under a host that
+/// is holding a connection. One minute keeps a restart visible quickly all the
+/// same.
 const SURFACE_TTL_MS: u64 = 60_000;
 
 /// Guidance a host shows the model with the tool list.
 const INSTRUCTIONS: &str = "\
-Canvas LMS, read-first. Every tool returns one JSON envelope with `outcome`, \
-`exit`, `freshness`, and `result`; read `outcome` before the result. \
-`freshness` says which cached dataset answered and whether it is stale; \
-`sync.run` refreshes the cache. A refusal is an answer, not an error: \
-`outcome` `refused` with `exit` 8 means the operation is not allowed as \
-asked. Nothing here reveals a credential, changes an identity, or opens a \
-browser. A submission needs a recorded human approval before anything \
-reaches Canvas.";
+Canvas LMS for one student identity. This server has one tool, \
+`getclitools`, and it performs nothing. Call it once: it returns the complete \
+`canvas` command-line reference — every command, its operands and flags, and \
+the JSON envelope each one returns. After that, run `canvas <command> ...` \
+yourself with whatever shell you have. There is no second tool, no resource, \
+and no subscription. Reads and writes are all commands; every write prints \
+what it is about to do and asks a person at the terminal, so never pass \
+`--yes`. Nothing here reveals a credential or changes an identity.";
 
-/// One `canvas mcp` instance: one identity generation, one catalog.
-pub struct CanvasServer {
-    globals: Globals,
-    binding: Binding,
-}
+/// One `canvas mcp` instance: one identity generation, one tool.
+///
+/// The instance holds no state. The identity it is bound to is enforced in
+/// [`crate::mcp::run`], which refuses to start without one and stops the
+/// process when it is replaced; the tool itself reads nothing but the
+/// binary's own command tree.
+pub struct CanvasServer;
 
 impl CanvasServer {
-    /// Bind a server to one identity generation.
+    /// Build the handler.
     #[must_use]
-    pub fn new(globals: Globals, binding: Binding) -> Self {
-        Self { globals, binding }
+    pub fn new() -> Self {
+        Self
     }
 
     fn capabilities() -> ServerCapabilities {
-        ServerCapabilities::builder()
-            .enable_tools()
-            .enable_resources()
-            // The resource list is fixed for the lifetime of an instance: one
-            // instance serves one identity generation. Per-resource updates
-            // are not fixed, and `subscriptions/listen` sends them from the
-            // event log (REPORT §3.6).
-            .enable_resources_list_changed()
-            .enable_resources_subscribe()
-            .build()
+        ServerCapabilities::builder().enable_tools().build()
     }
 
     fn implementation() -> Implementation {
@@ -100,175 +79,10 @@ impl CanvasServer {
     }
 }
 
-impl CanvasServer {
-    /// Record the decision a host collected and finish the tool call.
-    ///
-    /// `requestState` is untrusted, so it carries only two identifiers. The
-    /// handle it names is validated against the stored plan inside
-    /// `approve`, which is why an echoed state cannot approve anything on its
-    /// own.
-    async fn record_decision(
-        &self,
-        state: &str,
-        responses: Option<&InputResponses>,
-        consumer: &str,
-    ) -> Result<crate::commands::handled::Handled, ErrorData> {
-        let state: ApprovalState = serde_json::from_str(state)
-            .map_err(|e| ErrorData::invalid_params(format!("requestState: {e}"), None))?;
-        let answer = responses
-            .and_then(|responses| responses.get(APPROVAL_KEY))
-            .ok_or_else(|| {
-                ErrorData::invalid_params(
-                    format!("the retry carries no `{APPROVAL_KEY}` response"),
-                    None,
-                )
-            })?;
-        let answer: ElicitResult = serde_json::from_value(answer.clone())
-            .map_err(|e| ErrorData::invalid_params(format!("{APPROVAL_KEY}: {e}"), None))?;
-        match answer.action {
-            ElicitationAction::Accept => {
-                let handle = answer
-                    .content
-                    .as_ref()
-                    .and_then(|content| content.get("handle"))
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| {
-                        ErrorData::invalid_params(
-                            "an accepted approval must echo `handle`".to_owned(),
-                            None,
-                        )
-                    })?
-                    .to_owned();
-                Ok(submit::agent_approve(&self.globals, &state.plan_id, &handle, consumer).await)
-            }
-            ElicitationAction::Decline => Ok(submit::agent_refuse(
-                &self.globals,
-                &state.plan_id,
-                Refusal::Declined,
-            )),
-            // Every remaining action stops the operation.
-            _ => Ok(submit::agent_refuse(
-                &self.globals,
-                &state.plan_id,
-                Refusal::Cancelled,
-            )),
-        }
+impl Default for CanvasServer {
+    fn default() -> Self {
+        Self::new()
     }
-}
-
-/// What travels in `requestState` across the approval round trip.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct ApprovalState {
-    plan_id: String,
-    handle: String,
-}
-
-/// The consumer id this session records with plans and approval handles.
-///
-/// It names the host, so an approval audit says who asked. Both halves of an
-/// approval round trip come from the same client, so it is stable across them.
-fn consumer_of(context: &RequestContext<RoleServer>) -> String {
-    context.client_info().map_or_else(
-        || ANONYMOUS_CONSUMER.to_owned(),
-        |info| format!("{ANONYMOUS_CONSUMER}:{}", info.name),
-    )
-}
-
-/// Whether this host can show a person a form.
-///
-/// An empty `elicitation` object is the 2025-06-18 declaration, which is form
-/// mode; a host that declares URL mode only cannot answer this server.
-fn declares_form_elicitation(capabilities: Option<&ClientCapabilities>) -> bool {
-    capabilities
-        .and_then(|capabilities| capabilities.elicitation.as_ref())
-        .is_some_and(|elicitation| elicitation.form.is_some() || elicitation.url.is_none())
-}
-
-/// Ask a person to approve one plan (MRTR `input_required`).
-///
-/// The message names the exact bytes: the digest of the plan is what the
-/// approval binds. The handle is server-issued and travels in `requestState`;
-/// the host echoes it in `inputResponses`, so an approval cannot be asserted
-/// by a tool argument.
-fn ask_approval(pending: &Pending) -> Result<InputRequiredResult, ErrorData> {
-    let schema = ElicitationSchema::builder()
-        .title(if pending.plan.operation.is_some() {
-            "Approve this write"
-        } else {
-            "Approve this submission"
-        })
-        .description("Echo the approval handle from `requestState` to approve.")
-        .required_string_property("handle", |handle| {
-            handle
-                .title("Approval handle")
-                .description("The `handle` field of `requestState`, copied verbatim.")
-        })
-        .build()
-        .map_err(|e| ErrorData::internal_error(format!("approval schema: {e}"), None))?;
-    let params = ElicitRequestParams::FormElicitationParams {
-        meta: None,
-        message: approval_message(pending),
-        requested_schema: schema,
-    };
-    let mut requests = InputRequests::new();
-    requests.insert(
-        APPROVAL_KEY.to_owned(),
-        InputRequest::Elicitation(ElicitRequest::new(params)),
-    );
-    let state = serde_json::to_string(&ApprovalState {
-        plan_id: pending.plan_id.clone(),
-        handle: pending.handle.clone(),
-    })
-    .map_err(|e| ErrorData::internal_error(format!("requestState: {e}"), None))?;
-    Ok(InputRequiredResult::new(Some(requests), Some(state)))
-}
-
-/// What a person reads before approving.
-fn approval_message(pending: &Pending) -> String {
-    use std::fmt::Write;
-
-    let plan = &pending.plan;
-    let mut message = pending.summary.clone();
-    for file in &plan.files {
-        let _ = write!(
-            message,
-            "\n  {} ({} bytes, sha256 {})",
-            file.name, file.size, file.sha256
-        );
-    }
-    if let Some(text) = &plan.text {
-        let _ = write!(message, "\n  text sent_sha256 {}", text.sent_sha256);
-    }
-    if let Some(url) = &plan.url {
-        let _ = write!(message, "\n  url {url}");
-    }
-    if let Some(operation) = &plan.operation {
-        // The exact bytes and the exact attachments, so the approval names
-        // what is sent rather than the intention behind it.
-        let _ = write!(
-            message,
-            "\n  text sent_sha256 {}",
-            operation.text.sent_sha256
-        );
-        for attachment in &operation.attachments {
-            let _ = write!(
-                message,
-                "\n  {} ({} bytes, sha256 {})",
-                attachment.name, attachment.size, attachment.sha256
-            );
-        }
-    }
-    let _ = write!(
-        message,
-        "\n  plan {}  digest {}  expires {}",
-        plan.plan_id, plan.plan_sha256, plan.expires_at
-    );
-    message.push_str(if plan.operation.is_some() {
-        "\nAccept to send. Decline or cancel and the plan is invalidated."
-    } else {
-        "\nAccept to submit. Decline or cancel and the plan is invalidated."
-    });
-    message
 }
 
 impl ServerHandler for CanvasServer {
@@ -323,155 +137,55 @@ impl ServerHandler for CanvasServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> {
-        let tools = catalog::specs()
-            .iter()
-            .map(catalog::ToolSpec::tool)
-            .collect();
-        std::future::ready(Ok(ListToolsResult::with_all_items(tools)
-            .with_ttl_ms(SURFACE_TTL_MS)
-            .with_cache_scope(CacheScope::Private)))
+        std::future::ready(Ok(ListToolsResult::with_all_items(vec![
+            catalog::spec().tool(),
+        ])
+        .with_ttl_ms(SURFACE_TTL_MS)
+        .with_cache_scope(CacheScope::Private)))
     }
 
     fn get_tool(&self, name: &str) -> Option<rmcp::model::Tool> {
-        catalog::spec(name).map(catalog::ToolSpec::tool)
+        (name == catalog::TOOL).then(|| catalog::spec().tool())
     }
 
-    /// Run one tool and return its §7 envelope.
+    /// Return the `canvas` command reference.
     ///
-    /// A domain failure is a result, not a protocol error: the envelope keeps
-    /// `outcome` and `exit`, and the result is marked `isError` so the host
-    /// shows it. Only an unroutable request — an unknown tool, or arguments
-    /// the tool's schema does not admit — becomes a JSON-RPC error, because
-    /// then the tool never ran.
+    /// Only an unroutable request — a name that is not the one tool, or
+    /// arguments its schema does not admit — becomes a JSON-RPC error. The
+    /// tool itself cannot fail: it reads the binary's own command tree, with
+    /// no session, no network, and no cache behind it.
     ///
-    /// A retry that carries `requestState` is the second half of an approval
-    /// round trip: it records the person's decision instead of dispatching
-    /// the tool again, so a plan is never frozen twice.
+    /// Nothing here ever asks a person for a decision, so this server never
+    /// answers `input_required` and a request that carries `requestState` is
+    /// refused rather than run.
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        context: RequestContext<RoleServer>,
+        _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let name = request.name.to_string();
-        if catalog::spec(&name).is_none() {
+        if name != catalog::TOOL {
             return Err(ErrorData::new(
                 ErrorCode::METHOD_NOT_FOUND,
                 format!("unknown tool {name}"),
                 None,
             ));
         }
-        let consumer = consumer_of(&context);
-        if let Some(state) = request.request_state.as_deref() {
-            // Only a tool that asks for a decision can be the second half of
-            // a round trip. A retry that names any other tool is a host bug or
-            // a replayed state, and answering it would record an approval
-            // against a call that never asked for one.
-            if !catalog::asks_for_approval(&name) {
-                return Err(ErrorData::invalid_params(
-                    format!(
-                        "{name} never asks for an approval: `requestState` belongs to an execute tool"
-                    ),
-                    Some(serde_json::json!({ "tool": name })),
-                ));
-            }
-            let handled = self
-                .record_decision(state, request.input_responses.as_ref(), &consumer)
-                .await?;
-            return Ok(CallToolResponse::Complete(result::tool_result(
-                handled.envelope(),
-                now_timestamp(),
-            )));
+        if request.request_state.is_some() {
+            // Nothing on this surface asks for an approval, so a state can
+            // only be a host bug or a replay.
+            return Err(ErrorData::invalid_params(
+                format!("{name} never asks for an approval: it only describes the CLI"),
+                Some(serde_json::json!({ "tool": name })),
+            ));
         }
-        let dispatched = catalog::dispatch(&self.globals, &consumer, &name, request.arguments)
-            .await
-            .map_err(|message| {
-                ErrorData::invalid_params(
-                    format!("{name}: {message}"),
-                    Some(serde_json::json!({ "tool": name })),
-                )
-            })?;
-        let handled = match dispatched {
-            Dispatched::Done(handled) => handled,
-            Dispatched::Approval(pending) => {
-                // A host that cannot ask a person gets a refusal, and nothing
-                // is dispatched (REPORT §3.2).
-                if declares_form_elicitation(context.client_capabilities().as_ref()) {
-                    return Ok(CallToolResponse::InputRequired(ask_approval(&pending)?));
-                }
-                submit::agent_approval_required(&self.globals, &pending)
-            }
-        };
-        Ok(CallToolResponse::Complete(result::tool_result(
-            handled.envelope(),
-            now_timestamp(),
-        )))
-    }
-
-    fn list_resources(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> {
-        std::future::ready(Ok(ListResourcesResult::with_all_items(resources::listed(
-            &self.binding,
-        ))
-        .with_ttl_ms(SURFACE_TTL_MS)
-        .with_cache_scope(CacheScope::Private)))
-    }
-
-    fn list_resource_templates(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListResourceTemplatesResult, ErrorData>> {
-        std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(
-            resources::templates(&self.binding),
-        )
-        .with_ttl_ms(SURFACE_TTL_MS)
-        .with_cache_scope(CacheScope::Private)))
-    }
-
-    async fn read_resource(
-        &self,
-        request: ReadResourceRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResponse, ErrorData> {
-        // The consumer handle is this session's own, exactly as it is for a
-        // tool call: a model cannot read a resource under another handle.
-        let consumer = consumer_of(&context);
-        resources::read(&self.globals, &self.binding, &request.uri, &consumer)
-            .await
-            .map(ReadResourceResponse::Complete)
-    }
-
-    /// Accept the resource-list category, plus every subscribed URI this
-    /// instance can actually invalidate.
-    ///
-    /// A foreign identity key, another generation, and an unknown path all
-    /// address nothing here, so they are dropped from the accepted filter:
-    /// the host is told exactly which of its names this server can update.
-    fn accepted_subscription_filter(
-        &self,
-        requested: &SubscriptionFilter,
-    ) -> Option<SubscriptionFilter> {
-        let mut filter = SubscriptionFilter::builder().resources_list_changed();
-        if let Some(uris) = requested.resource_subscriptions.as_deref() {
-            let served = subscribe::served(&self.binding, uris);
-            if !served.is_empty() {
-                filter = filter.resource_subscriptions(served);
-            }
-        }
-        Some(filter.build())
-    }
-
-    /// Serve one subscription from the event log until the host cancels it.
-    ///
-    /// An event on a dataset scope invalidates the resources that read that
-    /// scope, and the cursor follows the same replay rules `watch --since`
-    /// follows (REPORT §3.6).
-    async fn listen(&self, context: SubscriptionContext) -> Result<(), ErrorData> {
-        let consumer = consumer_of(context.request_context());
-        subscribe::listen(&self.globals, &self.binding, &consumer, context).await
+        let result = catalog::dispatch(&name, request.arguments).map_err(|message| {
+            ErrorData::invalid_params(
+                format!("{name}: {message}"),
+                Some(serde_json::json!({ "tool": name })),
+            )
+        })?;
+        Ok(CallToolResponse::Complete(result))
     }
 }
 
@@ -480,20 +194,7 @@ mod tests {
     use super::*;
 
     fn server() -> CanvasServer {
-        CanvasServer::new(
-            Globals {
-                json: true,
-                color: crate::output::ColorMode::Never,
-                profile: Some("default".to_owned()),
-                fresh: false,
-                offline: true,
-                quiet: false,
-            },
-            Binding::new(
-                "canvas.test-7-abcd1234",
-                "11111111-1111-4111-8111-111111111111",
-            ),
-        )
+        CanvasServer::new()
     }
 
     #[test]
@@ -513,54 +214,29 @@ mod tests {
         assert_eq!(SUPPORTED[0], ProtocolVersion::V_2026_07_28);
     }
 
+    /// One tool resolves, and nothing else does.
     #[test]
-    fn every_catalog_tool_is_listed_and_resolvable() {
+    fn the_one_tool_is_resolvable_and_no_other_name_is() {
         let server = server();
-        for spec in catalog::specs() {
-            assert!(server.get_tool(spec.name).is_some(), "{}", spec.name);
+        assert!(server.get_tool(catalog::TOOL).is_some());
+        for gone in [
+            "todo.list",
+            "submission.prepare",
+            "context.attach",
+            "auth.token",
+        ] {
+            assert!(server.get_tool(gone).is_none(), "{gone} resolves");
         }
-        assert!(server.get_tool("auth.token").is_none());
     }
 
-    /// A host that asks for the list category alone gets nothing more.
+    /// The server declares tools and nothing else: no resources, and so no
+    /// resource list-changed notification and no subscription (§21.2).
     #[test]
-    fn a_list_only_subscription_promises_no_resource_events() {
-        let accepted = server()
-            .accepted_subscription_filter(
-                &SubscriptionFilter::builder()
-                    .resources_list_changed()
-                    .build(),
-            )
-            .expect("subscriptions/listen is declared");
-        assert_eq!(accepted.resources_list_changed, Some(true));
-        assert_eq!(accepted.resource_subscriptions, None);
-    }
-
-    /// Only names this instance serves survive into the accepted filter.
-    #[test]
-    fn a_subscription_keeps_only_the_uris_this_instance_serves() {
-        let server = server();
-        let binding = &server.binding;
-        let foreign = Binding::new("other.test-9-99999999", &binding.generation);
-        let accepted = server
-            .accepted_subscription_filter(
-                &SubscriptionFilter::builder()
-                    .resource_subscriptions([
-                        binding.uri("todo"),
-                        foreign.uri("todo"),
-                        binding.uri("auth/token"),
-                    ])
-                    .build(),
-            )
-            .expect("subscriptions/listen is declared");
-        assert_eq!(
-            accepted.resource_subscriptions,
-            Some(vec![binding.uri("todo")])
-        );
-        // The resource capability must advertise subscriptions, or the SDK
-        // strips them from the accepted filter before the acknowledgment.
+    fn the_server_declares_tools_and_nothing_else() {
         let capabilities = CanvasServer::capabilities();
-        let resources = capabilities.resources.expect("resources are enabled");
-        assert_eq!(resources.subscribe, Some(true));
+        assert!(capabilities.tools.is_some());
+        assert!(capabilities.resources.is_none());
+        assert!(capabilities.prompts.is_none());
+        assert!(capabilities.completions.is_none());
     }
 }
