@@ -258,21 +258,20 @@ pub fn document(entry: &SchemaEntry) -> Value {
 }
 
 /// The `schema@1` document for a command name, if one is registered.
+///
+/// A command that shares another command's result shape answers under its own
+/// name: `canvas schema "discussion reply"` describes the operation journal
+/// and says `discussion reply`, not `operation status`.
 #[must_use]
 pub fn document_for_command(name: &str) -> Option<Value> {
-    registry::entry_for_command(name).map(document)
-}
-
-/// The `schema@1` document for a schema id and one of its result shapes.
-///
-/// `canvas mcp` describes a tool's output this way, so a tool and the CLI
-/// cannot disagree about the shape of the same result. A schema whose
-/// Appendix D row lists several shapes — `receipts@1`, `cache@1`, `config@1`,
-/// `identity@1` — has one entry per shape, so the variant selects which one;
-/// `None` takes the first, which is the shape the bare command prints.
-#[must_use]
-pub fn document_for_schema(schema_id: &str, variant: Option<&str>) -> Option<Value> {
-    registry::entry_for_schema(schema_id, variant).map(document)
+    let entry = registry::entry_for_command(name)?;
+    let mut document = document(entry);
+    if let Some(alias) = registry::alias_command(name)
+        && let Some(object) = document.as_object_mut()
+    {
+        object.insert("command".into(), json!(alias));
+    }
+    Some(document)
 }
 
 /// The name of one entry: the command that prints it, as a person types it.
@@ -329,6 +328,13 @@ pub fn list() -> String {
             )
         })
         .collect();
+    // A command that prints another entry's shape is still a command a person
+    // can run, so it is listed as one.
+    lines.extend(
+        registry::command_aliases()
+            .iter()
+            .map(|(name, id)| format!("{name}\t{id}\tcommand")),
+    );
     lines.sort();
     lines.push(String::new());
     lines.join("\n")

@@ -15,8 +15,8 @@ pub use envelope::{
     Requests, error_envelope, print_human,
 };
 pub use json_schema::{
-    SCHEMA_SCHEMA, command_name, document_for_command, document_for_schema, entry_command,
-    entry_kind, list as schema_list,
+    SCHEMA_SCHEMA, command_name, document_for_command, entry_command, entry_kind,
+    list as schema_list,
 };
 pub use now::{generated_at_now, now_timestamp};
 pub use registry::{
@@ -47,8 +47,8 @@ pub use registry::{
     SCHEMA_SUBMISSION, SCHEMA_SUBMIT, SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_TODO, SCHEMA_VERIFY,
     SCHEMA_VERSION, SCHEMA_WATCH, SchemaEntry, SubmissionStatusJson, SubmitCandidateJson,
     SubmitFileJson, SubmitResult, SubmitTextJson, SyllabusResult, SyncDatasetJson, SyncResult,
-    TeacherJson, TermJson, WatchResult, WindowJson, all_schemas, entry_for_command,
-    entry_for_schema, rejects_json,
+    TeacherJson, TermJson, WatchResult, WindowJson, alias_command, all_schemas, command_aliases,
+    entry_for_command, entry_for_schema, rejects_json,
 };
 pub use render::{
     StatusKind, apply_status_style, apply_two_space_padding, format_local_datetime,

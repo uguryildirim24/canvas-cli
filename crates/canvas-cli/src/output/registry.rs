@@ -434,6 +434,59 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
     ]
 }
 
+/// Commands that print a document another entry already describes.
+///
+/// One schema can serve several commands: the three M8-b writes all print the
+/// operation journal `operation status` prints, every `alias` subcommand
+/// prints the same listing, and every `open` subcommand prints the same
+/// launch result. The registry holds one entry per *result shape*, so these
+/// names resolve through the entry that owns the shape instead of repeating
+/// its fixture. `canvas schema "discussion reply"` therefore answers, and
+/// `canvas schema --list` names it.
+///
+/// A name belongs here only when the command really prints that document. A
+/// command with no §7 envelope at all — `completions`, `notify`, `schema`,
+/// `config edit`, `auth token --reveal`, `bridge host` — is absent on
+/// purpose, and exits 6 as it always did.
+const COMMAND_ALIASES: &[(&str, &str)] = &[
+    ("discussion reply", SCHEMA_OPERATION),
+    ("inbox send", SCHEMA_OPERATION),
+    ("inbox reply", SCHEMA_OPERATION),
+    ("alias set", SCHEMA_ALIAS),
+    ("alias remove", SCHEMA_ALIAS),
+    ("open assignment", SCHEMA_OPEN),
+    ("open file", SCHEMA_OPEN),
+    ("open announcement", SCHEMA_OPEN),
+    // `auth token` without `--reveal` is `auth status`; with it, the raw
+    // token is the whole output and `--json` is refused.
+    ("auth token", SCHEMA_AUTH_STATUS),
+];
+
+/// The command names that resolve through another entry's shape.
+#[must_use]
+pub fn command_aliases() -> &'static [(&'static str, &'static str)] {
+    COMMAND_ALIASES
+}
+
+/// The canonical spelling of an alias, when `name` is one.
+///
+/// A name a registry entry owns is not an alias, however it is spelled, so a
+/// document about `receipts show` keeps saying `receipts show`.
+#[must_use]
+pub fn alias_command(name: &str) -> Option<&'static str> {
+    let wanted = normalize_command(name);
+    if all_schemas().iter().any(|entry| {
+        normalize_command(&crate::output::entry_command(entry)) == wanted
+            || normalize_command(&crate::output::command_name(entry.id)) == wanted
+    }) {
+        return None;
+    }
+    COMMAND_ALIASES
+        .iter()
+        .find(|(alias, _)| normalize_command(alias) == wanted)
+        .map(|(alias, _)| *alias)
+}
+
 /// The registered schema a command name belongs to.
 ///
 /// The name is the command path with any separator: `auth status`,
@@ -442,7 +495,8 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
 /// A schema with several result shapes has one entry per shape, named after
 /// the subcommand that emits it, so `receipts show` finds the `show` entry.
 /// A bare `receipts` finds the first entry, which is what the bare command
-/// prints.
+/// prints. A name in [`COMMAND_ALIASES`] finds the entry that owns the shape
+/// that command prints.
 #[must_use]
 pub fn entry_for_command(name: &str) -> Option<&'static SchemaEntry> {
     let wanted = normalize_command(name);
@@ -453,6 +507,12 @@ pub fn entry_for_command(name: &str) -> Option<&'static SchemaEntry> {
             all_schemas()
                 .iter()
                 .find(|entry| normalize_command(&crate::output::command_name(entry.id)) == wanted)
+        })
+        .or_else(|| {
+            COMMAND_ALIASES
+                .iter()
+                .find(|(alias, _)| normalize_command(alias) == wanted)
+                .and_then(|(_, id)| entry_for_schema(id, None))
         })
 }
 

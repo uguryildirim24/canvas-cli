@@ -89,29 +89,6 @@ pub async fn handle(
     })
 }
 
-/// The bundle a `context/<handle>` naming another consumer reads.
-///
-/// It is exactly the answer an unattached consumer of this session reads —
-/// the same `here@1` refusal, the same reason, the same exit — so a URI
-/// naming somebody else's handle cannot be used to learn whether that handle
-/// attached, or even whether a broker is running.
-pub fn foreign_consumer(globals: &Globals, consumer: &str) -> Handled {
-    let session = match globals.open_local_session() {
-        Ok(session) => session,
-        Err(e) => return session_error(e, globals.profile.clone()),
-    };
-    let identity = HereIdentityJson {
-        key: session.identity.key.to_string(),
-        generation: session.identity.generation.to_string(),
-    };
-    refusal(
-        &session,
-        &identity,
-        Some(consumer.to_owned()),
-        Reason::NotAttached,
-    )
-}
-
 /// Resolve the API side through the shared handlers.
 ///
 /// Each handler produces its own §7 envelope, freshness and all, so the
