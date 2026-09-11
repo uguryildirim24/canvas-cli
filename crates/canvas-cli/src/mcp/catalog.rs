@@ -1,82 +1,47 @@
-//! The tool catalog of `canvas mcp` (REPORT §3.2).
+//! The one tool of `canvas mcp` (§21.2).
 //!
-//! Every tool preserves the arguments of the v1 command behind it and returns
-//! that command's §7 result. What is absent is absent by design: credentials,
-//! token reveal, identity administration, arbitrary HTTP or shell, `--yes`,
-//! cache clearing, `download --force`, and any browser action.
+//! `canvas mcp` serves exactly one tool, `getclitools`, and it performs
+//! nothing: it returns the `canvas` command reference and the caller runs the
+//! commands itself (owner directive, 2026-09-10; §19 item 50). There is no
+//! catalog of agent-facing actions any more, so there is no per-tool argument
+//! struct, no per-tool output schema, and no effect annotation system — a
+//! surface with one read-only discovery tool has nothing to classify.
 //!
-//! Annotations describe effects, not command classes, and they are
-//! documentation only. Enforcement lives in the plan and approval core.
+//! What is absent is absent by design and now absent by construction:
+//! credentials, token reveal, identity administration, arbitrary HTTP or
+//! shell, `--yes`, cache clearing, `download --force`, and every browser
+//! action. None of them has a tool, because nothing has a tool.
 
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use rmcp::model::{JsonObject, Tool, ToolAnnotations};
+use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotations};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::cli::AssignmentBucket;
-use crate::commands::{
-    Globals, announcement, announcements, assignment, assignments, calendar, course, courses,
-    discussions, files, grades, handled::Handled, inbox, modules, pages, receipts, submission,
-    todo,
-};
-use crate::output::{
-    SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
-    SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DISCUSSION,
-    SCHEMA_DISCUSSIONS, SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD,
-    SCHEMA_MODULES, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_RECEIPTS, SCHEMA_SUBMISSION, SCHEMA_SYLLABUS,
-    SCHEMA_TODO,
-};
+use crate::mcp::reference;
 
-/// What a tool does to its environment (§21.2).
+/// The name of the only tool this server serves.
 ///
-/// One variant, and that is the point: the MCP catalog exposes reads and
-/// nothing else (owner directive, 2026-09-10). The write tiers the CLI
-/// carries — organize, retire, remote write (§20, §25) — have no spelling
-/// here, so a tool that is not a read cannot be described at all without
-/// reopening this enum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Effect {
-    /// An authorized read: nothing changes.
-    Read,
-}
+/// It is the owner's own word, used verbatim rather than bent into the dotted
+/// convention the removed catalog used. A host that has learned the name must
+/// keep finding it.
+pub const TOOL: &str = "getclitools";
 
-impl Effect {
-    fn annotations(self, title: &str, idempotent: bool, open_world: bool) -> ToolAnnotations {
-        let mut annotations = ToolAnnotations::new();
-        annotations.title = Some(title.to_owned());
-        annotations.read_only_hint = Some(self == Self::Read);
-        // Nothing in this catalog performs a destructive update.
-        annotations.destructive_hint = Some(false);
-        annotations.idempotent_hint = Some(idempotent);
-        annotations.open_world_hint = Some(open_world);
-        annotations
-    }
-}
-
-/// One tool: its name, its effect, and the command core behind it.
+/// The only tool: its name, its title, its description, and its arguments.
 pub struct ToolSpec {
     pub name: &'static str,
     pub title: &'static str,
     pub description: &'static str,
-    /// The `canvas-cli/<name>@<n>` schema of the result it returns.
-    pub schema: &'static str,
-    /// Which result shape of that schema, when it has more than one.
-    ///
-    /// `receipts@1` covers a listing, one journal, and an acknowledgement,
-    /// and they are different documents. The variant picks the registry entry
-    /// that describes what this tool actually returns.
-    pub variant: Option<&'static str>,
-    pub effect: Effect,
-    pub idempotent: bool,
-    pub open_world: bool,
     input_schema: fn() -> JsonObject,
 }
 
 impl ToolSpec {
-    /// The MCP tool definition, with the §7 envelope as its output schema.
+    /// The MCP tool definition.
+    ///
+    /// There is no `outputSchema`. The answer is one Markdown document, not a
+    /// §7 envelope, so a schema would describe nothing a host could validate.
     #[must_use]
     pub fn tool(&self) -> Tool {
         Tool::new(
@@ -85,29 +50,25 @@ impl ToolSpec {
             Arc::new((self.input_schema)()),
         )
         .with_title(self.title)
-        .with_raw_output_schema(Arc::new(output_schema(self.schema, self.variant)))
-        .with_annotations(self.effect.annotations(
-            self.title,
-            self.idempotent,
-            self.open_world,
-        ))
+        .with_annotations(annotations())
     }
 }
 
-/// The output schema of a tool: the success envelope or the domain error.
-///
-/// Both shapes are admitted, because a domain failure keeps the envelope
-/// (§3.2). The document comes from `canvas schema <command>`, so a tool and
-/// the CLI cannot describe their output differently.
-fn output_schema(schema_id: &str, variant: Option<&str>) -> JsonObject {
-    crate::output::document_for_schema(schema_id, variant)
-        .and_then(|mut document| document.get_mut("envelope").map(std::mem::take))
-        .and_then(|envelope| match envelope {
-            Value::Object(object) => Some(object),
-            _ => None,
-        })
-        .unwrap_or_default()
+/// The tool reads a reference the binary already holds: nothing changes, it
+/// is the same answer every time, and it reaches nothing outside the process.
+fn annotations() -> ToolAnnotations {
+    let mut annotations = ToolAnnotations::new();
+    annotations.read_only_hint = Some(true);
+    annotations.destructive_hint = Some(false);
+    annotations.idempotent_hint = Some(true);
+    annotations.open_world_hint = Some(false);
+    annotations
 }
+
+/// `getclitools` takes no arguments: it has one answer, and this is it.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GetCliToolsArgs {}
 
 fn schema_of<T: JsonSchema>() -> JsonObject {
     let mut settings = schemars::generate::SchemaSettings::draft2020_12();
@@ -122,883 +83,121 @@ fn schema_of<T: JsonSchema>() -> JsonObject {
     }
 }
 
-// ----------------------------------------------------------------- arguments
+/// The single tool this server exposes.
+static SPEC: ToolSpec = ToolSpec {
+    name: TOOL,
+    title: "Get the canvas CLI tools",
+    description: "Get the complete `canvas` command-line reference: every command, its \
+                  operands and flags, and the JSON envelope each one returns. Call it once, \
+                  then run `canvas <command> ...` yourself in a shell. This is the only tool \
+                  this server has: nothing here reads or writes Canvas.",
+    input_schema: schema_of::<GetCliToolsArgs>,
+};
 
-/// `<course>` accepts a numeric id, an alias, a URL, or a code substring (§6).
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CoursesListArgs {
-    /// Include completed and invited courses, not only the active ones.
-    #[serde(default)]
-    pub all: bool,
-    /// Keep only courses whose term name contains this text.
-    #[serde(default)]
-    pub term: Option<String>,
-    /// Keep only favorite courses.
-    #[serde(default)]
-    pub favorites: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CourseGetArgs {
-    /// Course id, alias, URL, or a substring of its code or name.
-    pub course: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct TodoListArgs {
-    /// Days ahead to include. The default window is 14 days.
-    #[serde(default)]
-    pub days: Option<u32>,
-    /// Include items that the default window hides.
-    #[serde(default)]
-    pub all: bool,
-    /// Only work Canvas reports as missing.
-    #[serde(default)]
-    pub missing: bool,
-    /// Only one course.
-    #[serde(default)]
-    pub course: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AssignmentsListArgs {
-    pub course: String,
-    /// Which assignments to keep. The default is `open`.
-    #[serde(default)]
-    pub bucket: Option<AssignmentBucket>,
-    /// Substring of the assignment name.
-    #[serde(default)]
-    pub search: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AssignmentGetArgs {
-    /// Course id, alias, code, or a full Canvas assignment URL.
-    pub course: String,
-    /// Assignment id or a substring of its name. Omit it when `course` is a URL.
-    #[serde(default)]
-    pub assignment: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GradesGetArgs {
-    /// One course, or every course when absent.
-    #[serde(default)]
-    pub course: Option<String>,
-    /// `current`, `all`, or a grading-period id.
-    #[serde(default)]
-    pub period: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FilesListArgs {
-    pub course: String,
-    /// Group the files by folder.
-    #[serde(default)]
-    pub tree: bool,
-    /// Substring of the file name.
-    #[serde(default)]
-    pub search: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ModulesListArgs {
-    pub course: String,
-    /// Include the items of each module.
-    #[serde(default)]
-    pub items: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PagesListArgs {
-    pub course: String,
-    /// Also list pages Canvas reports as unpublished. It changes what is
-    /// shown, never what is fetched.
-    #[serde(default)]
-    pub unpublished: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PageGetArgs {
-    pub course: String,
-    /// The page's URL slug, its numeric id, or a full Canvas page URL. A URL
-    /// must name the same course.
-    pub page: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SyllabusGetArgs {
-    pub course: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct DiscussionsListArgs {
-    pub course: String,
-    /// Only topics this identity has not read. Reading one never marks it
-    /// read.
-    #[serde(default)]
-    pub unread: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct DiscussionGetArgs {
-    pub course: String,
-    /// Topic id, or a full Canvas discussion URL naming the same course.
-    pub discussion: String,
-    /// Also read the thread. Without it the answer carries no replies and
-    /// says so in `replies_coverage`.
-    #[serde(default)]
-    pub replies: bool,
-    /// Which page of replies to show, 100 per page, counting from 1. It needs
-    /// `replies`. A page past the end is an empty window, not an error.
-    #[serde(default)]
-    pub page: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct InboxListArgs {
-    /// `inbox` (the default), `unread`, `sent`, or `archived`.
-    #[serde(default)]
-    pub scope: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct InboxGetArgs {
-    /// Conversation id.
-    pub id: String,
-}
-
-/// `inbox.unread_count` takes nothing; it reports one number for the identity.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct InboxUnreadCountArgs {}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AnnouncementsListArgs {
-    /// One course, or every active course when absent.
-    #[serde(default)]
-    pub course: Option<String>,
-    /// How far back to look, for example `7d` or `48h`. The default is 14 days.
-    #[serde(default)]
-    pub since: Option<String>,
-    /// Only announcements this identity has not read. Reading one here never
-    /// marks it read.
-    #[serde(default)]
-    pub unread: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AnnouncementGetArgs {
-    /// Course id, alias, code, or a full Canvas announcement URL.
-    pub course: String,
-    /// Announcement id. Omit it when `course` is a URL. A bare id is refused.
-    #[serde(default)]
-    pub id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CalendarListArgs {
-    /// Days ahead to include. The default window is 14 days.
-    #[serde(default)]
-    pub days: Option<u32>,
-    /// Only one course.
-    #[serde(default)]
-    pub course: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SubmissionGetArgs {
-    pub course: String,
-    pub assignment: String,
-    /// Include every previous attempt.
-    #[serde(default)]
-    pub history: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ReceiptsListArgs {
-    #[serde(default)]
-    pub course: Option<String>,
-    /// Receipt or journal state to keep.
-    #[serde(default)]
-    pub state: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ReceiptsShowArgs {
-    /// Receipt id or journal id.
-    pub id: String,
-}
-
-// ------------------------------------------------------------------ dispatch
-
-/// Every tool this server exposes, in a stable order.
+/// The single tool this server exposes.
 #[must_use]
-pub fn specs() -> &'static [ToolSpec] {
-    &[
-        ToolSpec {
-            name: "courses.list",
-            title: "List courses",
-            description: "List the courses of the bound identity, with the grades Canvas reports.",
-            schema: SCHEMA_COURSES,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<CoursesListArgs>,
-        },
-        ToolSpec {
-            name: "course.get",
-            title: "Show one course",
-            description: "Show one course: term, teachers, syllabus, and reported scores.",
-            schema: SCHEMA_COURSE,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<CourseGetArgs>,
-        },
-        ToolSpec {
-            name: "todo.list",
-            title: "List what is due",
-            description: "What is due and what Canvas reports as missing, in one merged list.",
-            schema: SCHEMA_TODO,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<TodoListArgs>,
-        },
-        ToolSpec {
-            name: "assignments.list",
-            title: "List assignments",
-            description: "List a course's assignments with your submission state.",
-            schema: SCHEMA_ASSIGNMENTS,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<AssignmentsListArgs>,
-        },
-        ToolSpec {
-            name: "assignment.get",
-            title: "Show one assignment",
-            description: "Show one assignment: prompt as Markdown, dates, rubric, and submission.",
-            schema: SCHEMA_ASSIGNMENT,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<AssignmentGetArgs>,
-        },
-        ToolSpec {
-            name: "grades.get",
-            title: "Show grades",
-            description: "Scores as Canvas reports them, per course or for one course's groups.",
-            schema: SCHEMA_GRADES,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<GradesGetArgs>,
-        },
-        ToolSpec {
-            name: "files.list",
-            title: "List course files",
-            description: "List a course's files, flat or grouped by folder.",
-            schema: SCHEMA_FILES,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<FilesListArgs>,
-        },
-        ToolSpec {
-            name: "modules.list",
-            title: "List modules",
-            description: "List a course's modules, with their items when asked.",
-            schema: SCHEMA_MODULES,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<ModulesListArgs>,
-        },
-        ToolSpec {
-            name: "pages.list",
-            title: "List course pages",
-            description: "List a course's wiki pages: title, slug, and when each was updated.",
-            schema: SCHEMA_PAGES,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<PagesListArgs>,
-        },
-        ToolSpec {
-            name: "page.get",
-            title: "Show one course page",
-            description: "One page as Markdown, with what the text could not show: embedded \
-                          content, its file references, and its external links.",
-            schema: SCHEMA_PAGE,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<PageGetArgs>,
-        },
-        ToolSpec {
-            name: "syllabus.get",
-            title: "Show a course syllabus",
-            description: "A course's syllabus as Markdown. It costs no request of its own.",
-            schema: SCHEMA_SYLLABUS,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<SyllabusGetArgs>,
-        },
-        ToolSpec {
-            name: "announcements.list",
-            title: "List announcements",
-            description: "Recent announcements across courses. Reading never marks one read.",
-            schema: SCHEMA_ANNOUNCEMENTS,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<AnnouncementsListArgs>,
-        },
-        ToolSpec {
-            name: "announcement.get",
-            title: "Show one announcement",
-            description: "Show one announcement's message as Markdown. It stays unread.",
-            schema: SCHEMA_ANNOUNCEMENT,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<AnnouncementGetArgs>,
-        },
-        ToolSpec {
-            name: "discussions.list",
-            title: "List course discussions",
-            description: "A course's discussion topics. Announcements are a different listing: \
-                          use `announcements.list` for those. Nothing is marked read.",
-            schema: SCHEMA_DISCUSSIONS,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<DiscussionsListArgs>,
-        },
-        ToolSpec {
-            name: "discussion.get",
-            title: "Show one discussion",
-            description: "One topic, and its thread when `replies` is asked. `replies_coverage` \
-                          says how much of the thread was read; it stays unread either way.",
-            schema: SCHEMA_DISCUSSION,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<DiscussionGetArgs>,
-        },
-        ToolSpec {
-            name: "inbox.list",
-            title: "List conversations",
-            description: "The identity's Canvas conversations. Every request says \
-                          `auto_mark_as_read=false`, so reading marks nothing.",
-            schema: SCHEMA_INBOX,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<InboxListArgs>,
-        },
-        ToolSpec {
-            name: "inbox.get",
-            title: "Show one conversation",
-            description: "One conversation with its messages and attachments. It stays unread.",
-            schema: SCHEMA_CONVERSATION,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<InboxGetArgs>,
-        },
-        ToolSpec {
-            name: "inbox.unread_count",
-            title: "Count unread conversations",
-            description: "How many conversations are unread. `null` means Canvas did not say.",
-            schema: SCHEMA_INBOX_UNREAD,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<InboxUnreadCountArgs>,
-        },
-        ToolSpec {
-            name: "calendar.list",
-            title: "List calendar items",
-            description: "Deadlines and calendar events in one window, in the identity time zone.",
-            schema: SCHEMA_CALENDAR,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<CalendarListArgs>,
-        },
-        ToolSpec {
-            name: "submission.get",
-            title: "Show a submission",
-            description: "Your submission for one assignment, with its attempts when asked.",
-            schema: SCHEMA_SUBMISSION,
-            variant: None,
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: true,
-            input_schema: schema_of::<SubmissionGetArgs>,
-        },
-        ToolSpec {
-            name: "receipts.list",
-            title: "List receipts",
-            description: "Local submission receipts and unresolved journals. Local only.",
-            schema: SCHEMA_RECEIPTS,
-            variant: Some("list"),
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: false,
-            input_schema: schema_of::<ReceiptsListArgs>,
-        },
-        ToolSpec {
-            name: "receipts.show",
-            title: "Show one receipt",
-            description: "One receipt or journal in full, as the local record holds it.",
-            schema: SCHEMA_RECEIPTS,
-            variant: Some("show"),
-            effect: Effect::Read,
-            idempotent: true,
-            open_world: false,
-            input_schema: schema_of::<ReceiptsShowArgs>,
-        },
-    ]
+pub fn spec() -> &'static ToolSpec {
+    &SPEC
 }
 
-/// The spec of one tool name.
-#[must_use]
-pub fn spec(name: &str) -> Option<&'static ToolSpec> {
-    specs().iter().find(|spec| spec.name == name)
-}
-
-/// Parse `arguments` for a tool, rejecting anything its schema does not name.
+/// Parse `arguments`, rejecting anything the schema does not name.
 fn parse<T: for<'de> Deserialize<'de>>(arguments: Option<JsonObject>) -> Result<T, String> {
     let value = Value::Object(arguments.unwrap_or_default());
     serde_json::from_value(value).map_err(|e| e.to_string())
 }
 
-/// Run one tool through the command core behind it.
+/// Run the one tool.
 ///
 /// `Err` is an argument failure: the caller turns it into a JSON-RPC error,
-/// because the tool never ran. Every outcome the command itself produces —
-/// including a refusal — comes back as `Ok` with its envelope.
-///
-/// Every tool in the catalog is a read, so a dispatch never needs a person's
-/// decision and never returns anything but a finished command (§21.2).
-pub async fn dispatch(
-    globals: &Globals,
-    name: &str,
-    arguments: Option<JsonObject>,
-) -> Result<Handled, String> {
-    Ok(match name {
-        "courses.list" => {
-            let args: CoursesListArgs = parse(arguments)?;
-            courses::handle(globals, args.all, args.term, args.favorites).await
-        }
-        "course.get" => {
-            let args: CourseGetArgs = parse(arguments)?;
-            course::handle(globals, args.course).await
-        }
-        "todo.list" => {
-            let args: TodoListArgs = parse(arguments)?;
-            todo::handle(globals, args.days, args.all, args.missing, args.course).await
-        }
-        "assignments.list" => {
-            let args: AssignmentsListArgs = parse(arguments)?;
-            assignments::handle(globals, args.course, args.bucket, args.search).await
-        }
-        "assignment.get" => {
-            let args: AssignmentGetArgs = parse(arguments)?;
-            assignment::handle(globals, args.course, args.assignment).await
-        }
-        "grades.get" => {
-            let args: GradesGetArgs = parse(arguments)?;
-            grades::handle(globals, args.course, args.period).await
-        }
-        "files.list" => {
-            let args: FilesListArgs = parse(arguments)?;
-            files::handle(globals, args.course, args.tree, args.search).await
-        }
-        "modules.list" => {
-            let args: ModulesListArgs = parse(arguments)?;
-            modules::handle(globals, args.course, args.items).await
-        }
-        "pages.list" => {
-            let args: PagesListArgs = parse(arguments)?;
-            pages::handle_list(globals, args.course, args.unpublished).await
-        }
-        "page.get" => {
-            let args: PageGetArgs = parse(arguments)?;
-            pages::handle_show(globals, args.course, args.page).await
-        }
-        "syllabus.get" => {
-            let args: SyllabusGetArgs = parse(arguments)?;
-            pages::handle_syllabus(globals, args.course).await
-        }
-        "announcements.list" => {
-            let args: AnnouncementsListArgs = parse(arguments)?;
-            announcements::handle(globals, args.course, args.since, args.unread).await
-        }
-        "announcement.get" => {
-            let args: AnnouncementGetArgs = parse(arguments)?;
-            announcement::handle(globals, args.course, args.id).await
-        }
-        "discussions.list" => {
-            let args: DiscussionsListArgs = parse(arguments)?;
-            discussions::handle_list(globals, args.course, args.unread).await
-        }
-        "discussion.get" => {
-            let args: DiscussionGetArgs = parse(arguments)?;
-            discussions::handle_show(
-                globals,
-                args.course,
-                args.discussion,
-                args.replies,
-                args.page,
-            )
-            .await
-        }
-        "inbox.list" => {
-            let args: InboxListArgs = parse(arguments)?;
-            inbox::handle_list(globals, args.scope).await
-        }
-        "inbox.get" => {
-            let args: InboxGetArgs = parse(arguments)?;
-            inbox::handle_show(globals, args.id).await
-        }
-        "inbox.unread_count" => {
-            let _args: InboxUnreadCountArgs = parse(arguments)?;
-            inbox::handle_unread_count(globals).await
-        }
-        "calendar.list" => {
-            let args: CalendarListArgs = parse(arguments)?;
-            calendar::handle(
-                globals,
-                calendar::CalendarArgs {
-                    days: args.days,
-                    course: args.course,
-                    // `--ics` writes a file and `--alarm` only shapes that
-                    // file, so neither belongs on an agent surface.
-                    ics: None,
-                    alarm: None,
-                },
-            )
-            .await
-        }
-        "submission.get" => {
-            let args: SubmissionGetArgs = parse(arguments)?;
-            submission::handle(
-                globals,
-                submission::SubmissionCmd::Show {
-                    course: args.course,
-                    assignment: Some(args.assignment),
-                    history: args.history,
-                },
-            )
-            .await
-        }
-        "receipts.list" => {
-            let args: ReceiptsListArgs = parse(arguments)?;
-            receipts::handle(
-                globals,
-                receipts::ReceiptsCmd::List {
-                    course: args.course,
-                    state: args.state,
-                },
-            )
-        }
-        "receipts.show" => {
-            let args: ReceiptsShowArgs = parse(arguments)?;
-            receipts::handle(globals, receipts::ReceiptsCmd::Show { id: args.id })
-        }
-        other => return Err(format!("unknown tool {other}")),
-    })
+/// because the tool never ran. Nothing else can fail — the reference is built
+/// from the binary's own command tree, with no session, no network, and no
+/// cache behind it.
+pub fn dispatch(name: &str, arguments: Option<JsonObject>) -> Result<CallToolResult, String> {
+    if name != TOOL {
+        return Err(format!("unknown tool {name}"));
+    }
+    let _args: GetCliToolsArgs = parse(arguments)?;
+    Ok(CallToolResult::success(vec![ContentBlock::text(
+        reference::reference(),
+    )]))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The catalog is reads only, and §21.2 names it exactly. This test is
-    /// the allowlist.
-    #[test]
-    fn the_catalog_is_the_report_catalog() {
-        let expected = [
-            "courses.list",
-            "course.get",
-            "todo.list",
-            "assignments.list",
-            "assignment.get",
-            "grades.get",
-            "files.list",
-            "modules.list",
-            "pages.list",
-            "page.get",
-            "syllabus.get",
-            "announcements.list",
-            "announcement.get",
-            "discussions.list",
-            "discussion.get",
-            "inbox.list",
-            "inbox.get",
-            "inbox.unread_count",
-            "calendar.list",
-            "submission.get",
-            "receipts.list",
-            "receipts.show",
-        ];
-        let names: Vec<&str> = specs().iter().map(|spec| spec.name).collect();
-        assert_eq!(names, expected);
-    }
-
-    /// The invariant the allowlist above only samples: this surface fetches,
-    /// and nothing else (owner directive, 2026-09-10; §19 item 48).
+    /// One tool, and it is the owner's name for it.
     ///
-    /// A tool that prepares, executes, retires, resolves, refreshes, or
-    /// reaches the browser companion fails here whatever its name, because
-    /// the effect and the read-only hint are checked too. A future change
-    /// that puts a write tool back in the catalog has to delete this test
-    /// to pass, which is the point.
+    /// A change that adds a second tool has to delete this test to pass,
+    /// which is the point (§19 item 50).
     #[test]
-    fn every_tool_in_the_catalog_is_a_read() {
-        for spec in specs() {
-            assert_eq!(
-                spec.effect,
-                Effect::Read,
-                "{} is not a read: the MCP catalog exposes reads only",
-                spec.name
-            );
-            let annotations = spec.tool().annotations.expect("annotations");
-            assert_eq!(
-                annotations.read_only_hint,
-                Some(true),
-                "{} is not annotated read-only",
-                spec.name
-            );
-            for suffix in [
-                ".prepare",
-                ".execute",
-                ".acknowledge",
-                ".reconcile",
-                ".run",
-                ".plan",
-            ] {
-                assert!(
-                    !spec.name.ends_with(suffix),
-                    "{} ends with {suffix}: that is a write surface",
-                    spec.name
-                );
-            }
-            assert!(
-                !spec.name.starts_with("context."),
-                "{} reaches the browser companion",
-                spec.name
-            );
-        }
+    fn the_only_tool_is_getclitools() {
+        let spec = spec();
+        assert_eq!(spec.name, "getclitools");
+        assert_eq!(spec.tool().name, "getclitools");
     }
 
-    /// Absent by design (§21.2): credentials, token reveal, identity
-    /// administration, arbitrary HTTP or shell, cache clearing, and any
-    /// browser action.
-    ///
-    /// Arbitrary execution is named by `shell`, `eval`, and `spawn` here.
+    /// The tool fetches a document the binary already holds: it changes
+    /// nothing, answers the same way every time, and reaches nothing.
     #[test]
-    fn no_tool_reaches_a_forbidden_surface() {
-        for spec in specs() {
-            let name = spec.name;
-            for forbidden in [
-                "auth",
-                "token",
-                "identity",
-                "credential",
-                "cache",
-                "config",
-                "http",
-                "shell",
-                "eval",
-                "spawn",
-                "browser",
-                "launch",
-                "quiz",
-                "submit",
-                "send",
-                "reply",
-                "download",
-                "sync",
-                "open",
-                "note",
-            ] {
-                assert!(
-                    !name.contains(forbidden),
-                    "{name} names the forbidden surface {forbidden}"
-                );
-            }
-        }
+    fn the_tool_is_annotated_as_a_closed_read() {
+        let tool = spec().tool();
+        let annotations = tool.annotations.expect("annotations");
+        assert_eq!(annotations.read_only_hint, Some(true));
+        assert_eq!(annotations.destructive_hint, Some(false));
+        assert_eq!(annotations.idempotent_hint, Some(true));
+        assert_eq!(annotations.open_world_hint, Some(false));
     }
 
-    /// No tool takes `--yes`, a destination, a force flag, a raw-output
-    /// switch, or an argument that retires evidence.
+    /// No output schema, because the answer is prose and not an envelope.
+    /// The whole point of this round is that a host pays for one tool
+    /// definition, not for 22 inlined §7 envelopes.
     #[test]
-    fn no_tool_takes_a_forbidden_argument() {
-        for spec in specs() {
-            let schema = (spec.input_schema)();
-            let properties = schema
-                .get("properties")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
-            for name in properties.keys() {
-                for forbidden in [
-                    "yes",
-                    "force",
-                    "dest",
-                    "out",
-                    "ics",
-                    "reveal",
-                    "token",
-                    "host",
-                    "replace",
-                    "alarm",
-                    "path",
-                    "assume_not_submitted",
-                    "assume_not_posted",
-                    "generation",
-                ] {
-                    assert!(
-                        name != forbidden,
-                        "{}.{name} exposes the forbidden argument {forbidden}",
-                        spec.name
-                    );
-                }
-            }
-        }
-    }
-
-    /// Hints describe effects (§21.2): every tool here is a pure read, and
-    /// nothing is destructive.
-    #[test]
-    fn annotations_describe_effects() {
-        for spec in specs() {
-            let tool = spec.tool();
-            let annotations = tool.annotations.expect("annotations");
-            assert_eq!(annotations.read_only_hint, Some(true), "{}", spec.name);
-            assert_eq!(annotations.destructive_hint, Some(false), "{}", spec.name);
-            assert_eq!(
-                annotations.idempotent_hint,
-                Some(spec.idempotent),
-                "{}",
-                spec.name
-            );
-        }
-    }
-
-    /// Every tool's output schema admits the success envelope and the domain
-    /// error, because a domain failure keeps the envelope (§21.2).
-    ///
-    /// The union also declares `type`. A host validator may require one
-    /// before it reads `oneOf`: Cursor rejects the whole catalog without it
-    /// (`docs/agent-hosts.md`).
-    #[test]
-    fn every_output_schema_admits_both_shapes() {
-        for spec in specs() {
-            let tool = spec.tool();
-            let schema = tool.output_schema.expect("output schema");
-            assert_eq!(schema["type"], "object", "{}", spec.name);
-            let branches = schema["oneOf"].as_array().expect("oneOf");
-            assert_eq!(branches.len(), 2, "{}", spec.name);
-            assert_eq!(
-                branches[0]["properties"]["schema"]["const"], spec.schema,
-                "{}",
-                spec.name
-            );
-            assert_eq!(
-                branches[1]["properties"]["schema"]["const"],
-                crate::output::SCHEMA_ERROR,
-                "{}",
-                spec.name
-            );
-        }
-    }
-
-    /// A tool's output schema must describe the result that tool returns.
-    ///
-    /// `receipts@1` covers three different documents, so a tool that names the
-    /// schema alone would advertise the listing's shape for every one of them
-    /// and a host that validates `structuredContent` would reject a valid
-    /// answer.
-    #[test]
-    fn every_tool_output_schema_is_the_shape_that_tool_returns() {
-        for spec in specs() {
-            assert!(
-                crate::output::entry_for_schema(spec.schema, spec.variant).is_some(),
-                "{} names no registered result shape",
-                spec.name
-            );
-        }
-        let required = |name: &str| -> Vec<String> {
-            let spec = spec(name).expect(name);
-            output_schema(spec.schema, spec.variant)["oneOf"][0]["properties"]["result"]["required"]
-                .as_array()
-                .expect("required")
-                .iter()
-                .map(|value| value.as_str().unwrap_or_default().to_owned())
-                .collect()
-        };
-        assert_eq!(required("receipts.list"), ["journals"]);
-        assert_eq!(required("receipts.show"), ["journal", "receipt"]);
+    fn the_tool_definition_is_small_and_claims_no_output_schema() {
+        let tool = spec().tool();
+        assert!(tool.output_schema.is_none());
+        let bytes = serde_json::to_vec(&tool).expect("serialize").len();
+        assert!(bytes < 2_000, "the one tool definition is {bytes} bytes");
     }
 
     #[test]
-    fn arguments_that_the_schema_does_not_name_are_refused() {
-        let refused = parse::<CoursesListArgs>(Some(
-            serde_json::json!({ "force": true })
-                .as_object()
-                .cloned()
-                .expect("object"),
-        ));
-        assert!(refused.is_err(), "force must not deserialize");
-        let accepted: CoursesListArgs = parse(None).expect("every field has a default");
-        assert!(!accepted.all && !accepted.favorites);
+    fn the_tool_takes_no_arguments_and_refuses_the_ones_it_is_given() {
+        let result = dispatch(TOOL, None).expect("no arguments is the call");
+        assert_eq!(result.is_error, Some(false));
+        let refused = dispatch(
+            TOOL,
+            Some(
+                serde_json::json!({ "command": "todo" })
+                    .as_object()
+                    .cloned()
+                    .expect("object"),
+            ),
+        );
+        assert!(refused.is_err(), "an unknown argument must not deserialize");
+        assert!(dispatch("todo.list", None).is_err(), "there is one tool");
+    }
+
+    /// The answer is the command reference, not a stub.
+    #[test]
+    fn the_answer_enumerates_the_command_line() {
+        let result = dispatch(TOOL, None).expect("the call");
+        let text = result
+            .content
+            .first()
+            .and_then(ContentBlock::as_text)
+            .map(|text| text.text.clone())
+            .expect("one text block");
+        for command in [
+            "### canvas todo",
+            "### canvas assignments",
+            "### canvas submit",
+            "### canvas discussion reply",
+            "### canvas inbox send",
+            "### canvas sync",
+            "### canvas download",
+            "### canvas schema",
+        ] {
+            assert!(text.contains(command), "the answer never names {command}");
+        }
     }
 }
