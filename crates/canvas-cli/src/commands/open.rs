@@ -214,7 +214,10 @@ async fn resolve(
     Ok(Resolved { kind, id, url })
 }
 
-/// `canvas open <target> --follow` and `context.follow`.
+/// `canvas open <target> --follow`.
+///
+/// The `context.follow` tool called this too until 2026-09-10; there is no
+/// tool now (SPEC §19 item 48).
 ///
 /// The target is resolved through the ordinary `open` resolver — the same
 /// code, the same cross-origin refusal at exit 6, and no fetch — and only
