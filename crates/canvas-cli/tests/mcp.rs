@@ -12,14 +12,18 @@ use canvas_core::identity::{IdentityDocument, Paths};
 use canvas_core::store::OpenIdentity;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use wiremock::matchers::{method, path, query_param};
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const TOKEN: &str = "mcp-secret-token";
 const PRIMARY: &str = "2026-07-28";
 const LEGACY: &str = "2025-11-25";
 
-/// The catalog REPORT §3.2 defines, in the server's order.
+/// The catalog §21.2 defines, in the server's order.
+///
+/// Reads only, by the owner's directive of 2026-09-10 (§19 item 48). The 21
+/// tools that prepared, executed, retired, resolved, refreshed, or reached
+/// the browser companion are gone; their commands are still on the CLI.
 const CATALOG: &[&str] = &[
     "courses.list",
     "course.get",
@@ -43,6 +47,14 @@ const CATALOG: &[&str] = &[
     "submission.get",
     "receipts.list",
     "receipts.show",
+];
+
+/// The 21 names the catalog no longer serves (§19 item 48).
+///
+/// Each one is a `canvas` command still, and each one must be unroutable
+/// here: a host that held the old catalog gets `METHOD_NOT_FOUND`, never a
+/// silent success.
+const REMOVED: &[&str] = &[
     "sync.run",
     "download.plan",
     "download.run",
@@ -519,453 +531,64 @@ async fn primed(server: &MockServer) -> Fixture {
     f
 }
 
-/// A primed fixture that can also accept one text submission.
+/// A host that held the old catalog cannot reach a write, and no tool on
+/// this surface ever asks a person for a decision (§19 item 48).
 ///
-/// Assignment 500 of course 1 is the one the planner dataset already names,
-/// so the same fixture answers the reads and the write.
-async fn submittable(server: &MockServer) -> (Fixture, std::path::PathBuf) {
-    let f = primed(server).await;
-    Mock::given(path("/api/v1/courses/1/assignments/500"))
-        .and(query_param("include[]", "can_submit"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": 500, "course_id": 1, "name": "Problem Set 2",
-            "submission_types": ["online_text_entry"],
-            "can_submit": true, "due_at": "2026-09-10T03:59:00Z",
-            "submission": {"attempt": 0}
-        })))
-        .mount(server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/api/v1/courses/1/assignments/500/submissions"))
-        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
-            "id": 77, "attempt": 1, "submitted_at": "2026-09-09T17:05:12Z",
-            "body": "<p>hello</p>"
-        })))
-        .mount(server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v1/courses/1/assignments/500/submissions/self"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "attempt": 1,
-            "submission_history": [{
-                "id": 77, "attempt": 1, "submitted_at": "2026-09-09T17:05:12Z",
-                "body": "<p>hello</p>", "attachments": []
-            }]
-        })))
-        .mount(server)
-        .await;
-    let input = f.dir.path().join("answer.txt");
-    std::fs::write(&input, b"hello").unwrap();
-    (f, input)
-}
+/// This is the wire half of `mcp::catalog::tests::every_tool_in_the_catalog_is_a_read`:
+/// a name that left the catalog is a protocol error, not a quiet success,
+/// and a `requestState` — the second half of the approval round trip this
+/// server used to serve — is refused whatever it names, so a replayed state
+/// can never record a decision against a read.
+#[tokio::test]
+async fn no_removed_tool_is_reachable_and_no_tool_asks_for_an_approval() {
+    let server = MockServer::start().await;
+    let f = primed(&server).await;
+    let mut mcp = f.mcp(&["--offline"]);
 
-/// Prepare one plan and return its `plan@1` result.
-fn prepare(mcp: &mut Mcp, input: &std::path::Path) -> Value {
-    let prepared = mcp.eliciting(
-        "tools/call",
-        json!({
-            "name": "submission.prepare",
-            "arguments": { "course": "1", "assignment": "500", "text": input },
-        }),
-    );
-    let result = &prepared["result"];
-    assert_eq!(result["isError"], false, "{prepared}");
-    assert_eq!(result["structuredContent"]["schema"], "canvas-cli/plan@1");
-    result["structuredContent"]["result"]["plan"].clone()
-}
+    for name in REMOVED {
+        let refused = mcp.primary(
+            "tools/call",
+            json!({ "name": name, "arguments": json!({}) }),
+        );
+        assert_eq!(
+            refused["error"]["code"], -32601,
+            "{name} is still reachable: {refused}"
+        );
+        assert!(refused["result"].is_null(), "{name}: {refused}");
+        assert!(!CATALOG.contains(name), "{name} is still advertised");
+    }
 
-/// How many POSTs the mock server has seen.
-async fn posts(server: &MockServer) -> usize {
-    server
-        .received_requests()
-        .await
+    // Every read the catalog does serve refuses a `requestState`, and the
+    // tool never runs: the error is the argument error, not an answer.
+    let state = json!(
+        serde_json::to_string(&json!({
+            "plan_id": "plan-anything",
+            "handle": "00000000000000000000000000000000",
+        }))
         .unwrap()
-        .iter()
-        .filter(|request| request.method == wiremock::http::Method::POST)
-        .count()
-}
-
-/// Ask for approval of one plan and return the opaque `requestState`.
-fn ask(mcp: &mut Mcp, plan: &Value) -> Value {
-    let asked = mcp.eliciting(
-        "tools/call",
-        json!({
-            "name": "submission.execute",
-            "arguments": { "plan_id": plan["plan_id"] },
-        }),
     );
-    let result = &asked["result"];
-    assert_eq!(result["resultType"], "input_required", "{asked}");
-    let request = &result["inputRequests"]["approval"];
-    assert_eq!(request["method"], "elicitation/create");
-    // The message names the exact bytes the approval binds.
-    let message = request["params"]["message"].as_str().unwrap();
-    assert!(
-        message.contains(plan["plan_sha256"].as_str().unwrap()),
-        "{message}"
-    );
-    result["requestState"].clone()
-}
+    for name in ["todo.list", "courses.list", "receipts.list"] {
+        let misrouted = mcp.retry(
+            name,
+            &state,
+            &json!({ "action": "accept", "content": { "handle": "00000000000000000000000000000000" } }),
+        );
+        assert_eq!(
+            misrouted["error"]["code"], -32602,
+            "{name} accepted a request state: {misrouted}"
+        );
+        assert!(misrouted["result"].is_null(), "{name}: {misrouted}");
+    }
 
-/// Preparing freezes a plan and sends nothing, and a refused approval keeps
-/// it that way.
-#[tokio::test]
-async fn a_declined_or_cancelled_approval_dispatches_nothing() {
-    let server = MockServer::start().await;
-    let (f, input) = submittable(&server).await;
-    let mut mcp = f.mcp(&[]);
-
-    let plan = prepare(&mut mcp, &input);
-    assert_eq!(plan["state"], "prepared");
-    assert_eq!(plan["consumer"], "mcp:test-host");
-    assert_eq!(posts(&server).await, 0, "prepare sent something");
-
-    let state = ask(&mut mcp, &plan);
-    assert_eq!(posts(&server).await, 0, "asking sent something");
-    let declined = mcp.retry(
-        "submission.execute",
-        &state,
-        &json!({ "action": "decline" }),
-    );
-    let envelope = &declined["result"]["structuredContent"];
-    assert_eq!(envelope["exit"], 11, "{envelope}");
-    assert_eq!(envelope["result"]["code"], "cancelled");
-    assert_eq!(posts(&server).await, 0, "a decline sent something");
-
-    // A declined plan is spent: the same handle can never be used again.
-    let again = mcp.retry(
-        "submission.execute",
-        &state,
-        &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
-    );
-    let envelope = &again["result"]["structuredContent"];
-    assert_eq!(envelope["outcome"], "refused", "{envelope}");
-    assert_eq!(envelope["exit"], 8);
-    assert_eq!(posts(&server).await, 0, "a spent handle sent something");
-
-    // Cancelling ends the same way, through the other action.
-    let plan = prepare(&mut mcp, &input);
-    let state = ask(&mut mcp, &plan);
-    let cancelled = mcp.retry("submission.execute", &state, &json!({ "action": "cancel" }));
-    assert_eq!(
-        cancelled["result"]["structuredContent"]["exit"], 11,
-        "{cancelled}"
-    );
-    assert_eq!(posts(&server).await, 0, "a cancel sent something");
-    mcp.stop();
-}
-
-/// An accepted approval submits once, and a second execute replays it.
-#[tokio::test]
-async fn an_accepted_approval_submits_once_and_replays_after_that() {
-    let server = MockServer::start().await;
-    let (f, input) = submittable(&server).await;
-    let mut mcp = f.mcp(&[]);
-
-    let plan = prepare(&mut mcp, &input);
-    let state = ask(&mut mcp, &plan);
-    let accepted = mcp.retry(
-        "submission.execute",
-        &state,
-        &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
-    );
-    let envelope = &accepted["result"]["structuredContent"];
-    assert_eq!(envelope["schema"], "canvas-cli/submit@1", "{envelope}");
-    assert_eq!(envelope["outcome"], "ok");
-    assert_eq!(envelope["exit"], 0);
-    assert_eq!(envelope["result"]["state"], "submitted");
-    assert_eq!(envelope["result"]["replayed"], false);
-    let journal = envelope["result"]["journal_id"].clone();
-    assert_eq!(posts(&server).await, 1, "the accepted plan sent once");
-
-    // The same plan returns the same journal and posts nothing more, with the
-    // journal's own outcome and exit (SPEC §19 item 17).
-    let replayed = mcp.eliciting(
-        "tools/call",
-        json!({
-            "name": "submission.execute",
-            "arguments": { "plan_id": plan["plan_id"] },
-        }),
-    );
-    let envelope = &replayed["result"]["structuredContent"];
-    assert_eq!(envelope["schema"], "canvas-cli/submit@1", "{envelope}");
-    assert_eq!(envelope["outcome"], "ok");
-    assert_eq!(envelope["exit"], 0);
-    assert_eq!(envelope["result"]["journal_id"], journal);
-    assert_eq!(envelope["result"]["replayed"], true);
-    assert_eq!(posts(&server).await, 1, "the replay sent something");
-
-    // The approval audit names the channel and the host that asked.
-    let receipt = f
-        .cli(&["receipts", "show", journal.as_str().unwrap()], 0)
-        .await;
-    let approval = &receipt["result"]["journal"]["approval"];
-    assert_eq!(approval["channel"], "elicitation", "{receipt}");
-    assert_eq!(approval["consumer"], "mcp:test-host");
-    mcp.stop();
-}
-
-/// The handle inside a `requestState`.
-fn handle_of(state: &Value) -> String {
-    let state: Value = serde_json::from_str(state.as_str().expect("an opaque string")).unwrap();
-    state["handle"].as_str().unwrap().to_owned()
-}
-
-/// A host that cannot ask a person gets a refusal, and nothing is dispatched.
-#[tokio::test]
-async fn a_host_without_elicitation_is_refused_and_nothing_is_dispatched() {
-    let server = MockServer::start().await;
-    let (f, input) = submittable(&server).await;
-    let mut mcp = f.mcp(&[]);
-
-    // `primary` declares no capabilities at all, which is such a host.
-    let prepared = mcp.primary(
-        "tools/call",
-        json!({
-            "name": "submission.prepare",
-            "arguments": { "course": "1", "assignment": "500", "text": input },
-        }),
-    );
-    let plan = &prepared["result"]["structuredContent"]["result"]["plan"];
-    let refused = mcp.primary(
-        "tools/call",
-        json!({
-            "name": "submission.execute",
-            "arguments": { "plan_id": plan["plan_id"] },
-        }),
-    );
-    let result = &refused["result"];
-    // A domain refusal, not a protocol error and not an `input_required`.
-    assert_eq!(result["isError"], true, "{refused}");
-    let envelope = &result["structuredContent"];
-    assert_eq!(envelope["outcome"], "refused");
-    assert_eq!(envelope["exit"], 8);
-    let details = &envelope["result"]["details"];
-    assert_eq!(details["reason"], "approval_required");
-    // The handle travels, so the approval can be recorded another way.
-    assert!(details["handle"].as_str().is_some_and(|h| !h.is_empty()));
-    assert_eq!(details["plan_id"], plan["plan_id"]);
-    assert_eq!(posts(&server).await, 0, "the refusal sent something");
-
-    // Nothing was uploaded either: the only requests are the reads.
+    // Nothing on this surface ever reached Canvas with anything but a GET.
     for request in server.received_requests().await.unwrap() {
         assert_eq!(
             request.method,
             wiremock::http::Method::GET,
-            "{} reached Canvas",
+            "{} was not a read",
             request.url
         );
     }
-    mcp.stop();
-}
-
-/// A primed fixture whose topic 55 of course 1 accepts one reply.
-async fn repliable(server: &MockServer) -> Fixture {
-    let f = primed(server).await;
-    mount(
-        server,
-        "/api/v1/courses/1/discussion_topics/55",
-        json!({
-            "id": 55, "title": "Week 3 reading", "message": "<p>Well?</p>",
-            "locked": false, "locked_for_user": false,
-            "require_initial_post": false, "user_can_see_posts": true,
-            "group_category_id": null, "group_topic_children": [],
-            "discussion_type": "threaded", "published": true
-        }),
-    )
-    .await;
-    let entry = json!({
-        "id": 5003, "user_id": 123, "user_name": "You",
-        "message": "<p>My reply.</p>", "created_at": "2026-09-09T17:00:00Z"
-    });
-    Mock::given(method("POST"))
-        .and(path("/api/v1/courses/1/discussion_topics/55/entries"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(entry.clone()))
-        .mount(server)
-        .await;
-    mount(
-        server,
-        "/api/v1/courses/1/discussion_topics/55/entries",
-        json!([entry]),
-    )
-    .await;
-    f
-}
-
-/// The write tools take the same approval road, and claim only what is true.
-///
-/// One round trip covers the six of them: the elicitation, the recorded
-/// approval, the single POST, the replay, and the receipt. The tools differ in
-/// what they freeze, not in how they are approved.
-#[tokio::test]
-async fn a_write_tool_asks_for_an_approval_and_replies_once() {
-    let server = MockServer::start().await;
-    let f = repliable(&server).await;
-    let mut mcp = f.mcp(&[]);
-
-    // Preparing freezes the plan and sends nothing.
-    let prepared = mcp.eliciting(
-        "tools/call",
-        json!({
-            "name": "discussion.reply.prepare",
-            "arguments": { "course": "1", "discussion": "55", "text": "My reply." },
-        }),
-    );
-    let plan = &prepared["result"]["structuredContent"]["result"]["plan"];
-    assert_eq!(plan["state"], "prepared", "{prepared}");
-    assert_eq!(plan["operation"]["kind"], "discussion_reply");
-    assert_eq!(posts(&server).await, 0, "prepare sent something");
-
-    // A write plan is never admitted by the submission road, and the other
-    // way round: each execute refuses the kind that is not its own.
-    let crossed = mcp.eliciting(
-        "tools/call",
-        json!({
-            "name": "submission.execute",
-            "arguments": { "plan_id": plan["plan_id"] },
-        }),
-    );
-    let envelope = &crossed["result"]["structuredContent"];
-    assert_eq!(envelope["exit"], 8, "{crossed}");
-    assert_eq!(envelope["result"]["details"]["reason"], "invalidated");
-    assert_eq!(posts(&server).await, 0, "a misrouted plan sent something");
-
-    // Executing asks, and asking still sends nothing.
-    let asked = mcp.eliciting(
-        "tools/call",
-        json!({
-            "name": "discussion.reply.execute",
-            "arguments": { "plan_id": plan["plan_id"] },
-        }),
-    );
-    let result = &asked["result"];
-    assert_eq!(result["resultType"], "input_required", "{asked}");
-    let request = &result["inputRequests"]["approval"];
-    assert_eq!(request["method"], "elicitation/create");
-    let message = request["params"]["message"].as_str().unwrap();
-    assert!(
-        message.contains(plan["plan_sha256"].as_str().unwrap()),
-        "{message}"
-    );
-    let state = result["requestState"].clone();
-    assert_eq!(posts(&server).await, 0, "asking sent something");
-
-    // The accepted approval sends once.
-    let accepted = mcp.retry(
-        "discussion.reply.execute",
-        &state,
-        &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
-    );
-    let envelope = &accepted["result"]["structuredContent"];
-    assert_eq!(envelope["schema"], "canvas-cli/operation@1", "{accepted}");
-    assert_eq!(envelope["exit"], 0);
-    assert_eq!(envelope["result"]["state"], "posted");
-    assert_eq!(envelope["result"]["replayed"], false);
-    let journal = envelope["result"]["journal_id"].clone();
-    assert_eq!(posts(&server).await, 1, "the accepted plan sent once");
-
-    // A second execute replays the journal and creates no second reply.
-    let replayed = mcp.eliciting(
-        "tools/call",
-        json!({
-            "name": "discussion.reply.execute",
-            "arguments": { "plan_id": plan["plan_id"] },
-        }),
-    );
-    let envelope = &replayed["result"]["structuredContent"];
-    assert_eq!(envelope["result"]["journal_id"], journal, "{envelope}");
-    assert_eq!(envelope["result"]["replayed"], true);
-    assert_eq!(posts(&server).await, 1, "the replay sent something");
-
-    // `operation.status` is the way to check, and it names the channel.
-    let status = mcp.eliciting(
-        "tools/call",
-        json!({ "name": "operation.status", "arguments": { "journal_id": journal } }),
-    );
-    let envelope = &status["result"]["structuredContent"];
-    assert_eq!(envelope["schema"], "canvas-cli/operation@1", "{envelope}");
-    assert_eq!(envelope["result"]["state"], "posted");
-    assert_eq!(posts(&server).await, 1, "a status check sent something");
-
-    let receipt = f
-        .cli(&["receipts", "show", journal.as_str().unwrap()], 0)
-        .await;
-    let approval = &receipt["result"]["journal"]["approval"];
-    assert_eq!(approval["channel"], "elicitation", "{receipt}");
-    assert_eq!(approval["consumer"], "mcp:test-host");
-
-    // A tool that never asks cannot be the second half of a round trip, so a
-    // replayed state can never record an approval against a read.
-    let misrouted = mcp.retry(
-        "operation.status",
-        &state,
-        &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
-    );
-    assert_eq!(misrouted["error"]["code"], -32602, "{misrouted}");
-    mcp.stop();
-}
-
-/// A tool argument can never assert an approval.
-#[tokio::test]
-async fn an_approval_cannot_be_asserted_by_an_argument() {
-    let server = MockServer::start().await;
-    let (f, input) = submittable(&server).await;
-    let mut mcp = f.mcp(&[]);
-
-    let plan = prepare(&mut mcp, &input);
-    for extra in [
-        json!({ "plan_id": plan["plan_id"], "handle": "anything" }),
-        json!({ "plan_id": plan["plan_id"], "approved": true }),
-        json!({ "plan_id": plan["plan_id"], "yes": true }),
-    ] {
-        let refused = mcp.eliciting(
-            "tools/call",
-            json!({ "name": "submission.execute", "arguments": extra }),
-        );
-        // An argument the schema does not name never reaches the command.
-        assert_eq!(refused["error"]["code"], -32602, "{refused}");
-    }
-    // A forged request state cannot approve either: the handle it names was
-    // never issued, so `approve` refuses it.
-    let forged = mcp.retry(
-        "submission.execute",
-        &json!(
-            serde_json::to_string(&json!({
-                "plan_id": plan["plan_id"],
-                "handle": "00000000000000000000000000000000",
-            }))
-            .unwrap()
-        ),
-        &json!({ "action": "accept", "content": { "handle": "00000000000000000000000000000000" } }),
-    );
-    let envelope = &forged["result"]["structuredContent"];
-    assert_eq!(envelope["outcome"], "refused", "{envelope}");
-    assert_eq!(envelope["exit"], 8);
-    assert_eq!(posts(&server).await, 0, "a forged state sent something");
-
-    // Only `submission.execute` ever asks for a decision, so a retry that
-    // names another tool records nothing: that call never asked for one.
-    let state = ask(&mut mcp, &plan);
-    for other in ["todo.list", "receipts.acknowledge", "sync.run"] {
-        let misrouted = mcp.retry(
-            other,
-            &state,
-            &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
-        );
-        assert_eq!(misrouted["error"]["code"], -32602, "{misrouted}");
-        assert_eq!(posts(&server).await, 0, "{other} sent something");
-    }
-    // The plan is untouched, so the tool that did ask can still be answered.
-    let accepted = mcp.retry(
-        "submission.execute",
-        &state,
-        &json!({ "action": "accept", "content": { "handle": handle_of(&state) } }),
-    );
-    assert_eq!(
-        accepted["result"]["structuredContent"]["outcome"], "ok",
-        "{accepted}"
-    );
-    assert_eq!(posts(&server).await, 1);
     mcp.stop();
 }
 
@@ -1026,7 +649,7 @@ async fn both_revisions_handshake_and_an_unknown_one_is_refused() {
 
 /// The catalog on the wire is the catalog REPORT §3.2 names, and no more.
 #[tokio::test]
-async fn the_tool_list_is_the_report_catalog_with_effect_annotations() {
+async fn the_tool_list_is_the_report_catalog_and_every_tool_is_a_read() {
     let server = MockServer::start().await;
     let f = Fixture::new(&server.uri());
     let mut mcp = f.mcp(&[]);
@@ -1048,6 +671,30 @@ async fn the_tool_list_is_the_report_catalog_with_effect_annotations() {
             annotations["destructiveHint"], false,
             "{name} is advertised as destructive"
         );
+        // The invariant, not a sample of it: this surface fetches and does
+        // nothing else, so every tool on the wire says `readOnlyHint: true`
+        // and no tool name is shaped like a write (§19 item 48).
+        assert_eq!(
+            annotations["readOnlyHint"], true,
+            "{name} is not annotated read-only"
+        );
+        for suffix in [
+            ".prepare",
+            ".execute",
+            ".acknowledge",
+            ".reconcile",
+            ".run",
+            ".plan",
+        ] {
+            assert!(
+                !name.ends_with(suffix),
+                "{name} ends with {suffix}: that is a write surface"
+            );
+        }
+        assert!(
+            !name.starts_with("context."),
+            "{name} reaches the browser companion"
+        );
         // A domain failure keeps the envelope, so both shapes are described.
         let branches = tool["outputSchema"]["oneOf"].as_array().unwrap();
         assert_eq!(branches.len(), 2, "{name}");
@@ -1060,22 +707,23 @@ async fn the_tool_list_is_the_report_catalog_with_effect_annotations() {
             .as_object()
             .cloned()
             .unwrap_or_default();
-        for forbidden in ["yes", "force", "dest", "out", "reveal", "token", "host"] {
+        for forbidden in [
+            "yes",
+            "force",
+            "dest",
+            "out",
+            "reveal",
+            "token",
+            "host",
+            "assume_not_submitted",
+            "assume_not_posted",
+            "generation",
+        ] {
             assert!(
                 !properties.contains_key(forbidden),
                 "{name} exposes {forbidden}"
             );
         }
-    }
-
-    let reads = ["courses.list", "todo.list", "open.url", "download.plan"];
-    for name in reads {
-        let tool = tools.iter().find(|t| t["name"] == name).unwrap();
-        assert_eq!(tool["annotations"]["readOnlyHint"], true, "{name}");
-    }
-    for name in ["sync.run", "download.run", "receipts.acknowledge"] {
-        let tool = tools.iter().find(|t| t["name"] == name).unwrap();
-        assert_eq!(tool["annotations"]["readOnlyHint"], false, "{name}");
     }
     mcp.stop();
 }
@@ -1124,9 +772,9 @@ async fn a_tool_result_is_the_same_envelope_the_cli_prints() {
 /// arguments, whatever that envelope says: an answer, a refusal, or the usage
 /// error a command that needs the network gives while `--offline`.
 ///
-/// `submission.execute` is the one tool with no command behind it. It names a
-/// stored plan rather than a course, and the plan flow it drives has its own
-/// tests above.
+/// Every tool is here. The catalog is reads only (§19 item 48), and a read
+/// always has a command behind it, so this table no longer excludes
+/// anything.
 const EQUIVALENTS: &[(&str, &str, &[&str])] = &[
     ("courses.list", r"{}", &["courses"]),
     ("course.get", r#"{"course":"1"}"#, &["course", "1"]),
@@ -1182,54 +830,6 @@ const EQUIVALENTS: &[(&str, &str, &[&str])] = &[
         r#"{"id":"no-such-receipt"}"#,
         &["receipts", "show", "no-such-receipt"],
     ),
-    ("sync.run", r"{}", &["sync"]),
-    (
-        "download.plan",
-        r#"{"course":"1"}"#,
-        &["download", "1", "--dry-run"],
-    ),
-    ("download.run", r#"{"course":"1"}"#, &["download", "1"]),
-    (
-        "submission.prepare",
-        r#"{"course":"1","assignment":"500","text":"answer.txt"}"#,
-        &["submit", "1", "500", "--text", "answer.txt"],
-    ),
-    (
-        "submission.reconcile",
-        r#"{"journal_id":"no-such-journal"}"#,
-        &["submission", "reconcile", "no-such-journal"],
-    ),
-    (
-        "discussion.reply.prepare",
-        r#"{"course":"1","discussion":"3001","text":"a reply"}"#,
-        &["discussion", "reply", "1", "3001", "--text", "a reply"],
-    ),
-    (
-        "inbox.send.prepare",
-        r#"{"recipients":["77"],"text":"a message"}"#,
-        &["inbox", "send", "--to", "77", "--text", "a message"],
-    ),
-    (
-        "inbox.reply.prepare",
-        r#"{"conversation_id":"700","text":"a message"}"#,
-        &["inbox", "reply", "700", "--text", "a message"],
-    ),
-    (
-        "operation.status",
-        r#"{"journal_id":"no-such-journal"}"#,
-        &["operation", "status", "no-such-journal"],
-    ),
-    (
-        "operation.reconcile",
-        r#"{"journal_id":"no-such-journal"}"#,
-        &["operation", "reconcile", "no-such-journal"],
-    ),
-    (
-        "receipts.acknowledge",
-        r#"{"journal_id":"no-such-journal"}"#,
-        &["receipts", "acknowledge", "no-such-journal"],
-    ),
-    ("open.url", r#"{"target":"CHEM"}"#, &["open", "CHEM"]),
 ];
 
 /// One implementation per command: every tool returns the CLI's envelope.
@@ -1240,14 +840,7 @@ async fn every_tool_returns_the_envelope_the_cli_prints() {
     let mut mcp = f.mcp(&["--offline"]);
 
     let covered: Vec<&str> = EQUIVALENTS.iter().map(|(tool, ..)| *tool).collect();
-    let mut expected: Vec<&str> = CATALOG.to_vec();
-    // Every execute is left out: it needs a recorded approval, and the CLI
-    // has no equivalent that runs one without a person. The three `context.*`
-    // tools name the calling consumer and the CLI does not, so their documents
-    // differ by design; `tests/bridge.rs` and `tests/m7b.rs` cover them
-    // against a live broker.
-    expected.retain(|name| !name.ends_with(".execute") && !name.starts_with("context."));
-    assert_eq!(covered, expected, "a tool has no command behind it");
+    assert_eq!(covered, CATALOG, "a tool has no command behind it");
 
     for (tool, arguments, args) in EQUIVALENTS {
         let arguments: Value = serde_json::from_str(arguments).expect("arguments");
@@ -1600,8 +1193,10 @@ async fn a_domain_failure_keeps_the_envelope_and_a_protocol_failure_does_not() {
 
     // So is an argument the tool's schema does not admit.
     for (name, arguments) in [
-        ("download.run", json!({ "force": true })),
-        ("download.run", json!({ "dest": "/tmp/anywhere" })),
+        (
+            "files.list",
+            json!({ "course": "1", "dest": "/tmp/anywhere" }),
+        ),
         ("calendar.list", json!({ "ics": "-" })),
         ("courses.list", json!({ "yes": true })),
         (
@@ -1618,24 +1213,6 @@ async fn a_domain_failure_keeps_the_envelope_and_a_protocol_failure_does_not() {
             "{name} accepted {refused}"
         );
     }
-    mcp.stop();
-}
-
-/// `open.url` resolves and returns the URL. It never launches anything.
-#[tokio::test]
-async fn open_url_resolves_without_launching() {
-    let server = MockServer::start().await;
-    let f = primed(&server).await;
-    let mut mcp = f.mcp(&["--offline"]);
-
-    let answer = mcp.primary(
-        "tools/call",
-        json!({ "name": "open.url", "arguments": { "target": "CHEM" } }),
-    );
-    let result = &answer["result"]["structuredContent"]["result"];
-    assert_eq!(result["target_kind"], "course");
-    assert_eq!(result["url"], format!("{}/courses/1", server.uri()));
-    assert_eq!(result["launched"], false);
     mcp.stop();
 }
 

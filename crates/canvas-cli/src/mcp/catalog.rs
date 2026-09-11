@@ -19,14 +19,15 @@ use serde_json::Value;
 use crate::cli::AssignmentBucket;
 use crate::commands::{
     Globals, announcement, announcements, assignment, assignments, calendar, course, courses,
-    discussions, files, grades, handled::Handled, inbox, modules, pages, receipts, submission, todo,
+    discussions, files, grades, handled::Handled, inbox, modules, pages, receipts, submission,
+    todo,
 };
 use crate::output::{
     SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS, SCHEMA_ASSIGNMENT, SCHEMA_ASSIGNMENTS,
     SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES, SCHEMA_DISCUSSION,
     SCHEMA_DISCUSSIONS, SCHEMA_FILES, SCHEMA_GRADES, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD,
-    SCHEMA_MODULES, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_RECEIPTS, SCHEMA_SUBMISSION,
-    SCHEMA_SYLLABUS, SCHEMA_TODO,
+    SCHEMA_MODULES, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_RECEIPTS, SCHEMA_SUBMISSION, SCHEMA_SYLLABUS,
+    SCHEMA_TODO,
 };
 
 /// What a tool does to its environment (§21.2).
@@ -633,83 +634,59 @@ pub async fn dispatch(
     Ok(match name {
         "courses.list" => {
             let args: CoursesListArgs = parse(arguments)?;
-            courses::handle(globals, args.all, args.term, args.favorites)
-                .await
-                .into()
+            courses::handle(globals, args.all, args.term, args.favorites).await
         }
         "course.get" => {
             let args: CourseGetArgs = parse(arguments)?;
-            course::handle(globals, args.course).await.into()
+            course::handle(globals, args.course).await
         }
         "todo.list" => {
             let args: TodoListArgs = parse(arguments)?;
-            todo::handle(globals, args.days, args.all, args.missing, args.course)
-                .await
-                .into()
+            todo::handle(globals, args.days, args.all, args.missing, args.course).await
         }
         "assignments.list" => {
             let args: AssignmentsListArgs = parse(arguments)?;
-            assignments::handle(globals, args.course, args.bucket, args.search)
-                .await
-                .into()
+            assignments::handle(globals, args.course, args.bucket, args.search).await
         }
         "assignment.get" => {
             let args: AssignmentGetArgs = parse(arguments)?;
-            assignment::handle(globals, args.course, args.assignment)
-                .await
-                .into()
+            assignment::handle(globals, args.course, args.assignment).await
         }
         "grades.get" => {
             let args: GradesGetArgs = parse(arguments)?;
-            grades::handle(globals, args.course, args.period)
-                .await
-                .into()
+            grades::handle(globals, args.course, args.period).await
         }
         "files.list" => {
             let args: FilesListArgs = parse(arguments)?;
-            files::handle(globals, args.course, args.tree, args.search)
-                .await
-                .into()
+            files::handle(globals, args.course, args.tree, args.search).await
         }
         "modules.list" => {
             let args: ModulesListArgs = parse(arguments)?;
-            modules::handle(globals, args.course, args.items)
-                .await
-                .into()
+            modules::handle(globals, args.course, args.items).await
         }
         "pages.list" => {
             let args: PagesListArgs = parse(arguments)?;
-            pages::handle_list(globals, args.course, args.unpublished)
-                .await
-                .into()
+            pages::handle_list(globals, args.course, args.unpublished).await
         }
         "page.get" => {
             let args: PageGetArgs = parse(arguments)?;
-            pages::handle_show(globals, args.course, args.page)
-                .await
-                .into()
+            pages::handle_show(globals, args.course, args.page).await
         }
         "syllabus.get" => {
             let args: SyllabusGetArgs = parse(arguments)?;
-            pages::handle_syllabus(globals, args.course).await.into()
+            pages::handle_syllabus(globals, args.course).await
         }
         "announcements.list" => {
             let args: AnnouncementsListArgs = parse(arguments)?;
-            announcements::handle(globals, args.course, args.since, args.unread)
-                .await
-                .into()
+            announcements::handle(globals, args.course, args.since, args.unread).await
         }
         "announcement.get" => {
             let args: AnnouncementGetArgs = parse(arguments)?;
-            announcement::handle(globals, args.course, args.id)
-                .await
-                .into()
+            announcement::handle(globals, args.course, args.id).await
         }
         "discussions.list" => {
             let args: DiscussionsListArgs = parse(arguments)?;
-            discussions::handle_list(globals, args.course, args.unread)
-                .await
-                .into()
+            discussions::handle_list(globals, args.course, args.unread).await
         }
         "discussion.get" => {
             let args: DiscussionGetArgs = parse(arguments)?;
@@ -721,19 +698,18 @@ pub async fn dispatch(
                 args.page,
             )
             .await
-            .into()
         }
         "inbox.list" => {
             let args: InboxListArgs = parse(arguments)?;
-            inbox::handle_list(globals, args.scope).await.into()
+            inbox::handle_list(globals, args.scope).await
         }
         "inbox.get" => {
             let args: InboxGetArgs = parse(arguments)?;
-            inbox::handle_show(globals, args.id).await.into()
+            inbox::handle_show(globals, args.id).await
         }
         "inbox.unread_count" => {
             let _args: InboxUnreadCountArgs = parse(arguments)?;
-            inbox::handle_unread_count(globals).await.into()
+            inbox::handle_unread_count(globals).await
         }
         "calendar.list" => {
             let args: CalendarListArgs = parse(arguments)?;
@@ -749,7 +725,6 @@ pub async fn dispatch(
                 },
             )
             .await
-            .into()
         }
         "submission.get" => {
             let args: SubmissionGetArgs = parse(arguments)?;
@@ -762,7 +737,6 @@ pub async fn dispatch(
                 },
             )
             .await
-            .into()
         }
         "receipts.list" => {
             let args: ReceiptsListArgs = parse(arguments)?;
@@ -773,11 +747,10 @@ pub async fn dispatch(
                     state: args.state,
                 },
             )
-            .into()
         }
         "receipts.show" => {
             let args: ReceiptsShowArgs = parse(arguments)?;
-            receipts::handle(globals, receipts::ReceiptsCmd::Show { id: args.id }).into()
+            receipts::handle(globals, receipts::ReceiptsCmd::Show { id: args.id })
         }
         other => return Err(format!("unknown tool {other}")),
     })
