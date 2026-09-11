@@ -766,9 +766,10 @@ pub struct SubmitResult {
     pub journal_id: String,
     /// True when this envelope reports a journal that already existed.
     ///
-    /// `submission.execute` on a plan that is already executed returns the
-    /// linked journal rather than a second one (SPEC §19 item 17). The human
-    /// `submit` never reaches that path, so it always reports `false`.
+    /// `submission.execute` returned the linked journal rather than a second
+    /// one when a plan was already executed (SPEC §19 item 17). That tool left
+    /// the catalog in M9, so nothing reaches the path now and the field is
+    /// always `false`; §19 items 17 and 49 own the rule (SPEC §12.2).
     #[serde(default)]
     pub replayed: bool,
     #[serde(default)]
@@ -2291,7 +2292,7 @@ pub struct HereBrowserJson {
     /// Why `selection` and `text` are absent, when they are: `zone_opaque`,
     /// `validating`, or `account_mismatch`.
     pub content_reason: Option<String>,
-    /// The last `context.follow` this consumer asked for, with the load
+    /// The last `canvas open --follow` this consumer asked for, with the load
     /// outcome as it stands now. `null` when none was asked for.
     ///
     /// It lives in `browser` because it is an observation of the browser, and
@@ -2303,7 +2304,7 @@ pub struct HereBrowserJson {
     pub notes: Vec<NoteJson>,
 }
 
-/// One `context.follow`, from dispatch to load.
+/// One `canvas open --follow`, from dispatch to load.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowJson {
     pub request_id: String,
