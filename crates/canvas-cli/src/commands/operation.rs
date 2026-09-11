@@ -13,21 +13,19 @@ use std::process::ExitCode;
 
 use canvas_core::operations::{
     Admitted as OpAdmitted, DiscussionReplyRequest, InboxReplyRequest, InboxSendRequest, OpState,
-    OperationError, OperationRow, OperationTarget, PreparedOperation, Reconciled, Verdict,
+    OperationError, OperationRow, PreparedOperation, Reconciled, Verdict,
 };
-use canvas_core::plan::{ApprovalChannel, PlanState};
+use canvas_core::plan::ApprovalChannel;
 
 use super::Globals;
 use super::emit::{base_envelope, emit_error, require_client, session_error, sync_error};
 use super::handled::Handled;
 use super::submit::{
-    Admitted, Pending, Refusal, cancel_plan, confirm_tty, map_plan_error, plan_refusal,
-    plan_refusal_with, record_approval, render_plan, selected_error,
+    cancel_plan, confirm_tty, map_plan_error, plan_refusal, record_approval, selected_error,
 };
 use crate::output::{
     Freshness, OperationMatchJson, OperationReadbackJson, OperationReconcileResult,
-    OperationResult, Outcome, PlanJson, PlanResult, SCHEMA_OPERATION, SCHEMA_OPERATION_RECONCILE,
-    SCHEMA_PLAN,
+    OperationResult, Outcome, SCHEMA_OPERATION, SCHEMA_OPERATION_RECONCILE,
 };
 use crate::session::Session;
 
@@ -151,7 +149,7 @@ pub async fn handle_write(globals: &Globals, args: WriteArgs) -> Handled {
     // The human flow approves the plan it just froze, so a plan that already
     // admitted a journal is a refusal here (SPEC §19 item 17 covers the agent
     // surface, which replays instead).
-    run_plan(&session, client, &plan_id, freshness, OnExisting::Refuse).await
+    run_plan(&session, client, &plan_id, freshness).await
 }
 
 /// A frozen operation plan, the session holding it, and the reads it cost.
@@ -159,15 +157,6 @@ struct Frozen {
     session: Session,
     prepared: PreparedOperation,
     freshness: Vec<Freshness>,
-}
-
-/// What [`run_plan`] does with a plan that already admitted a journal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OnExisting {
-    /// Refuse with exit 8.
-    Refuse,
-    /// Return the linked journal with `replayed: true` (SPEC §19 item 17).
-    Replay,
 }
 
 /// Freeze one operation without approving anything.
@@ -322,7 +311,6 @@ async fn run_plan(
     client: &canvas_api::Client,
     plan_id: &str,
     freshness: Vec<Freshness>,
-    on_existing: OnExisting,
 ) -> Handled {
     let (journal_id, owner) = match canvas_core::operations::execute(
         client,
@@ -336,15 +324,12 @@ async fn run_plan(
     {
         Ok(OpAdmitted::Created { journal_id, owner }) => (journal_id, owner),
         Ok(OpAdmitted::Existing { journal_id }) => {
-            return match on_existing {
-                OnExisting::Refuse => selected_error(
-                    session,
-                    "refused",
-                    &format!("plan already executed as journal {journal_id}"),
-                    8,
-                ),
-                OnExisting::Replay => replayed_journal(session, &journal_id, freshness),
-            };
+            return selected_error(
+                session,
+                "refused",
+                &format!("plan already executed as journal {journal_id}"),
+                8,
+            );
         }
         Err(e) => return map_operation_error(session, e),
     };
@@ -361,20 +346,6 @@ async fn run_plan(
                 _ => map_operation_error(session, e),
             }
         }
-    }
-}
-
-/// The `operation@1` envelope of the journal a plan already admitted.
-fn replayed_journal(session: &Session, journal_id: &str, freshness: Vec<Freshness>) -> Handled {
-    match canvas_core::operations::get(&session.open.store, journal_id) {
-        Ok(Some(row)) => emit_operation(session, &row, freshness, true, None),
-        Ok(None) => selected_error(
-            session,
-            "local",
-            &format!("plan is linked to journal {journal_id}, which is missing"),
-            13,
-        ),
-        Err(e) => map_operation_error(session, e),
     }
 }
 
@@ -786,199 +757,6 @@ fn print_plan(prepared: &PreparedOperation) {
         );
     }
     let _ = writeln!(out, "  expires {}", plan.expires_at);
-}
-
-// ------------------------------------------------------- the agent surface
-
-/// `discussion.reply.prepare`, `inbox.send.prepare`, `inbox.reply.prepare`.
-///
-/// Nothing reaches Canvas beyond the reads that check the target. The stored
-/// plan is `prepared`, and `plan_id` is what the matching `execute` needs.
-pub async fn agent_prepare(globals: &Globals, args: WriteArgs, consumer: &str) -> Handled {
-    let frozen = match freeze(globals, args, Some(consumer)).await {
-        Ok(frozen) => frozen,
-        Err(handled) => return handled,
-    };
-    let Frozen {
-        session,
-        prepared,
-        freshness,
-    } = *frozen;
-    let result = PlanResult {
-        plan: PlanJson::of(&prepared.plan),
-    };
-    let mut envelope = base_envelope(SCHEMA_PLAN, &session, result);
-    envelope.freshness = freshness;
-    envelope.requests = session.requests();
-    envelope
-        .warnings
-        .push("this plan needs a recorded human approval before anything is sent".to_owned());
-    Handled::new(envelope, move |envelope| {
-        render_plan(io::stdout(), &envelope.result)
-    })
-}
-
-/// `discussion.reply.execute` and both inbox executes: run an approved plan,
-/// or ask for the approval.
-pub async fn agent_execute(globals: &Globals, plan_id: &str, consumer: &str) -> Admitted {
-    let session = match globals.open_session() {
-        Ok(s) => s,
-        Err(e) => return Admitted::Done(session_error(e, globals.profile.clone())),
-    };
-    let plan = match canvas_core::plan::require(&session.open.store, plan_id) {
-        Ok(plan) => plan,
-        Err(e) => return Admitted::Done(map_plan_error(&session, e)),
-    };
-    if !plan.kind.is_operation() {
-        return Admitted::Done(plan_refusal(
-            &session,
-            "invalidated",
-            "this plan is a submission; use submission.execute",
-        ));
-    }
-    // An executed plan replays its journal, and that is a local read: it
-    // answers even when the network is gone (SPEC §19 item 17).
-    if plan.state == PlanState::Executed {
-        return Admitted::Done(match &plan.journal_id {
-            Some(journal_id) => replayed_journal(&session, journal_id, Vec::new()),
-            None => plan_refusal(&session, "invalidated", "executed plan has no journal"),
-        });
-    }
-    if plan.state == PlanState::Prepared {
-        let handle =
-            match canvas_core::plan::issue_handle(&session.open.store, plan_id, Some(consumer)) {
-                Ok(handle) => handle,
-                Err(e) => return Admitted::Done(map_plan_error(&session, e)),
-            };
-        return Admitted::NeedsApproval(Box::new(Pending {
-            plan_id: plan.plan_id.clone(),
-            handle,
-            summary: plan_summary(&plan),
-            plan: PlanJson::of(&plan),
-        }));
-    }
-    let client = match require_client(globals, &session) {
-        Ok(c) => c,
-        Err(code) => return Admitted::Done(code),
-    };
-    Admitted::Done(run_plan(&session, client, plan_id, Vec::new(), OnExisting::Replay).await)
-}
-
-/// Record an elicited approval and dispatch the operation plan.
-pub async fn agent_approve(
-    globals: &Globals,
-    plan_id: &str,
-    handle: &str,
-    consumer: &str,
-) -> Handled {
-    let session = match globals.open_session() {
-        Ok(s) => s,
-        Err(e) => return session_error(e, globals.profile.clone()),
-    };
-    if let Err(e) = canvas_core::plan::approve(
-        &session.open.store,
-        plan_id,
-        handle,
-        ApprovalChannel::Elicitation,
-        Some(consumer),
-        crate::output::now_timestamp(),
-    ) {
-        return map_plan_error(&session, e);
-    }
-    let client = match require_client(globals, &session) {
-        Ok(c) => c,
-        Err(code) => return code,
-    };
-    run_plan(&session, client, plan_id, Vec::new(), OnExisting::Replay).await
-}
-
-/// A person declined or cancelled the operation: invalidate the plan.
-pub fn agent_refuse(globals: &Globals, plan_id: &str, refusal: Refusal) -> Handled {
-    let session = match globals.open_session() {
-        Ok(s) => s,
-        Err(e) => return session_error(e, globals.profile.clone()),
-    };
-    let invalidated = match refusal {
-        Refusal::Declined => canvas_core::plan::decline(&session.open.store, plan_id),
-        Refusal::Cancelled => canvas_core::plan::cancel(&session.open.store, plan_id),
-    };
-    if let Err(e) = invalidated {
-        return map_plan_error(&session, e);
-    }
-    let message = match refusal {
-        Refusal::Declined => "operation declined",
-        Refusal::Cancelled => "operation cancelled",
-    };
-    selected_error(&session, "cancelled", message, 11)
-}
-
-/// The refusal a host that cannot ask a person gets (REPORT §3.2).
-pub fn agent_approval_required(globals: &Globals, pending: &Pending) -> Handled {
-    let session = match globals.open_session() {
-        Ok(s) => s,
-        Err(e) => return session_error(e, globals.profile.clone()),
-    };
-    plan_refusal_with(
-        &session,
-        "this operation needs a recorded human approval, and this host declared no elicitation \
-         support",
-        serde_json::json!({
-            "reason": "approval_required",
-            "plan_id": pending.plan_id,
-            "handle": pending.handle,
-        }),
-    )
-}
-
-/// One line naming what an operation plan is about to send.
-pub fn plan_summary(plan: &canvas_core::plan::PlanRow) -> String {
-    let Some(operation) = &plan.operation else {
-        return plan.kind.as_str().to_owned();
-    };
-    let attachments = match operation.attachments.len() {
-        0 => String::new(),
-        1 => " with 1 attachment".to_owned(),
-        n => format!(" with {n} attachments"),
-    };
-    match &operation.target {
-        OperationTarget::DiscussionReply {
-            topic_id,
-            parent_entry_id,
-            ..
-        } => {
-            let title = operation
-                .labels
-                .topic_title
-                .as_deref()
-                .map_or_else(|| format!("topic {topic_id}"), |t| format!("\"{t}\""));
-            match parent_entry_id {
-                Some(entry) => {
-                    format!("Post a public reply to entry {entry} in {title}{attachments}.")
-                }
-                None => format!("Post a public reply in {title}{attachments}."),
-            }
-        }
-        OperationTarget::InboxSend { recipients } => {
-            let who = if operation.labels.recipients.is_empty() {
-                recipients.join(", ")
-            } else {
-                operation.labels.recipients.join(", ")
-            };
-            let subject = operation
-                .subject
-                .as_deref()
-                .map_or_else(String::new, |s| format!(" with subject \"{s}\""));
-            format!("Send a new conversation to {who}{subject}{attachments}.")
-        }
-        OperationTarget::InboxReply { conversation_id } => {
-            let subject = operation
-                .labels
-                .conversation_subject
-                .as_deref()
-                .map_or_else(String::new, |s| format!(" (\"{s}\")"));
-            format!("Add a message to conversation {conversation_id}{subject}{attachments}.")
-        }
-    }
 }
 
 // ------------------------------------------------------------------- helpers
