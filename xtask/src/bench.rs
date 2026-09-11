@@ -1150,11 +1150,15 @@ fn document(
         writeln!(out, "### What `tools/list` costs\n")?;
         writeln!(
             out,
-            "The bytes the whole tool list puts on the wire, which a host \
-             pays once per session before the model has read anything. The \
-             token column is an estimate: one token per {} bytes of UTF-8. \
-             That is a rule of thumb for JSON with English identifiers, not a \
-             tokenizer run; the byte column is exact.\n\n\
+            "The bytes of the tool definitions a host pays for once per \
+             session, before the model has read anything. This is the \
+             definitions alone, which is what makes it comparable with the \
+             catalogs below; the whole `tools/list` result carries its \
+             `ttlMs` and `cacheScope` on top, and `crates/canvas-cli/tests/\
+             mcp.rs` measures that on the wire. The token column is an \
+             estimate: one token per {} bytes of UTF-8. That is a rule of \
+             thumb for JSON with English identifiers, not a tokenizer run; \
+             the byte column is exact.\n\n\
              The surface is one tool and it declares no output schema, so \
              there is nothing here but a name, a title, a description, and an \
              empty argument object. The 22-tool catalog this replaced cost \
