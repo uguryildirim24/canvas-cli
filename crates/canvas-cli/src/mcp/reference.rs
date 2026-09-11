@@ -151,7 +151,10 @@ fn describe(command: &Command, path: &str, out: &mut String) {
     if let Some(about) = command.get_about() {
         let _ = writeln!(out, "{about}\n");
     }
-    let _ = writeln!(out, "    {}{}\n", path, usage_tail(command));
+    for line in usage_lines(command, path) {
+        let _ = writeln!(out, "    {line}");
+    }
+    out.push('\n');
 
     let operands: Vec<&Arg> = visible_args(command)
         .filter(|arg| arg.is_positional())
@@ -198,36 +201,67 @@ fn visible_args(command: &Command) -> impl Iterator<Item = &Arg> {
     })
 }
 
-/// The `[OPTIONS] <OPERAND>...` tail of a usage line.
-fn usage_tail(command: &Command) -> String {
-    let mut tail = String::new();
-    if visible_args(command).any(|arg| !arg.is_positional()) {
-        tail.push_str(" [OPTIONS]");
-    }
-    for arg in visible_args(command).filter(|arg| arg.is_positional()) {
-        tail.push(' ');
-        tail.push_str(&operand(arg));
-    }
-    if command.get_subcommands().next().is_some() {
-        tail.push_str(" <SUBCOMMAND>");
-    }
-    tail
+/// The usage lines of one command, as clap itself spells them.
+///
+/// clap renders them from the same tree it parses with, so the reference
+/// cannot claim a spelling the binary would reject: a required option
+/// (`--to <TO>`), a required one-of group (`<--text <TEXT>|--text-file
+/// <TEXT_FILE>>`), an optional subcommand, and a command with two alternative
+/// forms all come out the way `canvas <command> --help` prints them. Rolling
+/// this by hand is what made `canvas inbox` read as `<SUBCOMMAND>`-only and
+/// lost every required group.
+///
+/// The clone carries `path` as its binary name so the lines read
+/// `canvas inbox send`, and drops `--help`, which is described once in the
+/// preamble and would otherwise put `[OPTIONS]` on commands that take none.
+fn usage_lines(command: &Command, path: &str) -> Vec<String> {
+    let mut spelled = command
+        .clone()
+        .bin_name(path.to_owned())
+        .disable_help_flag(true);
+    spelled
+        .render_usage()
+        .to_string()
+        .lines()
+        .map(|line| {
+            line.trim_start()
+                .trim_start_matches("Usage:")
+                .trim()
+                .to_owned()
+        })
+        .filter(|line| !line.is_empty())
+        .collect()
 }
 
-/// A positional argument: `<COURSE>`, `[COURSE]`, or `<FILE>...`.
+/// A positional argument: `<COURSE>`, `[COURSE]`, or `<COURSE> [ASSIGNMENT]...`.
+///
+/// One positional can stand for several values — `canvas submission` takes a
+/// course and then an assignment through a single `1..=2` argument — so every
+/// value name is spelled, not just the first. Only the first `min_values` of
+/// them are required, which is what makes the second one `[ASSIGNMENT]`.
 fn operand(arg: &Arg) -> String {
-    let mut name = arg
+    let names: Vec<String> = arg
         .get_value_names()
-        .and_then(|names| names.first().map(ToString::to_string))
-        .unwrap_or_else(|| arg.get_id().as_str().to_ascii_uppercase());
+        .map(|names| names.iter().map(ToString::to_string).collect())
+        .filter(|names: &Vec<String>| !names.is_empty())
+        .unwrap_or_else(|| vec![arg.get_id().as_str().to_ascii_uppercase()]);
+    let required = arg.get_num_args().map_or(1, |range| range.min_values());
+    let mut spelling = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            if arg.is_required_set() && index < required {
+                format!("<{name}>")
+            } else {
+                format!("[{name}]")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
     if takes_many(arg) {
-        name.push_str("...");
+        spelling.push_str("...");
     }
-    if arg.is_required_set() {
-        format!("<{name}>")
-    } else {
-        format!("[{name}]")
-    }
+    spelling
 }
 
 /// A flag or an option, as it is typed.
@@ -277,7 +311,8 @@ fn help_of(arg: &Arg) -> String {
         .map(|value| value.get_name().to_owned())
         .collect();
     if !values.is_empty() {
-        let _ = write!(text, " One of: {}.", values.join(", "));
+        end_sentence(&mut text);
+        let _ = write!(text, "One of: {}.", values.join(", "));
     }
     let defaults: Vec<String> = arg
         .get_default_values()
@@ -285,9 +320,26 @@ fn help_of(arg: &Arg) -> String {
         .map(|value| value.to_string_lossy().into_owned())
         .collect();
     if !defaults.is_empty() {
-        let _ = write!(text, " Default: {}.", defaults.join(", "));
+        end_sentence(&mut text);
+        let _ = write!(text, "Default: {}.", defaults.join(", "));
     }
     text.trim().to_owned()
+}
+
+/// Close whatever `text` holds so the next sentence starts as one.
+///
+/// A clap help string carries no trailing stop, so appending straight to it
+/// read as "Which Chromium-family browser to install for One of: chrome".
+fn end_sentence(text: &mut String) {
+    let trimmed = text.trim_end();
+    text.truncate(trimmed.len());
+    if text.is_empty() {
+        return;
+    }
+    if !text.ends_with(['.', '!', '?', ':']) {
+        text.push('.');
+    }
+    text.push(' ');
 }
 
 /// What this command prints, from the same registry `canvas schema` reads.
@@ -354,6 +406,72 @@ mod tests {
             }
         }
         assert!(checked > 40, "only {checked} commands were described");
+    }
+
+    /// Every command's usage line is clap's own, so a spelling the reference
+    /// prints is a spelling the binary accepts.
+    ///
+    /// This is the test the first cut did not have. A hand-rolled tail lost
+    /// every required argument group and every required option, and told an
+    /// agent that `canvas inbox` needs a subcommand when the bare form is the
+    /// read, so a model that followed the reference earned exit 2.
+    #[test]
+    fn every_usage_line_is_the_one_the_command_itself_prints() {
+        let text = reference();
+        let root = canvas_cli::dist::command();
+        let mut stack: Vec<(String, Command)> = root
+            .get_subcommands()
+            .map(|sub| (format!("canvas {}", sub.get_name()), sub.clone()))
+            .collect();
+        let mut checked = 0;
+        while let Some((path, command)) = stack.pop() {
+            if command.is_hide_set() || command.get_name() == "help" {
+                continue;
+            }
+            for line in usage_lines(&command, &path) {
+                assert!(
+                    text.contains(&format!("\n    {line}\n")),
+                    "{path} is not spelled the way it parses: {line}"
+                );
+                checked += 1;
+            }
+            for sub in command.get_subcommands() {
+                stack.push((format!("{path} {}", sub.get_name()), sub.clone()));
+            }
+        }
+        assert!(checked > 40, "only {checked} usage lines were checked");
+    }
+
+    /// A required option and a required one-of group are on the usage line.
+    ///
+    /// These are the three writes and the two commands an agent cannot run at
+    /// all without them, spelled out here so the check does not depend on
+    /// clap's rendering staying identical.
+    #[test]
+    fn the_writes_say_what_they_cannot_run_without() {
+        let text = reference();
+        for required in [
+            "canvas submit [OPTIONS] <--file <FILES>|--text <TEXT>|--html <HTML>|--url <URL>> \
+             <TARGET> [ASSIGNMENT]",
+            "canvas inbox send [OPTIONS] --to <TO> <--text <TEXT>|--text-file <TEXT_FILE>>",
+            "canvas inbox reply [OPTIONS] <--text <TEXT>|--text-file <TEXT_FILE>> \
+             <CONVERSATION_ID>",
+            "canvas discussion reply [OPTIONS] <--text <TEXT>|--text-file <TEXT_FILE>> \
+             <COURSE> <DISCUSSION>",
+            "canvas download [OPTIONS] <COURSE|--all-courses>",
+            "canvas note [OPTIONS] --text <TEXT>",
+        ] {
+            assert!(
+                text.contains(required),
+                "the reference never spells: {required}"
+            );
+        }
+        // A command whose subcommand is optional says so, and its bare form
+        // is the one the skill's own workflows run.
+        assert!(text.contains("canvas inbox [OPTIONS] [COMMAND]"), "{text}");
+        assert!(text.contains("canvas open [OPTIONS] <TARGET>"), "{text}");
+        // One positional can stand for two values, and both are named.
+        assert!(text.contains("<COURSE> [ASSIGNMENT]..."), "{text}");
     }
 
     /// The reference names the writes as commands, with their flags.
