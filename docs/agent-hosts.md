@@ -6,17 +6,27 @@ what each one negotiated, and what stayed untested. A host that is not in the
 table below was not exercised, and a row never claims more than the session
 log shows.
 
-Recorded 2026-09-10 on macOS 26.6.2, arm64, from `lane/w2`.
+Recorded 2026-09-10 on macOS 26.6.2, arm64, from `lane/w2`, against a
+22-tool catalog. The catalog grew to 43 tools after these runs and was
+narrowed back to the same 22 reads later the same day (SPEC §19 item 48);
+the tool counts below therefore match the current build, but **no row was
+re-run against it**.
 
 ## What ran
 
-| Host | Version | Connected | Revision | `tools/list` | `resources/list` | Elicitation declared | `input_required` exercised |
-|---|---|---|---|---|---|---|---|
-| Claude Code (CLI) | 2.1.267 | yes | `2025-11-25` | 22 tools | not requested | yes, `elicitation: {}` | no |
-| Cursor (`cursor-agent`) | 2026.09.08-6caf4ff (client id `Cursor 1.0.0`) | yes | `2025-11-25` | 22 tools | 2 resources | yes, `elicitation: { form: {} }` | no |
-| Codex CLI | 0.153.4 | not exercised | — | — | — | — | no |
-| Project harness (`crates/canvas-cli/tests/mcp.rs`) | this build | yes | `2026-07-28` and `2025-11-25` | 22 tools | 2 resources + 2 templates | yes and no, both cases | yes |
-| Project harness (`cargo xtask bench --mcp`) | this build | yes | `2026-07-28` | 22 tools | not requested | no | no |
+`input_required` has no column any more: the server no longer implements
+that round trip, because no tool in the catalog acts (SPEC §21.2).
+
+| Host | Version | Connected | Revision | `tools/list` | `resources/list` | Elicitation declared |
+|---|---|---|---|---|---|---|
+| Claude Code (CLI) | 2.1.267 | yes | `2025-11-25` | 22 tools | not requested | yes, `elicitation: {}` |
+| Cursor (`cursor-agent`) | 2026.09.08-6caf4ff (client id `Cursor 1.0.0`) | yes | `2025-11-25` | 22 tools | 2 resources | yes, `elicitation: { form: {} }` |
+| Codex CLI | 0.153.4 | not exercised | — | — | — | — |
+| Project harness (`crates/canvas-cli/tests/mcp.rs`) | this build | yes | `2026-07-28` and `2025-11-25` | 22 tools | 2 resources + 2 templates | yes and no, both cases |
+| Project harness (`cargo xtask bench --mcp`) | this build | yes | `2026-07-28` | 22 tools | not requested | no |
+
+A host that declares elicitation is never asked for one. The declaration is
+recorded because it is what the host sent, not because the server uses it.
 
 ## How each row was produced
 
@@ -41,10 +51,11 @@ inferred from a screen.
   configuration was removed afterwards. **Nothing about Codex's handshake is
   claimed here.**
 - **The project harnesses.** `crates/canvas-cli/tests/mcp.rs` speaks
-  hand-written JSON-RPC over a real pipe, and it is the only client here that
-  exercises the whole approval round trip: `input_required`, the retry with
-  `inputResponses`, accept, decline, cancel, the replay, and the
-  `approval_required` refusal a host without elicitation gets.
+  hand-written JSON-RPC over a real pipe. It is the only client here that
+  exercises both protocol revisions, the resource namespace, and the
+  subscription cursor. It also pins that every tool on the wire is a read,
+  that each of the 21 removed names is `METHOD_NOT_FOUND`, and that a request
+  carrying a `requestState` is refused.
   `cargo xtask bench --mcp` is a second hand-written client, used for the
   numbers in [`bench.md`](bench.md).
 
@@ -66,17 +77,20 @@ Running the hosts found one real defect, now fixed:
   with `path: ["tools", 0, "outputSchema", "type"]`. Both branches of the
   union are objects, so the union now says `"type": "object"` as well. After
   that, Cursor listed all 22 tools.
-  `mcp::catalog::tests::every_output_schema_admits_both_shapes` pins it.
+  `mcp::catalog::tests::every_output_schema_admits_both_shapes` pins it, and
+  still does over the narrowed catalog.
 
 ## What stayed untested
 
-- **The approval round trip in a third-party host.** Both connected hosts
-  declare elicitation, but neither `claude mcp list` nor
+- **Any tool call in a third-party host.** Neither `claude mcp list` nor
   `cursor-agent mcp list-tools` calls a tool, and driving a tool call needs a
-  model turn. So `input_required` is verified only against the project's own
-  client. **No claim is made that Claude Code or Cursor renders the approval
-  form correctly.**
+  model turn. Both hosts loaded the catalog; **no claim is made that either
+  one renders a result correctly.**
 - **Codex's handshake**, for the reason above.
+- **Every row against the current build.** The two third-party runs predate
+  the M9 narrowing. They are kept because the catalog they loaded is the same
+  size and holds the same 22 reads, and because the defect one of them found
+  is still pinned by a test — but they were not repeated.
 - **Every host's GUI.** Only the three command-line interfaces were run.
   Claude Desktop, the Cursor editor, and the Codex IDE extension were not.
 - **A real Canvas instance.** The identity used here points at a local mock
