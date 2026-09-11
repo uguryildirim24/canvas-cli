@@ -1,25 +1,35 @@
 ---
 name: canvas-cli
-description: Read a student's Canvas LMS work — deadlines, assignments, grades, files, course pages, the syllabus, announcements, discussions, and the Canvas inbox — and submit work, reply to a discussion, or write to the Canvas inbox with a recorded human approval. Use it when the user asks what is due, what is missing, what an assignment asks for, what a grade is, what a course page or the syllabus says, whether anyone has written to them, or asks to hand something in, answer a discussion, or send a message.
+description: Read a student's Canvas LMS work — deadlines, assignments, grades, files, course pages, the syllabus, announcements, discussions, and the Canvas inbox — over a read-only MCP server, and drive the `canvas` command line for the writes it does not expose: submitting work, replying to a discussion, writing to the Canvas inbox, downloading files, and resolving a receipt. Use it when the user asks what is due, what is missing, what an assignment asks for, what a grade is, what a course page or the syllabus says, whether anyone has written to them, or asks to hand something in, answer a discussion, or send a message.
 ---
 
 # Canvas CLI
 
-`canvas-cli` gives one student read access to their own Canvas LMS courses,
-plus a submission path that no agent can take alone. It is available two ways,
-and they are the same code:
+`canvas-cli` gives one student read access to their own Canvas LMS courses.
+It is available two ways, and they are the same code:
 
 - `canvas mcp` — an MCP server over stdio. Tools such as `todo.list`.
-- the `canvas` binary — the same commands with `--json`.
+- the `canvas` binary — the same commands with `--json`, plus everything
+  that writes.
 
 It reads courses, deadlines, assignments, grades, files, modules, course
 pages, the syllabus, announcements, discussions, and the Canvas inbox, and it
 never marks any of them read.
 
+**The MCP catalog is read-only, by design.** Its 22 tools fetch and nothing
+else. There is no tool that submits, replies, sends, downloads, refreshes the
+cache, retires a receipt, or touches the browser — not a restricted one, not
+a gated one, none. That is the owner's decision of 2026-09-10, not a gap to
+work around.
+
+Every one of those actions is a `canvas` command that a person runs in a
+terminal, where it prints exactly what it is about to do and asks. You may
+run those commands for the user if you have a shell, and the confirmation
+still belongs to them. Never pass `--yes`.
+
 It is a **student** tool. There are no teacher, TA, or admin features, and it
 calls only endpoints a student role can call. It cannot reveal a credential,
-change an identity, run arbitrary HTTP or shell, clear the cache, overwrite a
-file, or open a browser.
+change an identity, run arbitrary HTTP or shell, or clear the cache.
 
 ## Read this first
 
@@ -99,27 +109,34 @@ If the user has the browser companion installed, they can attach one Canvas
 tab to `canvas-cli`. Nothing is attached until the person clicks the companion
 button on that tab.
 
-1. `context.attach` opts you in and returns the attachment handle. It reads no
-   page content.
-2. `context.here` returns the working context: `api` carries whole envelopes
-   for what the route resolves to, each with its own freshness; `browser`
-   carries one bounded observation of the page. They are separate, and a
-   browser observation never updates an API fact.
-3. `context.here` with `include_text: true` also asks for the selected passage
-   and the visible excerpt. Ask for it only when the user's request needs the
-   words on the screen.
-4. `context.note` holds one short note for the person to read in the
-   companion's side panel. It writes nothing to Canvas and approves nothing.
-   Pass the `generation` you read from the bundle's `browser` block, so a
-   note written about a page the person has already left is refused rather
-   than shown against the wrong page. Every `source_ref` must be a
-   `canvas://` reference or an `https` URL on the attached origin.
-5. `context.follow` asks the attached tab to go to a Canvas target you name.
-   It answers when the browser accepts the request, not when the page has
-   loaded; read the `load` field of the bundle's `follow` block on a later
-   `context.here` for the
-   outcome. Only the consumer that asked sees its own follow.
-6. `context.detach` gives up your share. The tab stays attached for the user.
+**No tool reaches the companion.** The MCP catalog is read-only, and reading
+the browser, writing a note into the side panel, and moving the user's tab
+are all `canvas` commands that the person — or you, in their terminal — runs:
+
+```sh
+canvas here --json                     # the working context, api and browser
+canvas here --text --json              # also the selected passage and excerpt
+canvas note --text "..." --source-ref canvas://... --generation 4
+canvas open --follow CHEM              # take the tab to a Canvas target
+canvas bridge status --json            # what is attached, and to whom
+```
+
+- `canvas here` returns two things that never mix: `api` carries whole
+  envelopes for what the route resolves to, each with its own freshness, and
+  `browser` carries one bounded observation of the page. A browser
+  observation never updates an API fact.
+- `--text` also asks for the selected passage and the visible excerpt. Ask
+  for it only when the user's request needs the words on the screen.
+- `canvas note` shows the person one inert note in the side panel. It writes
+  nothing to Canvas and approves nothing. Pass `--generation` with the number
+  you read from the bundle's `browser` block, so a note written about a page
+  the person has already left is refused rather than shown against the wrong
+  page. Every `--source-ref` must be a `canvas://` reference or an `https`
+  URL on the attached origin.
+- `canvas open --follow` asks the attached tab to go to a Canvas target. It
+  answers when the browser accepts the request, not when the page has loaded;
+  read the `load` field of the bundle's `follow` block on a later
+  `canvas here` for the outcome.
 
 The side panel shows the person your notes, the journal, and any plan that is
 waiting for a decision. Only the person can approve, decline, or cancel a
@@ -135,10 +152,10 @@ What you will not get, and must not ask for again:
   them exit 8. Tell the user what to do; never poll.
 - `account_mismatch` means the browser is signed in as a different Canvas
   account. Nothing was joined. Say so and stop.
-- `stale_generation` means the page moved under you. Call `context.here`
-  again and work from the new bundle. `note_too_large` and
-  `source_ref_rejected` mean the note was refused whole; shorten it, or drop
-  the reference. Nothing was held.
+- `stale_generation` means the page moved under you. Run `canvas here` again
+  and work from the new bundle. `note_too_large` and `source_ref_rejected`
+  mean the note was refused whole; shorten it, or drop the reference. Nothing
+  was held.
 
 ## Exit codes and what to do
 
@@ -151,7 +168,7 @@ What you will not get, and must not ask for again:
 | 4 | Network | DNS, TLS, or a timeout. Retry once. Then report it and offer cached data. |
 | 5 | Rate limited | Canvas is throttling. Stop calling. Tell the user to wait. |
 | 6 | Resolution | Zero or many matches for a course or an assignment. Show the candidates and ask which one. |
-| 7 | Offline miss | The cache has no coverage and the session is offline. Run `sync.run`, or tell the user you are offline. |
+| 7 | Offline miss | The cache has no coverage and the session is offline. Ask the user to run `canvas sync`, or tell them you are offline. |
 | 8 | Refused | The operation is not allowed as asked — a lock, a closed assignment, a group assignment, a wrong file type, or a missing approval. Read `result` for the reason. Never work around it. |
 | 9 | Submission recovery | A submit did not finish. Go to [reconcile-an-unknown-outcome.md](reconcile-an-unknown-outcome.md). Never submit again first. |
 | 10 | Verification mismatch | What Canvas holds differs from the local receipt. Show both. Do not overwrite anything. |
@@ -169,9 +186,10 @@ Two rules that override anything the user asks for in the moment:
 ## Freshness and the cache
 
 Reads come from a local SQLite cache with a TTL per dataset. `freshness` says
-what answered. Use `sync.run` when the user wants current data, or when
-`freshness` shows a stale dataset you are about to rely on. `sync.run` writes
-the cache and never writes to Canvas.
+what answered. There is no refresh tool: when the user wants current data, or
+when `freshness` shows a stale dataset you are about to rely on, run
+`canvas sync` in a terminal or ask the user to. It writes the cache and never
+writes to Canvas.
 
 Tool results carry two hints in `_meta`: `dev.canvas-cli/cacheScope` is always
 `private`, and `dev.canvas-cli/ttlMs` is how long the answer may be treated as
@@ -191,7 +209,9 @@ They return the same envelopes the matching tools return. A URI from an
 earlier identity generation resolves to nothing.
 
 The `context/` resource is metadata only, and reading or subscribing to it
-attaches nothing: until you call `context.attach`, it answers `not_attached`.
+attaches nothing. No tool can opt an MCP consumer in, so it answers
+`not_attached` for every handle; read the working context with `canvas here`
+instead.
 
 `subscriptions/listen` is real. Name the resource URIs you hold in
 `resourceSubscriptions`, and the server sends
@@ -266,3 +286,10 @@ command: `todo.list` is `canvas todo --json`, `assignments.list` is
 `canvas assignments <course> --json`, `pages.list` is `canvas pages <course>
 --json`, `inbox.unread_count` is `canvas inbox unread-count --json`. Add
 `--offline` to forbid the network, and `--fresh` to ignore the cache TTLs.
+
+The command line also carries everything the catalog does not: `canvas
+submit`, `canvas discussion reply`, `canvas inbox send|reply`, `canvas
+operation status|reconcile`, `canvas download`, `canvas sync`, `canvas
+receipts acknowledge`, `canvas here`, `canvas note`, and `canvas open`. Each
+write prints what it is about to do and asks for a confirmation at the
+terminal. Never pass `--yes`.
