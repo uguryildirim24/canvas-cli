@@ -328,17 +328,17 @@ fn install_writes_the_manifest_and_the_steps() {
     assert!(human.contains("Load unpacked"), "{human}");
 }
 
-/// M7-a acceptance, as M9 leaves it: no MCP consumer can opt in at all, so
-/// every `context/` resource reads `not_attached` while the person's own
-/// `canvas here` still sees the page.
+/// M7-a acceptance, as M9-b leaves it: the MCP surface cannot reach the
+/// browser at all, and the person's own `canvas here` still sees the page.
 ///
 /// The tools that opted a consumer in — `context.attach`, `context.here`,
 /// `context.detach` — left the catalog with the owner's read-only directive
-/// (§19 item 48). The resource template stays, and this pins what it now
-/// answers: reading it attaches nobody, a handle is not a name anyone may
-/// read under, and the browser side of the bundle is never released.
+/// (§19 item 48), and the `context/` resource that answered under a consumer
+/// handle was deleted with the whole resource namespace (§19 item 50). What
+/// is pinned here is that both are gone from the wire, and that neither the
+/// page nor the handle is readable through MCP by any route.
 #[test]
-fn no_mcp_consumer_can_attach_and_the_context_resource_reads_not_attached() {
+fn no_mcp_consumer_can_reach_the_browser_and_the_person_still_can() {
     let f = Fixture::new();
     let mut host = f.host(EXTENSION);
     host.recv_type("ready");
@@ -348,15 +348,14 @@ fn no_mcp_consumer_can_attach_and_the_context_resource_reads_not_attached() {
     wait_for("the endpoint", || exists(&f.endpoint()));
 
     let mut alpha = f.mcp("alpha");
-    let mut beta = f.mcp("beta");
-    let prefix = format!(
-        "canvas://{}/{}/context",
-        f.doc.key.as_str(),
-        f.doc.generation
-    );
 
-    // There is no tool that opts a consumer in, and no tool that reads the
-    // page: every `context.*` name is unroutable.
+    // One tool, and it is not a browser tool.
+    let listed = alpha.call("tools/list", json!({}));
+    let tools = listed["result"]["tools"].as_array().expect("tools");
+    assert_eq!(tools.len(), 1, "{listed}");
+    assert_eq!(tools[0]["name"], "getclitools");
+
+    // Every name that opted a consumer in or read the page is unroutable.
     for name in [
         "context.attach",
         "context.here",
@@ -374,31 +373,45 @@ fn no_mcp_consumer_can_attach_and_the_context_resource_reads_not_attached() {
         );
     }
 
-    // Reading the resource is not an opt-in, and without a tool that opts in
-    // there is nothing it can ever become.
-    // The third row is beta naming alpha's handle: a consumer handle is not
-    // a name anyone may read under (REPORT section 3.2).
-    for (alphas_turn, handle) in [
-        (true, "mcp:alpha"),
-        (false, "mcp:beta"),
-        (false, "mcp:alpha"),
-    ] {
-        let who = if alphas_turn { &mut alpha } else { &mut beta };
-        let read = who.call(
+    // The `context/` resource is gone with the rest of the namespace: a
+    // handle is not a name anyone may read under, because nothing is.
+    let prefix = format!(
+        "canvas://{}/{}/context",
+        f.doc.key.as_str(),
+        f.doc.generation
+    );
+    for handle in ["mcp:alpha", "mcp:beta"] {
+        let read = alpha.call(
             "resources/read",
             json!({ "uri": format!("{prefix}/{handle}") }),
         );
-        let text = read["result"]["contents"][0]["text"]
-            .as_str()
-            .expect("text");
-        let document: Value = serde_json::from_str(text).expect("json");
         assert_eq!(
-            document["result"]["reason"], "not_attached",
-            "{handle}: {document}"
+            read["error"]["code"], -32601,
+            "{handle} still reads: {read}"
         );
-        assert!(document["result"]["browser"].is_null(), "{document}");
-        assert!(!text.contains("Essay 1"), "a page reached MCP: {document}");
+        assert!(read["result"].is_null(), "{handle}: {read}");
     }
+    let listed = alpha.call("resources/list", json!({}));
+    assert_eq!(
+        listed["result"]["resources"].as_array().map(Vec::len),
+        Some(0),
+        "the server still lists a resource: {listed}"
+    );
+
+    // The reference the one tool hands out names `canvas here`, which is
+    // where the browser context actually lives.
+    let answer = alpha.call(
+        "tools/call",
+        json!({ "name": "getclitools", "arguments": {} }),
+    );
+    let text = answer["result"]["content"][0]["text"]
+        .as_str()
+        .expect("the reference");
+    assert!(
+        text.contains("### canvas here"),
+        "the reference omits `here`"
+    );
+    assert!(!text.contains("Essay 1"), "a page reached MCP: {text}");
 
     // The person's own view is untouched: the tab is still attached, and the
     // CLI still reads it.
@@ -407,6 +420,5 @@ fn no_mcp_consumer_can_attach_and_the_context_resource_reads_not_attached() {
     assert_eq!(still["result"]["browser"]["title"], "Essay 1");
 
     alpha.stop();
-    beta.stop();
     host.stop();
 }
