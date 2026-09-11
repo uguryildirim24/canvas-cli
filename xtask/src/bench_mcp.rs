@@ -1,15 +1,19 @@
 //! What the agent surface costs: `cargo xtask bench --mcp`.
 //!
-//! Three numbers, all measured against the same primed fixture the SPEC §13
-//! metrics use:
+//! The surface is one tool, `getclitools` (§21.2), so there are three
+//! numbers and they are all about what that one tool costs:
 //!
-//! - **Schema size per tool.** The bytes `tools/list` actually puts on the
-//!   wire for each tool, and a token estimate from them. A host pays this
-//!   once per session, before the model has read a single course.
-//! - **Warm `todo.list` round trip** over stdio, p50 and p95. The target is
+//! - **Schema size.** The bytes `tools/list` actually puts on the wire, and
+//!   a token estimate from them. A host pays this once per session, before
+//!   the model has read anything.
+//! - **Warm `getclitools` round trip** over stdio, p50 and p95. The target is
 //!   p95 < 100 ms, excluding model time.
-//! - **Tool calls per workflow** for the six workflows the shipped skill
-//!   documents. A workflow that needs four round trips costs four turns.
+//! - **Answer size.** The bytes the one call returns: the whole `canvas`
+//!   command reference, which the model reads once and then runs commands.
+//!
+//! There is no workflow table any more. Every step of every skill workflow is
+//! a `canvas` command the agent runs itself, so a workflow costs exactly one
+//! MCP round trip whatever it does next.
 //!
 //! The client here is hand-written JSON-RPC over the child's pipes, so the
 //! measured bytes and times are the ones a host sees.
@@ -25,6 +29,9 @@ use serde_json::{Value, json};
 
 /// The revision the measurement negotiates.
 const PROTOCOL: &str = "2026-07-28";
+
+/// The only tool the server serves (§19 item 50).
+const TOOL: &str = "getclitools";
 
 /// Round trips discarded before the timed ones.
 pub const WARMUP: u32 = 5;
@@ -61,32 +68,19 @@ impl Latency {
     }
 }
 
-/// One workflow of the shipped skill, as round trips.
-pub struct WorkflowCost {
-    pub name: &'static str,
-    /// The calls this benchmark issued, in order, with their outcome.
-    pub calls: Vec<(String, String)>,
-    /// Calls the workflow needs that this harness cannot issue.
-    pub unmeasured: usize,
-    /// Why those calls are unmeasured. Empty when there are none.
-    pub unmeasured_note: &'static str,
-    /// Wall-clock time of the measured calls, in milliseconds.
-    pub total_ms: f64,
-}
-
-impl WorkflowCost {
-    /// Round trips the workflow costs in full.
-    #[must_use]
-    pub fn total_calls(&self) -> usize {
-        self.calls.len() + self.unmeasured
-    }
+/// What the one call returns: the whole `canvas` command reference.
+pub struct ReferenceCost {
+    pub bytes: usize,
+    pub tokens: usize,
+    /// How many commands the reference describes.
+    pub commands: usize,
 }
 
 /// Everything `--mcp` adds to the report.
 pub struct Report {
     pub catalog: Vec<ToolCost>,
     pub latency: Latency,
-    pub workflows: Vec<WorkflowCost>,
+    pub reference: ReferenceCost,
 }
 
 impl Report {
@@ -188,115 +182,8 @@ impl Drop for Client {
     }
 }
 
-/// The outcome an envelope reports, for the workflow table.
-fn outcome_of(result: &Value) -> String {
-    let document = &result["structuredContent"];
-    let outcome = document["outcome"].as_str().unwrap_or("?");
-    let exit = document["exit"].as_u64().unwrap_or_default();
-    format!("{outcome} ({exit})")
-}
-
-/// One workflow of the skill: what to issue, and what stays unmeasured.
-struct Workflow {
-    name: &'static str,
-    calls: Vec<(&'static str, Value)>,
-    unmeasured: usize,
-    unmeasured_note: &'static str,
-}
-
-/// The six workflows the shipped skill documents.
-///
-/// Each entry is the sequence of tool calls this harness can issue offline,
-/// plus the count of turns the workflow needs that are not tool calls at all.
-/// Since the catalog became read-only (SPEC §19 item 48) every write in a
-/// workflow is a `canvas` command run at a terminal, so it costs a host turn
-/// and measures nothing here.
-fn workflows(course: i64, assignment: i64) -> Vec<Workflow> {
-    let course = course.to_string();
-    let assignment = assignment.to_string();
-    vec![
-        Workflow {
-            name: "organize the week",
-            calls: vec![("todo.list", json!({}))],
-            unmeasured: 0,
-            unmeasured_note: "",
-        },
-        Workflow {
-            name: "read an assignment",
-            calls: vec![
-                (
-                    "assignments.list",
-                    json!({ "course": course, "search": "Assignment 1" }),
-                ),
-                (
-                    "assignment.get",
-                    json!({ "course": course, "assignment": assignment }),
-                ),
-            ],
-            unmeasured: 0,
-            unmeasured_note: "",
-        },
-        Workflow {
-            name: "prepare and submit with approval",
-            calls: vec![
-                (
-                    "assignment.get",
-                    json!({ "course": course, "assignment": assignment }),
-                ),
-                (
-                    "submission.get",
-                    json!({ "course": course, "assignment": assignment }),
-                ),
-            ],
-            unmeasured: 1,
-            unmeasured_note: "`canvas submit`, which is a command, not a tool: it needs \
-                              the network, a real file, and a person at the terminal",
-        },
-        Workflow {
-            name: "reconcile an unknown outcome",
-            calls: vec![
-                ("receipts.list", json!({})),
-                (
-                    "submission.get",
-                    json!({ "course": course, "assignment": assignment }),
-                ),
-            ],
-            unmeasured: 1,
-            unmeasured_note: "`canvas submission reconcile`, a command, which needs an \
-                              unresolved journal",
-        },
-        Workflow {
-            name: "reply and message with approval",
-            calls: vec![
-                ("discussions.list", json!({ "course": course })),
-                ("inbox.list", json!({})),
-            ],
-            unmeasured: 2,
-            unmeasured_note: "the write command itself — `canvas discussion reply`, \
-                              `canvas inbox send`, or `canvas inbox reply` — and then \
-                              `canvas operation status`: both need the network and a \
-                              person at the terminal",
-        },
-        Workflow {
-            name: "download course files",
-            calls: vec![
-                ("files.list", json!({ "course": course, "tree": true })),
-                ("modules.list", json!({ "course": course, "items": true })),
-            ],
-            unmeasured: 2,
-            unmeasured_note: "`canvas download --dry-run` and then `canvas download`, \
-                              both commands, which need the network",
-        },
-    ]
-}
-
 /// Measure the agent surface. `command` builds a fresh `canvas` invocation.
-pub fn measure(
-    command: &dyn Fn() -> Command,
-    runs: u32,
-    course: i64,
-    assignment: i64,
-) -> Result<Report> {
+pub fn measure(command: &dyn Fn() -> Command, runs: u32) -> Result<Report> {
     let mut client = Client::start(command())?;
 
     // What a host pays before the model has read anything.
@@ -315,16 +202,21 @@ pub fn measure(
         });
     }
 
-    // Warm round trip of the command a session opens with.
+    // Warm round trip of the one call a session opens with.
     for _ in 0..WARMUP {
-        client.call("todo.list", &json!({}))?;
+        client.call(TOOL, &json!({}))?;
     }
     let mut samples = Vec::new();
+    let mut answer = String::new();
     for _ in 0..runs {
-        let (result, elapsed) = client.call("todo.list", &json!({}))?;
+        let (result, elapsed) = client.call(TOOL, &json!({}))?;
         if result["isError"] == json!(true) {
-            bail!("todo.list refused: {}", result["structuredContent"]);
+            bail!("{TOOL} refused: {result}");
         }
+        result["content"][0]["text"]
+            .as_str()
+            .context("the tool answered with no text")?
+            .clone_into(&mut answer);
         samples.push(elapsed);
     }
     let latency = Latency {
@@ -332,31 +224,21 @@ pub fn measure(
         p95: percentile(&samples, 0.95),
         runs,
     };
-
-    // Round trips per documented workflow.
-    let mut measured = Vec::new();
-    for workflow in workflows(course, assignment) {
-        let mut issued = Vec::new();
-        let mut total = 0.0;
-        for (tool, arguments) in workflow.calls {
-            let (result, elapsed) = client.call(tool, &arguments)?;
-            total += elapsed;
-            issued.push((tool.to_owned(), outcome_of(&result)));
-        }
-        measured.push(WorkflowCost {
-            name: workflow.name,
-            calls: issued,
-            unmeasured: workflow.unmeasured,
-            unmeasured_note: workflow.unmeasured_note,
-            total_ms: total,
-        });
-    }
+    let bytes = answer.len();
+    let reference = ReferenceCost {
+        bytes,
+        tokens: bytes.div_ceil(BYTES_PER_TOKEN),
+        commands: answer
+            .lines()
+            .filter(|line| line.starts_with("### "))
+            .count(),
+    };
 
     client.stop();
     Ok(Report {
         catalog,
         latency,
-        workflows: measured,
+        reference,
     })
 }
 
@@ -371,31 +253,9 @@ mod tests {
         assert_eq!(5_usize.div_ceil(BYTES_PER_TOKEN), 2);
     }
 
-    /// Every workflow the skill documents is measured, and every one that
-    /// cannot be measured in full says why.
+    /// The benchmark measures the tool the server actually serves.
     #[test]
-    fn the_six_skill_workflows_are_covered() {
-        let workflows = workflows(101, 10101);
-        let names: Vec<&str> = workflows.iter().map(|w| w.name).collect();
-        assert_eq!(
-            names,
-            [
-                "organize the week",
-                "read an assignment",
-                "prepare and submit with approval",
-                "reconcile an unknown outcome",
-                "reply and message with approval",
-                "download course files",
-            ]
-        );
-        for workflow in workflows {
-            let name = workflow.name;
-            assert!(!workflow.calls.is_empty(), "{name} issues no call");
-            assert_eq!(
-                workflow.unmeasured > 0,
-                !workflow.unmeasured_note.is_empty(),
-                "{name} does not explain its unmeasured calls"
-            );
-        }
+    fn the_measured_tool_is_the_only_tool() {
+        assert_eq!(TOOL, "getclitools");
     }
 }

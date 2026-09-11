@@ -1,12 +1,10 @@
 # Reply and message, with approval
 
 The user asks to answer a discussion, write to somebody, or answer a message
-in the Canvas inbox. **You cannot do any of it over MCP.** The tool catalog is
-reads only: there is no prepare tool, no execute tool, and no argument
-anywhere that posts.
+in the Canvas inbox.
 
-Each write is a `canvas` command the person runs, or that you run for them in
-a terminal. It prints the exact bytes and asks for a confirmation there.
+Each write is a `canvas` command: it prints the exact bytes and asks for a
+confirmation at the terminal.
 
 ## What these writes are
 
@@ -28,8 +26,9 @@ Because of that, the course-policy boundary is the user's, not yours:
 
 ## Steps
 
-1. Read the thread first over MCP. `discussion.get` with `replies: true`, or
-   `inbox.get`, so the user's answer is an answer to what is actually there.
+1. Read the thread first. `canvas discussion <course> <id> --replies --json`,
+   or `canvas inbox show <id> --json`, so the user's answer is an answer to
+   what is actually there.
 2. Draft exactly what the user named. Never add a recipient, an attachment, or
    a sentence they did not ask for.
 3. Show it back: the thread or the recipients, the whole message text, and
@@ -46,9 +45,8 @@ canvas inbox reply 700 --text "..."
    bytes, and every attachment with its digest, and asks. Nothing is sent
    until the person answers.
 
-5. Read what came back: `canvas operation status <journal-id>` for the state,
-   the `attribution`, and the `delivery` field. `--json` prints the same
-   envelope the read tools return.
+5. Read what came back: `canvas operation status <journal-id> --json` for the
+   state, the `attribution`, and the `delivery` field.
 
 ## What you may claim afterwards
 
@@ -90,31 +88,27 @@ delivered", "they got it", or "they have seen it".
 - **Exit 11 means the person said no.** The plan is invalidated and nothing
   was sent.
 - **A pending write makes a read uncertain.** While `pending` is true on
-  `discussion.get`, `inbox.list`, `inbox.get`, or `inbox.unread_count`, a
-  write of the user's own is unresolved. Say so instead of reporting the
-  thread as settled.
+  `canvas discussion`, `canvas inbox`, `canvas inbox show`, or
+  `canvas inbox unread-count`, a write of the user's own is unresolved. Say so
+  instead of reporting the thread as settled.
 
-## Typical calls
-
-The reads are tools. The writes are commands.
-
-```
-discussion.get { "course": "CHEM", "discussion": "3001", "replies": true }
-inbox.get      { "id": "700" }
-inbox.list     { "scope": "unread" }
-```
+## Typical commands
 
 ```sh
+canvas discussion CHEM 3001 --replies --json
+canvas inbox show 700 --json
+canvas inbox --scope unread --json
 canvas discussion reply CHEM 3001 --text "..."
 canvas inbox send --to 77 --subject "Lab partner" --text "..."
 canvas inbox reply 700 --text "..."
-canvas operation status <journal-id>
-canvas operation reconcile <journal-id>
+canvas operation status <journal-id> --json
+canvas operation reconcile <journal-id> --json
 ```
 
 ## Why it is this way
 
-The owner narrowed the MCP catalog to reads on 2026-09-10. A public post in a
-course and a message in a person's name are approved at the terminal where
-that person is, not through a host's form. Say so plainly if the user asks
-why you cannot just send it.
+A public post in a course and a message in a person's name are approved at
+the terminal where that person is, not through a host's form. `canvas mcp`
+serves one tool and it only describes the CLI, so there is no surface that
+could post on the user's behalf. Say so plainly if the user asks why you
+cannot just send it.
