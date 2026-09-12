@@ -8,6 +8,7 @@ mod exits;
 mod harness;
 mod m6c;
 mod precedence;
+mod quizzes;
 mod raw_output;
 mod schema;
 mod selection;

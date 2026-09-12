@@ -155,6 +155,10 @@ expression: value
         "rows": 0
       },
       {
+        "name": "quizzes",
+        "rows": 0
+      },
+      {
         "name": "discussion_topics",
         "rows": 0
       },

@@ -3,11 +3,13 @@
 use canvas_api::Supplied;
 use canvas_api::models::{
     Announcement, Assignment, AssignmentGroup, CalendarEvent, Course, Enrollment, File, Folder,
-    GradingPeriod, MissingSubmission, Module, ModuleItem, PlannerItem, Submission, Term, User,
+    GradingPeriod, MissingSubmission, Module, ModuleItem, NewQuiz, PlannerItem, Quiz,
+    QuizSubmission, QuizSubmissionQuestionsDoc, QuizSubmissionsDoc, Submission, Term, User,
     WrappedCollection,
 };
 use canvas_api::serde_util::with_origin;
 use reqwest::Url;
+use serde_json::Value;
 
 fn origin() -> Url {
     Url::parse("https://canvas.example.test").unwrap()
@@ -37,6 +39,62 @@ fn fixtures_deserialize() {
     let _: ModuleItem = load(include_str!("fixtures/module_item.json"));
     let _: Announcement = load(include_str!("fixtures/announcement.json"));
     let _: CalendarEvent = load(include_str!("fixtures/calendar.json"));
+}
+
+#[test]
+fn quiz_models_deserialize() {
+    let quiz: Quiz = load(include_str!("fixtures/quiz.json"));
+    assert_eq!(quiz.id, 101);
+    assert_eq!(quiz.time_limit, Some(30));
+    assert!(quiz.has_attempts_left());
+
+    let doc: QuizSubmissionsDoc = load(include_str!("fixtures/quiz_submission.json"));
+    let submission = doc.quiz_submissions.first().expect("one quiz submission");
+    assert_eq!(submission.id, 501);
+    assert_eq!(submission.attempt, Some(1));
+    assert_eq!(
+        submission.validation_token.as_deref(),
+        Some("0123456789abcdef")
+    );
+    assert!(submission.is_live());
+    assert!(!submission.is_complete());
+
+    let questions: QuizSubmissionQuestionsDoc =
+        load(include_str!("fixtures/quiz_submission_questions.json"));
+    assert_eq!(questions.quiz_submission_questions.len(), 4);
+    let first = questions.quiz_submission_questions[0].clone();
+    assert_eq!(first.id, 901);
+    assert_eq!(
+        first.question_type.as_deref(),
+        Some("multiple_choice_question")
+    );
+    assert!(first.answers.as_ref().is_some_and(Value::is_array));
+
+    // A second attempt carries no token: Canvas hands it out only at start.
+    let finished = r#"{
+        "id": 502, "quiz_id": 101, "user_id": 123, "submission_id": 46002,
+        "attempt": 2, "workflow_state": "complete",
+        "started_at": "2026-09-10T09:00:00Z",
+        "finished_at": "2026-09-10T09:21:00Z",
+        "score": 8.0, "kept_score": 8.0, "attempts_left": 0
+    }"#;
+    let finished: QuizSubmission = load(finished);
+    assert_eq!(finished.validation_token, None);
+    assert!(finished.is_complete());
+    assert_eq!(finished.attempts_left, Some(0));
+}
+
+#[test]
+fn new_quiz_models_deserialize() {
+    let quiz: NewQuiz = load(include_str!("fixtures/new_quiz.json"));
+    assert_eq!(quiz.id, 201);
+    assert_eq!(quiz.time_limit_seconds(), Some(1800));
+    let attempts = quiz
+        .quiz_settings
+        .as_ref()
+        .and_then(|s| s.multiple_attempts.as_ref())
+        .expect("attempt settings");
+    assert_eq!(attempts.max_attempts, Some(2));
 }
 
 #[test]

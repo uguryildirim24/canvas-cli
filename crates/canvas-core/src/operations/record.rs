@@ -24,6 +24,9 @@ pub enum OperationKind {
     InboxSend,
     /// `POST /conversations/:id/add_message`.
     InboxReply,
+    /// `POST /quiz_submissions/:id/questions` then
+    /// `POST /courses/:cid/quizzes/:qid/submissions/:id/complete` (M10-a).
+    QuizSubmit,
 }
 
 impl OperationKind {
@@ -34,6 +37,7 @@ impl OperationKind {
             Self::DiscussionReply => "discussion_reply",
             Self::InboxSend => "inbox_send",
             Self::InboxReply => "inbox_reply",
+            Self::QuizSubmit => "quiz_submit",
         }
     }
 
@@ -44,6 +48,7 @@ impl OperationKind {
             Self::DiscussionReply => crate::plan::PlanKind::DiscussionReply,
             Self::InboxSend => crate::plan::PlanKind::InboxSend,
             Self::InboxReply => crate::plan::PlanKind::InboxReply,
+            Self::QuizSubmit => crate::plan::PlanKind::QuizSubmit,
         }
     }
 }
@@ -61,6 +66,7 @@ impl FromStr for OperationKind {
             "discussion_reply" => Self::DiscussionReply,
             "inbox_send" => Self::InboxSend,
             "inbox_reply" => Self::InboxReply,
+            "quiz_submit" => Self::QuizSubmit,
             _ => return Err(()),
         })
     }
@@ -92,6 +98,17 @@ pub enum OperationTarget {
         /// Conversation id.
         conversation_id: i64,
     },
+    /// One quiz, answered and completed in one operation.
+    QuizSubmit {
+        /// Course the quiz belongs to.
+        course_id: i64,
+        /// Quiz id.
+        quiz_id: i64,
+        /// The Canvas quiz submission id the answers go to.
+        quiz_submission_id: i64,
+        /// The attempt this operation answers.
+        attempt: i64,
+    },
 }
 
 impl OperationTarget {
@@ -102,6 +119,7 @@ impl OperationTarget {
             Self::DiscussionReply { .. } => OperationKind::DiscussionReply,
             Self::InboxSend { .. } => OperationKind::InboxSend,
             Self::InboxReply { .. } => OperationKind::InboxReply,
+            Self::QuizSubmit { .. } => OperationKind::QuizSubmit,
         }
     }
 
@@ -109,7 +127,9 @@ impl OperationTarget {
     #[must_use]
     pub const fn course_id(&self) -> Option<i64> {
         match self {
-            Self::DiscussionReply { course_id, .. } => Some(*course_id),
+            Self::DiscussionReply { course_id, .. } | Self::QuizSubmit { course_id, .. } => {
+                Some(*course_id)
+            }
             _ => None,
         }
     }
@@ -126,6 +146,7 @@ impl OperationTarget {
             Self::DiscussionReply { topic_id, .. } => format!("topic-{topic_id}"),
             Self::InboxSend { .. } => format!("conversation-new-{}", sanitize(plan_id)),
             Self::InboxReply { conversation_id } => format!("conversation-{conversation_id}"),
+            Self::QuizSubmit { quiz_id, .. } => format!("quiz-{quiz_id}"),
         }
     }
 
@@ -136,6 +157,7 @@ impl OperationTarget {
             Self::DiscussionReply { topic_id, .. } => format!("topic:{topic_id}"),
             Self::InboxSend { .. } => "conversation:new".to_owned(),
             Self::InboxReply { conversation_id } => format!("conversation:{conversation_id}"),
+            Self::QuizSubmit { quiz_id, .. } => format!("quiz:{quiz_id}"),
         }
     }
 
@@ -160,6 +182,7 @@ impl OperationTarget {
                 "inbox:*".to_owned(),
                 "inbox_unread:*".to_owned(),
             ],
+            Self::QuizSubmit { course_id, .. } => vec![format!("quizzes:course:{course_id}")],
         }
     }
 }
@@ -211,6 +234,9 @@ pub struct OperationLabels {
     /// Recipient display names, in the order of the frozen recipient ids.
     #[serde(default)]
     pub recipients: Vec<String>,
+    /// Quiz title.
+    #[serde(default)]
+    pub quiz_title: Option<String>,
 }
 
 /// The frozen half of an operation plan.
@@ -224,6 +250,10 @@ pub struct OperationPlan {
     /// Conversation subject, when the caller gave one.
     #[serde(default)]
     pub subject: Option<String>,
+    /// Quiz access code, when the quiz needs one. Sent with the answers and
+    /// the completion; never printed.
+    #[serde(default)]
+    pub access_code: Option<String>,
     /// Attachments, in the order they will be sent.
     #[serde(default)]
     pub attachments: Vec<OperationAttachment>,
@@ -498,6 +528,9 @@ pub struct OperationReceipt {
     /// Conversation id, for an inbox reply and for a send Canvas accepted.
     #[serde(default)]
     pub conversation_id: Option<String>,
+    /// Quiz id, for a quiz submit.
+    #[serde(default)]
+    pub quiz_id: Option<String>,
     /// Recipient ids, for a send.
     #[serde(default)]
     pub recipients: Vec<String>,
@@ -599,11 +632,12 @@ impl OperationRow {
     ///
     /// Never, for either inbox operation: Canvas accepts a conversation and
     /// says nothing about whether a person received it. A discussion reply is
-    /// a public post, so a readback of the thread does observe it.
+    /// a public post, so a readback of the thread does observe it. A quiz
+    /// readback shows the graded state, which is observed the same way.
     #[must_use]
     pub const fn delivery(&self) -> &'static str {
         match self.kind {
-            OperationKind::DiscussionReply => "observable",
+            OperationKind::DiscussionReply | OperationKind::QuizSubmit => "observable",
             OperationKind::InboxSend | OperationKind::InboxReply => "not_observable",
         }
     }
@@ -630,6 +664,7 @@ mod tests {
             OperationKind::DiscussionReply,
             OperationKind::InboxSend,
             OperationKind::InboxReply,
+            OperationKind::QuizSubmit,
         ] {
             assert_eq!(OperationKind::from_str(kind.as_str()), Ok(kind));
             assert_eq!(kind.plan_kind().as_str(), kind.as_str());
@@ -685,6 +720,7 @@ mod tests {
                     outbound_bytes: String::new(),
                 },
                 subject: None,
+                access_code: None,
                 attachments: Vec::new(),
                 labels: OperationLabels::default(),
             },

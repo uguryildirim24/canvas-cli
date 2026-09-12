@@ -11,6 +11,8 @@ Commands (v1):
   courses, course, todo, assignments, assignment
   submit, submission, submission verify|reconcile
   discussion reply, inbox send|reply
+  quizzes, quiz, quiz questions|submit
+  new-quizzes, new-quiz
   operation status|reconcile
   receipts list|show|export|acknowledge
   grades, files, download, modules
@@ -343,6 +345,35 @@ pub enum Commands {
         /// Which list: inbox, unread, sent, or archived.
         #[arg(long)]
         scope: Option<String>,
+    },
+    /// List quizzes in a course.
+    Quizzes {
+        /// Course id, code, or alias.
+        course: String,
+    },
+    /// List New Quizzes in a course.
+    NewQuizzes {
+        /// Course id, code, or alias.
+        course: String,
+    },
+    /// Show one New Quiz: its instructions and taking rules.
+    NewQuiz {
+        /// Course id, code, or alias.
+        course: String,
+        /// The assignment id Canvas prints beside the quiz.
+        quiz: String,
+    },
+    /// Show one quiz, or take it.
+    #[command(subcommand_negates_reqs = true)]
+    Quiz {
+        #[command(subcommand)]
+        command: Option<QuizCommand>,
+        /// Course id, code, or alias.
+        #[arg(required = true)]
+        course: Option<String>,
+        /// Quiz id, title, or a Canvas quiz URL.
+        #[arg(required = true)]
+        quiz: Option<String>,
     },
     /// Inspect or resolve one write operation.
     Operation {
@@ -684,6 +715,43 @@ pub enum DiscussionCommand {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum QuizCommand {
+    /// Read the live session's censored questions.
+    ///
+    /// Joins the session in progress, or starts one first: starting begins
+    /// an attempt and may start the clock, so it is confirmed at the
+    /// terminal, or recorded with `--yes`.
+    Questions {
+        /// Course id, code, or alias.
+        course: String,
+        /// Quiz id, title, or a Canvas quiz URL.
+        quiz: String,
+        /// Access code for the quiz, when one protects it.
+        #[arg(long = "access-code")]
+        access_code: Option<String>,
+        /// Record the start without asking.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Answer every question and turn the quiz in (needs an approval).
+    Submit {
+        /// Course id, code, or alias.
+        course: String,
+        /// Quiz id, title, or a Canvas quiz URL.
+        quiz: String,
+        /// JSON answers file, or `-` for stdin.
+        #[arg(long, required = true)]
+        answers: Option<String>,
+        /// Access code for the quiz, when one protects it.
+        #[arg(long = "access-code")]
+        access_code: Option<String>,
+        /// Skip confirmation.
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum OperationCommand {
     /// Show one operation journal, reading the thread back.
     Status {
@@ -776,6 +844,13 @@ impl Cli {
                     page,
                 } if course.is_some() || discussion.is_some() || *replies || page.is_some() => {
                     Some("discussion operands and read flags cannot be used with reply")
+                }
+                Commands::Quiz {
+                    command: Some(_),
+                    course,
+                    quiz,
+                } if course.is_some() || quiz.is_some() => {
+                    Some("quiz operands cannot be used with questions or submit")
                 }
                 _ => None,
             }

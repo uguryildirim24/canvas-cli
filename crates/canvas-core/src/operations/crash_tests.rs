@@ -41,7 +41,10 @@ mod kills {
     use crate::identity::{IdentityDocument, Paths};
     use crate::store::{OpenIdentity, Store};
 
-    use super::super::tests::{approved_reply, mount_topic, open_topic, test_client};
+    use super::super::tests::{
+        approved_quiz, approved_reply, mount_quiz, mount_quiz_answers, mount_quiz_complete,
+        mount_topic, open_topic, test_client,
+    };
     use super::super::{Admitted, NotPostedEvidence, OpState, execute, get, post, recover_active};
 
     /// Publish a handshake file atomically, so the parent never reads a half file.
@@ -230,6 +233,49 @@ mod kills {
                     assert_eq!(row.not_posted_evidence, evidence, "{checkpoint}");
                 }
             }
+        }
+    }
+
+    /// A kill between the quiz's two requests recovers to unknown.
+    ///
+    /// The answers POST answered 200 before the process died, so the journal
+    /// names the session Canvas recorded them on — but the completion was
+    /// never observed, and only reconcile can say whether it landed.
+    #[tokio::test]
+    async fn a_kill_between_the_quiz_posts_recovers_unknown() {
+        for checkpoint in ["quiz_answers_received", "quiz_complete_received"] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let doc = IdentityDocument::new("https://canvas.example", 7, "2026-01-01T00:00:00Z");
+            let paths = Paths::for_identity(dir.path(), &doc.key);
+            std::fs::create_dir_all(&paths.identity_dir).unwrap();
+            std::fs::create_dir_all(paths.lock_path.parent().unwrap()).unwrap();
+            doc.write(&paths.identity_json()).unwrap();
+            let open = OpenIdentity::open(&paths, &doc).unwrap();
+
+            let server = MockServer::start().await;
+            mount_quiz(&server).await;
+            mount_quiz_answers(&server).await;
+            mount_quiz_complete(&server).await;
+            let client = test_client(&server.uri());
+            let prepared = approved_quiz(&client, &open.store, &paths, &doc).await;
+
+            let ready = dir.path().join("ready");
+            let mut child = Process(
+                command(dir.path(), &ready, &prepared.plan.plan_id, &server.uri())
+                    .env("CANVAS_OPERATION_CRASH_AT", checkpoint)
+                    .spawn()
+                    .unwrap(),
+            );
+            wait_for(&ready);
+            std::fs::write(dir.path().join("start"), "go").unwrap();
+            let status = child.0.wait().unwrap();
+            assert!(!status.success(), "{checkpoint}: the child did not die");
+
+            let recovered =
+                recover_active(&open.store, &paths.identity_dir, &prepared.operation.target)
+                    .unwrap();
+            assert_eq!(recovered.len(), 1, "{checkpoint}: {recovered:?}");
+            assert_eq!(recovered[0].1, OpState::OutcomeUnknown, "{checkpoint}");
         }
     }
 

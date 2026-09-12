@@ -48,6 +48,22 @@ pub struct AssignmentCandidate {
     pub name: Option<String>,
 }
 
+/// A quiz resolved from an identifier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedQuiz {
+    pub id: i64,
+    pub course_id: i64,
+    pub title: Option<String>,
+}
+
+/// One candidate shown on ambiguous or empty quiz resolution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuizCandidate {
+    pub id: i64,
+    pub course_id: i64,
+    pub title: Option<String>,
+}
+
 /// One row from the durable `alias` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AliasRow {
@@ -72,6 +88,10 @@ pub enum ResolveError {
     AssignmentAmbiguous {
         candidates: Vec<AssignmentCandidate>,
     },
+    #[error("quiz not found")]
+    QuizNotFound { candidates: Vec<QuizCandidate> },
+    #[error("quiz ambiguous")]
+    QuizAmbiguous { candidates: Vec<QuizCandidate> },
     #[error("origin mismatch")]
     OriginMismatch,
     #[error("course id mismatch: url {url_course}, arg {arg_course}")]
@@ -191,6 +211,142 @@ pub fn resolve_assignment(
             candidates: matches,
         }),
     }
+}
+
+/// Resolve `<quiz>` for a known course.
+///
+/// A numeric id, a `/courses/:cid/quizzes/:qid` URL, or a title substring of
+/// the cached `quizzes` listing. A title only resolves against a complete
+/// listing, exactly as an assignment name resolves against its own.
+pub fn resolve_quiz(
+    conns: &StoreConns,
+    course_id: i64,
+    input: &str,
+    identity_origin: &str,
+    class: CommandClass,
+) -> Result<ResolvedQuiz, ResolveError> {
+    if let Ok(id) = input.parse::<i64>() {
+        return Ok(load_quiz(conns, id, course_id)?.unwrap_or(ResolvedQuiz {
+            id,
+            course_id,
+            title: None,
+        }));
+    }
+
+    if let Some((url_course, quiz_id)) = parse_quiz_url(input, identity_origin)? {
+        if url_course != course_id {
+            return Err(ResolveError::CourseIdMismatch {
+                url_course,
+                arg_course: course_id,
+            });
+        }
+        return Ok(
+            load_quiz(conns, quiz_id, course_id)?.unwrap_or(ResolvedQuiz {
+                id: quiz_id,
+                course_id,
+                title: None,
+            }),
+        );
+    }
+
+    if input.contains("://") {
+        return Err(ResolveError::QuizNotFound { candidates: vec![] });
+    }
+    require_complete(conns, "quizzes", &format!("course:{course_id}"), class)?;
+    let rows = membership_quizzes(conns, course_id)?;
+    let needle = input.to_lowercase();
+    let matches: Vec<QuizCandidate> = rows
+        .into_iter()
+        .filter(|q| {
+            q.title
+                .as_ref()
+                .is_some_and(|t| t.to_lowercase().contains(&needle))
+        })
+        .collect();
+    match matches.len() {
+        1 => {
+            let q = &matches[0];
+            Ok(ResolvedQuiz {
+                id: q.id,
+                course_id: q.course_id,
+                title: q.title.clone(),
+            })
+        }
+        0 => Err(ResolveError::QuizNotFound {
+            candidates: matches,
+        }),
+        _ => Err(ResolveError::QuizAmbiguous {
+            candidates: matches,
+        }),
+    }
+}
+
+/// One row of a course's cached `quizzes` listing.
+fn membership_quizzes(
+    conns: &StoreConns,
+    course_id: i64,
+) -> Result<Vec<QuizCandidate>, ResolveError> {
+    let scope = format!("course:{course_id}");
+    let mut stmt = conns.cache.prepare(
+        "SELECT q.id, q.course_id, q.title
+         FROM membership m
+         INNER JOIN quizzes q ON q.id = CAST(m.entity_id AS INTEGER)
+         WHERE m.dataset = 'quizzes' AND m.scope = ?1 AND m.entity_kind = 'quiz'
+         ORDER BY m.position ASC, q.id ASC",
+    )?;
+    let rows = stmt
+        .query_map(params![scope], |r| {
+            Ok(QuizCandidate {
+                id: r.get(0)?,
+                course_id: r.get::<_, Option<i64>>(1)?.unwrap_or(course_id),
+                title: r.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// One quiz row, when the cache holds it.
+fn load_quiz(
+    conns: &StoreConns,
+    id: i64,
+    course_id: i64,
+) -> Result<Option<ResolvedQuiz>, ResolveError> {
+    let row: Option<ResolvedQuiz> = conns
+        .cache
+        .query_row(
+            "SELECT id, course_id, title FROM quizzes WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok(ResolvedQuiz {
+                    id: r.get(0)?,
+                    course_id: r.get::<_, Option<i64>>(1)?.unwrap_or(course_id),
+                    title: r.get(2)?,
+                })
+            },
+        )
+        .optional()?;
+    if let Some(ref quiz) = row
+        && quiz.course_id != course_id
+    {
+        return Err(ResolveError::CourseIdMismatch {
+            url_course: quiz.course_id,
+            arg_course: course_id,
+        });
+    }
+    Ok(row)
+}
+
+/// Split a `/courses/:cid/quizzes/:qid` URL, when the input is one on this origin.
+fn parse_quiz_url(input: &str, identity_origin: &str) -> Result<Option<(i64, i64)>, ResolveError> {
+    let Some(url) = canvas_url(input, identity_origin)? else {
+        return Ok(None);
+    };
+    let parts: Vec<_> = url.path_segments().into_iter().flatten().collect();
+    Ok(parts
+        .windows(4)
+        .find(|p| p[0] == "courses" && p[2] == "quizzes")
+        .and_then(|p| Some((p[1].parse().ok()?, p[3].parse().ok()?))))
 }
 
 /// Insert or replace a course alias for the active identity.

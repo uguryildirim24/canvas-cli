@@ -12,8 +12,10 @@ mod file;
 mod folder;
 mod grading_period;
 mod module;
+mod new_quiz;
 mod page;
 mod planner;
+mod quiz;
 mod submission;
 mod term;
 mod user;
@@ -33,8 +35,13 @@ pub use file::File;
 pub use folder::Folder;
 pub use grading_period::{GradingPeriod, WrappedCollection};
 pub use module::{Module, ModuleItem, ModuleItemContentDetails};
+pub use new_quiz::{NewQuiz, NewQuizMultipleAttempts, NewQuizSettings};
 pub use page::Page;
 pub use planner::{Plannable, PlannerItem, PlannerOverride};
+pub use quiz::{
+    Quiz, QuizAnswer, QuizSubmission, QuizSubmissionQuestion, QuizSubmissionQuestionsDoc,
+    QuizSubmissionsDoc,
+};
 pub use submission::{
     RubricAssessment, Submission, SubmissionAttachment, SubmissionComment, SubmissionHistoryEntry,
 };

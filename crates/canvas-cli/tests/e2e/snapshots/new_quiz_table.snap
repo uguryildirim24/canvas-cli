@@ -1,0 +1,14 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+Week 3 New Quiz
+New Quiz — taken in the browser
+<origin>/courses/100/assignments/9013
+12 points · 30 minutes · 2 attempts
+due 2026-09-18T23:59:00Z
+
+Answer every question. Two attempts, highest score kept.
+--- stderr ---

@@ -1,0 +1,23 @@
+{
+  "id": 101,
+  "title": "Week 3 Reading Quiz",
+  "description": "<p>Chapters 4 and 5. Two attempts, highest score kept.</p>",
+  "quiz_type": "assignment",
+  "assignment_group_id": 7,
+  "assignment_id": 9012,
+  "time_limit": 30,
+  "allowed_attempts": 2,
+  "question_count": 5,
+  "points_possible": 10.0,
+  "cant_go_back": false,
+  "one_question_at_a_time": false,
+  "shuffle_answers": true,
+  "show_correct_answers": true,
+  "published": true,
+  "unlocked_for_user": true,
+  "locked_for_user": false,
+  "require_lockdown_browser": false,
+  "due_at": "2026-09-18T23:59:00Z",
+  "unlock_at": "2026-09-14T00:00:00Z",
+  "html_url": "https://school.test/courses/101/quizzes/101"
+}

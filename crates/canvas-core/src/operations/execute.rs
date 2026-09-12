@@ -98,7 +98,7 @@ pub async fn execute(
     // The target is read again, and every prepare refusal is applied to what
     // the fresh read shows. A topic that closed while a person was deciding is
     // refused here, before a journal exists.
-    revalidate(client, &operation).await?;
+    revalidate(client, store, identity_key, &operation).await?;
 
     let name = operation.target.admission_name(&plan.plan_id);
     let admission = match AdmissionLock::try_acquire_named(identity_dir, &name) {
@@ -171,7 +171,12 @@ async fn wait_for_existing(store: &Store, plan: &PlanRow) -> Result<Admitted, Op
 }
 
 /// Read the target again and re-apply every refusal to what it shows now.
-async fn revalidate(client: &Client, operation: &OperationPlan) -> Result<(), OperationError> {
+async fn revalidate(
+    client: &Client,
+    store: &Store,
+    identity_key: &str,
+    operation: &OperationPlan,
+) -> Result<(), OperationError> {
     match &operation.target {
         OperationTarget::DiscussionReply {
             course_id,
@@ -209,6 +214,59 @@ async fn revalidate(client: &Client, operation: &OperationPlan) -> Result<(), Op
         // A new conversation has nothing to read back: the recipients were
         // resolved at prepare and they are frozen into the plan digest.
         OperationTarget::InboxSend { .. } => Ok(()),
+        // The quiz is read again the way prepare read it, and the session must
+        // still be the one the plan froze: same submission, same attempt, and
+        // still live. The fresh read also refreshes the stored session, so the
+        // token the answers POST needs is the one Canvas just handed out.
+        OperationTarget::QuizSubmit {
+            course_id,
+            quiz_id,
+            quiz_submission_id,
+            attempt,
+        } => {
+            let quiz: canvas_api::models::Quiz = client
+                .get(&format!("/api/v1/courses/{course_id}/quizzes/{quiz_id}"))
+                .await?;
+            super::prepare::check_quiz_answerable(&quiz)?;
+            let submission = crate::quiz::own_submission(client, *course_id, *quiz_id).await?;
+            let live = submission
+                .as_ref()
+                .is_some_and(|s| s.is_live() && s.id == *quiz_submission_id);
+            if !live {
+                return Err(OperationError::refused(
+                    "no_session",
+                    "the session this plan froze is no longer live; \
+                     run `canvas quiz questions` and prepare again",
+                ));
+            }
+            if submission.as_ref().and_then(|s| s.attempt) != Some(*attempt) {
+                return Err(OperationError::refused(
+                    "no_session",
+                    format!("the session moved to another attempt than {attempt}"),
+                ));
+            }
+            let submission = submission.expect("the session is live");
+            let Some(token) = submission.validation_token.clone() else {
+                return Err(OperationError::refused(
+                    "session_expired",
+                    "the session is live but Canvas gave no validation token",
+                ));
+            };
+            crate::quiz::save_session(
+                store,
+                identity_key,
+                *course_id,
+                *quiz_id,
+                &crate::quiz::Session {
+                    quiz_submission_id: submission.id,
+                    attempt: submission.attempt.unwrap_or(1),
+                    validation_token: token,
+                    started_at: submission.started_at.map(|t| t.to_string()),
+                    end_at: submission.end_at.map(|t| t.to_string()),
+                },
+            )?;
+            Ok(())
+        }
     }
 }
 
@@ -301,6 +359,14 @@ pub async fn post(
     // this process cannot prove the request never left.
     #[cfg(test)]
     super::crash_tests::checkpoint("posting", journal_id);
+
+    // A quiz sends two requests inside one `posting`: the answers, then the
+    // completion. Both are this one operation; a process that dies between
+    // them leaves `outcome_unknown`, and reconcile reads the session back.
+    if row.kind == OperationKind::QuizSubmit {
+        return post_quiz(client, store, owner, journal_id, &row).await;
+    }
+
     let (path, body) = request_of(&row, &attachment_ids);
     let url = client.api_url(&path).map_err(|_| {
         OperationError::refused("unresolved", "the target URL is not on this origin")
@@ -360,6 +426,179 @@ pub async fn post(
             })
         }
     }
+}
+
+/// A quiz sends its answers, then turns the quiz in, as one operation.
+///
+/// Both requests run inside the journal's `posting`. A process that dies
+/// between them leaves `outcome_unknown`: the answers may be recorded while
+/// the session is still open, and only reconcile can say which half landed.
+async fn post_quiz(
+    client: &Client,
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    row: &OperationRow,
+) -> Result<Posted, OperationError> {
+    let OperationTarget::QuizSubmit {
+        course_id,
+        quiz_id,
+        quiz_submission_id,
+        attempt,
+    } = row.intended.target
+    else {
+        return Err(OperationError::StateConflict);
+    };
+    let token = crate::quiz::load_session(store, &row.identity_key, quiz_id)
+        .map(|session| session.validation_token)
+        .ok_or_else(|| {
+            OperationError::refused(
+                "no_session",
+                "the stored session is gone; start the quiz again before submitting",
+            )
+        })?;
+    let answers: Value =
+        serde_json::from_str(&row.intended.body.outbound_bytes).map_err(OperationError::Json)?;
+
+    let answers_url = client
+        .api_url(&format!(
+            "/api/v1/quiz_submissions/{quiz_submission_id}/questions"
+        ))
+        .map_err(|_| {
+            OperationError::refused("unresolved", "the target URL is not on this origin")
+        })?;
+    let mut answers_body = json!({
+        "attempt": attempt,
+        "validation_token": token,
+        "quiz_questions": answers,
+    });
+    if let Some(code) = row.intended.access_code.as_deref() {
+        answers_body["access_code"] = code.into();
+    }
+    let answers_request = canvas_api::ApiRequest::new(Method::POST, answers_url)
+        .json(&answers_body)
+        .map_err(OperationError::Network)?
+        .route_key(route_key(row.kind));
+
+    // The answers are in hand; the journal has not moved. A death here, and
+    // a death between the two requests, both recover to `outcome_unknown`.
+    #[cfg(test)]
+    super::crash_tests::checkpoint("quiz_answers_received", journal_id);
+    match client.execute_api(answers_request).await {
+        Ok((status, _headers, bytes, _url)) if (200..300).contains(&status.as_u16()) => {
+            // The answers POST answered: its observation is recorded now, so
+            // a completion that is never observed still leaves the journal
+            // naming the session Canvas recorded them on.
+            let record = answers_response_record(quiz_submission_id, &bytes);
+            ops::record_answers_response(store, owner, journal_id, &record)?;
+        }
+        Ok((status, _headers, bytes, _url)) => {
+            return record_response(store, owner, journal_id, status.as_u16(), &bytes);
+        }
+        Err(ApiError::Timeout | ApiError::Network) => {
+            return unknown_after_transport(store, owner, journal_id, None);
+        }
+        Err(other) => {
+            return unknown_after_transport(store, owner, journal_id, Some(other.to_string()));
+        }
+    }
+
+    let complete_url = client
+        .api_url(&format!(
+            "/api/v1/courses/{course_id}/quizzes/{quiz_id}/submissions/{quiz_submission_id}/complete"
+        ))
+        .map_err(|_| {
+            OperationError::refused("unresolved", "the target URL is not on this origin")
+        })?;
+    let mut complete_body = json!({
+        "attempt": attempt,
+        "validation_token": token,
+    });
+    if let Some(code) = row.intended.access_code.as_deref() {
+        complete_body["access_code"] = code.into();
+    }
+    let complete_request = canvas_api::ApiRequest::new(Method::POST, complete_url)
+        .json(&complete_body)
+        .map_err(OperationError::Network)?
+        .route_key(route_key(row.kind));
+
+    #[cfg(test)]
+    super::crash_tests::checkpoint("quiz_complete_received", journal_id);
+    match client.execute_api(complete_request).await {
+        Ok((status, _headers, bytes, _url)) => {
+            let posted = record_response(store, owner, journal_id, status.as_u16(), &bytes)?;
+            if posted.row.state == OpState::Posted {
+                // The session is closed; its stored token authorizes nothing
+                // anymore, so it is forgotten with the success.
+                let _ = crate::quiz::clear_session(store, &row.identity_key, quiz_id);
+            }
+            Ok(posted)
+        }
+        Err(ApiError::Timeout | ApiError::Network) => {
+            unknown_after_transport(store, owner, journal_id, None)
+        }
+        Err(other) => unknown_after_transport(store, owner, journal_id, Some(other.to_string())),
+    }
+}
+
+/// The allowlisted record of what the answers POST answered.
+///
+/// The answers response names no submission object of its own — it echoes the
+/// recorded questions — so the record names the session the request answered,
+/// with the digest of the answers it holds. The completion's own record
+/// overwrites this one when it arrives.
+fn answers_response_record(quiz_submission_id: i64, bytes: &[u8]) -> super::record::ResponseRecord {
+    use canvas_api::models::QuizSubmissionQuestionsDoc;
+    let mut record = super::record::ResponseRecord {
+        id: Some(quiz_submission_id.to_string()),
+        response_sha256: Some(hex_sha256(bytes)),
+        ..super::record::ResponseRecord::default()
+    };
+    if let Ok(doc) = serde_json::from_slice::<QuizSubmissionQuestionsDoc>(bytes) {
+        let mut answers: Vec<canvas_api::models::QuizAnswer> = doc
+            .quiz_submission_questions
+            .iter()
+            .map(|q| canvas_api::models::QuizAnswer {
+                id: q.id,
+                answer: q.answer.clone().unwrap_or(serde_json::Value::Null),
+            })
+            .collect();
+        answers.sort_by_key(|a| a.id);
+        if let Ok(rendered) = serde_json::to_string(&answers) {
+            record.body_sha256 = Some(hex_sha256(rendered.as_bytes()));
+        }
+    }
+    record
+}
+
+/// The honest answer to a request whose outcome was never observed.
+fn unknown_after_transport(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    detail: Option<String>,
+) -> Result<Posted, OperationError> {
+    ops::transition(
+        store,
+        owner,
+        journal_id,
+        OpState::Posting,
+        OpState::OutcomeUnknown,
+        ops::Patch {
+            response_kind: Some("none"),
+            error_text: Some(
+                detail
+                    .unwrap_or_else(|| "the request ended without an observed response".to_owned()),
+            ),
+            ..ops::Patch::default()
+        },
+    )?;
+    Ok(Posted {
+        row: Box::new(ops::require(store, journal_id)?),
+        warning: Some(
+            "the request may still complete; operation reconcile re-checks it".to_owned(),
+        ),
+    })
 }
 
 fn record_response(
@@ -489,6 +728,12 @@ pub fn request_of(row: &OperationRow, attachment_ids: &[String]) -> (String, Val
             format!("/api/v1/conversations/{conversation_id}/add_message"),
             json!({ "body": body, "attachment_ids": attachment_ids }),
         ),
+        // The quiz sends its own two requests in [`post_quiz`]: the answers,
+        // then the completion. The pair is one operation.
+        OperationTarget::QuizSubmit { .. } => (
+            "/api/v1/quiz_submissions".to_owned(),
+            json!({ "quiz_questions": body }),
+        ),
     }
 }
 
@@ -497,6 +742,7 @@ const fn route_key(kind: OperationKind) -> &'static str {
         OperationKind::DiscussionReply => "discussion_entries:create",
         OperationKind::InboxSend => "conversations:create",
         OperationKind::InboxReply => "conversations:add_message",
+        OperationKind::QuizSubmit => "quiz_submissions:answer",
     }
 }
 
@@ -559,6 +805,19 @@ pub fn response_record(kind: OperationKind, value: Option<&Value>, raw: &[u8]) -
                 record.body_sha256 =
                     string_of(message.get("body")).map(|b| hex_sha256(b.as_bytes()));
                 record.attachment_ids = attachment_ids_of(message);
+            }
+        }
+        OperationKind::QuizSubmit => {
+            // Both quiz requests answer `{"quiz_submissions": [...]}`; the
+            // record is the same whichever one this is.
+            let first = value
+                .get("quiz_submissions")
+                .and_then(Value::as_array)
+                .and_then(|rows| rows.first());
+            if let Some(submission) = first {
+                record.id = json_id(submission.get("id"));
+                record.created_at = string_of(submission.get("finished_at"));
+                record.user_id = json_id(submission.get("user_id"));
             }
         }
     }
@@ -671,6 +930,7 @@ mod tests {
                     outbound_bytes: "hello".into(),
                 },
                 subject: subject.map(str::to_owned),
+                access_code: None,
                 attachments: Vec::new(),
                 labels: OperationLabels::default(),
             },

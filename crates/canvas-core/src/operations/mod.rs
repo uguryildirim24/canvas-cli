@@ -37,13 +37,15 @@ mod tests;
 pub use execute::{Admitted, Posted, execute, post};
 pub use ops::{
     ASSUME_AFTER, Patch, acknowledge, assume_not_posted, attach_identity, commit_matched,
-    commit_posted, create_linked, enrich_readback, for_plan, get, identity_user_id, is_superseded,
-    list, mark_posting, owner_status_for, pending, record_attachment_id, recover_active,
-    recover_if_owner_absent, recover_owned, require, transition,
+    commit_observed, commit_posted, create_linked, enrich_readback, for_plan, get,
+    identity_user_id, is_superseded, list, mark_posting, owner_status_for, pending,
+    record_answers_response, record_attachment_id, recover_active, recover_if_owner_absent,
+    recover_owned, require, transition,
 };
 pub use prepare::{
-    DiscussionReplyRequest, InboxReplyRequest, InboxSendRequest, PreparedOperation, Refusal,
-    prepare_discussion_reply, prepare_inbox_reply, prepare_inbox_send,
+    DiscussionReplyRequest, InboxReplyRequest, InboxSendRequest, PreparedOperation,
+    QuizSubmitRequest, Refusal, prepare_discussion_reply, prepare_inbox_reply, prepare_inbox_send,
+    prepare_quiz_submit,
 };
 pub use reconcile::{Reconciled, Verdict, readback, reconcile, status};
 pub use record::{

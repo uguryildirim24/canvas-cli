@@ -23,6 +23,7 @@ mod modules;
 mod outcome;
 mod pages;
 mod planner;
+pub(crate) mod quizzes;
 mod refresh;
 mod submission;
 mod terms;
@@ -103,6 +104,10 @@ pub use pages::{
 pub use planner::{
     PlannerDataset, PlannerWindow, default_ttl_planner, planner_item_to_entity, planner_path,
     planner_to_ingest_page,
+};
+pub use quizzes::{
+    QuizDetailDataset, QuizzesDataset, default_ttl_quizzes, quiz_path, quiz_to_entity,
+    quizzes_path, quizzes_to_ingest_page, refresh_quiz, refresh_quizzes,
 };
 pub use refresh::{
     DenialAction, classify_listing_denial, listing_denial_status, refresh_assignment_groups,

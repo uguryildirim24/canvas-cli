@@ -23,6 +23,8 @@ pub enum PlanKind {
     InboxSend,
     /// A message added to an existing conversation (M8-b).
     InboxReply,
+    /// Quiz answers and their completion (M10-a).
+    QuizSubmit,
 }
 
 impl PlanKind {
@@ -34,6 +36,7 @@ impl PlanKind {
             Self::DiscussionReply => "discussion_reply",
             Self::InboxSend => "inbox_send",
             Self::InboxReply => "inbox_reply",
+            Self::QuizSubmit => "quiz_submit",
         }
     }
 
@@ -44,6 +47,7 @@ impl PlanKind {
             "discussion_reply" => Some(Self::DiscussionReply),
             "inbox_send" => Some(Self::InboxSend),
             "inbox_reply" => Some(Self::InboxReply),
+            "quiz_submit" => Some(Self::QuizSubmit),
             other => InputKind::parse_plan_name(other).map(Self::Submission),
         }
     }

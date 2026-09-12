@@ -19,7 +19,7 @@ expression: value
     "code": "local",
     "details": {},
     "http_status": null,
-    "message": "cannot open identity store: database schema is newer than this binary (user_version=102, supported=2)",
+    "message": "cannot open identity store: database schema is newer than this binary (user_version=103, supported=3)",
     "server_errors": []
   },
   "schema": "canvas-cli/error@1",

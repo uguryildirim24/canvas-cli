@@ -462,6 +462,71 @@ async fn main() -> ExitCode {
                     }
                     None => commands::inbox::run_list(&m1b_globals(&globals), scope).await,
                 },
+                Commands::Quizzes { course } => {
+                    commands::quizzes::run_list(&m1b_globals(&globals), course).await
+                }
+                Commands::NewQuizzes { course } => {
+                    commands::new_quiz::run_list(&m1b_globals(&globals), course).await
+                }
+                Commands::NewQuiz { course, quiz } => {
+                    commands::new_quiz::run_show(&m1b_globals(&globals), course, quiz).await
+                }
+                Commands::Quiz {
+                    command: None,
+                    course,
+                    quiz,
+                } => {
+                    commands::quizzes::run_show(
+                        &m1b_globals(&globals),
+                        course.unwrap_or_default(),
+                        quiz.unwrap_or_default(),
+                    )
+                    .await
+                }
+                Commands::Quiz {
+                    command:
+                        Some(cli::QuizCommand::Questions {
+                            course,
+                            quiz,
+                            access_code,
+                            yes,
+                        }),
+                    ..
+                } => {
+                    commands::quiz::run_questions(
+                        &m1b_globals(&globals),
+                        commands::quiz::QuizQuestionsArgs {
+                            course,
+                            quiz,
+                            access_code,
+                            yes,
+                        },
+                    )
+                    .await
+                }
+                Commands::Quiz {
+                    command:
+                        Some(cli::QuizCommand::Submit {
+                            course,
+                            quiz,
+                            answers,
+                            access_code,
+                            yes,
+                        }),
+                    ..
+                } => {
+                    commands::operation::run_quiz_submit(
+                        &m1b_globals(&globals),
+                        commands::operation::QuizSubmitArgs {
+                            course,
+                            quiz,
+                            answers,
+                            access_code,
+                            yes,
+                        },
+                    )
+                    .await
+                }
                 Commands::Operation { command } => match command {
                     cli::OperationCommand::Status { journal_id } => {
                         commands::operation::run_status(&m1b_globals(&globals), journal_id).await
