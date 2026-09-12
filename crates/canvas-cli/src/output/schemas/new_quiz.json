@@ -1,0 +1,25 @@
+{
+  "quiz": {
+    "id": "201",
+    "course_id": "101",
+    "assignment_id": "9013",
+    "title": "Week 3 New Quiz",
+    "points_possible": 12.0,
+    "time_limit_seconds": 1800,
+    "max_attempts": "2",
+    "score_to_keep": "highest",
+    "one_at_a_time": "none",
+    "shuffle_answers": true,
+    "access_code_required": false,
+    "published": true,
+    "due_at": "2026-09-18T23:59:00Z",
+    "unlock_at": "2026-09-14T00:00:00Z",
+    "lock_at": null,
+    "html_url": "https://school.test/courses/101/assignments/9013",
+    "instructions_markdown": "Answer every question. Two attempts, highest score kept.",
+    "truncated": false,
+    "embedded": [],
+    "files": [],
+    "external_links": []
+  }
+}

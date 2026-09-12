@@ -13,7 +13,7 @@ use std::process::ExitCode;
 
 use canvas_core::operations::{
     Admitted as OpAdmitted, DiscussionReplyRequest, InboxReplyRequest, InboxSendRequest, OpState,
-    OperationError, OperationRow, PreparedOperation, Reconciled, Verdict,
+    OperationError, OperationRow, PreparedOperation, QuizSubmitRequest, Reconciled, Verdict,
 };
 use canvas_core::plan::ApprovalChannel;
 
@@ -62,7 +62,19 @@ pub struct InboxReplyArgs {
     pub yes: bool,
 }
 
-/// Which of the three writes an argument set describes.
+/// Operands and flags of one `canvas quiz submit`.
+#[derive(Debug, Clone, Default)]
+pub struct QuizSubmitArgs {
+    pub course: String,
+    pub quiz: String,
+    /// Path to a JSON answers file, or `-` for stdin.
+    pub answers: Option<String>,
+    /// Access code for the quiz, when one protects it.
+    pub access_code: Option<String>,
+    pub yes: bool,
+}
+
+/// Which of the four writes an argument set describes.
 #[derive(Debug, Clone)]
 pub enum WriteArgs {
     /// `discussion reply`.
@@ -71,6 +83,8 @@ pub enum WriteArgs {
     InboxSend(Box<InboxSendArgs>),
     /// `inbox reply`.
     InboxReply(Box<InboxReplyArgs>),
+    /// `quiz submit`.
+    QuizSubmit(Box<QuizSubmitArgs>),
 }
 
 impl WriteArgs {
@@ -80,6 +94,7 @@ impl WriteArgs {
             Self::DiscussionReply(a) => a.yes,
             Self::InboxSend(a) => a.yes,
             Self::InboxReply(a) => a.yes,
+            Self::QuizSubmit(a) => a.yes,
         }
     }
 }
@@ -103,6 +118,13 @@ pub async fn run_inbox_send(globals: &Globals, args: InboxSendArgs) -> ExitCode 
 /// Run `canvas inbox reply` for the CLI.
 pub async fn run_inbox_reply(globals: &Globals, args: InboxReplyArgs) -> ExitCode {
     handle_write(globals, WriteArgs::InboxReply(Box::new(args)))
+        .await
+        .emit(globals.json)
+}
+
+/// Run `canvas quiz submit` for the CLI.
+pub async fn run_quiz_submit(globals: &Globals, args: QuizSubmitArgs) -> ExitCode {
+    handle_write(globals, WriteArgs::QuizSubmit(Box::new(args)))
         .await
         .emit(globals.json)
 }
@@ -281,6 +303,48 @@ async fn freeze(
                         attachments: &args.attach,
                     };
                     canvas_core::operations::prepare_inbox_reply(
+                        client,
+                        &session.open.store,
+                        &request,
+                        now,
+                    )
+                    .await
+                }
+                WriteArgs::QuizSubmit(args) => {
+                    let answers = match read_answers(args.answers.as_deref()) {
+                        Ok(answers) => answers,
+                        Err(message) => return Err(usage(&session, &message)),
+                    };
+                    let (course, mut course_freshness, _) =
+                        match super::course::resolve_with_refresh(globals, &session, &args.course)
+                            .await
+                        {
+                            Ok(v) => v,
+                            Err(code) => return Err(code),
+                        };
+                    freshness.append(&mut course_freshness);
+                    let listing =
+                        match super::quizzes::ensure_quizzes(globals, &session, course.id).await {
+                            Ok(o) => o,
+                            Err(e) => return Err(super::course::refresh_fail(&session, e)),
+                        };
+                    freshness.push(super::course_load::outcome_freshness(&listing));
+                    let quiz_id =
+                        match super::quizzes::quiz_id_of(&session, course.id, &args.quiz).await {
+                            Ok(id) => id,
+                            Err(code) => return Err(code),
+                        };
+                    let request = QuizSubmitRequest {
+                        identity_dir: &identity_dir,
+                        identity_key: identity_key.as_str(),
+                        consumer,
+                        course_id: course.id,
+                        course_code: course.code.as_deref(),
+                        quiz_id,
+                        access_code: args.access_code.as_deref(),
+                        answers: &answers,
+                    };
+                    canvas_core::operations::prepare_quiz_submit(
                         client,
                         &session.open.store,
                         &request,
@@ -482,6 +546,7 @@ fn verdict_message(done: &Reconciled) -> String {
     let row = &done.row;
     let what = match row.kind {
         canvas_core::operations::OperationKind::DiscussionReply => "the reply",
+        canvas_core::operations::OperationKind::QuizSubmit => "the answers",
         _ => "the message",
     };
     match done.verdict {
@@ -688,6 +753,19 @@ pub(super) fn render_target(
             }
         }
         _ => {
+            if target.kind.as_str() == "quiz_submit" {
+                return writeln!(
+                    out,
+                    "quiz {}{}  course {}",
+                    target.quiz_id.as_deref().unwrap_or("unknown"),
+                    target
+                        .quiz_title
+                        .as_deref()
+                        .map(|t| format!(" \"{t}\""))
+                        .unwrap_or_default(),
+                    target.course_id.as_deref().unwrap_or("unknown"),
+                );
+            }
             writeln!(
                 out,
                 "conversation {}{}",
@@ -764,6 +842,25 @@ fn print_plan(prepared: &PreparedOperation) {
 /// One byte past the §12.2 step 5 bound, so an over-long body is refused
 /// rather than read.
 const BODY_READ_LIMIT: u64 = 1_048_577;
+
+/// Read the answers from `--answers PATH`, `--answers -`, or fail.
+///
+/// The file is a JSON array of `{"id": <question>, "answer": <value>}` — the
+/// values follow the Question Answer Formats appendix for each question
+/// type. The canonical full set is built at prepare, so blanks may be
+/// omitted; an id the session does not hold is refused there.
+fn read_answers(path: Option<&str>) -> Result<Vec<canvas_api::models::QuizAnswer>, String> {
+    let raw = match path {
+        Some("-") => bounded(io::stdin()).map_err(|e| format!("cannot read stdin: {e}")),
+        Some(path) => {
+            let handle =
+                std::fs::File::open(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+            bounded(handle).map_err(|e| format!("cannot read {path}: {e}"))
+        }
+        None => return Err("one of --answers PATH or --answers - is required".to_owned()),
+    }?;
+    serde_json::from_str(&raw).map_err(|e| format!("the answers are not a JSON array: {e}"))
+}
 
 /// Read the body from `--text`, `--text -`, or `--text-file`.
 ///

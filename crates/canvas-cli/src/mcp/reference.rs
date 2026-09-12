@@ -465,6 +465,7 @@ mod tests {
              <CONVERSATION_ID>",
             "canvas discussion reply [OPTIONS] <--text <TEXT>|--text-file <TEXT_FILE>> \
              <COURSE> <DISCUSSION>",
+            "canvas quiz submit [OPTIONS] --answers <ANSWERS> <COURSE> <QUIZ>",
             "canvas download [OPTIONS] <COURSE|--all-courses>",
             "canvas note [OPTIONS] --text <TEXT>",
         ] {
@@ -490,6 +491,7 @@ mod tests {
             "### canvas discussion reply",
             "### canvas inbox send",
             "### canvas inbox reply",
+            "### canvas quiz submit",
             "### canvas operation status",
             "### canvas download",
             "canvas-cli/operation@1",

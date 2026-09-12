@@ -1,0 +1,127 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "quizzes",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 4,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "attempt": 1,
+    "course_id": "100",
+    "end_at": "2026-09-11T14:30:00Z",
+    "questions": [
+      {
+        "answer": null,
+        "answers": [
+          {
+            "id": "4811",
+            "text": "Phenolphthalein"
+          },
+          {
+            "id": "4812",
+            "text": "Litmus"
+          },
+          {
+            "id": "4813",
+            "text": "Methyl orange"
+          },
+          {
+            "id": "4814",
+            "text": "Starch"
+          }
+        ],
+        "id": "901",
+        "name": "Question 1",
+        "points_possible": 2.0,
+        "position": 1,
+        "question_type": "multiple_choice_question",
+        "text_markdown": "Which reagent marks the end point?"
+      },
+      {
+        "answer": null,
+        "answers": [],
+        "id": "902",
+        "name": "Question 2",
+        "points_possible": 4.0,
+        "position": 2,
+        "question_type": "essay_question",
+        "text_markdown": "Name two sources of error, and how each biases the result."
+      },
+      {
+        "answer": null,
+        "answers": [
+          {
+            "id": "4901",
+            "text": "True"
+          },
+          {
+            "id": "4902",
+            "text": "False"
+          }
+        ],
+        "id": "903",
+        "name": "Question 3",
+        "points_possible": 2.0,
+        "position": 3,
+        "question_type": "true_false_question",
+        "text_markdown": "A buffer resists pH change on dilution."
+      },
+      {
+        "answer": null,
+        "answers": [
+          {
+            "id": "5101",
+            "text": "Rinse the burette with the titrant"
+          },
+          {
+            "id": "5102",
+            "text": "Record the initial volume"
+          },
+          {
+            "id": "5103",
+            "text": "Add the indicator to the flask"
+          },
+          {
+            "id": "5104",
+            "text": "Drain to the end point"
+          }
+        ],
+        "id": "904",
+        "name": "Question 4",
+        "points_possible": 2.0,
+        "position": 4,
+        "question_type": "multiple_answers_question",
+        "text_markdown": "Select every step of the procedure that runs before titration begins."
+      }
+    ],
+    "quiz_id": "101",
+    "started": true,
+    "started_at": "2026-09-11T14:00:00Z"
+  },
+  "schema": "canvas-cli/quiz_questions@1",
+  "warnings": []
+}

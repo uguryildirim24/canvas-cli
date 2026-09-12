@@ -17,8 +17,8 @@ use crate::store::{OpenIdentity, PendingTarget, Store, pending_operations};
 
 use super::{
     Admitted, Attribution, DiscussionReplyRequest, InboxSendRequest, NotPostedEvidence, OpState,
-    OperationError, OperationTarget, PreparedOperation, Verdict, execute, post,
-    prepare_discussion_reply, prepare_inbox_send, reconcile, status,
+    OperationError, OperationTarget, PreparedOperation, QuizSubmitRequest, Verdict, execute, post,
+    prepare_discussion_reply, prepare_inbox_send, prepare_quiz_submit, reconcile, status,
 };
 
 pub(super) fn setup() -> (tempfile::TempDir, Paths, OpenIdentity, IdentityDocument) {
@@ -195,6 +195,189 @@ pub(super) async fn approved_reply(
 
 fn reason(error: &OperationError) -> &str {
     error.refusal_reason().unwrap_or("<not a refusal>")
+}
+
+/// A quiz this identity may answer: untimed, two attempts, going back allowed.
+pub(super) fn answerable_quiz() -> Value {
+    json!({
+        "id": 77,
+        "title": "Week 3 Reading Quiz",
+        "description": "<p>Chapters 4 and 5.</p>",
+        "quiz_type": "assignment",
+        "time_limit": null,
+        "allowed_attempts": 2,
+        "question_count": 2,
+        "points_possible": 6.0,
+        "cant_go_back": false,
+        "one_question_at_a_time": false,
+        "require_lockdown_browser": false,
+        "published": true,
+        "unlocked_for_user": true,
+        "locked_for_user": false
+    })
+}
+
+/// A live session on attempt 1, holding the token answering needs.
+pub(super) fn live_quiz_submission() -> Value {
+    json!({
+        "quiz_submissions": [{
+            "id": 601,
+            "quiz_id": 77,
+            "user_id": 7,
+            "submission_id": 46001,
+            "started_at": "2026-09-11T14:00:00Z",
+            "finished_at": null,
+            "end_at": null,
+            "attempt": 1,
+            "validation_token": "tok-1",
+            "workflow_state": "untaken",
+            "attempts_left": 2
+        }]
+    })
+}
+
+/// Two censored questions, unanswered.
+pub(super) fn quiz_questions() -> Value {
+    json!({
+        "quiz_submission_questions": [
+            {
+                "id": 901,
+                "flagged": false,
+                "answer": null,
+                "position": 1,
+                "question_name": "Question 1",
+                "question_type": "multiple_choice_question",
+                "question_text": "<p>Which reagent?</p>",
+                "points_possible": 2.0,
+                "answers": [
+                    {"id": 4811, "text": "Phenolphthalein"},
+                    {"id": 4812, "text": "Litmus"}
+                ]
+            },
+            {
+                "id": 902,
+                "flagged": false,
+                "answer": null,
+                "position": 2,
+                "question_name": "Question 2",
+                "question_type": "essay_question",
+                "question_text": "<p>Name two sources of error.</p>",
+                "points_possible": 4.0,
+                "answers": null
+            }
+        ]
+    })
+}
+
+/// The reads every quiz prepare makes.
+pub(super) async fn mount_quiz(server: &MockServer) {
+    mount_get(server, "/api/v1/courses/5/quizzes/77", answerable_quiz()).await;
+    mount_get(
+        server,
+        "/api/v1/courses/5/quizzes/77/submission",
+        live_quiz_submission(),
+    )
+    .await;
+    mount_get(
+        server,
+        "/api/v1/quiz_submissions/601/questions",
+        quiz_questions(),
+    )
+    .await;
+}
+
+/// The answers half of the write: the session questions with each recorded
+/// answer echoed back.
+pub(super) async fn mount_quiz_answers(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/api/v1/quiz_submissions/601/questions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json({
+            let mut questions = quiz_questions();
+            questions["quiz_submission_questions"][0]["answer"] = json!(4811);
+            questions["quiz_submission_questions"][1]["answer"] =
+                json!("A wet flask dilutes the titrant.");
+            questions
+        }))
+        .mount(server)
+        .await;
+}
+
+/// The completion half of the write: the session graded and closed.
+pub(super) async fn mount_quiz_complete(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path(
+            "/api/v1/courses/5/quizzes/77/submissions/601/complete",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "quiz_submissions": [{
+                "id": 601,
+                "quiz_id": 77,
+                "user_id": 7,
+                "submission_id": 46001,
+                "started_at": "2026-09-11T14:00:00Z",
+                "finished_at": "2026-09-11T14:21:00Z",
+                "attempt": 1,
+                "workflow_state": "complete",
+                "score": 6.0,
+                "kept_score": 6.0
+            }]
+        })))
+        .mount(server)
+        .await;
+}
+
+pub(super) fn quiz_request<'a>(
+    paths: &'a Paths,
+    doc: &'a IdentityDocument,
+) -> QuizSubmitRequest<'a> {
+    // A static answer set is enough: the request borrows it, and the two
+    // questions below are the whole session.
+    static ANSWERS: std::sync::OnceLock<Vec<canvas_api::models::QuizAnswer>> =
+        std::sync::OnceLock::new();
+    let answers = ANSWERS.get_or_init(|| {
+        vec![
+            canvas_api::models::QuizAnswer {
+                id: 901,
+                answer: json!(4811),
+            },
+            canvas_api::models::QuizAnswer {
+                id: 902,
+                answer: json!("A wet flask dilutes the titrant."),
+            },
+        ]
+    });
+    QuizSubmitRequest {
+        identity_dir: &paths.identity_dir,
+        identity_key: doc.key.as_str(),
+        consumer: None,
+        course_id: 5,
+        course_code: Some("CHEM-101"),
+        quiz_id: 77,
+        access_code: None,
+        answers,
+    }
+}
+
+pub(super) async fn approved_quiz(
+    client: &Client,
+    store: &Store,
+    paths: &Paths,
+    doc: &IdentityDocument,
+) -> PreparedOperation {
+    let prepared = prepare_quiz_submit(client, store, &quiz_request(paths, doc), Timestamp::now())
+        .await
+        .unwrap();
+    let handle = issue_handle(store, &prepared.plan.plan_id, None).unwrap();
+    approve(
+        store,
+        &prepared.plan.plan_id,
+        &handle,
+        ApprovalChannel::YesFlag,
+        None,
+        Timestamp::now(),
+    )
+    .unwrap();
+    prepared
 }
 
 // --------------------------------------------------------- what a plan freezes
@@ -1330,6 +1513,7 @@ pub(super) fn seeded(
                     outbound_bytes: "<p>x</p>".to_owned(),
                 },
                 subject: None,
+                access_code: None,
                 attachments: Vec::new(),
                 labels: super::OperationLabels::default(),
             },
@@ -1360,4 +1544,332 @@ pub(super) fn seeded(
     // Releasing the owner lock is what an absent owner looks like.
     drop(owner);
     journal_id
+}
+
+// ------------------------------------------------------- quiz submit (M10-a)
+
+/// Preparing freezes the canonical answer set, not the caller's order.
+#[tokio::test]
+async fn quiz_prepare_freezes_the_canonical_answer_set() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_quiz(&server).await;
+    let client = test_client(&server.uri());
+    let request = QuizSubmitRequest {
+        answers: &[
+            canvas_api::models::QuizAnswer {
+                id: 902,
+                answer: json!("A wet flask dilutes the titrant."),
+            },
+            canvas_api::models::QuizAnswer {
+                id: 901,
+                answer: json!(4811),
+            },
+        ],
+        ..quiz_request(&paths, &doc)
+    };
+    let prepared = prepare_quiz_submit(&client, &open.store, &request, Timestamp::now())
+        .await
+        .unwrap();
+    assert_eq!(
+        prepared.operation.target,
+        OperationTarget::QuizSubmit {
+            course_id: 5,
+            quiz_id: 77,
+            quiz_submission_id: 601,
+            attempt: 1,
+        }
+    );
+    // Canonical order, by question id, whatever order the caller gave.
+    let frozen: Vec<canvas_api::models::QuizAnswer> =
+        serde_json::from_str(&prepared.operation.body.outbound_bytes).unwrap();
+    assert_eq!(
+        frozen.iter().map(|a| a.id).collect::<Vec<_>>(),
+        vec![901, 902]
+    );
+    assert_eq!(prepared.operation.body.transform, "json");
+    assert_eq!(
+        prepared.operation.labels.quiz_title.as_deref(),
+        Some("Week 3 Reading Quiz")
+    );
+}
+
+/// A locked quiz is refused before anything is frozen.
+#[tokio::test]
+async fn quiz_prepare_refuses_a_locked_quiz() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    let mut quiz = answerable_quiz();
+    quiz["locked_for_user"] = json!(true);
+    quiz["lock_explanation"] = json!("the quiz closed at midnight");
+    mount_get(&server, "/api/v1/courses/5/quizzes/77", quiz).await;
+    let client = test_client(&server.uri());
+    let error = prepare_quiz_submit(
+        &client,
+        &open.store,
+        &quiz_request(&paths, &doc),
+        Timestamp::now(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(reason(&error), "locked");
+}
+
+/// No session in progress means there is nothing to answer.
+#[tokio::test]
+async fn quiz_prepare_refuses_without_a_session() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_get(&server, "/api/v1/courses/5/quizzes/77", answerable_quiz()).await;
+    mount_get(
+        &server,
+        "/api/v1/courses/5/quizzes/77/submission",
+        json!({ "quiz_submissions": [] }),
+    )
+    .await;
+    let client = test_client(&server.uri());
+    let error = prepare_quiz_submit(
+        &client,
+        &open.store,
+        &quiz_request(&paths, &doc),
+        Timestamp::now(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(reason(&error), "no_session");
+}
+
+/// An answer for a question the session does not hold is unresolved.
+#[tokio::test]
+async fn quiz_prepare_refuses_an_unknown_question() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_quiz(&server).await;
+    let client = test_client(&server.uri());
+    let request = QuizSubmitRequest {
+        answers: &[canvas_api::models::QuizAnswer {
+            id: 9999,
+            answer: json!(1),
+        }],
+        ..quiz_request(&paths, &doc)
+    };
+    let error = prepare_quiz_submit(&client, &open.store, &request, Timestamp::now())
+        .await
+        .unwrap_err();
+    assert_eq!(reason(&error), "unresolved");
+}
+
+/// `LockDown` and one-question-at-a-time quizzes need the browser.
+#[tokio::test]
+async fn quiz_prepare_refuses_a_browser_only_quiz() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    let client = test_client(&server.uri());
+    for (field, value) in [
+        ("require_lockdown_browser", json!(true)),
+        ("one_question_at_a_time", json!(true)),
+        ("cant_go_back", json!(true)),
+    ] {
+        let mut quiz = answerable_quiz();
+        quiz[field] = value;
+        mount_get(&server, "/api/v1/courses/5/quizzes/77", quiz).await;
+        let error = prepare_quiz_submit(
+            &client,
+            &open.store,
+            &quiz_request(&paths, &doc),
+            Timestamp::now(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(reason(&error), "unsupported", "{field}");
+    }
+}
+
+/// The whole write: answers posted, quiz completed, session forgotten.
+#[tokio::test]
+async fn quiz_post_answers_and_completes() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_quiz(&server).await;
+    mount_quiz_answers(&server).await;
+    mount_quiz_complete(&server).await;
+    let client = test_client(&server.uri());
+    let prepared = approved_quiz(&client, &open.store, &paths, &doc).await;
+
+    let admitted = execute(
+        &client,
+        &open.store,
+        &paths.identity_dir,
+        doc.key.as_str(),
+        &prepared.plan.plan_id,
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+    let Admitted::Created { journal_id, owner } = admitted else {
+        panic!("the plan admitted nothing");
+    };
+    let posted = post(&client, &open.store, &owner, &journal_id)
+        .await
+        .unwrap();
+    assert_eq!(posted.row.state, OpState::Posted);
+    assert_eq!(posted.row.attribution, Attribution::Accepted);
+    assert_eq!(
+        posted.row.response.as_ref().and_then(|r| r.id.clone()),
+        Some("601".to_owned())
+    );
+    // The session is closed, so its token authorizes nothing anymore.
+    assert!(
+        crate::quiz::load_session(&open.store, doc.key.as_str(), 77).is_none(),
+        "the session was not forgotten"
+    );
+}
+
+/// A server error on the completion is unknown, and the readback resolves it.
+///
+/// The answers POST answered 200, then Canvas answered 500 after it may have
+/// committed. The readback shows the completed session with the sent answers,
+/// so reconcile moves the journal to `posted` with attribution `observed`.
+#[tokio::test]
+async fn quiz_reconcile_after_a_server_error_posts_observed() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_quiz(&server).await;
+    mount_quiz_answers(&server).await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/api/v1/courses/5/quizzes/77/submissions/601/complete",
+        ))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "status": "internal_server_error",
+            "message": "unexpected",
+            "error_report_id": 4242,
+        })))
+        .mount(&server)
+        .await;
+    let client = test_client(&server.uri());
+    let prepared = approved_quiz(&client, &open.store, &paths, &doc).await;
+    let admitted = execute(
+        &client,
+        &open.store,
+        &paths.identity_dir,
+        doc.key.as_str(),
+        &prepared.plan.plan_id,
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+    let Admitted::Created { journal_id, owner } = admitted else {
+        panic!("the plan admitted nothing");
+    };
+    let posted = post(&client, &open.store, &owner, &journal_id)
+        .await
+        .unwrap();
+    assert_eq!(posted.row.state, OpState::OutcomeUnknown);
+    // Releasing the owner lock is what an absent owner looks like.
+    drop(owner);
+
+    // Canvas did commit: the session is complete with the sent answers.
+    Mock::given(method("GET"))
+        .and(path("/api/v1/courses/5/quizzes/77/submission"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "quiz_submissions": [{
+                "id": 601,
+                "quiz_id": 77,
+                "user_id": 7,
+                "submission_id": 46001,
+                "started_at": "2026-09-11T14:00:00Z",
+                "finished_at": "2026-09-11T14:21:00Z",
+                "attempt": 1,
+                "workflow_state": "complete",
+                "score": 6.0
+            }]
+        })))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/quiz_submissions/601/questions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json({
+            let mut questions = quiz_questions();
+            questions["quiz_submission_questions"][0]["answer"] = json!(4811);
+            questions["quiz_submission_questions"][1]["answer"] =
+                json!("A wet flask dilutes the titrant.");
+            questions
+        }))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    let done = reconcile(
+        &client,
+        &open.store,
+        &paths.identity_dir,
+        &journal_id,
+        false,
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(done.verdict, Verdict::Observed);
+    assert_eq!(done.row.state, OpState::Posted);
+    assert_eq!(done.row.attribution, Attribution::Observed);
+}
+
+/// Answers recorded on an open session do not close the journal.
+#[tokio::test]
+async fn quiz_status_with_an_open_session_stays_unknown() {
+    let (_dir, paths, open, doc) = setup();
+    let server = MockServer::start().await;
+    mount_quiz(&server).await;
+    mount_quiz_answers(&server).await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/api/v1/courses/5/quizzes/77/submissions/601/complete",
+        ))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "status": "internal_server_error",
+            "message": "unexpected",
+            "error_report_id": 4242,
+        })))
+        .mount(&server)
+        .await;
+    let client = test_client(&server.uri());
+    let prepared = approved_quiz(&client, &open.store, &paths, &doc).await;
+    let admitted = execute(
+        &client,
+        &open.store,
+        &paths.identity_dir,
+        doc.key.as_str(),
+        &prepared.plan.plan_id,
+        Timestamp::now(),
+    )
+    .await
+    .unwrap();
+    let Admitted::Created { journal_id, owner } = admitted else {
+        panic!("the plan admitted nothing");
+    };
+    post(&client, &open.store, &owner, &journal_id)
+        .await
+        .unwrap();
+    // Releasing the owner lock is what an absent owner looks like.
+    drop(owner);
+
+    // The answers are recorded, but the session is still open.
+    Mock::given(method("GET"))
+        .and(path("/api/v1/quiz_submissions/601/questions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json({
+            let mut questions = quiz_questions();
+            questions["quiz_submission_questions"][0]["answer"] = json!(4811);
+            questions["quiz_submission_questions"][1]["answer"] =
+                json!("A wet flask dilutes the titrant.");
+            questions
+        }))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    let done = status(&client, &open.store, &paths.identity_dir, &journal_id)
+        .await
+        .unwrap();
+    assert_eq!(done.row.state, OpState::OutcomeUnknown);
+    assert_eq!(done.row.attribution, Attribution::Observed);
 }

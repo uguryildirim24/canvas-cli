@@ -1,0 +1,31 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+attempt 1 of quiz 101
+attempt ends 2026-09-11T14:30:00Z
+
+Q901  multiple_choice_question  2 pts  Question 1
+Which reagent marks the end point?
+  [4811] Phenolphthalein
+  [4812] Litmus
+  [4813] Methyl orange
+  [4814] Starch
+
+Q902  essay_question  4 pts  Question 2
+Name two sources of error, and how each biases the result.
+
+Q903  true_false_question  2 pts  Question 3
+A buffer resists pH change on dilution.
+  [4901] True
+  [4902] False
+
+Q904  multiple_answers_question  2 pts  Question 4
+Select every step of the procedure that runs before titration begins.
+  [5101] Rinse the burette with the titrant
+  [5102] Record the initial volume
+  [5103] Add the indicator to the flask
+  [5104] Drain to the end point
+--- stderr ---

@@ -105,6 +105,27 @@ pub struct InboxReplyRequest<'a> {
     pub attachments: &'a [PathBuf],
 }
 
+/// What `quiz submit` freezes.
+#[derive(Debug, Clone)]
+pub struct QuizSubmitRequest<'a> {
+    /// Identity directory holding the lock and journal files.
+    pub identity_dir: &'a Path,
+    /// Identity key the plan is bound to.
+    pub identity_key: &'a str,
+    /// Consumer that asked, when one did.
+    pub consumer: Option<&'a str>,
+    /// Course the quiz belongs to.
+    pub course_id: i64,
+    /// Course code, for the confirmation line.
+    pub course_code: Option<&'a str>,
+    /// The quiz to answer.
+    pub quiz_id: i64,
+    /// Access code for the quiz, when one protects it.
+    pub access_code: Option<&'a str>,
+    /// The answers, already parsed from the file or stdin.
+    pub answers: &'a [canvas_api::models::QuizAnswer],
+}
+
 /// Freeze a discussion reply and store it as a `prepared` plan.
 pub async fn prepare_discussion_reply(
     client: &Client,
@@ -155,6 +176,7 @@ pub async fn prepare_discussion_reply(
         },
         body,
         subject: None,
+        access_code: None,
         attachments: Vec::new(),
         labels: OperationLabels {
             course_code: request.course_code.map(str::to_owned),
@@ -220,6 +242,7 @@ pub async fn prepare_inbox_send(
         },
         body,
         subject: request.subject.map(str::to_owned).filter(|s| !s.is_empty()),
+        access_code: None,
         attachments,
         labels: OperationLabels {
             recipients: names,
@@ -261,6 +284,7 @@ pub async fn prepare_inbox_reply(
         },
         body,
         subject: None,
+        access_code: None,
         attachments,
         labels: OperationLabels {
             conversation_subject: conversation
@@ -281,10 +305,212 @@ pub async fn prepare_inbox_reply(
     )
 }
 
-/// Take the target admission lock, recover what it left, and store the plan.
+/// Freeze quiz answers and store them as a `prepared` plan.
+///
+/// Preparing refuses everything the quiz itself refuses — locked, one
+/// question at a time, no going back, `LockDown`, an IP filter — and every
+/// answer id the live session does not hold. The body is the exact JSON of
+/// the answers, so the approval binds the same bytes execute sends.
+pub async fn prepare_quiz_submit(
+    client: &Client,
+    store: &Store,
+    request: &QuizSubmitRequest<'_>,
+    now: Timestamp,
+) -> Result<PreparedOperation, OperationError> {
+    let quiz: canvas_api::models::Quiz = match client
+        .get(&format!(
+            "/api/v1/courses/{}/quizzes/{}",
+            request.course_id, request.quiz_id
+        ))
+        .await
+    {
+        Ok(quiz) => quiz,
+        Err(
+            ApiError::Unauthorized
+            | ApiError::NotFound
+            | ApiError::Forbidden {
+                rate_limited: false,
+                ..
+            }
+            | ApiError::Denied {
+                status: 401 | 403 | 404,
+            },
+        ) => {
+            return Err(OperationError::refused(
+                "denied",
+                "this identity cannot see that quiz",
+            ));
+        }
+        Err(other) => return Err(OperationError::Network(other)),
+    };
+    check_quiz_answerable(&quiz)?;
+
+    // Answers exist only against a live session, and starting one is the
+    // person's decision: preparing refuses when none is in progress.
+    let submission = crate::quiz::own_submission(client, request.course_id, request.quiz_id)
+        .await?
+        .filter(canvas_api::models::QuizSubmission::is_live)
+        .ok_or_else(|| {
+            OperationError::refused(
+                "no_session",
+                format!(
+                    "quiz {} has no session in progress; run `canvas quiz questions` first",
+                    request.quiz_id
+                ),
+            )
+        })?;
+    let attempt = submission.attempt.unwrap_or(1);
+    let questions = crate::quiz::questions(client, submission.id).await?;
+    let answers = canonical_answers(&questions, request.answers)?;
+
+    let body = frozen_answers(&answers)?;
+    let operation = OperationPlan {
+        target: OperationTarget::QuizSubmit {
+            course_id: request.course_id,
+            quiz_id: request.quiz_id,
+            quiz_submission_id: submission.id,
+            attempt,
+        },
+        body,
+        subject: None,
+        access_code: request.access_code.map(str::to_owned),
+        attachments: Vec::new(),
+        labels: OperationLabels {
+            course_code: request.course_code.map(str::to_owned),
+            quiz_title: quiz.title.clone(),
+            ..OperationLabels::default()
+        },
+    };
+    store_plan(
+        store,
+        request.identity_dir,
+        request.identity_key,
+        request.consumer,
+        operation,
+        now,
+    )
+}
+
+/// Refuse a quiz this package must not answer.
+///
+/// The order is the order a person would ask about it: may the API read it at
+/// all, is it locked, and does Canvas require a browser for it. One question
+/// at a time hides its questions from the Quiz Submission Questions API for a
+/// student, so it is refused here rather than failing mid-quiz.
+pub(super) fn check_quiz_answerable(quiz: &canvas_api::models::Quiz) -> Result<(), OperationError> {
+    if quiz.require_lockdown_browser.unwrap_or(false) {
+        return Err(OperationError::refused(
+            "unsupported",
+            "this quiz requires LockDown Browser, and must be taken in the browser",
+        ));
+    }
+    if quiz.ip_filter.as_deref().is_some_and(|f| !f.is_empty()) {
+        return Err(OperationError::refused(
+            "unsupported",
+            "this quiz is IP filtered, and must be taken on a permitted network",
+        ));
+    }
+    if quiz.one_question_at_a_time.unwrap_or(false) {
+        return Err(OperationError::refused(
+            "unsupported",
+            "this quiz shows one question at a time, and the API cannot read its questions",
+        ));
+    }
+    if quiz.cant_go_back.unwrap_or(false) {
+        return Err(OperationError::refused(
+            "unsupported",
+            "this quiz does not allow going back, so partial answers are not safe",
+        ));
+    }
+    let locked = quiz.locked_for_user.unwrap_or(false)
+        || !quiz.unlocked_for_user.unwrap_or(true)
+        || quiz.published == Some(false);
+    if locked {
+        return Err(OperationError::refused(
+            "locked",
+            quiz.lock_explanation
+                .clone()
+                .unwrap_or_else(|| "the quiz is locked".to_owned()),
+        ));
+    }
+    Ok(())
+}
 ///
 /// The lock covers the recovery pass only. Nothing is held while a person
 /// decides, exactly as REPORT §3.5 requires of a submission plan.
+/// Build the canonical answer set: every session question in id order, with
+/// `null` where the caller answered nothing.
+///
+/// The reconciliation compares the frozen bytes with what Canvas holds, which
+/// only works on a canonical full set. A duplicate id, or an id the session
+/// does not hold, is refused; a missing one is a blank answer, which the
+/// approval displays as `null`.
+fn canonical_answers(
+    questions: &[canvas_api::models::QuizSubmissionQuestion],
+    given: &[canvas_api::models::QuizAnswer],
+) -> Result<Vec<canvas_api::models::QuizAnswer>, OperationError> {
+    use std::collections::BTreeMap;
+    let mut by_id: BTreeMap<i64, &serde_json::Value> = BTreeMap::new();
+    for answer in given {
+        if by_id.insert(answer.id, &answer.answer).is_some() {
+            return Err(OperationError::refused(
+                "unresolved",
+                format!("question {} is answered twice", answer.id),
+            ));
+        }
+    }
+    let mut full = Vec::with_capacity(questions.len());
+    for question in questions {
+        if let Some(answer) = by_id.remove(&question.id) {
+            full.push(canvas_api::models::QuizAnswer {
+                id: question.id,
+                answer: answer.clone(),
+            });
+        } else {
+            full.push(canvas_api::models::QuizAnswer {
+                id: question.id,
+                answer: serde_json::Value::Null,
+            });
+        }
+    }
+    if let Some(unknown) = by_id.keys().next() {
+        return Err(OperationError::refused(
+            "unresolved",
+            format!(
+                "question {unknown} is not one of the {} questions this session holds",
+                questions.len()
+            ),
+        ));
+    }
+    full.sort_by_key(|a| a.id);
+    Ok(full)
+}
+
+/// Freeze the answers: digest the input JSON and the bytes that are sent.
+fn frozen_answers(
+    answers: &[canvas_api::models::QuizAnswer],
+) -> Result<IntendedText, OperationError> {
+    if answers.is_empty() {
+        return Err(OperationError::refused(
+            "empty_body",
+            "the answer set is empty",
+        ));
+    }
+    let outbound = serde_json::to_string(answers)?;
+    if outbound.len() > MAX_TEXT_BYTES {
+        return Err(OperationError::refused(
+            "unsupported",
+            format!("the answers exceed {MAX_TEXT_BYTES} bytes"),
+        ));
+    }
+    Ok(IntendedText {
+        input_sha256: sha256_hex(outbound.as_bytes()),
+        transform: "json".to_owned(),
+        sent_sha256: sha256_hex(outbound.as_bytes()),
+        outbound_bytes: outbound,
+    })
+}
+
 fn store_plan(
     store: &Store,
     identity_dir: &Path,

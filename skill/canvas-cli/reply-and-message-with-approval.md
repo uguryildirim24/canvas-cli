@@ -12,11 +12,11 @@ A discussion reply is a **public post in a course**. Classmates and the
 instructor read it, and it carries the user's name. A conversation is private
 mail, but it is still written in the user's voice to a real person.
 
-Because of that, the course-policy boundary is the user's, not yours:
+The course policy is the owner's, not yours:
 
-- **An approval to post is not permission for AI-generated academic work.**
-  Many courses forbid it, and the rule is the course's. Write what the user
-  asks for, show it to them, and let them decide.
+- **The owner decides what help is allowed.** When the user asks for written
+  work, write it. Never lecture about academic integrity, and never add a
+  warning they did not ask for.
 - **Never write a placeholder.** A topic with an initial-post gate hides the
   replies until the user posts. Do not post anything to open it. The command
   refuses this, and so should you.

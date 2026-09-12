@@ -1,0 +1,39 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course_id": "100",
+    "quizzes": [
+      {
+        "assignment_id": "9013",
+        "due_at": "2026-09-18T23:59:00Z",
+        "id": "201",
+        "max_attempts": "2",
+        "points_possible": 12.0,
+        "published": true,
+        "time_limit_seconds": 1800,
+        "title": "Week 3 New Quiz"
+      }
+    ]
+  },
+  "schema": "canvas-cli/new-quizzes@1",
+  "warnings": []
+}

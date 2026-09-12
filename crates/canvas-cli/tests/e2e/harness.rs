@@ -135,6 +135,18 @@ impl Fixtures {
     pub fn grading_period() -> Value {
         fixture!("grading_period.json")
     }
+    pub fn quiz() -> Value {
+        fixture!("quiz.json")
+    }
+    pub fn quiz_submission() -> Value {
+        fixture!("quiz_submission.json")
+    }
+    pub fn quiz_submission_questions() -> Value {
+        fixture!("quiz_submission_questions.json")
+    }
+    pub fn new_quiz() -> Value {
+        fixture!("new_quiz.json")
+    }
 }
 
 /// A `wiremock` Canvas built from the shipped fixtures (Appendix B).
@@ -161,6 +173,8 @@ impl CanvasServer {
         this.mount_announcements_and_calendar().await;
         this.mount_inbox_unread().await;
         this.mount_submit().await;
+        this.mount_quizzes().await;
+        this.mount_new_quizzes().await;
         this
     }
 
@@ -327,6 +341,88 @@ impl CanvasServer {
             .await;
     }
 
+    /// Serve the Classic Quizzes taking routes from the shipped fixtures.
+    ///
+    /// The listing and the detail name quiz 101 in course 100; the session
+    /// fixtures carry the live session (quiz submission 501, attempt 1). A
+    /// test that needs another answer — none started, locked, a different
+    /// completion — overrides the one route it changes.
+    async fn mount_quizzes(&self) {
+        let mut quiz = Fixtures::quiz();
+        quiz["html_url"] = json!(format!("{}/courses/{COURSE_ID}/quizzes/101", self.uri()));
+        self.json(
+            &format!("/api/v1/courses/{COURSE_ID}/quizzes"),
+            json!([quiz.clone()]),
+        )
+        .await;
+        self.json(&format!("/api/v1/courses/{COURSE_ID}/quizzes/101"), quiz)
+            .await;
+        let mut submission = Fixtures::quiz_submission();
+        submission["quiz_submissions"][0]["html_url"] = json!(format!(
+            "{}/courses/{COURSE_ID}/quizzes/101/submissions/501",
+            self.uri()
+        ));
+        submission["quiz_submissions"][0]["user_id"] = json!(USER_ID);
+        self.json(
+            &format!("/api/v1/courses/{COURSE_ID}/quizzes/101/submission"),
+            submission.clone(),
+        )
+        .await;
+        self.json(
+            "/api/v1/quiz_submissions/501/questions",
+            Fixtures::quiz_submission_questions(),
+        )
+        .await;
+        Mock::given(method("POST"))
+            .and(path(format!(
+                "/api/v1/courses/{COURSE_ID}/quizzes/101/submissions"
+            )))
+            .respond_with(ResponseTemplate::new(200).set_body_json(submission))
+            .mount(&self.server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/quiz_submissions/501/questions".to_owned()))
+            .respond_with(QuizAnswersEcho)
+            .mount(&self.server)
+            .await;
+        let mut complete = Fixtures::quiz_submission();
+        complete["quiz_submissions"][0]["workflow_state"] = json!("complete");
+        complete["quiz_submissions"][0]["finished_at"] = json!(NOW);
+        complete["quiz_submissions"][0]["score"] = json!(8.0);
+        complete["quiz_submissions"][0]["kept_score"] = json!(8.0);
+        complete["quiz_submissions"][0]["user_id"] = json!(USER_ID);
+        Mock::given(method("POST"))
+            .and(path(format!(
+                "/api/v1/courses/{COURSE_ID}/quizzes/101/submissions/501/complete"
+            )))
+            .respond_with(ResponseTemplate::new(200).set_body_json(complete))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Serve the New Quizzes metadata routes from the shipped fixture.
+    ///
+    /// The listing and the detail name New Quiz 201 (assignment 9013) in
+    /// course 100. Taking one is an LTI session no token reaches, so there
+    /// is nothing to mount for it.
+    async fn mount_new_quizzes(&self) {
+        let mut quiz = Fixtures::new_quiz();
+        quiz["html_url"] = json!(format!(
+            "{}/courses/{COURSE_ID}/assignments/9013",
+            self.uri()
+        ));
+        self.json(
+            &format!("/api/quiz/v1/courses/{COURSE_ID}/quizzes"),
+            json!([quiz.clone()]),
+        )
+        .await;
+        self.json(
+            &format!("/api/quiz/v1/courses/{COURSE_ID}/quizzes/9013"),
+            quiz,
+        )
+        .await;
+    }
+
     /// Let assignment 9 take a file submission with no attempts used.
     ///
     /// The shipped fixture spends one of its two attempts, so a `submit --file`
@@ -474,6 +570,39 @@ fn posted_attempt(submission: &Value) -> Value {
         "submission_comments": [],
         "submission_history": [entry],
     })
+}
+
+/// Answers a quiz answers `POST` with the questions it recorded.
+///
+/// The response is the session questions with each recorded answer echoed
+/// back, which is how the operation's readback later compares them.
+struct QuizAnswersEcho;
+
+impl wiremock::Respond for QuizAnswersEcho {
+    fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+        let sent: Value = serde_json::from_slice(&request.body).unwrap_or_else(|_| json!({}));
+        let mut questions = Fixtures::quiz_submission_questions();
+        let recorded = sent
+            .get("quiz_questions")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(list) = questions
+            .get_mut("quiz_submission_questions")
+            .and_then(Value::as_array_mut)
+        {
+            for question in list.iter_mut() {
+                let id = question.get("id").cloned().unwrap_or(Value::Null);
+                question["answer"] = recorded
+                    .iter()
+                    .find(|a| a.get("id") == Some(&id))
+                    .and_then(|a| a.get("answer"))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+            }
+        }
+        ResponseTemplate::new(200).set_body_json(questions)
+    }
 }
 
 /// One invocation's captured output.

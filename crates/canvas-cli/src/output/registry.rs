@@ -45,6 +45,11 @@ pub const SCHEMA_DISCUSSION: &str = "canvas-cli/discussion@1";
 pub const SCHEMA_INBOX: &str = "canvas-cli/inbox@1";
 pub const SCHEMA_CONVERSATION: &str = "canvas-cli/conversation@1";
 pub const SCHEMA_INBOX_UNREAD: &str = "canvas-cli/inbox_unread@1";
+pub const SCHEMA_QUIZZES: &str = "canvas-cli/quizzes@1";
+pub const SCHEMA_QUIZ: &str = "canvas-cli/quiz@1";
+pub const SCHEMA_QUIZ_QUESTIONS: &str = "canvas-cli/quiz_questions@1";
+pub const SCHEMA_NEW_QUIZZES: &str = "canvas-cli/new-quizzes@1";
+pub const SCHEMA_NEW_QUIZ: &str = "canvas-cli/new-quiz@1";
 pub const SCHEMA_HERE: &str = "canvas-cli/here@1";
 pub const SCHEMA_NOTE: &str = "canvas-cli/note@1";
 pub const SCHEMA_FOLLOW: &str = "canvas-cli/follow@1";
@@ -321,6 +326,36 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
             fixture: include_str!("schemas/inbox_unread.json"),
         },
         SchemaEntry {
+            id: SCHEMA_QUIZZES,
+            command: Some("quizzes"),
+            variant: None,
+            fixture: include_str!("schemas/quizzes.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_QUIZ,
+            command: Some("quiz"),
+            variant: None,
+            fixture: include_str!("schemas/quiz.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_QUIZ_QUESTIONS,
+            command: Some("quiz questions"),
+            variant: None,
+            fixture: include_str!("schemas/quiz_questions.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_NEW_QUIZZES,
+            command: Some("new-quizzes"),
+            variant: None,
+            fixture: include_str!("schemas/new_quizzes.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_NEW_QUIZ,
+            command: Some("new-quiz"),
+            variant: None,
+            fixture: include_str!("schemas/new_quiz.json"),
+        },
+        SchemaEntry {
             id: SCHEMA_VERSION,
             command: Some("version"),
             variant: None,
@@ -436,10 +471,10 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
 
 /// Commands that print a document another entry already describes.
 ///
-/// One schema can serve several commands: the three M8-b writes all print the
-/// operation journal `operation status` prints, every `alias` subcommand
-/// prints the same listing, and every `open` subcommand prints the same
-/// launch result. The registry holds one entry per *result shape*, so these
+/// One schema can serve several commands: the three M8-b writes and the M10-a
+/// quiz submit all print the operation journal `operation status` prints,
+/// every `alias` subcommand prints the same listing, and every `open`
+/// subcommand prints the same launch result. The registry holds one entry per *result shape*, so these
 /// names resolve through the entry that owns the shape instead of repeating
 /// its fixture. `canvas schema "discussion reply"` therefore answers, and
 /// `canvas schema --list` names it.
@@ -452,6 +487,7 @@ const COMMAND_ALIASES: &[(&str, &str)] = &[
     ("discussion reply", SCHEMA_OPERATION),
     ("inbox send", SCHEMA_OPERATION),
     ("inbox reply", SCHEMA_OPERATION),
+    ("quiz submit", SCHEMA_OPERATION),
     ("alias set", SCHEMA_ALIAS),
     ("alias remove", SCHEMA_ALIAS),
     ("open assignment", SCHEMA_OPEN),
@@ -1236,6 +1272,8 @@ pub struct OperationTargetJson {
     pub parent_entry_id: Option<String>,
     pub conversation_id: Option<String>,
     pub conversation_subject: Option<String>,
+    pub quiz_id: Option<String>,
+    pub quiz_title: Option<String>,
     pub recipients: Vec<String>,
     pub recipient_names: Vec<String>,
 }
@@ -1314,6 +1352,8 @@ impl OperationTargetJson {
             parent_entry_id: None,
             conversation_id: conversation_id.map(str::to_owned),
             conversation_subject: labels.conversation_subject.clone(),
+            quiz_id: None,
+            quiz_title: labels.quiz_title.clone(),
             recipients: Vec::new(),
             recipient_names: labels.recipients.clone(),
         };
@@ -1329,6 +1369,9 @@ impl OperationTargetJson {
             T::InboxSend { recipients } => json.recipients.clone_from(recipients),
             T::InboxReply { conversation_id } => {
                 json.conversation_id = Some(conversation_id.to_string());
+            }
+            T::QuizSubmit { quiz_id, .. } => {
+                json.quiz_id = Some(quiz_id.to_string());
             }
         }
         json
@@ -2009,6 +2052,152 @@ pub struct PageDetailJson {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageResult {
     pub page: PageDetailJson,
+}
+
+/// One quiz row of a `quizzes@1` listing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizSummaryJson {
+    pub id: String,
+    pub title: Option<String>,
+    pub quiz_type: Option<String>,
+    pub due_at: Option<String>,
+    pub question_count: Option<u64>,
+    pub points_possible: Option<f64>,
+    pub time_limit: Option<u64>,
+    pub allowed_attempts: Option<i64>,
+    pub published: Option<bool>,
+    pub locked_for_user: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizzesResult {
+    pub course_id: String,
+    pub quizzes: Vec<QuizSummaryJson>,
+}
+
+/// One quiz with everything the description could not show.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizDetailJson {
+    pub id: String,
+    pub course_id: String,
+    pub title: Option<String>,
+    pub quiz_type: Option<String>,
+    pub time_limit: Option<u64>,
+    pub allowed_attempts: Option<i64>,
+    pub question_count: Option<u64>,
+    pub points_possible: Option<f64>,
+    pub cant_go_back: Option<bool>,
+    pub one_question_at_a_time: Option<bool>,
+    pub require_lockdown_browser: Option<bool>,
+    pub ip_filtered: Option<bool>,
+    pub published: Option<bool>,
+    pub unlocked_for_user: Option<bool>,
+    pub locked_for_user: Option<bool>,
+    pub lock_explanation: Option<String>,
+    /// `assignment`, when the quiz keeps a score in the gradebook.
+    pub assignment_id: Option<String>,
+    pub html_url: Option<String>,
+    pub due_at: Option<String>,
+    pub unlock_at: Option<String>,
+    pub lock_at: Option<String>,
+    pub description_markdown: Option<String>,
+    /// True when the description was cut at 64 KiB.
+    pub truncated: bool,
+    pub embedded: Vec<EmbeddedJson>,
+    pub files: Vec<FileRefJson>,
+    pub external_links: Vec<ExternalLinkJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizResult {
+    pub quiz: QuizDetailJson,
+}
+
+/// One answer a question offers: the id the answers POST names.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizAnswerOptionJson {
+    pub id: Option<String>,
+    pub text: Option<String>,
+}
+
+/// One question of a live session, censored. Correctness never appears: an
+/// agent reads the choices, never the key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizQuestionJson {
+    pub id: String,
+    pub position: Option<i64>,
+    pub name: Option<String>,
+    pub question_type: Option<String>,
+    pub points_possible: Option<f64>,
+    pub text_markdown: Option<String>,
+    /// The answer this session already holds, or `null`.
+    pub answer: Option<serde_json::Value>,
+    pub answers: Vec<QuizAnswerOptionJson>,
+}
+
+/// `quiz_questions@1`: the live session and its questions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizQuestionsResult {
+    pub course_id: String,
+    pub quiz_id: String,
+    pub attempt: Option<i64>,
+    pub started_at: Option<String>,
+    pub end_at: Option<String>,
+    /// True when the session was started by this command.
+    pub started: bool,
+    pub questions: Vec<QuizQuestionJson>,
+}
+
+/// One New Quiz row of a `new-quizzes@1` listing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NewQuizSummaryJson {
+    pub id: String,
+    /// The assignment id the detail route takes.
+    pub assignment_id: Option<String>,
+    pub title: Option<String>,
+    pub due_at: Option<String>,
+    pub points_possible: Option<f64>,
+    pub time_limit_seconds: Option<u64>,
+    pub max_attempts: Option<String>,
+    pub published: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NewQuizzesResult {
+    pub course_id: String,
+    pub quizzes: Vec<NewQuizSummaryJson>,
+}
+
+/// One New Quiz with its instructions and taking rules.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NewQuizDetailJson {
+    pub id: String,
+    pub course_id: String,
+    pub assignment_id: Option<String>,
+    pub title: Option<String>,
+    pub points_possible: Option<f64>,
+    pub time_limit_seconds: Option<u64>,
+    pub max_attempts: Option<String>,
+    pub score_to_keep: Option<String>,
+    pub one_at_a_time: Option<String>,
+    pub shuffle_answers: Option<bool>,
+    pub access_code_required: Option<bool>,
+    pub published: Option<bool>,
+    pub due_at: Option<String>,
+    pub unlock_at: Option<String>,
+    pub lock_at: Option<String>,
+    pub html_url: Option<String>,
+    pub instructions_markdown: Option<String>,
+    /// True when the instructions were cut at 64 KiB.
+    pub truncated: bool,
+    pub embedded: Vec<EmbeddedJson>,
+    pub files: Vec<FileRefJson>,
+    pub external_links: Vec<ExternalLinkJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NewQuizResult {
+    pub quiz: NewQuizDetailJson,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]

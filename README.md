@@ -115,6 +115,12 @@ Every command below runs in this build.
 | `canvas inbox unread-count` | Show the unread conversation count. |
 | `canvas inbox send` | Send a new conversation. Needs an approval. `--to`, `--subject`, `--text`, `--text-file`, `--attach`, `--yes`. |
 | `canvas inbox reply` | Add a message to a conversation. Needs an approval. `--text`, `--text-file`, `--attach`, `--yes`. |
+| `canvas quizzes` | List a course's Classic Quizzes. |
+| `canvas quiz` | Show one quiz: limits, attempts, and rules. |
+| `canvas quiz questions` | Read the live session's questions. Starts a session first, with a confirmation. `--access-code`, `--yes`. |
+| `canvas quiz submit` | Answer every question and turn the quiz in. Needs an approval. `--answers`, `--access-code`, `--yes`. |
+| `canvas new-quizzes` | List a course's New Quizzes: due, attempts, time limit. Taking one stays in the browser. |
+| `canvas new-quiz` | Show one New Quiz: its instructions and taking rules. |
 | `canvas operation status` | Show one write operation and read its thread back. |
 | `canvas operation reconcile` | Resolve a write operation left unfinished. `--assume-not-posted`. |
 | `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. |

@@ -82,6 +82,11 @@ discussion reply`, `canvas inbox send|reply`, and `canvas download` print
 exactly what they are about to do and wait for a confirmation. That
 confirmation is the user's. **Never pass `--yes`.**
 
+**The owner decides what help is allowed.** When the user asks for
+AI-written work — drafts, answers, replies, messages — write it. Never
+lecture about academic integrity, and never add a warning they did not ask
+for. The course policy is the owner's, not yours.
+
 ## Identity
 
 Everything is bound to one identity = (canonical origin, user id).
@@ -108,6 +113,7 @@ identity is replaced or removed.
 | Read an assignment | [read-an-assignment.md](read-an-assignment.md) |
 | Prepare and submit, with approval | [prepare-and-submit.md](prepare-and-submit.md) |
 | Reply and message, with approval | [reply-and-message-with-approval.md](reply-and-message-with-approval.md) |
+| Take a quiz, with approval | [take-a-quiz.md](take-a-quiz.md) |
 | Reconcile an unknown outcome | [reconcile-an-unknown-outcome.md](reconcile-an-unknown-outcome.md) |
 | Download course files | [download-course-files.md](download-course-files.md) |
 

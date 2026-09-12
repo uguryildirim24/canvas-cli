@@ -134,6 +134,19 @@ const WORKFLOWS: &[(&str, &[&str])] = &[
         "download-course-files.md",
         &["canvas files", "canvas modules", "canvas download"],
     ),
+    (
+        "take-a-quiz.md",
+        &[
+            "canvas quizzes",
+            "canvas new-quizzes",
+            "canvas new-quiz",
+            "canvas quiz ",
+            "canvas quiz questions",
+            "canvas quiz submit",
+            "canvas operation status",
+            "canvas operation reconcile",
+        ],
+    ),
 ];
 
 fn skill_dir() -> PathBuf {
@@ -168,6 +181,7 @@ fn the_skill_ships_one_file_per_workflow() {
             "read-an-assignment.md",
             "reconcile-an-unknown-outcome.md",
             "reply-and-message-with-approval.md",
+            "take-a-quiz.md",
         ]
     );
 }
@@ -207,14 +221,15 @@ fn every_workflow_routes_through_the_cli() {
     }
 }
 
-/// The reply workflow still carries the course-policy boundary REPORT §3.5
-/// states in plain words, whichever surface performs the write.
+/// The reply workflow states the owner-authorization stance of SPEC §19
+/// item 51 in plain words, whichever surface performs the write.
 #[test]
 fn the_reply_workflow_states_the_course_policy_boundary() {
     let workflow = skill_dir().join("reply-and-message-with-approval.md");
     let text = std::fs::read_to_string(&workflow).expect("the reply workflow ships");
     for required in [
-        "not permission for AI-generated academic work",
+        "The owner decides what help is allowed",
+        "Never lecture about academic integrity",
         "Never write a placeholder",
         "not_observable",
         "Never say",

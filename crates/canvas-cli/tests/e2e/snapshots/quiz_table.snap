@@ -1,0 +1,13 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+Week 3 Reading Quiz
+<origin>/courses/100/quizzes/101
+5 questions · 10 points · 30 minutes · 2 attempts
+due 2026-09-18T23:59:00Z
+
+Chapters 4 and 5. Two attempts, highest score kept.
+--- stderr ---
