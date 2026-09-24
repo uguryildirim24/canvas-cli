@@ -50,10 +50,11 @@ cargo build --release        # binary at target/release/canvas
 Rust 1.88 or newer. Put `target/release/canvas` on your `PATH`, or run
 `cargo install --path crates/canvas-cli`.
 
-To run the gates CI runs:
+To run the same gates CI runs:
 
 ```sh
 just check                   # fmt, clippy, tests, cargo-deny
+just msrv                    # the 1.88 check CI runs alongside them
 ```
 
 Once a release exists, `brew install uguryildirim24/homebrew-tap/canvas-lms-cli`
