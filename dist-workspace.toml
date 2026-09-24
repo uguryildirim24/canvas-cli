@@ -1,8 +1,8 @@
 [workspace]
 members = ["cargo:."]
 
-# SPEC §17. The repository has no remote and no tap yet: this config is
-# complete but nothing is published. See docs/release.md.
+# SPEC §17. There is no Homebrew tap yet: this config is complete but nothing
+# is published. See docs/release.md.
 [dist]
 cargo-dist-version = "0.32.0"
 # Archives, checksums, and the Homebrew formula are all a release needs.
@@ -26,7 +26,7 @@ ci = ["github"]
 pr-run-mode = "plan"
 # No publish job. The tap does not exist yet, and dist 0.32 would push its own
 # formula, which has no man page or completion install lines: `xtask
-# dist-formula` adds those, and docs/release.md is the owner's tap step. This is
+# dist-formula` adds those, and docs/release.md is the manual tap step. This is
 # what `dist plan` warns about, and the warning is expected.
 publish-jobs = []
 install-updater = false
@@ -42,5 +42,7 @@ include = [
     "skill",
     "extension",
 ]
-# Injects the `dist-assets` step into the generated build job.
-github-build-setup = "build-setup.yml"
+# Injects the `dist-assets` step into the generated build job. This file is a
+# fragment — a bare list of steps, not a workflow — so it lives outside
+# `.github/workflows/`, where GitHub Actions would try to run it and fail.
+github-build-setup = "../build-setup.yml"
