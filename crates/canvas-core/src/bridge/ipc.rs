@@ -4,9 +4,9 @@
 //! The transport is a Unix socket at mode `0600` inside a `0700` directory,
 //! or a user-restricted named pipe on Windows: it carries no authentication
 //! of its own, because the operating system's file permissions are the
-//! boundary (the design note, "within Rolf's OS trust domain").
+//! boundary (the design note, "within the user's own OS trust domain").
 //!
-//! Four operations are the surface the design note names, plus `release`, which
+//! Four operations are the surface the design names, plus `release`, which
 //! is how `identity remove` asks a live owner to let go (the design note,
 //! "cooperative release").
 
@@ -83,7 +83,7 @@ impl Reason {
         }
     }
 
-    /// Whether this reason is one of the the design note refusals that exit 8.
+    /// Whether this reason is one of the refusals that exit 8.
     ///
     /// `zone_opaque` is not: the attachment is healthy and the answer is a
     /// bundle with no page content in it.

@@ -1,6 +1,6 @@
 //! M8-b acceptance at the command surface: reply, send, status, reconcile.
 //!
-//! Every case here is one row of the the design note M8-b acceptance column that
+//! Every case here is one row of the M8-b acceptance column that
 //! needs a whole `canvas` process: the exit codes, the two new envelopes in
 //! both modes, the receipts listing, and the promise that a refusal reaches
 //! Canvas with nothing.

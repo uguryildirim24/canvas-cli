@@ -561,7 +561,7 @@ fn repo_path(relative: &str) -> PathBuf {
 /// A journal created before plans exposes `plan_id` and `approval` as null.
 ///
 /// Appendix D's nullable convention makes that the correct legacy shape, and
-/// the design note makes `plan@1`'s `approval` null until a person approves. Every
+/// the design makes `plan@1`'s `approval` null until a person approves. Every
 /// submission in this suite runs through the plan path, so no snapshot carries
 /// the legacy shape yet and nothing else would notice a fixture that declares
 /// these fields as always-present.

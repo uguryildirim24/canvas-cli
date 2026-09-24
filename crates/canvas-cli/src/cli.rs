@@ -818,7 +818,7 @@ impl Cli {
         } else if self.json && self.command.has_raw_output() {
             Some("--json cannot be used with this raw-output command")
         } else if self.json && matches!(self.command, Commands::Watch { .. }) {
-            // the design note: the stream is its own contract, and §7's one
+            // The stream is its own contract, and §7's one
             // document per invocation rule is unchanged. `--jsonl` is the
             // machine-readable form of `watch`.
             Some("--json cannot be used with watch; use --jsonl")

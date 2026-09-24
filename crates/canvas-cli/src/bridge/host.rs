@@ -48,7 +48,7 @@ pub(crate) const TEXT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long a `follow` waits for the companion's dispatch acknowledgement.
 ///
-/// the design note proposes a p95 under 300 ms for the acknowledgement, so a wait
+/// the design proposed a p95 under 300 ms for the acknowledgement, so a wait
 /// several times that is generous and still well inside the client's own
 /// timeout. Exceeding it is `navigation_timeout`, not a claim that the page
 /// did or did not load.
@@ -493,7 +493,7 @@ async fn decide(host: &Arc<Host>, plan_id: &str, handle: &str, digest: &str, dec
 /// Compute the panel's whole view and send it.
 ///
 /// The bundle the panel sees is the CLI's own: the host reads it with neither
-/// an attachment id nor a consumer, which is the reading the design note permits
+/// an attachment id nor a consumer, which is the reading the design permits
 /// the local side. It never asks the browser for text.
 async fn push_panel(host: &Arc<Host>) {
     let context = host.broker.lock().await.context(None, None, false).ok();

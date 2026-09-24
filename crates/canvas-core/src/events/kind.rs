@@ -1,4 +1,4 @@
-//! Event kinds (agent-UX the design note).
+//! Event kinds (agent-UX design).
 
 /// One `canvas-cli/event@1` kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

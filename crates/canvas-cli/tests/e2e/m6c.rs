@@ -1,6 +1,6 @@
 //! M6-c: the shared coordinator, the event stream, and `notify`.
 //!
-//! These tests exercise the parts of the design note that need a real process:
+//! These tests exercise the parts of the design that need a real process:
 //! cross-process request permits, refresh single-flight, foreground priority,
 //! and the `watch`/`notify` contracts. Everything that fits inside one process
 //! — the lock-name encoding, the outbox replay, the comparison rules — lives in

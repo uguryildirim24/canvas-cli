@@ -193,7 +193,14 @@ mod tests {
 
     #[test]
     fn the_descriptor_builder_refuses_anything_that_is_not_a_sid() {
-        for bad in ["", "rolf", "S-1-", "S-1-5-", "S-1-x-5", "D:P(A;;GA;;;WD)"] {
+        for bad in [
+            "",
+            "not-a-sid",
+            "S-1-",
+            "S-1-5-",
+            "S-1-x-5",
+            "D:P(A;;GA;;;WD)",
+        ] {
             assert!(pipe_security(bad).is_err(), "{bad}");
         }
         assert!(is_sid("S-1-5-18"));

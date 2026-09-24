@@ -1,4 +1,4 @@
-//! `canvas watch` (class C): the local event stream (agent-UX the design note).
+//! `canvas watch` (class C): the local event stream (agent-UX design).
 //!
 //! Watch is a resident consumer. It holds the shared identity lock for its
 //! whole life, so `identity remove` reports busy (§3.4). Each tick expires the
@@ -456,7 +456,7 @@ async fn refresh_due(
     // The unread count is last. It is the cheapest dataset and the least
     // urgent one, so a slow inbox never delays the coursework a deadline
     // depends on, and a failing one backs off on its own (M8-a `inbox_unread`,
-    // the design note `inbox.unread_count`).
+    // `inbox.unread_count`).
     if let Some(outcome) = attempt(
         session,
         summary,
