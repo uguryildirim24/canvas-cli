@@ -1,6 +1,6 @@
 //! `canvas here` — `ContextBundle@1` (class C, `here@1`).
 //!
-//! One bundle, two sources, kept apart (REPORT §3.1):
+//! One bundle, two sources, kept apart:
 //!
 //! - `api` carries whole §7 envelopes from the shared command handlers, each
 //!   with its own freshness. A browser extract never updates one of them.
@@ -9,7 +9,7 @@
 //!
 //! When there is nothing to report the bundle says why. `not_attached`,
 //! `paused`, `validating`, `account_mismatch`, and `bridge_unavailable` are
-//! refusals and exit 8 (REPORT §3.2). `zone_opaque` is not: the attachment is
+//! refusals and exit 8. `zone_opaque` is not: the attachment is
 //! healthy, and the answer is a bundle whose page content is absent.
 
 use std::fmt::Write as _;
@@ -37,7 +37,7 @@ pub async fn run(globals: &Globals, attachment: Option<String>, text: bool) -> E
 
 /// Build one `ContextBundle@1`.
 ///
-/// `consumer` is `None` for the CLI, which REPORT §3.2 lets select the sole
+/// `consumer` is `None` for the CLI, which the design note lets select the sole
 /// attachment. Every agent surface passes its own handle, and the broker
 /// serves it only if that consumer attached.
 pub async fn handle(
@@ -82,7 +82,7 @@ pub async fn handle(
     };
     let mut envelope = super::emit::base_envelope(SCHEMA_HERE, &session, result);
     // Browser context is an observation, never a cached dataset: it carries
-    // no freshness row of its own (REPORT §3.2).
+    // no freshness row of its own.
     envelope.warnings = Vec::new();
     Handled::new(envelope, |envelope| {
         writeln!(io::stdout(), "{}", human(&envelope.result))

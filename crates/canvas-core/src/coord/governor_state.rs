@@ -1,4 +1,4 @@
-//! The shared `governor` row in `state.sqlite` (SPEC §11, REPORT §3.6).
+//! The shared `governor` row in `state.sqlite` (SPEC §11).
 //!
 //! The row is read before admission and written after each response. Every
 //! write is one `BEGIN IMMEDIATE` transaction around a pure merge closure

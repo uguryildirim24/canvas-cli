@@ -1,4 +1,4 @@
-//! Where the broker lives on disk (REPORT §3.4, the §9 path additions).
+//! Where the broker lives on disk (the design note, the §9 path additions).
 //!
 //! | Purpose | Path |
 //! |---|---|

@@ -93,7 +93,7 @@ pub struct ReceiptDocument {
     pub cli_version: String,
     /// Journal `created_at`.
     pub created_at: String,
-    /// The plan this submission was admitted from (REPORT §3.5).
+    /// The plan this submission was admitted from.
     ///
     /// Appendix D's nullable convention: the field is always present, and a
     /// receipt rebuilt from a journal created before plans expose `null`

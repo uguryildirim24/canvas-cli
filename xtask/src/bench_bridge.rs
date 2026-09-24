@@ -8,12 +8,12 @@
 //!   companion says it took the navigation, target p95 < 300 ms. It is not
 //!   the time to load a page. Nothing here waits for a load, and nothing
 //!   here could: the load outcome is a separate message that arrives later
-//!   (REPORT §3.2). What this measures is the cost of asking.
+//!  . What this measures is the cost of asking.
 //!
 //! What is deliberately outside the measurement:
 //!
 //! - **The account probe.** It runs in the browser, against the user's own
-//!   Canvas, and only when text is requested (REPORT §3.3 step 4). A metadata
+//!   Canvas, and only when text is requested. A metadata
 //!   read never triggers one, so no probe is in these numbers.
 //! - **The API side of the bundle.** `canvas here` also resolves the route
 //!   through the shared command handlers, and those are already measured by

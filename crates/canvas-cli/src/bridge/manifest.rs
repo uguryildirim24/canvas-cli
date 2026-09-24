@@ -4,7 +4,7 @@
 //! `NativeMessagingHosts` directory. It never opens a browser profile, a
 //! cookie store, or a preferences file: the manifest is the whole of what the
 //! CLI puts into the browser's world, and the extension is loaded by the
-//! person, not by this command (REPORT §3.4).
+//! person, not by this command.
 
 use std::path::{Path, PathBuf};
 

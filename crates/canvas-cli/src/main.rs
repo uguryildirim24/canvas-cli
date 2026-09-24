@@ -62,7 +62,7 @@ fn m1b_globals(globals: &Globals) -> commands::Globals {
 
 /// Rewrite Chrome's native-messaging invocation into a command line.
 ///
-/// The host manifest names the absolute path of the `canvas` binary (REPORT
+/// The host manifest names the absolute path of the `canvas` binary (the design note
 /// §3.4), and Chrome starts a native host as
 /// `<path> chrome-extension://<id>/ [--parent-window=<handle>]`. Clap would
 /// reject that first argument, so it is turned into the subcommand it means

@@ -1,4 +1,4 @@
-//! Event kinds (agent-UX REPORT §3.6).
+//! Event kinds (agent-UX the design note).
 
 /// One `canvas-cli/event@1` kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -25,7 +25,7 @@ pub enum EventKind {
     OperationState,
     /// The unread-conversation count changed (M8-a `inbox_unread`).
     InboxUnreadCount,
-    /// A person approved a plan (REPORT §3.5). Ids only, never a payload.
+    /// A person approved a plan. Ids only, never a payload.
     PlanApproved,
     /// A person declined a plan.
     PlanDeclined,

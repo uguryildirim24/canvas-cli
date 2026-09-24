@@ -1,7 +1,7 @@
 //! Discussion and inbox writes under a plan (M8-b).
 //!
 //! A discussion reply, a new conversation, and a reply to one are remote
-//! writes, so each of them runs the plan layer of REPORT §3.5 —
+//! writes, so each of them runs the plan layer of the design note —
 //! `prepare → issue_handle → approve → execute` — and lands in a journal that
 //! keeps SPEC §12.2's discipline. Nothing is sent without a recorded human
 //! approval, one plan admits at most one journal, and an ambiguous outcome is
@@ -72,7 +72,7 @@ pub enum OperationError {
     /// An expected-state guard matched zero rows.
     #[error("state conflict")]
     StateConflict,
-    /// The operation cannot be prepared as asked (exit 8, REPORT §3.2).
+    /// The operation cannot be prepared as asked (exit 8).
     #[error("{message}")]
     Refused {
         /// `group_write`, `locked`, `initial_post_required`, `unresolved`,

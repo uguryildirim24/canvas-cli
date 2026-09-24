@@ -9,7 +9,7 @@
 //! the route and the zone from the sanitized URL before it believes either.
 //! Cookies never leave Chrome: the one browser-session request in this design
 //! is a fixed same-origin `GET /api/v1/users/self` performed in extension
-//! code, whose body is reduced to `{ id }` before it is sent (REPORT §3.1).
+//! code, whose body is reduced to `{ id }` before it is sent.
 
 pub mod endpoint;
 pub mod framing;

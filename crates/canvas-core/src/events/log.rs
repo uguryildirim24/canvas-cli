@@ -9,7 +9,7 @@ use super::compare::PendingEvent;
 use super::kind::EventKind;
 use crate::store::DbError;
 
-/// How long event rows are kept (REPORT §3.6).
+/// How long event rows are kept.
 pub const RETENTION_DAYS: i64 = 30;
 
 /// One `canvas-cli/event@1` document, before rendering.
@@ -99,7 +99,7 @@ pub fn insert(
 /// dataset: there is no baseline to compare and no allowlisted field to
 /// carry. `before` names the state the plan was in, `after` names the
 /// decision, and neither carries a target, a digest, or a byte of the payload
-/// (REPORT §3.5).
+///.
 #[allow(clippy::too_many_arguments)]
 pub fn insert_decision(
     tx: &Transaction<'_>,
@@ -206,7 +206,7 @@ pub enum CursorCheck {
     Resync,
 }
 
-/// Classify a `--since` cursor (REPORT §3.6, §3.2 exit row).
+/// Classify a `--since` cursor (the design note, §3.2 exit row).
 pub fn check_cursor(
     state: &Connection,
     since: i64,
@@ -270,7 +270,7 @@ pub fn expire(state: &mut Connection, now: Timestamp) -> Result<usize, DbError> 
 /// How far a derived consumer has read the log.
 ///
 /// `notify` deduplicates by cursor, so its position is durable: a second run
-/// posts nothing the first one already posted (REPORT §3.6).
+/// posts nothing the first one already posted.
 pub fn consumer_cursor(state: &Connection, consumer: &str) -> Result<i64, DbError> {
     Ok(state
         .query_row(

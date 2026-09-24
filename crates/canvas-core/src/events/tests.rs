@@ -1,4 +1,4 @@
-//! Observation, baseline, retention, and crash-replay tests (REPORT §3.6).
+//! Observation, baseline, retention, and crash-replay tests.
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};

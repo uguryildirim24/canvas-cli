@@ -5,7 +5,7 @@
 //! running, and a process that dies frees its slot with its descriptor. The
 //! files are created with `create_new` when absent and are never deleted.
 //!
-//! Storage transfers keep a per-process semaphore, as REPORT §3.6 says.
+//! Storage transfers keep a per-process semaphore, as the design note says.
 
 use std::fs::File;
 use std::future::Future;

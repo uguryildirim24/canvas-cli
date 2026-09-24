@@ -1,14 +1,14 @@
 //! Broker ownership: one host per identity, elected by a file lock.
 //!
 //! `<data root>/bridge/<identity-key>.lock` is a persistent identity-local
-//! lock (REPORT §3.6): it is created once and removed only by
-//! `identity remove`. Its content is the owner's own description, rewritten
+//! lock: it is created once and removed only by `identity remove`. Its
+//! content is the holding process's own description, rewritten
 //! each time ownership is taken, so a second host can report who holds it
 //! instead of replacing it.
 //!
 //! The socket is not a lock file. It is transient IPC, so a stale one may be
 //! unlinked — but only by a process that already holds this lock, which by
-//! construction means no live host owns the endpoint (REPORT §3.4).
+//! construction means no live host owns the endpoint.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};

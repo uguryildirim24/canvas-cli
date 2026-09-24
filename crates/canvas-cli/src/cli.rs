@@ -818,7 +818,7 @@ impl Cli {
         } else if self.json && self.command.has_raw_output() {
             Some("--json cannot be used with this raw-output command")
         } else if self.json && matches!(self.command, Commands::Watch { .. }) {
-            // REPORT §3.6: the stream is its own contract, and §7's one
+            // the design note: the stream is its own contract, and §7's one
             // document per invocation rule is unchanged. `--jsonl` is the
             // machine-readable form of `watch`.
             Some("--json cannot be used with watch; use --jsonl")
@@ -875,13 +875,13 @@ impl Commands {
     pub fn has_raw_output(&self) -> bool {
         match self {
             // `bridge host` speaks Chrome's native-messaging framing on
-            // stdout, not the §7 output contract (REPORT §3.2).
+            // stdout, not the §7 output contract.
             Self::Bridge {
                 command: BridgeCommand::Host { .. },
             }
             | Self::Completions { .. }
             // Notify posts derived alerts, not a query result, so it has no
-            // §7 payload and no Appendix D row (REPORT §3.6).
+            // §7 payload and no Appendix D row.
             | Self::Notify { .. }
             | Self::Schema { .. }
             | Self::Auth {

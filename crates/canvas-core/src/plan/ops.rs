@@ -15,7 +15,7 @@ use crate::store::{DbError, Store};
 use super::record::{Approval, ApprovalChannel, Observations, PlanKind, PlanRow, PlanState};
 use super::{HandleRefusal, PlanError};
 
-/// How long a prepared plan may wait for approval (REPORT §3.5).
+/// How long a prepared plan may wait for approval.
 pub const EXPIRY: jiff::SignedDuration = jiff::SignedDuration::from_mins(15);
 
 /// The columns [`load`] reads, in order.
@@ -266,7 +266,7 @@ pub fn identity_generation(store: &Store) -> Result<String, PlanError> {
 /// Issue a random approval handle bound to one plan, consumer, and expiry.
 ///
 /// The handle is a version-4 UUID: a 128-bit value carrying 122 bits from the
-/// operating system's random source. It is the server-issued secret REPORT
+/// operating system's random source. It is the server-issued secret the design note
 /// §3.5 requires; echoing a plan digest is not a substitute for holding it.
 pub fn issue_handle(
     store: &Store,
@@ -405,7 +405,7 @@ pub fn invalidate(store: &Store, plan_id: &str, reason: &str) -> Result<PlanRow,
 ///
 /// The event commits with the state change, so a decision the log names is a
 /// decision the plan row already carries. It records the plan id and nothing
-/// else: what was in the plan stays in the plan (REPORT §3.5).
+/// else: what was in the plan stays in the plan.
 ///
 /// `None` is the invalidation `execute` performs when a meaningful fact
 /// changed. That is not a decision, so it produces no decision event.
@@ -460,7 +460,7 @@ pub fn cancel(store: &Store, plan_id: &str) -> Result<PlanRow, PlanError> {
 ///
 /// The payload is the plan id and the decision, and nothing else: no target,
 /// no digest, no bytes. The panel shows the person what they decided; the log
-/// records only that a decision happened (REPORT §3.5).
+/// records only that a decision happened.
 fn record_plan_decision(
     tx: &rusqlite::Transaction<'_>,
     kind: EventKind,
@@ -551,7 +551,7 @@ pub fn expire(store: &Store, plan_id: &str) -> Result<PlanRow, PlanError> {
     require(store, plan_id)
 }
 
-/// The refusal reason a non-admissible state maps to (REPORT §3.2).
+/// The refusal reason a non-admissible state maps to.
 pub fn refusal_for(state: PlanState) -> &'static str {
     match state {
         PlanState::Expired => "expired",
@@ -563,7 +563,7 @@ pub fn refusal_for(state: PlanState) -> &'static str {
 /// Refuse a plan that can no longer be admitted.
 ///
 /// Expiry is evaluated here, at admission, and nowhere else: a status read of
-/// an executed plan must never turn it into an expired one (REPORT §3.5).
+/// an executed plan must never turn it into an expired one.
 pub fn guard_admission(plan: &PlanRow, now: Timestamp) -> Result<(), PlanError> {
     match plan.state {
         PlanState::Expired => {

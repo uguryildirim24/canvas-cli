@@ -570,7 +570,7 @@ mod tests {
     /// A fixture is the example Appendix D publishes and the shape the MCP
     /// `outputSchema` advertises, so a fixture the document rejects means a
     /// host validating a legitimate answer would reject it too. This is the
-    /// defect `docs/reviews/code-M8-a2.md` found on the eight M8-a schemas:
+    /// defect review found on the eight M8-a schemas:
     /// their documents were inferred from the fixture and declared every
     /// nullable field non-nullable.
     #[test]

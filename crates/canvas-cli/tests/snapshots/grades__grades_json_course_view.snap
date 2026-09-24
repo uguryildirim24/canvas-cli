@@ -54,7 +54,7 @@ expression: v
   "generated_at": "2026-09-09T17:05:12Z",
   "identity": {
     "key": "KEY",
-    "origin": "https://courses.example.test",
+    "origin": "https://canvas.example.edu",
     "user_id": "12345"
   },
   "outcome": "ok",
@@ -165,7 +165,7 @@ expression: v
         "course": {
           "code": "CS-101",
           "enrollment_state": "active",
-          "html_url": "https://courses.example.test/courses/101",
+          "html_url": "https://canvas.example.edu/courses/101",
           "id": "101",
           "is_favorite": true,
           "name": "Intro to Computing",

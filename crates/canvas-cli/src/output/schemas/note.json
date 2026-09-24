@@ -6,7 +6,7 @@
     "consumer": "mcp:claude-code",
     "text": "The rubric asks for two sources. See the assignment page.",
     "source_refs": [
-      "https://courses.example.test/courses/45679/assignments/98765"
+      "https://canvas.example.edu/courses/45679/assignments/98765"
     ],
     "at": "2026-09-10T16:04:38Z",
     "generation": 3

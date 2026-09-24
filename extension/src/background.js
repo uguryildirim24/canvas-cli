@@ -216,7 +216,7 @@ function openPort() {
   state.port = chrome.runtime.connectNative(HOST_NAME);
   state.port.onMessage.addListener(onHostMessage);
   state.port.onDisconnect.addListener(() => {
-    // Host loss ends sharing (REPORT section 3.3 step 6).
+    // Host loss ends sharing (the design note section 3.3 step 6).
     state.port = null;
     state.attached = false;
   });

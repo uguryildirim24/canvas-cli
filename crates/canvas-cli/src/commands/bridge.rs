@@ -2,7 +2,7 @@
 //!
 //! `install`, `status`, and `detach` are ordinary class-B commands with
 //! `--json` per §7. `host` is not: Chrome starts it and its stdout is the
-//! native-messaging channel, so it has its own transport framing (REPORT
+//! native-messaging channel, so it has its own transport framing (the design note
 //! §3.2) and lives in [`crate::bridge::host`].
 //!
 //! `install` writes one file: the native-messaging host manifest, into the

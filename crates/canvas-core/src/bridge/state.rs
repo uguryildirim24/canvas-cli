@@ -1,6 +1,6 @@
 //! The broker: one identity, at most one attachment, and who may read it.
 //!
-//! Every rule REPORT §3.3 states about the lifetime of an attachment lives
+//! Every rule the design note states about the lifetime of an attachment lives
 //! here, and nothing here does I/O, so all of it is tested directly:
 //!
 //! - one active attachment per identity, bound to the browser-profile
@@ -25,7 +25,7 @@ use crate::bridge::note::{self, Note};
 use crate::bridge::text::{bound_extract, extract_bytes, sanitize_url};
 use crate::bridge::wire::{Account, Extract, Observation, PauseCause, Route, Zone, classify_route};
 
-/// Browser context is never cacheable (REPORT §3.2): its TTL is always zero.
+/// Browser context is never cacheable: its TTL is always zero.
 pub const BROWSER_TTL_MS: u64 = 0;
 
 /// The identity one broker owns.
@@ -204,7 +204,7 @@ impl Broker {
             };
         };
         // Cross-origin navigation ends the grant: `activeTab` is gone and a
-        // new gesture is required (REPORT §3.3 step 6).
+        // new gesture is required.
         if observation.origin != current.origin || observation.origin != self.identity.origin {
             self.attachment = None;
             return Accepted::Ended;
@@ -263,7 +263,7 @@ impl Broker {
             current.account = account;
         }
         current.state = if zone == Zone::Assessment {
-            // Entering an assessment pauses sharing (REPORT §3.3 step 6).
+            // Entering an assessment pauses sharing.
             current.erase();
             AttachmentState::Paused
         } else if new_document {
@@ -445,7 +445,7 @@ impl Broker {
     /// Whether an extract for the current document is already held.
     ///
     /// The host asks before it sends a text request, so a metadata read never
-    /// triggers a probe (REPORT §3.3 step 4).
+    /// triggers a probe.
     #[must_use]
     pub fn has_text(&self) -> bool {
         self.attachment.as_ref().is_some_and(|current| {
@@ -475,12 +475,12 @@ impl Broker {
     /// This is the capability check alone, and it is separate from `context`
     /// so the host can make it **before** it asks the browser for anything: a
     /// caller that may not read must not be able to cause a page extraction
-    /// or an account probe (REPORT §3.3 step 4).
+    /// or an account probe.
     ///
     /// `attachment_id` is the capability. `consumer`, which the adapter sets
     /// and a model cannot, selects the attachment that consumer opted into.
     /// With neither — the CLI — the sole attachment is served, which is what
-    /// REPORT §3.2 permits the CLI and nothing else.
+    /// the design note permits the CLI and nothing else.
     pub fn may_read(
         &self,
         attachment_id: Option<&str>,
@@ -593,7 +593,7 @@ impl Broker {
     /// document the person is on.
     ///
     /// Notes and navigation are both bound to the navigation generation the
-    /// agent last read (REPORT §3.2, §3.3 step 6). Any other value — behind
+    /// agent last read (the design note, §3.3 step 6). Any other value — behind
     /// or ahead — is stale: the agent is talking about a page that is not the
     /// one in front of the person.
     pub fn check_generation(&self, generation: u64) -> Result<(), Reason> {
@@ -717,7 +717,7 @@ impl Broker {
             .and_then(|current| current.follows.get(consumer.unwrap_or_default()).cloned())
     }
 
-    /// Check the probed account against this identity (REPORT §3.3 step 2).
+    /// Check the probed account against this identity.
     fn verify(&self, account: Option<&Account>) -> Result<VerifiedAccount, Reason> {
         // A failed or redirected probe sends no account at all: without one,
         // nothing is joined and no text is accepted.
@@ -1220,7 +1220,7 @@ mod tests {
             Err(Reason::NotAttached)
         );
 
-        // The two callers REPORT §3.2 admits.
+        // The two callers the design note admits.
         assert_eq!(broker.may_read(Some(&id), Some("mcp:alpha")), Ok(()));
         assert_eq!(broker.may_read(None, None), Ok(()));
 
@@ -1256,7 +1256,7 @@ mod tests {
             broker.context(Some("00000000000000000000000000000000"), None, false),
             Err(Reason::NotAttached)
         );
-        // The CLI, with neither, reads the sole attachment (REPORT §3.2).
+        // The CLI, with neither, reads the sole attachment.
         assert!(broker.context(None, None, false).is_ok());
     }
 

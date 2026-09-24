@@ -180,7 +180,7 @@ const NULLABLE_WITH_EXAMPLE: &[&str] = &[
     "canvas-cli/todo@1:items[].scheduled_at_local",
     "canvas-cli/todo@1:items[].status.graded",
     "canvas-cli/todo@1:items[].status.submitted",
-    // `here@1` = `ContextBundle@1` (REPORT §3.3). Every one of these is
+    // `here@1` = `ContextBundle@1`. Every one of these is
     // absent when the answer does not carry it, and the fixture shows the
     // populated form so the shape stays described.
     "canvas-cli/here@1:attachment",
@@ -561,7 +561,7 @@ fn repo_path(relative: &str) -> PathBuf {
 /// A journal created before plans exposes `plan_id` and `approval` as null.
 ///
 /// Appendix D's nullable convention makes that the correct legacy shape, and
-/// REPORT §3.5 makes `plan@1`'s `approval` null until a person approves. Every
+/// the design note makes `plan@1`'s `approval` null until a person approves. Every
 /// submission in this suite runs through the plan path, so no snapshot carries
 /// the legacy shape yet and nothing else would notice a fixture that declares
 /// these fields as always-present.

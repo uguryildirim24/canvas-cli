@@ -1,6 +1,6 @@
 // Zone classification, which happens BEFORE any text is read.
 //
-// The five zones are REPORT section 3.5's: `open`, `graded`, `assessment`,
+// The five zones are the design note section 3.5's: `open`, `graded`, `assessment`,
 // `external`, `unknown`. The last three expose nothing at all — no title, no
 // URL beyond the origin, no route ids, no text.
 //
@@ -94,6 +94,6 @@ function zoneForFrame(frame) {
     return "open";
   }
   // An unknown frame is not searched for clues by first reading its contents
-  // (REPORT section 3.3). It makes the page opaque instead.
+  // (the design note section 3.3). It makes the page opaque instead.
   return "unknown";
 }

@@ -139,7 +139,7 @@ enum Load {
     Idle,
     /// One `canvas download` stream against the same server.
     Download,
-    /// One resident `canvas watch` on the same identity (REPORT §3.6).
+    /// One resident `canvas watch` on the same identity.
     Watch,
 }
 
@@ -1092,14 +1092,14 @@ fn document(
         writeln!(out, "|---|---:|---:|---|")?;
         writeln!(
             out,
-            "| watch tick, full refresh | {:.1} | {:.1} | none (REPORT §3.6: \
+            "| watch tick, full refresh | {:.1} | {:.1} | none (the design note: \
              dataset TTL plus backoff, no 60 s freshness guarantee) |",
             tick.p50, tick.p95
         )?;
         writeln!(
             out,
             "\nThe last measured tick made {} API request(s) and streamed {} \
-             event(s). REPORT §3.6 sets no latency target for `watch`; the \
+             event(s). the design note sets no latency target for `watch`; the \
              number is recorded so a later change can be compared with it.",
             tick.requests, tick.events
         )?;
@@ -1107,7 +1107,7 @@ fn document(
             out,
             "\nThe `watch` rows of the table above are the §13 `todo` targets \
              measured while that resident `watch` was running, which is the \
-             REPORT §4 acceptance condition for M6-c."
+             the design note acceptance condition for M6-c."
         )?;
     } else {
         writeln!(out, "\n## Watch\n")?;
@@ -1270,7 +1270,7 @@ fn document(
             "The follow number is a **dispatch acknowledgement**, not a page \
              load. It ends when the companion says it took the navigation; \
              what became of the page is a separate message that arrives \
-             later and lands on `here@1`'s `browser.follow` (REPORT §3.2). \
+             later and lands on `here@1`'s `browser.follow`. \
              Nothing in this measurement waits for a browser to render.\n"
         )?;
         writeln!(

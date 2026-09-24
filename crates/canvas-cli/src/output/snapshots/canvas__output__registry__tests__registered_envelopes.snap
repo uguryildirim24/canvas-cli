@@ -2915,7 +2915,7 @@ expression: rendered
           "load": "loaded",
           "load_at": "2026-09-10T16:04:40Z",
           "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
-          "url": "https://courses.example.test/courses/45679/assignments/98765"
+          "url": "https://canvas.example.edu/courses/45679/assignments/98765"
         },
         "frame_id": 0,
         "navigation_generation": 3,
@@ -2926,13 +2926,13 @@ expression: rendered
             "generation": 3,
             "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
             "source_refs": [
-              "https://courses.example.test/courses/45679/assignments/98765"
+              "https://canvas.example.edu/courses/45679/assignments/98765"
             ],
             "text": "The rubric asks for two sources. See the assignment page."
           }
         ],
         "observed_at": "2026-09-10T16:04:40Z",
-        "origin": "https://courses.example.test",
+        "origin": "https://canvas.example.edu",
         "page_kind": "assignment",
         "page_url": null,
         "quiz_id": null,
@@ -2944,13 +2944,13 @@ expression: rendered
         "topic_id": null,
         "truncated": false,
         "ttl_ms": 0,
-        "url": "https://courses.example.test/courses/45679/assignments/98765",
+        "url": "https://canvas.example.edu/courses/45679/assignments/98765",
         "zone": "open"
       },
       "consumer": "mcp:claude-code",
       "identity": {
         "generation": "01932f3a-7a1b-7c3d-8e90-123456789abc",
-        "key": "courses.example.test-12345-3f9a1c2e"
+        "key": "canvas.example.edu-12345-3f9a1c2e"
       },
       "reason": null,
       "state": "attached"
@@ -2985,7 +2985,7 @@ expression: rendered
         "generation": 3,
         "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
         "source_refs": [
-          "https://courses.example.test/courses/45679/assignments/98765"
+          "https://canvas.example.edu/courses/45679/assignments/98765"
         ],
         "text": "The rubric asks for two sources. See the assignment page."
       },
@@ -3022,7 +3022,7 @@ expression: rendered
         "load": "unknown",
         "load_at": null,
         "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
-        "url": "https://courses.example.test/courses/45679/assignments/98765"
+        "url": "https://canvas.example.edu/courses/45679/assignments/98765"
       },
       "id": "98765",
       "reason": null,
@@ -3030,7 +3030,7 @@ expression: rendered
         "the browser loads the page, and Canvas' own page controllers run: a discussion page marks itself read"
       ],
       "target_kind": "assignment",
-      "url": "https://courses.example.test/courses/45679/assignments/98765"
+      "url": "https://canvas.example.edu/courses/45679/assignments/98765"
     },
     "schema": "canvas-cli/follow@1",
     "warnings": []
@@ -3061,17 +3061,17 @@ expression: rendered
             "mcp:claude-code"
           ],
           "navigation_generation": 3,
-          "origin": "https://courses.example.test",
+          "origin": "https://canvas.example.edu",
           "state": "attached",
           "zone": "open"
         }
       ],
-      "endpoint": "/Users/rolf/.local/share/canvas-cli/bridge/courses.example.test-12345-3f9a1c2e.sock",
+      "endpoint": "/Users/you/.local/share/canvas-cli/bridge/canvas.example.edu-12345-3f9a1c2e.sock",
       "manifest": {
         "browser": "chrome",
         "extension_id": "abcdefghijklmnopabcdefghijklmnop",
         "host_name": "com.canvas_cli.bridge",
-        "path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+        "path": "/Users/you/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
         "present": true
       },
       "owner": {
@@ -3105,7 +3105,7 @@ expression: rendered
       "browser": "chrome",
       "extension_id": "abcdefghijklmnopabcdefghijklmnop",
       "host_name": "com.canvas_cli.bridge",
-      "manifest_path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+      "manifest_path": "/Users/you/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
       "steps": [
         "Open chrome://extensions and turn on Developer mode.",
         "Choose \"Load unpacked\" and select the `extension/` directory of this checkout.",

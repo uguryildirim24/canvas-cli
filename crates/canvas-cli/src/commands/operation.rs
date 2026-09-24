@@ -3,7 +3,7 @@
 //!
 //! All three writes run the same three steps `canvas submit` runs — freeze a
 //! plan, record an approval, execute the approved plan — on the same plan
-//! layer (REPORT §3.5). What differs is only what is frozen and where it goes.
+//! layer. What differs is only what is frozen and where it goes.
 //! Nothing here dispatches without a recorded approval, nothing resends, and
 //! nothing claims more than it observed.
 

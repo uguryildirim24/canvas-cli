@@ -1,4 +1,4 @@
-//! Operation plans and approval (REPORT §3.5).
+//! Operation plans and approval.
 //!
 //! A plan is the frozen description of one remote write, held between the
 //! moment the content is fixed and the moment a person approves it. It exists
@@ -109,7 +109,7 @@ pub enum PlanError {
     /// No such plan.
     #[error("plan not found")]
     NotFound,
-    /// The plan cannot be admitted (exit 8, REPORT §3.2).
+    /// The plan cannot be admitted (exit 8).
     #[error("{message}")]
     Refused {
         /// `expired`, `invalidated`, or `approval_required`.
@@ -155,7 +155,7 @@ pub enum PlanError {
 impl PlanError {
     /// The `refused` reason this error carries, when it is a plan refusal.
     ///
-    /// REPORT §3.2 maps every one of these to exit 8.
+    /// the design note maps every one of these to exit 8.
     #[must_use]
     pub fn refusal_reason(&self) -> Option<&str> {
         match self {

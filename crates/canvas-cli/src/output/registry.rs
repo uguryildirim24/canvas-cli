@@ -703,7 +703,7 @@ pub struct SyncResult {
     pub datasets: Vec<SyncDatasetJson>,
 }
 
-/// One `canvas-cli/event@1` line document (REPORT §3.6).
+/// One `canvas-cli/event@1` line document.
 ///
 /// A stream line is self-describing: it names its own schema, so a consumer
 /// that reads `canvas watch --jsonl` needs no envelope around it. §7 is
@@ -1068,7 +1068,7 @@ pub struct PlanApprovalJson {
     pub plan_sha256: String,
 }
 
-/// A frozen plan (REPORT §3.5).
+/// A frozen plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanJson {
     pub plan_id: String,
@@ -1578,7 +1578,7 @@ mod tests {
                         panic!("fixture for {} is not JSON: {e}", entry.id);
                     });
                 // A stream document is a whole line, not a `result` payload:
-                // `canvas watch --jsonl` writes it as it stands (REPORT §3.6).
+                // `canvas watch --jsonl` writes it as it stands.
                 if entry.id == SCHEMA_EVENT {
                     assert_eq!(result["schema"], entry.id);
                     let _: EventJson = serde_json::from_value(result.clone())
@@ -1962,11 +1962,11 @@ mod tests {
                 serde_json::from_str(include_str!("schemas/courses.json")).unwrap();
             let mut env = Envelope::new(
                 SCHEMA_COURSES,
-                Some("lasell"),
+                Some("school"),
                 Some(IdentityRef {
-                    origin: "https://courses.example.test".into(),
+                    origin: "https://canvas.example.edu".into(),
                     user_id: "12345".into(),
-                    key: "courses.example.test-12345-3f9a1c2e".into(),
+                    key: "canvas.example.edu-12345-3f9a1c2e".into(),
                 }),
             )
             .with_result(result);
@@ -2429,7 +2429,7 @@ pub struct InboxUnreadResult {
     pub pending_journals: Vec<String>,
 }
 
-// --- M7-a typed result payloads (`here@1`, `bridge@1`; REPORT §3.2, §3.3) ---
+// --- M7-a typed result payloads (`here@1`, `bridge@1`; the design note, §3.3) ---
 
 /// The identity a bundle belongs to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -2439,7 +2439,7 @@ pub struct HereIdentityJson {
 }
 
 /// The API side of `ContextBundle@1`: whole §7 envelopes, each with its own
-/// freshness. A browser extract never updates one of these (REPORT §3.1).
+/// freshness. A browser extract never updates one of these.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HereApiJson {
     /// A `canvas-cli/course@1` envelope, when the route named a course.
@@ -2454,7 +2454,7 @@ pub struct HereApiJson {
 /// The browser side of `ContextBundle@1`.
 ///
 /// Everything here is an observation of one document at one moment. `ttl_ms`
-/// is zero: browser context is never cacheable (REPORT §3.2).
+/// is zero: browser context is never cacheable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HereBrowserJson {
     pub origin: String,
@@ -2487,7 +2487,7 @@ pub struct HereBrowserJson {
     /// It lives in `browser` because it is an observation of the browser, and
     /// it is where the **load outcome** of a navigation is reported: the
     /// `follow@1` answer carries the dispatch acknowledgement alone
-    /// (REPORT §3.2).
+    ///.
     pub follow: Option<FollowJson>,
     /// The notes the panel is holding for this attachment, oldest first.
     pub notes: Vec<NoteJson>,
@@ -2564,7 +2564,7 @@ pub struct HereAccountJson {
 /// `note@1` result: the note the panel is now holding.
 ///
 /// The note is inert. It is displayed to the person and decides nothing: no
-/// note can approve, decline, or cancel a plan (REPORT §3.5).
+/// note can approve, decline, or cancel a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct NoteResult {
     /// The attachment the note belongs to; `null` when none was held.
@@ -2583,7 +2583,7 @@ pub struct NoteResult {
 ///
 /// `dispatch` is what this answer knows: the companion accepted the
 /// navigation. `load` is `unknown` here by design, and the settled outcome
-/// arrives later on the `here@1` bundle (REPORT §3.2).
+/// arrives later on the `here@1` bundle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowResult {
     /// The attachment whose tab was asked to move; `null` when none was.
@@ -2606,7 +2606,7 @@ pub struct FollowResult {
     pub reason: Option<String>,
 }
 
-/// `here@1` = `ContextBundle@1` (REPORT §3.3).
+/// `here@1` = `ContextBundle@1`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HereResult {
     /// The opaque attachment id, when one was resolved.
