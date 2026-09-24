@@ -10,39 +10,61 @@ scriptable because every data command has a defined `--json` schema. It has no
 teacher, TA, or admin features, and it calls only endpoints a student role can
 call.
 
-`docs/SPEC.md` is the contract. This README is the short version.
+## Why
+
+Canvas is a web app, and the things a student needs from it most often — what
+is due, what is missing, what an assignment actually asks for, what a grade is
+— are each three clicks and a page load away. A terminal client makes them one
+command, makes them scriptable, and makes them available to a coding agent
+without handing that agent a browser session or a password.
+
+## Status
+
+**Working, in daily use, not released.** Version `0.1.0`, no tag, no published
+package. The whole command surface below runs: 923 tests pass, and CI gates
+every commit on `fmt`, `clippy -D warnings`, the test suite, `cargo deny`, and
+an MSRV check.
+
+What "not released" means in practice:
+
+- There is no Homebrew tap and no crates.io release yet, so **building from
+  source is the only install route.** `docs/release.md` is the runbook for
+  making the other routes live.
+- The browser companion in `extension/` has been exercised end to end against
+  a real native-messaging host process, but its Chrome-side flows have not
+  been run in a real browser. `docs/companion.md` says exactly what was and
+  was not tried.
+- `docs/SPEC.md` §19 lists the design questions that are still open.
+
+`docs/SPEC.md` is the contract this code implements. This README is the short
+version.
 
 ## Install
 
-Nothing is published yet: there is no git remote, no Homebrew tap, and no
-crates.io release. The commands below are the routes the project supports, and
-`docs/release.md` records what the owner runs to make them live.
-
 ```sh
-# Homebrew, the supported route on macOS and Linux
-brew install uguryildirim24/homebrew-tap/canvas-lms-cli
-
-# From crates.io, once published
-cargo install canvas-lms-cli
-
-# Prebuilt archive without a compiler, once released
-cargo binstall canvas-lms-cli
+git clone https://github.com/uguryildirim24/canvas-cli
+cd canvas-cli
+cargo build --release        # binary at target/release/canvas
 ```
 
-Direct archive downloads on macOS are not a supported route until the binaries
-are signed and notarized, so there is no `curl | sh` installer.
+Rust 1.88 or newer. Put `target/release/canvas` on your `PATH`, or run
+`cargo install --path crates/canvas-cli`.
 
-To build from this repository:
+To run the gates CI runs:
 
 ```sh
-cargo build --release        # binary at target/release/canvas
 just check                   # fmt, clippy, tests, cargo-deny
 ```
+
+Once a release exists, `brew install uguryildirim24/homebrew-tap/canvas-lms-cli`
+and `cargo binstall canvas-lms-cli` become the supported routes. Direct archive
+downloads on macOS will not be, until the binaries are signed and notarized —
+so there will be no `curl | sh` installer.
 
 ## First run
 
 ```sh
-canvas auth login --host courses.example.test
+canvas auth login --host canvas.example.edu
 ```
 
 `auth login` asks for a **personal access token**. Create one in Canvas at
@@ -60,6 +82,35 @@ Where no credential store is available, the token goes to
 
 Check the result with `canvas auth status`, and check the whole local setup
 with `canvas doctor`.
+
+## A short example
+
+A week, an assignment, and a hand-in:
+
+```console
+$ canvas todo --days 7
+BIO-310  Lab report 4                 due Thu 23:59  (in 2d 4h)
+CHEM-201 Problem set 7                due Fri 17:00  (in 3d 21h)
+CHEM-201 Reading response 3           MISSING        (overdue 3d)
+
+$ canvas assignment chem "problem set 7"
+CHEM-201 · Problem set 7 · 20 points · due 2026-09-26 17:00
+Submit one PDF. Show your work for every equilibrium calculation.
+Your submission: none yet.
+
+$ canvas submit chem "problem set 7" --file ps7.pdf
+about to submit 1 file to CHEM-201 · Problem set 7
+  ps7.pdf  412 KB  sha256 9f2a…c41d
+proceed? [y/N] y
+submitted · attempt 1 · receipt r-01K6QX3
+```
+
+Every one of those takes `--json` and prints a single documented envelope, so
+the same three steps script cleanly:
+
+```sh
+canvas todo --days 7 --json | jq -r '.result.items[] | select(.missing) | .title'
+```
 
 ## Global flags
 
