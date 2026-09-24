@@ -37,7 +37,7 @@ fn the_companion_is_shipped_and_referenced() {
 
 /// The companion asks for one tab on a gesture and a pipe, and nothing else.
 ///
-/// `scripting` is one of two permissions beyond the two the design note names:
+/// `scripting` is one of two permissions beyond the two the design names:
 /// Chrome requires it for `chrome.scripting.executeScript` even under
 /// `activeTab`, and it grants no host access of its own. `sidePanel` is the
 /// other, added in M7-b: it opens the extension's own surface and reaches no

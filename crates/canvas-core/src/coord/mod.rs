@@ -1,4 +1,4 @@
-//! Per-identity coordinator (agent-UX the design note).
+//! Per-identity coordinator (agent-UX design).
 //!
 //! Every CLI, watch, and (later) MCP process that binds one identity shares
 //! four things through the identity directory and `state.sqlite`:

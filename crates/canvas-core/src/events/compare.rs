@@ -1,4 +1,4 @@
-//! Baseline comparison (agent-UX the design note).
+//! Baseline comparison (agent-UX design).
 //!
 //! Only a complete membership of the same scope is compared, and only the
 //! allowlisted §12.2 fields are carried. A payload never holds a full message,

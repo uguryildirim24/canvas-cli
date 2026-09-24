@@ -1,6 +1,6 @@
 //! The broker: one identity, at most one attachment, and who may read it.
 //!
-//! Every rule the design note states about the lifetime of an attachment lives
+//! Every rule the design states about the lifetime of an attachment lives
 //! here, and nothing here does I/O, so all of it is tested directly:
 //!
 //! - one active attachment per identity, bound to the browser-profile
@@ -480,7 +480,7 @@ impl Broker {
     /// `attachment_id` is the capability. `consumer`, which the adapter sets
     /// and a model cannot, selects the attachment that consumer opted into.
     /// With neither — the CLI — the sole attachment is served, which is what
-    /// the design note permits the CLI and nothing else.
+    /// the design permits the CLI and nothing else.
     pub fn may_read(
         &self,
         attachment_id: Option<&str>,

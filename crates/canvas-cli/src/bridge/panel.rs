@@ -104,7 +104,7 @@ impl DecisionRefusal {
 /// Apply one decision the person made in the panel.
 ///
 /// The order is deliberate: everything is checked before anything moves, and
-/// the checks are the ones the design note names — handle, digest, identity
+/// the checks are the ones the design names — handle, digest, identity
 /// generation, consumer. A decision that fails any of them changes nothing at
 /// all, which is what the forgery tests assert.
 pub fn apply_decision(

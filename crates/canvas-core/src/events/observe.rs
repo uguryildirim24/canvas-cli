@@ -1,4 +1,4 @@
-//! The observation outbox and its replay (agent-UX the design note).
+//! The observation outbox and its replay (agent-UX design).
 //!
 //! The cache commit and the state transaction are separate on purpose, so the
 //! sequence has to survive a kill between them:

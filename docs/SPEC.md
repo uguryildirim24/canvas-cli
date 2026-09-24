@@ -388,7 +388,7 @@ default_profile = "school"
 origin    = "https://canvas.example.edu"
 user_id   = 12345
 key       = "canvas.example.edu-12345-3f9a1c2e"
-name      = "Rolf"
+name      = "Sam Rivera"
 time_zone = "America/New_York"
 
 [download]

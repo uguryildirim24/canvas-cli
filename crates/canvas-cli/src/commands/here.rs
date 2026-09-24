@@ -37,7 +37,7 @@ pub async fn run(globals: &Globals, attachment: Option<String>, text: bool) -> E
 
 /// Build one `ContextBundle@1`.
 ///
-/// `consumer` is `None` for the CLI, which the design note lets select the sole
+/// `consumer` is `None` for the CLI, which the design lets select the sole
 /// attachment. Every agent surface passes its own handle, and the broker
 /// serves it only if that consumer attached.
 pub async fn handle(

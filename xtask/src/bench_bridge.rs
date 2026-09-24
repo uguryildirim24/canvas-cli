@@ -7,8 +7,8 @@
 //! - a **follow acknowledgement**: the socket round trip that ends when the
 //!   companion says it took the navigation, target p95 < 300 ms. It is not
 //!   the time to load a page. Nothing here waits for a load, and nothing
-//!   here could: the load outcome is a separate message that arrives later
-//!  . What this measures is the cost of asking.
+//!   here could: the load outcome is a separate message that arrives later.
+//!   What this measures is the cost of asking.
 //!
 //! What is deliberately outside the measurement:
 //!
