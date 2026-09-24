@@ -77,6 +77,43 @@ impl CanvasServer {
             .with_title("Canvas CLI")
             .with_description("Canvas LMS for one identity, over the local `canvas` binary.")
     }
+
+    /// Answer `tools/call`.
+    ///
+    /// Only an unroutable request — a name that is not the one tool, or
+    /// arguments its schema does not admit — becomes a JSON-RPC error. The
+    /// tool itself cannot fail: it reads the binary's own command tree, with
+    /// no session, no network, and no cache behind it. Nothing here waits on
+    /// anything, which is why the handler answers from a ready future.
+    ///
+    /// Nothing here ever asks a person for a decision, so this server never
+    /// answers `input_required` and a request that carries `requestState` is
+    /// refused rather than run.
+    fn answer(request: CallToolRequestParams) -> Result<CallToolResponse, ErrorData> {
+        let name = request.name.to_string();
+        if name != catalog::TOOL {
+            return Err(ErrorData::new(
+                ErrorCode::METHOD_NOT_FOUND,
+                format!("unknown tool {name}"),
+                None,
+            ));
+        }
+        if request.request_state.is_some() {
+            // Nothing on this surface asks for an approval, so a state can
+            // only be a host bug or a replay.
+            return Err(ErrorData::invalid_params(
+                format!("{name} never asks for an approval: it only describes the CLI"),
+                Some(serde_json::json!({ "tool": name })),
+            ));
+        }
+        let result = catalog::dispatch(&name, request.arguments).map_err(|message| {
+            ErrorData::invalid_params(
+                format!("{name}: {message}"),
+                Some(serde_json::json!({ "tool": name })),
+            )
+        })?;
+        Ok(CallToolResponse::Complete(result))
+    }
 }
 
 impl Default for CanvasServer {
@@ -148,44 +185,13 @@ impl ServerHandler for CanvasServer {
         (name == catalog::TOOL).then(|| catalog::spec().tool())
     }
 
-    /// Return the `canvas` command reference.
-    ///
-    /// Only an unroutable request — a name that is not the one tool, or
-    /// arguments its schema does not admit — becomes a JSON-RPC error. The
-    /// tool itself cannot fail: it reads the binary's own command tree, with
-    /// no session, no network, and no cache behind it.
-    ///
-    /// Nothing here ever asks a person for a decision, so this server never
-    /// answers `input_required` and a request that carries `requestState` is
-    /// refused rather than run.
-    async fn call_tool(
+    /// Return the `canvas` command reference. See [`CanvasServer::answer`].
+    fn call_tool(
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResponse, ErrorData> {
-        let name = request.name.to_string();
-        if name != catalog::TOOL {
-            return Err(ErrorData::new(
-                ErrorCode::METHOD_NOT_FOUND,
-                format!("unknown tool {name}"),
-                None,
-            ));
-        }
-        if request.request_state.is_some() {
-            // Nothing on this surface asks for an approval, so a state can
-            // only be a host bug or a replay.
-            return Err(ErrorData::invalid_params(
-                format!("{name} never asks for an approval: it only describes the CLI"),
-                Some(serde_json::json!({ "tool": name })),
-            ));
-        }
-        let result = catalog::dispatch(&name, request.arguments).map_err(|message| {
-            ErrorData::invalid_params(
-                format!("{name}: {message}"),
-                Some(serde_json::json!({ "tool": name })),
-            )
-        })?;
-        Ok(CallToolResponse::Complete(result))
+    ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> {
+        std::future::ready(Self::answer(request))
     }
 }
 

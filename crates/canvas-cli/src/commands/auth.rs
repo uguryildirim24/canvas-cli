@@ -225,10 +225,7 @@ async fn status(globals: &Globals, paths: &CliPaths) -> Result<(), CliError> {
     let row = CredentialRow::load(&open.store, &selected.identity.key)
         .map_err(|e| e.for_selected(&selected))?;
     let mut token_source: Option<&str> = None;
-    if std::env::var("CANVAS_TOKEN")
-        .ok()
-        .is_some_and(|v| !v.is_empty())
-    {
+    if std::env::var("CANVAS_TOKEN").is_ok_and(|v| !v.is_empty()) {
         token_source = Some("env");
     } else {
         match row.active_source {
