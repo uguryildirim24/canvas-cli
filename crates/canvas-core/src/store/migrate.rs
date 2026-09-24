@@ -649,7 +649,7 @@ CREATE TABLE destinations (
 );
 ";
 
-/// Coordinator, observation, and event tables (REPORT §3.6, migration `0003_events`).
+/// Coordinator, observation, and event tables (the design note, migration `0003_events`).
 const STATE_0003: &str = r"
 -- The shared rate-limit governor (SPEC §11). One row, id 1.
 CREATE TABLE governor (
@@ -720,7 +720,7 @@ CREATE INDEX events_observation ON events(observation_id);
 
 -- How far a derived consumer has read the log. `notify` keeps its position
 -- here, so a second run posts nothing the first one already posted: alerts are
--- deduplicated by cursor, never by content (REPORT §3.6).
+-- deduplicated by cursor, never by content.
 CREATE TABLE consumer_cursor (
     consumer TEXT PRIMARY KEY NOT NULL,
     cursor INTEGER NOT NULL,
@@ -728,7 +728,7 @@ CREATE TABLE consumer_cursor (
 );
 ";
 
-/// Operation plans and the approval record (M6-a; REPORT §3.5).
+/// Operation plans and the approval record (M6-a; the design note).
 ///
 /// `plan_sha256` covers the canonical plan document, so an approval names
 /// exact bytes. The journal link is unique: one plan can admit at most one

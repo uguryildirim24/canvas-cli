@@ -1,4 +1,4 @@
-//! The observation outbox and its replay (agent-UX REPORT §3.6).
+//! The observation outbox and its replay (agent-UX the design note).
 //!
 //! The cache commit and the state transaction are separate on purpose, so the
 //! sequence has to survive a kill between them:
@@ -212,7 +212,7 @@ fn apply(conns: &mut StoreConns, observation_id: &str) -> Result<Observed, DbErr
     let mut result = Observed::default();
     let events = match &baseline {
         // The first complete observation of a scope sets the baseline and
-        // emits nothing (REPORT §3.6).
+        // emits nothing.
         None => {
             result.baseline = true;
             Vec::new()

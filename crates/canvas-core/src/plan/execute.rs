@@ -91,7 +91,7 @@ pub async fn execute(
         return Err(invalidate(store, &plan, "identity generation changed"));
     }
 
-    // REPORT §3.6: foreground interest, registered before the first pre-flight
+    // the design note: foreground interest, registered before the first pre-flight
     // request and held until execute returns. While it is registered `watch`
     // admits no new polling request, so the revalidation read is never queued
     // behind a poll. A coordinator that cannot record it costs priority, not
@@ -195,7 +195,7 @@ const CONTENTION_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Wait for a concurrent execute of this plan, then return its journal.
 ///
-/// REPORT §3.5: a concurrent execute, a restarted host, or a replayed approval
+/// the design note: a concurrent execute, a restarted host, or a replayed approval
 /// returns the existing journal and never creates a second attempt. Admission
 /// held by anything else is still the ordinary in-progress refusal.
 async fn wait_for_existing(

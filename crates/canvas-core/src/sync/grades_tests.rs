@@ -27,11 +27,7 @@ fn ts(secs: i64) -> Timestamp {
 
 fn setup() -> (TempDir, OpenIdentity) {
     let dir = TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://lasell.instructure.com",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.edu", 12345, "2026-01-01T00:00:00Z");
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
     fs::create_dir_all(paths.lock_path.parent().unwrap()).unwrap();

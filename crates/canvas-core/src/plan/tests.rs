@@ -1,4 +1,4 @@
-//! Plan, approval, and execute acceptance tests (REPORT §3.5).
+//! Plan, approval, and execute acceptance tests.
 
 use canvas_api::{Client, GovernorConfig, Secret};
 use jiff::Timestamp;

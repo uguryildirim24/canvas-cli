@@ -25,9 +25,6 @@ and the payload shapes are
 The choices this file used to list are in §24, and the open ones are SPEC
 §19 items 30, 31, 32, 41, 42, 43, 44, and 45.
 
-Reviews: [`reviews/code-M7-a.md`](reviews/code-M7-a.md),
-[`reviews/code-M7-b.md`](reviews/code-M7-b.md).
-
 Two things stay here, because no section of the SPEC carries them: the
 install walkthrough, and the table of checks that need a real browser.
 

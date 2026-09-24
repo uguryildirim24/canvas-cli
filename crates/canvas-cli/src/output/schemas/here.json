@@ -3,7 +3,7 @@
   "state": "attached",
   "consumer": "mcp:claude-code",
   "identity": {
-    "key": "lasell.instructure.com-12345-3f9a1c2e",
+    "key": "canvas.example.edu-12345-3f9a1c2e",
     "generation": "01932f3a-7a1b-7c3d-8e90-123456789abc"
   },
   "api": {
@@ -12,7 +12,7 @@
     "announcement": null
   },
   "browser": {
-    "origin": "https://lasell.instructure.com",
+    "origin": "https://canvas.example.edu",
     "account": { "user_id": "12345", "observed_at": "2026-09-10T16:04:40Z" },
     "zone": "open",
     "page_kind": "assignment",
@@ -21,7 +21,7 @@
     "topic_id": null,
     "quiz_id": null,
     "page_url": null,
-    "url": "https://lasell.instructure.com/courses/45679/assignments/98765",
+    "url": "https://canvas.example.edu/courses/45679/assignments/98765",
     "title": "Essay 1",
     "document_id": "6C1F7A2E9B3D4A58",
     "frame_id": 0,
@@ -36,7 +36,7 @@
     "content_reason": null,
     "follow": {
       "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
-      "url": "https://lasell.instructure.com/courses/45679/assignments/98765",
+      "url": "https://canvas.example.edu/courses/45679/assignments/98765",
       "dispatched": true,
       "dispatched_at": "2026-09-10T16:04:39Z",
       "dispatch_ms": 41,
@@ -50,7 +50,7 @@
         "consumer": "mcp:claude-code",
         "text": "The rubric asks for two sources. See the assignment page.",
         "source_refs": [
-          "https://lasell.instructure.com/courses/45679/assignments/98765"
+          "https://canvas.example.edu/courses/45679/assignments/98765"
         ],
         "at": "2026-09-10T16:04:38Z",
         "generation": 3

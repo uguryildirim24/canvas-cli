@@ -96,7 +96,7 @@ struct Frozen {
 /// Run pre-flight and freeze one plan, without approving anything.
 ///
 /// The stored plan is `prepared` and no lock is held when this returns, so a
-/// person can take as long as they need to decide (REPORT §3.5).
+/// person can take as long as they need to decide.
 async fn freeze_plan(
     globals: &Globals,
     args: SubmitArgs,
@@ -165,7 +165,7 @@ async fn freeze_plan(
         } else {
             InputKind::OnlineTextEntry
         };
-        // REPORT §3.6: foreground submission interest, registered as early as
+        // the design note: foreground submission interest, registered as early as
         // it can be and held until the command finishes. An interest is keyed
         // by assignment, so it cannot be registered before the resolution read
         // that produces the id: the token validation and `resolve_target`
@@ -556,7 +556,7 @@ pub fn cancel_plan(session: &Session, plan_id: &str) {
 
 /// Map a plan-layer failure onto the §14 exit codes.
 ///
-/// Every plan refusal is exit 8 and carries the REPORT §3.2 reason
+/// Every plan refusal is exit 8 and carries the the design note reason
 /// (`expired`, `invalidated`, or `approval_required`) in `details`.
 pub fn map_plan_error(session: &Session, err: PlanError) -> Handled {
     if let Some(reason) = err.refusal_reason() {
@@ -577,7 +577,7 @@ pub fn map_plan_error(session: &Session, err: PlanError) -> Handled {
     }
 }
 
-/// A plan refusal: exit 8 with the REPORT §3.2 reason in `details`.
+/// A plan refusal: exit 8 with the the design note reason in `details`.
 pub fn plan_refusal(session: &Session, reason: &str, message: &str) -> Handled {
     plan_refusal_with(session, message, serde_json::json!({ "reason": reason }))
 }

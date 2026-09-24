@@ -332,7 +332,7 @@ fn install_writes_the_manifest_and_the_steps() {
 /// browser at all, and the person's own `canvas here` still sees the page.
 ///
 /// The tools that opted a consumer in — `context.attach`, `context.here`,
-/// `context.detach` — left the catalog with the owner's read-only directive
+/// `context.detach` — left the catalog with the read-only decision
 /// (§19 item 48), and the `context/` resource that answered under a consumer
 /// handle was deleted with the whole resource namespace (§19 item 50). What
 /// is pinned here is that both are gone from the wire, and that neither the

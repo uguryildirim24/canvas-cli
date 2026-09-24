@@ -5,11 +5,11 @@ expression: json
 {
   "schema": "canvas-cli/courses@1",
   "generated_at": "2026-09-09T17:05:12Z",
-  "profile": "lasell",
+  "profile": "school",
   "identity": {
-    "origin": "https://lasell.instructure.com",
+    "origin": "https://canvas.example.edu",
     "user_id": "12345",
-    "key": "lasell.instructure.com-12345-3f9a1c2e"
+    "key": "canvas.example.edu-12345-3f9a1c2e"
   },
   "freshness": [
     {

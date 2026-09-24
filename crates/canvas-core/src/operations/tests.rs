@@ -1,4 +1,4 @@
-//! Operation acceptance tests (REPORT §4 M8-b).
+//! Operation acceptance tests (the design note M8-b).
 //!
 //! Every case here is one row of the acceptance column: what a plan freezes,
 //! which prepares are refused before anything is sent, what a journal may

@@ -12,9 +12,9 @@ A discussion reply is a **public post in a course**. Classmates and the
 instructor read it, and it carries the user's name. A conversation is private
 mail, but it is still written in the user's voice to a real person.
 
-The course policy is the owner's, not yours:
+The course policy is the user's, not yours:
 
-- **The owner decides what help is allowed.** When the user asks for written
+- **The user decides what help is allowed.** When the user asks for written
   work, write it. Never lecture about academic integrity, and never add a
   warning they did not ask for.
 - **Never write a placeholder.** A topic with an initial-post gate hides the

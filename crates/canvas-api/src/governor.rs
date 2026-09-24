@@ -674,7 +674,7 @@ impl Inner {
         // process is live: `merge_locked` owns the reset for it, and it
         // has already run for this admission. Resetting here as well would
         // hand this process an invented full bucket and drop a shared cooldown
-        // (SPEC §11, REPORT §3.6).
+        // (SPEC §11).
         if state
             .shared_seen_at
             .is_some_and(|at| at.elapsed() < Duration::from_secs(SILENCE_SECS))

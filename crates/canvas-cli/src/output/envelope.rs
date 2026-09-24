@@ -264,10 +264,10 @@ mod tests {
     #[test]
     fn envelope_new_honors_canvas_now() {
         with_canvas_now("2026-09-09T17:05:12Z", || {
-            let env = Envelope::new("canvas-cli/courses@1", Some("lasell"), None);
+            let env = Envelope::new("canvas-cli/courses@1", Some("school"), None);
             assert_eq!(env.schema, "canvas-cli/courses@1");
             assert_eq!(env.generated_at, "2026-09-09T17:05:12Z");
-            assert_eq!(env.profile.as_deref(), Some("lasell"));
+            assert_eq!(env.profile.as_deref(), Some("school"));
             assert!(env.identity.is_none());
             assert_eq!(env.outcome, Outcome::Ok);
             assert_eq!(env.exit, 0);

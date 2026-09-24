@@ -1,4 +1,4 @@
-// The side panel: an extension-owned surface (REPORT §3.4).
+// The side panel: an extension-owned surface.
 //
 // It is not a Canvas overlay and it is not a chat window. It has no model
 // behind it, it opens no database, and it makes no request of its own — not

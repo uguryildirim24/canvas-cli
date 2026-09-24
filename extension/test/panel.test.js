@@ -5,7 +5,7 @@ import { companion, fixture } from "./load.js";
 
 const { apiView, attachmentView, followView, journalView, panelView } = companion;
 
-const ORIGIN = "https://lasell.instructure.com";
+const ORIGIN = "https://canvas.example.edu";
 
 function journal(state, extra = {}) {
   return {

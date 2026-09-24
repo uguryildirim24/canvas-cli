@@ -215,7 +215,7 @@ impl Session {
                 let origin = Url::parse(&identity.origin)
                     .map_err(|e| SessionError::Local(format!("invalid identity origin: {e}")))?;
                 // Every process that binds this identity shares one request
-                // budget: the slot files and the `governor` row (REPORT §3.6).
+                // budget: the slot files and the `governor` row.
                 match Client::with_seams(
                     origin,
                     Secret::new(token),

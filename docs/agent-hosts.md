@@ -20,8 +20,7 @@ schema for a validator to reject.
 
 ## What ran
 
-Recorded 2026-09-10 on macOS 26.6.2, arm64, from `lane/w2`, against a
-22-tool catalog. **No third-party row was re-run against the one-tool
+Recorded 2026-09-10 on macOS 26.6.2, arm64, against a 22-tool catalog. **No third-party row was re-run against the one-tool
 build.** The rows are kept because the handshake they exercised is unchanged
 and because one of them found a defect that is still pinned by a test; what
 they loaded is not what this build serves.

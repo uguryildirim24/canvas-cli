@@ -2,7 +2,7 @@
 //!
 //! `canvas mcp` serves exactly one tool, `getclitools`, and it performs
 //! nothing: it returns the `canvas` command reference and the caller runs the
-//! commands itself (owner directive, 2026-09-10; §19 item 50). There is no
+//! commands itself (project decision, 2026-09-10; §19 item 50). There is no
 //! catalog of agent-facing actions any more, so there is no per-tool argument
 //! struct, no per-tool output schema, and no effect annotation system — a
 //! surface with one read-only discovery tool has nothing to classify.
@@ -24,7 +24,7 @@ use crate::mcp::reference;
 
 /// The name of the only tool this server serves.
 ///
-/// It is the owner's own word, used verbatim rather than bent into the dotted
+/// It is the name the tool was asked for, used verbatim rather than bent into the dotted
 /// convention the removed catalog used. A host that has learned the name must
 /// keep finding it.
 pub const TOOL: &str = "getclitools";
@@ -127,7 +127,7 @@ pub fn dispatch(name: &str, arguments: Option<JsonObject>) -> Result<CallToolRes
 mod tests {
     use super::*;
 
-    /// One tool, and it is the owner's name for it.
+    /// One tool, under the name it was asked for.
     ///
     /// A change that adds a second tool has to delete this test to pass,
     /// which is the point (§19 item 50).

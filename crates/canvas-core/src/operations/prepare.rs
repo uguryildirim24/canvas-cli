@@ -1,4 +1,4 @@
-//! `prepare` for the three write operations (M8-b, REPORT §3.5).
+//! `prepare` for the three write operations (M8-b).
 //!
 //! Preparing reads the target, refuses everything that must be refused before
 //! anything is sent, freezes the exact bytes and the exact attachments, and
@@ -437,7 +437,7 @@ pub(super) fn check_quiz_answerable(quiz: &canvas_api::models::Quiz) -> Result<(
 }
 ///
 /// The lock covers the recovery pass only. Nothing is held while a person
-/// decides, exactly as REPORT §3.5 requires of a submission plan.
+/// decides, exactly as the design note requires of a submission plan.
 /// Build the canonical answer set: every session question in id order, with
 /// `null` where the caller answered nothing.
 ///

@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bridge::ipc::Reason;
 
-/// The largest note the broker accepts, in UTF-8 bytes (REPORT §3.2).
+/// The largest note the broker accepts, in UTF-8 bytes.
 pub const MAX_NOTE_BYTES: usize = 8 * 1024;
 
 /// The largest number of source refs one note may carry.
@@ -130,13 +130,13 @@ pub fn check(text: &str, source_refs: &[String], origin: &str, held: usize) -> R
 mod tests {
     use super::*;
 
-    const ORIGIN: &str = "https://lasell.instructure.com";
+    const ORIGIN: &str = "https://canvas.example.edu";
 
     #[test]
     fn a_ref_is_the_granted_origin_or_this_project_and_nothing_else() {
         for good in [
-            "https://lasell.instructure.com/courses/1/assignments/2",
-            "https://lasell.instructure.com/",
+            "https://canvas.example.edu/courses/1/assignments/2",
+            "https://canvas.example.edu/",
             "canvas://receipts/0199",
             "canvas://assignment/45679/98765",
         ] {
@@ -146,10 +146,10 @@ mod tests {
             "javascript:alert(1)",
             "data:text/html,<script>alert(1)</script>",
             "file:///etc/passwd",
-            "http://lasell.instructure.com/courses/1",
-            "https://lasell.instructure.com.evil.test/courses/1",
+            "http://canvas.example.edu/courses/1",
+            "https://canvas.example.edu.evil.test/courses/1",
             "https://evil.test/courses/1",
-            "https://user@lasell.instructure.com/courses/1@evil.test",
+            "https://user@canvas.example.edu/courses/1@evil.test",
             "canvas://",
             "",
             "not a url",

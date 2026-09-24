@@ -656,7 +656,7 @@ mod tests {
     use crate::identity::{IdentityDocument, Paths};
     use crate::store::OpenIdentity;
 
-    const ORIGIN: &str = "https://lasell.instructure.com";
+    const ORIGIN: &str = "https://canvas.example.edu";
 
     fn setup() -> (TempDir, OpenIdentity) {
         let dir = TempDir::new().unwrap();
@@ -731,7 +731,7 @@ mod tests {
             .call_blocking(|conns| {
                 let got = resolve_course(
                     conns,
-                    "https://lasell.instructure.com/courses/99",
+                    "https://canvas.example.edu/courses/99",
                     ORIGIN,
                     CommandClass::B,
                 )
@@ -948,7 +948,7 @@ mod tests {
                 let by_url = resolve_assignment(
                     conns,
                     5,
-                    "https://lasell.instructure.com/courses/5/assignments/11",
+                    "https://canvas.example.edu/courses/5/assignments/11",
                     ORIGIN,
                     CommandClass::B,
                 )
@@ -962,7 +962,7 @@ mod tests {
                 let mismatch = resolve_assignment(
                     conns,
                     5,
-                    "https://lasell.instructure.com/courses/9/assignments/11",
+                    "https://canvas.example.edu/courses/9/assignments/11",
                     ORIGIN,
                     CommandClass::B,
                 )
@@ -994,16 +994,16 @@ mod tests {
     #[test]
     fn canonical_urls_and_assignment_course_binding() {
         assert_eq!(
-            parse_course_url("HTTPS://LASELL.INSTRUCTURE.COM:443/courses/42?x=1", ORIGIN).unwrap(),
+            parse_course_url("HTTPS://canvas.example.edu:443/courses/42?x=1", ORIGIN).unwrap(),
             Some(42)
         );
         assert!(matches!(
-            parse_course_url("https://user@lasell.instructure.com/courses/42", ORIGIN),
+            parse_course_url("https://user@canvas.example.edu/courses/42", ORIGIN),
             Err(ResolveError::OriginMismatch)
         ));
         assert_eq!(
             parse_assignment_url(
-                "https://lasell.instructure.com/courses/1/files/2/assignments/3",
+                "https://canvas.example.edu/courses/1/files/2/assignments/3",
                 ORIGIN
             )
             .unwrap(),
@@ -1015,10 +1015,7 @@ mod tests {
                 conns
                     .cache
                     .execute("INSERT INTO assignments (id, course_id) VALUES (10, 9)", [])?;
-                for input in [
-                    "10",
-                    "https://lasell.instructure.com/courses/5/assignments/10",
-                ] {
+                for input in ["10", "https://canvas.example.edu/courses/5/assignments/10"] {
                     assert!(matches!(
                         resolve_assignment(conns, 5, input, ORIGIN, CommandClass::B),
                         Err(ResolveError::CourseIdMismatch {
@@ -1041,19 +1038,14 @@ mod tests {
                         resolve_assignment(
                             conns,
                             1,
-                            "https://lasell.instructure.com/courses/1/files/2",
+                            "https://canvas.example.edu/courses/1/files/2",
                             ORIGIN,
                             class
                         ),
                         Err(ResolveError::AssignmentNotFound { .. })
                     ));
                     assert!(matches!(
-                        resolve_course(
-                            conns,
-                            "https://lasell.instructure.com/files/2",
-                            ORIGIN,
-                            class
-                        ),
+                        resolve_course(conns, "https://canvas.example.edu/files/2", ORIGIN, class),
                         Err(ResolveError::NotFound { .. })
                     ));
                 }

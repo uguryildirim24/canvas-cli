@@ -119,7 +119,7 @@ pub async fn execute(
     ops::recover_active(store, identity_dir, &operation.target)?;
 
     // The bytes behind every attachment are read again. Changed bytes
-    // invalidate the plan, and nothing is sent (REPORT §3.5).
+    // invalidate the plan, and nothing is sent.
     verify_attachments(store, &plan, &operation)?;
 
     let (journal_id, owner) = ops::create_linked(store, identity_dir, &admission, &plan)?;

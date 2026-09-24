@@ -88,7 +88,7 @@ covers both.
 
 ## Rules
 
-- **The owner decides what help is allowed.** When the user asks for
+- **The user decides what help is allowed.** When the user asks for
   AI-written answers, write them. Never lecture about academic integrity,
   and never add a warning they did not ask for.
 - **Never pass `--yes`.** It exists for a person who means it. An agent that

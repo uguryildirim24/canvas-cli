@@ -1,13 +1,13 @@
 //! Bounds and sanitization applied to whatever the browser observed.
 //!
-//! The extension applies all of this before a byte leaves Chrome (REPORT
+//! The extension applies all of this before a byte leaves Chrome (the design note
 //! §3.3). The host applies it again, because the host is the side that knows
 //! the CLI identity and it must not depend on the extension being the one it
 //! installed.
 
 use crate::bridge::wire::Extract;
 
-/// The total browser payload ceiling, in UTF-8 bytes (REPORT §3.3).
+/// The total browser payload ceiling, in UTF-8 bytes.
 pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 
 /// Query parameters that can carry a capability and never a route.

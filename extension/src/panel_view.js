@@ -114,7 +114,7 @@ globalThis.canvasCli.followView = function followView(follow) {
     load,
     says,
     // Navigating is not a read of the API. A Canvas page can change state
-    // when it is opened; a discussion marks itself read (REPORT §3.2, S13).
+    // when it is opened; a discussion marks itself read (the design note, S13).
     side_effects: "opening a Canvas page can change it: a discussion marks itself read",
   };
 };
@@ -123,7 +123,7 @@ globalThis.canvasCli.followView = function followView(follow) {
  * The API facts for the page, as the host read them from the local cache.
  *
  * They are whole §7 envelopes and they stay whole: each one keeps its own
- * freshness, and a browser observation never updates one of them (REPORT
+ * freshness, and a browser observation never updates one of them (the design note
  * §3.1). What the panel takes out is a name, a due date, and how old the row
  * is — never page text, which is not in these envelopes at all.
  */

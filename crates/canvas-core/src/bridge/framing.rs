@@ -1,4 +1,4 @@
-//! Chrome native-messaging framing (REPORT §3.4).
+//! Chrome native-messaging framing.
 //!
 //! A message is a 4-byte length prefix in **native** byte order followed by
 //! that many bytes of UTF-8 JSON. Chrome's own limit is larger than anything
@@ -13,7 +13,7 @@ use thiserror::Error;
 
 /// The largest message this bridge reads or writes, in bytes.
 ///
-/// The bounded browser payload is 64 KiB (REPORT §3.3); the rest is envelope
+/// The bounded browser payload is 64 KiB; the rest is envelope
 /// and headroom. Chrome permits more, so this is the tighter of the two.
 pub const MAX_MESSAGE_BYTES: u32 = 1024 * 1024;
 

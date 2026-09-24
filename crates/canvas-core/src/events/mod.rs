@@ -1,4 +1,4 @@
-//! Observations, baselines, and the `canvas-cli/event@1` log (REPORT §3.6).
+//! Observations, baselines, and the `canvas-cli/event@1` log.
 //!
 //! A completed refresh is recorded as an observation, compared against the
 //! baseline for its dataset scope, and turned into events. The first complete

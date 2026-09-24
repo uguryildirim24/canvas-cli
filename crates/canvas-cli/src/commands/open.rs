@@ -22,7 +22,7 @@ use crate::output::{
 /// The API previews of this project promise not to change anything. Handing a
 /// URL to the browser promises no such thing: Canvas' own page controllers
 /// run, and the discussion controller marks a topic read when it renders it
-/// (REPORT §3.3 step 7, source S13). The two are different acts and the
+/// (the design note, source S13). The two are different acts and the
 /// output says so.
 pub const NAVIGATION_SIDE_EFFECTS: &str = "the browser loads the page, and Canvas' own page controllers run: a discussion page \
      marks itself read";
@@ -224,7 +224,7 @@ async fn resolve(
 /// then is the companion asked to move the tab. What comes back is the
 /// **dispatch acknowledgement**: the companion took the navigation. Whether
 /// the page loaded is a separate fact, and it arrives later, on the `here@1`
-/// bundle's `browser.follow` (REPORT §3.2).
+/// bundle's `browser.follow`.
 pub async fn follow(
     globals: &Globals,
     command: Option<OpenCommand>,

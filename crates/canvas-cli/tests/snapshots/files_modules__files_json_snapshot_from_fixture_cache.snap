@@ -35,8 +35,8 @@ expression: value
   ],
   "generated_at": "2026-09-09T17:05:12Z",
   "identity": {
-    "key": "lasell.instructure.com-12345-f1e3cb02",
-    "origin": "https://lasell.instructure.com",
+    "key": "canvas.example.edu-12345-f1e3cb02",
+    "origin": "https://canvas.example.edu",
     "user_id": "12345"
   },
   "outcome": "ok",

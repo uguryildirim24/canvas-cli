@@ -492,7 +492,7 @@ pub fn record_attachment_id(
 ///
 /// The attribution is `accepted` when the response named an object id and
 /// `none` when it did not: a 2xx alone says Canvas took the request, and this
-/// process never claims more than that (REPORT §3.5).
+/// process never claims more than that.
 pub fn commit_posted(
     store: &Store,
     owner: &OwnerLock,

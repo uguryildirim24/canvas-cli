@@ -44,11 +44,7 @@ fn ingest_ok(epoch_seen: i64) -> IngestOpts<'static> {
 
 fn setup_identity(dir: &TempDir) -> (Paths, IdentityDocument) {
     let data_root = dir.path().to_path_buf();
-    let doc = IdentityDocument::new(
-        "https://lasell.instructure.com",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.edu", 12345, "2026-01-01T00:00:00Z");
     let paths = Paths::for_identity(&data_root, &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
     fs::create_dir_all(paths.lock_path.parent().unwrap()).unwrap();
@@ -71,7 +67,7 @@ fn identity_key_ipv6_example() {
 fn two_processes_open_same_identity() {
     if let Ok(data) = std::env::var("CANVAS_TEST_TWO_PROCESS_DATA") {
         let marker = PathBuf::from(std::env::var("CANVAS_TEST_TWO_PROCESS_MARKER").unwrap());
-        let key = IdentityKey::compute("https://lasell.instructure.com", 12345);
+        let key = IdentityKey::compute("https://canvas.example.edu", 12345);
         let paths = Paths::for_identity(data, &key);
         let doc = IdentityDocument::read(&paths.identity_json()).unwrap();
         let _open = OpenIdentity::open(&paths, &doc).expect("child open");
