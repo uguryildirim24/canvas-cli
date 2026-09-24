@@ -27,6 +27,7 @@ fn courses_offline_json_without_identity_is_auth_exit_3() {
     let assert = Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path().join("config"))
         .env_remove("CANVAS_IDENTITY_KEY")
         .env_remove("CANVAS_TOKEN")
         .args(["courses", "--offline", "--json", "--color", "never"])
@@ -43,6 +44,7 @@ fn courses_offline_with_identity_but_no_coverage_is_exit_7() {
     let assert = Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path().join("config"))
         .env("CANVAS_IDENTITY_KEY", &key)
         .env_remove("CANVAS_TOKEN")
         .args(["courses", "--offline", "--json", "--color", "never"])
@@ -73,6 +75,7 @@ fn courses_json_snapshot_from_fixture_cache() {
     let (dir, key) = prepare_seeded_courses();
     let output = StdCommand::new(env!("CARGO_BIN_EXE_canvas"))
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path().join("config"))
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
@@ -101,11 +104,7 @@ fn courses_json_snapshot_from_fixture_cache() {
 
 fn prepare_identity_only() -> (tempfile::TempDir, String) {
     let dir = tempfile::TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://courses.example.test",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.edu", 12345, "2026-01-01T00:00:00Z");
     let key = doc.key.to_string();
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
@@ -118,11 +117,7 @@ fn prepare_identity_only() -> (tempfile::TempDir, String) {
 
 fn prepare_seeded_courses() -> (tempfile::TempDir, String) {
     let dir = tempfile::TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://courses.example.test",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.edu", 12345, "2026-01-01T00:00:00Z");
     let key = doc.key.to_string();
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
@@ -142,7 +137,7 @@ fn prepare_seeded_courses() -> (tempfile::TempDir, String) {
                     101,
                     'Intro to Computing',
                     'CS-101',
-                    'https://courses.example.test/courses/101',
+                    'https://canvas.example.edu/courses/101',
                     7,
                     '{"enrollment_state":"active","is_favorite":true,"restricted":false}'
                  )"#,

@@ -36,6 +36,7 @@ impl Fixture {
     fn cmd(&self) -> Command {
         let mut cmd = Command::cargo_bin("canvas").unwrap();
         cmd.env("CANVAS_DATA_ROOT", self.data.path())
+            .env("CANVAS_CONFIG_DIR", self.data.path().join("config"))
             .env("CANVAS_IDENTITY_KEY", &self.key)
             .env("CANVAS_TOKEN", "tok")
             .env("CANVAS_TEST_ALLOW_HTTP", "1")
@@ -172,6 +173,7 @@ fn download_offline_is_exit_2() {
     let assert = Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path().join("config"))
         .args([
             "download",
             "101",
@@ -1133,6 +1135,7 @@ async fn two_process_installers_transfer_outside_the_lock() {
     let spawn = || {
         std::process::Command::new(assert_cmd::cargo::cargo_bin("canvas"))
             .env("CANVAS_DATA_ROOT", fx.data.path())
+            .env("CANVAS_CONFIG_DIR", fx.data.path().join("config"))
             .env("CANVAS_IDENTITY_KEY", &fx.key)
             .env("CANVAS_TOKEN", "tok")
             .env("CANVAS_TEST_ALLOW_HTTP", "1")
