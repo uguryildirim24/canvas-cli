@@ -1,5 +1,5 @@
 # `cargo xtask <task>` is the conventional spelling for the workspace's
-# automation binary, and is what the package briefs and `docs/bench.md` use.
+# automation binary, and is what `docs/bench.md` and `docs/testing.md` use.
 # It stays equivalent to `cargo run -p xtask --`, which CI spells out.
 [alias]
 xtask = "run --package xtask --"
