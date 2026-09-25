@@ -1985,7 +1985,7 @@ mod tests {
     }
 }
 
-// --- M8-a richer reads (Appendix D v2, `docs/reads-v2.md`) ---
+// --- M8-a richer reads (SPEC §23, Appendix D) ---
 
 /// One piece of content the Markdown cannot carry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

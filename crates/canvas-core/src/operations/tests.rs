@@ -1215,7 +1215,7 @@ async fn a_threaded_reply_is_read_back_under_its_parent_entry() {
 ///
 /// The exposed case is a send Canvas never named a conversation for: there is
 /// no thread to read, so `complete` is false and the assertion is refused
-/// however old the journal is (`docs/writes-v2.md` choice 8).
+/// however old the journal is (SPEC §25.5).
 #[tokio::test]
 async fn an_assumption_needs_a_readback_that_covered_the_thread() {
     let (_dir, paths, open, doc) = setup();
@@ -1382,9 +1382,9 @@ async fn assume_not_posted_is_refused_early_and_recorded_late() {
 /// `operation status` recovers nothing (M8-b review).
 ///
 /// SPEC §12.2 names the recoverers, and a readback is not one.
-/// `docs/writes-v2.md` choice 9, the module doc, and the MCP tool description
-/// all say `status` never changes state; it applied the owner-absent recovery
-/// table anyway. `reconcile` still does.
+/// SPEC §25.5, the module doc, and the MCP tool description all say `status`
+/// never changes state; it applied the owner-absent recovery table anyway.
+/// `reconcile` still does.
 #[tokio::test]
 async fn status_leaves_an_abandoned_journal_where_it_found_it() {
     let (_dir, paths, open, doc) = setup();

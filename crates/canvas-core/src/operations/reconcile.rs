@@ -147,8 +147,8 @@ async fn run(
 
     // The owner was absent. `reconcile` is a recoverer (SPEC §12.2 names
     // them); `status` is not, so it reports the row it found and leaves the
-    // state alone — `docs/writes-v2.md` choice 9, and what the tool
-    // description promises a host.
+    // state alone — SPEC §25.5, and what the tool description promises a
+    // host.
     let row = if may_transition {
         ops::recover_owned(store, &owner, journal_id)?;
         ops::require(store, journal_id)?
@@ -192,7 +192,7 @@ async fn run(
         } else if assume_not_posted {
             // A readback that did not cover the whole thread cannot prove
             // absence, so it cannot support the assertion that nothing was
-            // posted either (`docs/writes-v2.md` choice 8). The exposed case
+            // posted either (SPEC §25.5). The exposed case
             // is an `inbox_send` Canvas never named a conversation for: there
             // is no thread to read at all, and asserting "never sent" there
             // invites a resend that would be a second message.
