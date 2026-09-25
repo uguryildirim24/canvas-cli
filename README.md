@@ -21,7 +21,7 @@ without handing that agent a browser session or a password.
 ## Status
 
 **Working, in daily use, not released.** Version `0.1.0`, no tag, no published
-package. The whole command surface below runs: 923 tests pass, and CI gates
+package. The whole command surface below runs: 924 tests pass, and CI gates
 every commit on `fmt`, `clippy -D warnings`, the test suite, `cargo deny`, and
 an MSRV check.
 
