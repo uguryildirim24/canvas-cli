@@ -12,7 +12,9 @@ use crate::journal::{
     create, get_journal, transition,
 };
 use crate::store::OpenIdentity;
-use crate::submit::freeze::{TextSource, freeze_files, freeze_text, validate_comment};
+use crate::submit::freeze::{
+    MAX_COMMENT_CHARS, TextSource, freeze_files, freeze_text, validate_comment,
+};
 use crate::submit::preflight::{create_from_plan, preflight};
 use crate::submit::reconcile::{ReconcileOutcome, reconcile};
 use crate::submit::{InputKind, execute, post_and_finish};
@@ -55,8 +57,22 @@ fn assignment_json() -> serde_json::Value {
 
 #[test]
 fn comment_too_long_is_validation() {
-    let long = "x".repeat(65_536);
+    let long = "x".repeat(MAX_COMMENT_CHARS + 1);
     assert!(validate_comment(Some(&long)).is_err());
+
+    // Canvas counts the comment in characters, not bytes. A comment right at
+    // the limit in multi-byte characters is twice the byte budget and still
+    // valid; one character more is not. Only a unit test can say this: as an
+    // argument to the binary either string is large enough for Linux to
+    // refuse the `execve` outright.
+    let wide = "é".repeat(MAX_COMMENT_CHARS);
+    assert_eq!(wide.len(), 2 * MAX_COMMENT_CHARS);
+    assert_eq!(
+        validate_comment(Some(&wide)).unwrap().as_deref(),
+        Some(wide.as_str())
+    );
+    let too_wide = "é".repeat(MAX_COMMENT_CHARS + 1);
+    assert!(validate_comment(Some(&too_wide)).is_err());
 }
 
 #[tokio::test]
