@@ -36,6 +36,16 @@ jobs:
       - name: deny
         run: cargo deny check
 
+      # The MSRV check shares this `target/` and can reuse nothing from the
+      # gates above: a different rustc fingerprints every unit differently, so
+      # the whole graph — aws-lc-sys included — is compiled a second time
+      # alongside the first. On `ubuntu-latest` the two together fill the
+      # runner's disk and the MSRV build dies linking with `No space left on
+      # device`. Nothing after this point wants the gates' artifacts, and
+      # cleaning them costs no rebuild that was not already going to happen.
+      - name: drop the artifacts the gates are done with
+        run: cargo clean
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
