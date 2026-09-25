@@ -1,0 +1,51 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "quizzes",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 1,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "course_id": "100",
+    "quizzes": [
+      {
+        "allowed_attempts": 2,
+        "due_at": "2026-09-18T23:59:00Z",
+        "id": "101",
+        "locked_for_user": false,
+        "points_possible": 10.0,
+        "published": true,
+        "question_count": 5,
+        "quiz_type": "assignment",
+        "time_limit": 30,
+        "title": "Week 3 Reading Quiz"
+      }
+    ]
+  },
+  "schema": "canvas-cli/quizzes@1",
+  "warnings": []
+}

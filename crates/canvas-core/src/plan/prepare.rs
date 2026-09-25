@@ -1,4 +1,4 @@
-//! `prepare`: freeze one remote write and store it for approval (REPORT §3.5).
+//! `prepare`: freeze one remote write and store it for approval.
 //!
 //! Preparing is an authorized local organization step: it reads the assignment,
 //! freezes the exact bytes, and writes one `prepared` row. It never uploads,

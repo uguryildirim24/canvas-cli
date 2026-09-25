@@ -1,0 +1,30 @@
+{
+  "quiz_submissions": [
+    {
+      "id": 501,
+      "quiz_id": 101,
+      "user_id": 123,
+      "submission_id": 46001,
+      "started_at": "2026-09-11T14:00:00Z",
+      "finished_at": null,
+      "end_at": "2026-09-11T14:30:00Z",
+      "attempt": 1,
+      "extra_attempts": null,
+      "extra_time": null,
+      "manually_unlocked": false,
+      "time_spent": null,
+      "score": null,
+      "score_before_regrade": null,
+      "kept_score": null,
+      "fudge_points": null,
+      "has_seen_results": false,
+      "validation_token": "6b8f45c2a1de90f3",
+      "workflow_state": "untaken",
+      "overdue_and_needs_submission": false,
+      "attempts_left": 2,
+      "quiz_points_possible": 10.0,
+      "html_url": "https://school.test/courses/101/quizzes/101/submissions/501",
+      "result_url": null
+    }
+  ]
+}

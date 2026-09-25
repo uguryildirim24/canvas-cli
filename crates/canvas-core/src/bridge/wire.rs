@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// How much of a page the companion may expose (REPORT §3.5).
+/// How much of a page the companion may expose.
 ///
 /// `assessment`, `external`, and `unknown` expose nothing: no title, no URL
 /// beyond the origin, no route ids, and no text.
@@ -67,7 +67,7 @@ pub enum PageKind {
 }
 
 /// The ids a route carries. Every one of them is a hint until the API
-/// confirms it (REPORT §3.1).
+/// confirms it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Route {
     pub kind: Option<PageKind>,
@@ -250,7 +250,7 @@ pub enum ExtensionMessage {
         request_id: String,
         document_id: String,
         navigation_generation: u64,
-        /// A fresh probe accompanies every extract (REPORT §3.3 step 4).
+        /// A fresh probe accompanies every extract.
         account: Option<Account>,
         zone: Zone,
         extract: Extract,
@@ -276,7 +276,7 @@ pub enum ExtensionMessage {
         /// `loaded`, `failed`, or `unknown`.
         outcome: String,
     },
-    /// A decision the person made in the panel (REPORT §3.5).
+    /// A decision the person made in the panel.
     ///
     /// This is the only approval path in the whole design. It carries the
     /// same handle the panel was shown, and the host checks the handle, the
@@ -363,7 +363,7 @@ pub struct PanelState {
     /// They are read from the local cache and nothing else: the panel must
     /// never be the reason a Canvas request happens, and a stale row is shown
     /// as stale rather than refreshed behind the person's back. No page text
-    /// is here — metadata only (REPORT §3.3).
+    /// is here — metadata only.
     pub api: PanelApi,
     /// The sanitized URL, absent in an opaque zone.
     pub url: Option<String>,
@@ -371,7 +371,7 @@ pub struct PanelState {
     pub title: Option<String>,
     /// When the observation was made, and how old the panel may treat it.
     pub observed_at: Option<String>,
-    /// Always `0`: browser context is never cacheable (REPORT §3.2).
+    /// Always `0`: browser context is never cacheable.
     pub ttl_ms: u64,
     /// The journals for the current course and assignment, newest first.
     pub journals: Vec<PanelJournal>,
@@ -430,7 +430,7 @@ pub struct PanelJournal {
 pub struct PanelPlan {
     pub plan_id: String,
     /// The server-issued handle this panel was shown. A decision must carry
-    /// it back; echoing a digest is not a substitute (REPORT §3.5).
+    /// it back; echoing a digest is not a substitute.
     pub handle: String,
     pub plan_sha256: String,
     pub consumer: Option<String>,

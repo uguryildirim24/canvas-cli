@@ -9,7 +9,7 @@
 //! - it is **not** a Canvas write. Nothing here reaches Canvas at all;
 //! - it is **not** an approval. There is no approval operation on
 //!   `bridge-ipc@1`, so no note — whatever its text or its refs say — can
-//!   approve, decline, or cancel a plan (REPORT §3.5);
+//!   approve, decline, or cancel a plan;
 //! - it is **not** HTML. The text travels as Markdown source, and the panel
 //!   renders a sanitized subset of it that builds no script, no image, and no
 //!   link to anywhere but the granted origin.

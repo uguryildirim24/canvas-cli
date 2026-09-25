@@ -696,17 +696,19 @@ async fn timeout_and_malformed_success_remain_unknown() {
     for timeout in [false, true] {
         let (_dir, paths, open, doc) = setup_identity();
         let server = TestServer::start().await;
-        let client = test_client_with_timeout(&server, std::time::Duration::from_millis(100));
+        // The two legs only need the undelayed answer to arrive inside the
+        // timeout and the delayed one to miss it. The margins have to be wide,
+        // not tight: with a 100ms timeout a loaded CI runner took longer than
+        // that to answer even the request delayed by nothing, and the fast leg
+        // recorded `None` instead of `Other`. A second of headroom costs the
+        // slow leg a second it spends waiting either way.
+        let client = test_client_with_timeout(&server, std::time::Duration::from_secs(1));
         let (jid, owner, frozen) = seed(&paths, &open.store, &doc, false);
         Mock::given(method("POST"))
             .respond_with(
                 ResponseTemplate::new(201)
                     .set_body_string("raw unrecognized body")
-                    .set_delay(std::time::Duration::from_millis(if timeout {
-                        300
-                    } else {
-                        0
-                    })),
+                    .set_delay(std::time::Duration::from_secs(if timeout { 30 } else { 0 })),
             )
             .mount(&server)
             .await;

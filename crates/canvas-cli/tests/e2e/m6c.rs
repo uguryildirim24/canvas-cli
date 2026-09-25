@@ -1,6 +1,6 @@
 //! M6-c: the shared coordinator, the event stream, and `notify`.
 //!
-//! These tests exercise the parts of REPORT §3.6 that need a real process:
+//! These tests exercise the parts of the design that need a real process:
 //! cross-process request permits, refresh single-flight, foreground priority,
 //! and the `watch`/`notify` contracts. Everything that fits inside one process
 //! — the lock-name encoding, the outbox replay, the comparison rules — lives in
@@ -247,7 +247,7 @@ async fn foreground_interest_stops_polling_and_polling_resumes_when_it_ends() {
 
 /// The unread count is observed by the same path every other dataset uses:
 /// a `watch` tick refreshes it, the first observation is silent, and a changed
-/// count is one `inbox.unread_count` event (M8-a item 4, REPORT §3.6).
+/// count is one `inbox.unread_count` event (M8-a item 4).
 #[tokio::test(flavor = "current_thread")]
 async fn a_changed_unread_count_is_one_event_from_the_watch_tick() {
     let server = CanvasServer::start().await;

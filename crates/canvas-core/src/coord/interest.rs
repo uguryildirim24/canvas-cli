@@ -1,4 +1,4 @@
-//! Foreground submission interest (REPORT §3.6).
+//! Foreground submission interest.
 //!
 //! A `submit` or `plan execute` registers before its first pre-flight request.
 //! While a live registration exists, `watch` admits no new polling request and

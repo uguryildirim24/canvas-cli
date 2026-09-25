@@ -45,6 +45,9 @@ pub fn operation_block(row: &OperationRow) -> OperationReceipt {
             Some(conversation_id.to_string()),
             Vec::new(),
         ),
+        OperationTarget::QuizSubmit { course_id, .. } => {
+            (Some(course_id.to_string()), None, None, None, Vec::new())
+        }
     };
     // A send has no conversation id until Canvas answers with one.
     if conversation_id.is_none() {
@@ -64,6 +67,10 @@ pub fn operation_block(row: &OperationRow) -> OperationReceipt {
         topic_id,
         parent_entry_id,
         conversation_id,
+        quiz_id: match &row.intended.target {
+            OperationTarget::QuizSubmit { quiz_id, .. } => Some(quiz_id.to_string()),
+            _ => None,
+        },
         recipients,
         subject: row.intended.subject.clone(),
         state: row.state.as_str().to_owned(),

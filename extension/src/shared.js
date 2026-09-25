@@ -10,7 +10,7 @@ globalThis.canvasCli = globalThis.canvasCli || {};
 // The version both ends of the native channel declare.
 globalThis.canvasCli.NATIVE_PROTOCOL = "bridge-native@1";
 
-// The total browser payload ceiling, in UTF-8 bytes (REPORT section 3.3).
+// The total browser payload ceiling, in UTF-8 bytes (the design note section 3.3).
 globalThis.canvasCli.MAX_PAYLOAD_BYTES = 64 * 1024;
 
 // The one Canvas request this companion ever makes.

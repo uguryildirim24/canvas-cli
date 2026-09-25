@@ -25,9 +25,6 @@ and the payload shapes are
 The choices this file used to list are in §24, and the open ones are SPEC
 §19 items 30, 31, 32, 41, 42, 43, 44, and 45.
 
-Reviews: [`reviews/code-M7-a.md`](reviews/code-M7-a.md),
-[`reviews/code-M7-b.md`](reviews/code-M7-b.md).
-
 Two things stay here, because no section of the SPEC carries them: the
 install walkthrough, and the table of checks that need a real browser.
 
@@ -93,7 +90,7 @@ Follow the install steps above, then:
 | Cross-origin navigation | Go to another site in that tab | `canvas here` reports `not_attached` |
 | Account switch | Sign in to Canvas as another user, reattach | `account_mismatch`, and no text released |
 | Two tabs | Attach a second Canvas tab | One attachment; the newer tab replaces the older |
-| Two consumers | Attach from two MCP hosts | Each reads only after its own `context.attach` |
+| Two consumers | **Nothing to run.** Nothing in the shipped binary attaches a named consumer any more: the five `context.*` tools went in M9 and the `context/{consumer_handle}` resource in M9-b (SPEC §19 items 48 and 50), and `canvas here` from a terminal names no consumer — it takes the sole attachment. The broker's rule is unchanged beneath and is covered by `canvas_core::bridge::state::tests::only_an_opted_in_consumer_reads_the_bundle` | The rule still holds in the broker; there is no longer a way to exercise it by hand |
 | Broker restart | Quit Chrome, reopen it, reattach | A new host takes ownership; no stale socket remains |
 | Panel opens | Click the toolbar button | The side panel opens beside the tab, showing the origin and `attached` |
 | Note display | `canvas note --text "the rubric asks for two sources"` | The note appears in the panel, under the consumer and the time |

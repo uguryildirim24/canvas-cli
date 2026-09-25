@@ -98,6 +98,7 @@ struct CacheConfig {
     ttl_pages: Option<String>,
     ttl_discussions: Option<String>,
     ttl_inbox: Option<String>,
+    ttl_quizzes: Option<String>,
 }
 
 impl Session {
@@ -214,7 +215,7 @@ impl Session {
                 let origin = Url::parse(&identity.origin)
                     .map_err(|e| SessionError::Local(format!("invalid identity origin: {e}")))?;
                 // Every process that binds this identity shares one request
-                // budget: the slot files and the `governor` row (REPORT §3.6).
+                // budget: the slot files and the `governor` row.
                 match Client::with_seams(
                     origin,
                     Secret::new(token),
@@ -531,6 +532,20 @@ pub fn ttl_calendar() -> jiff::Span {
 pub fn ttl_pages() -> jiff::Span {
     parse_ttl(
         read_config().unwrap_or_default().cache.ttl_pages.as_deref(),
+        1,
+        true,
+    )
+}
+
+/// Default quizzes TTL (1h), optionally overridden by config.
+#[must_use]
+pub fn ttl_quizzes() -> jiff::Span {
+    parse_ttl(
+        read_config()
+            .unwrap_or_default()
+            .cache
+            .ttl_quizzes
+            .as_deref(),
         1,
         true,
     )

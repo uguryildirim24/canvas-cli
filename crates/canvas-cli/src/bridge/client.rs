@@ -34,7 +34,7 @@ pub struct BridgeClient {
 impl BridgeClient {
     /// Connect to the endpoint, or report that no broker is running.
     ///
-    /// An absent broker is [`Reason::BridgeUnavailable`], which REPORT §3.2
+    /// An absent broker is [`Reason::BridgeUnavailable`], which the design note
     /// maps to a domain refusal and exit 8 — not a local failure.
     #[cfg(unix)]
     pub fn connect(endpoint: &Endpoint) -> Result<Self, Reason> {

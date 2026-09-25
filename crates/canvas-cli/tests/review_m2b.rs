@@ -2,6 +2,7 @@
 use canvas_core::{
     identity::{IdentityDocument, Paths},
     store::OpenIdentity,
+    submit::MAX_COMMENT_CHARS,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -287,7 +288,13 @@ async fn submit_validation_refusal_and_persistence_exits_are_real() {
     let input = f.dir.path().join("text");
     fs::write(&input, b"hello").unwrap();
     mock_assignment(&server, 200).await;
-    let long = "é".repeat(65_536);
+    // One character over the limit, and ASCII. Linux refuses any single
+    // `execve` argument of 128 KiB or more, so a multi-byte comment this long
+    // never reaches the binary at all — the test would fail in the spawn
+    // rather than on the validation it is here to check. That the limit counts
+    // characters and not bytes is proved in `canvas-core`, where the string
+    // does not have to survive a kernel argument list.
+    let long = "x".repeat(MAX_COMMENT_CHARS + 1);
     let usage = f
         .run(
             &[

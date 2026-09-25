@@ -30,6 +30,9 @@ pub mod receipts;
 /// Submit, reconcile, and verify orchestration.
 pub mod submit;
 
+/// Quiz taking: the live session and its questions.
+pub mod quiz;
+
 /// Operation plans and the approval that admits them.
 pub mod operations;
 pub mod plan;

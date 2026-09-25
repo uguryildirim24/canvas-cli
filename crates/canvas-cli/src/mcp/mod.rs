@@ -5,16 +5,14 @@
 //! that identity is replaced or removed (§10), so nothing an agent holds can
 //! ever address a later identity.
 //!
-//! Every tool runs the same command core the CLI runs
-//! ([`crate::commands::handled::Handled`]) and returns the same §7 envelope
-//! `--json` prints. There is no second implementation of a command, and
-//! nothing here shells out to `canvas`.
+//! The surface is one tool, `getclitools`, and it performs nothing: it hands
+//! the caller the `canvas` command reference and the caller runs the commands
+//! itself (§21.2). Nothing here shells out to `canvas`, and nothing here
+//! reaches Canvas.
 
 pub mod catalog;
-pub mod resources;
-pub mod result;
+pub mod reference;
 pub mod server;
-pub mod subscribe;
 
 use std::cell::Cell;
 use std::io::{self, Write};
@@ -28,11 +26,31 @@ use rmcp::transport::stdio;
 
 use crate::commands::Globals;
 use crate::commands::emit::session_error;
-use crate::mcp::resources::Binding;
 use crate::mcp::server::CanvasServer;
 
 /// How often the instance re-reads `identity.json` (§10).
 const IDENTITY_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The identity generation this server instance is bound to (§10).
+///
+/// The instance binds one key and one generation at startup and never
+/// re-reads them, so nothing it serves can drift to another identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Binding {
+    pub key: String,
+    pub generation: String,
+}
+
+impl Binding {
+    /// Bind to an opened identity.
+    #[must_use]
+    pub fn new(key: impl Into<String>, generation: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            generation: generation.into(),
+        }
+    }
+}
 
 /// Run the MCP server on stdin and stdout.
 ///
@@ -44,7 +62,7 @@ pub async fn run(globals: &Globals) -> ExitCode {
         Ok(bound) => bound,
         Err(handled) => return handled,
     };
-    let server = CanvasServer::new(globals.clone(), binding.clone());
+    let server = CanvasServer::new();
     // The command cores are `!Send`, so the service runs on this thread.
     let local = tokio::task::LocalSet::new();
     let code = local

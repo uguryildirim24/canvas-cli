@@ -69,6 +69,7 @@ type TargetColumns = (
     Option<i64>,
     Option<i64>,
     Option<String>,
+    Option<i64>,
 );
 
 fn row_from(row: &rusqlite::Row<'_>) -> Result<OperationRow, rusqlite::Error> {
@@ -140,7 +141,7 @@ pub fn create_linked(
     let identity_key = plan.identity_key.clone();
     let kind = intended.kind();
     let scope = intended.target.event_scope();
-    let (course_id, topic_id, parent_entry_id, conversation_id, recipients) =
+    let (course_id, topic_id, parent_entry_id, conversation_id, recipients, quiz_id) =
         target_columns(&intended.target);
     let subject = intended.subject.clone();
     let input_sha256 = intended.body.input_sha256.clone();
@@ -162,26 +163,27 @@ pub fn create_linked(
         let insert = tx.execute(
             "INSERT INTO operation_journal (
                 journal_id, identity_key, plan_id, kind, course_id, topic_id,
-                parent_entry_id, conversation_id, recipients_json, subject,
+                parent_entry_id, conversation_id, quiz_id, recipients_json, subject,
                 input_sha256, sent_sha256, intended_json, approval_json, state,
                 attribution, created_at, planned_at
-             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'planned','none',?15,?15)",
+             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'planned','none',?16,?16)",
             params![
                 jid,
                 identity_key,
                 plan_id,
                 kind.as_str(),
-                course_id,
-                topic_id,
-                parent_entry_id,
-                conversation_id,
-                recipients,
-                subject,
-                input_sha256,
-                sent_sha256,
-                intended_json,
-                approval_json,
-                now,
+                 course_id,
+                 topic_id,
+                 parent_entry_id,
+                 conversation_id,
+                 quiz_id,
+                 recipients,
+                 subject,
+                 input_sha256,
+                 sent_sha256,
+                 intended_json,
+                 approval_json,
+                 now,
             ],
         );
         match insert {
@@ -234,6 +236,7 @@ fn target_columns(target: &OperationTarget) -> TargetColumns {
             *parent_entry_id,
             None,
             None,
+            None,
         ),
         OperationTarget::InboxSend { recipients } => (
             None,
@@ -241,10 +244,14 @@ fn target_columns(target: &OperationTarget) -> TargetColumns {
             None,
             None,
             Some(serde_json::to_string(recipients).unwrap_or_else(|_| "[]".to_owned())),
+            None,
         ),
         OperationTarget::InboxReply { conversation_id } => {
-            (None, None, None, Some(*conversation_id), None)
+            (None, None, None, Some(*conversation_id), None, None)
         }
+        OperationTarget::QuizSubmit {
+            course_id, quiz_id, ..
+        } => (Some(*course_id), None, None, None, None, Some(*quiz_id)),
     }
 }
 
@@ -485,7 +492,7 @@ pub fn record_attachment_id(
 ///
 /// The attribution is `accepted` when the response named an object id and
 /// `none` when it did not: a 2xx alone says Canvas took the request, and this
-/// process never claims more than that (REPORT §3.5).
+/// process never claims more than that.
 pub fn commit_posted(
     store: &Store,
     owner: &OwnerLock,
@@ -534,6 +541,36 @@ pub fn commit_matched(
         &Committed {
             post_status: None,
             attribution: Attribution::Unproven,
+            response: None,
+            readback: Some(readback.clone()),
+            server_match: Some(server_match.clone()),
+        },
+    )
+}
+
+/// Record a quiz operation whose readback shows its own completion.
+///
+/// A quiz readback names the object by id, shows it completed at the frozen
+/// attempt, and digests the answers it holds to the ones the operation sent.
+/// That is `posted` with `observed`, never `matched`: the submission the
+/// journal attempted is the one Canvas holds. Quiz only; every other
+/// operation resolves an unknown outcome through `commit_matched`.
+pub fn commit_observed(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    server_match: &ServerMatch,
+    readback: &OperationReadback,
+) -> Result<(), OperationError> {
+    commit(
+        store,
+        owner,
+        journal_id,
+        OpState::OutcomeUnknown,
+        OpState::Posted,
+        &Committed {
+            post_status: None,
+            attribution: Attribution::Observed,
             response: None,
             readback: Some(readback.clone()),
             server_match: Some(server_match.clone()),
@@ -644,6 +681,38 @@ fn commit(
         .map_err(OperationError::from)
 }
 
+/// Record what the answers POST answered, while the journal is `posting`.
+///
+/// A quiz sends two requests; the answers response is an observation worth
+/// keeping even when the completion that follows it is never observed. The
+/// guard is the state: only a journal still `posting` takes it, and the
+/// completion's own record overwrites it when it arrives. Quiz only.
+pub fn record_answers_response(
+    store: &Store,
+    owner: &OwnerLock,
+    journal_id: &str,
+    response: &ResponseRecord,
+) -> Result<(), OperationError> {
+    verify_store_directory(store, owner.identity_dir())?;
+    if !owner.matches(journal_id) {
+        return Err(OperationError::StateConflict);
+    }
+    let json = serde_json::to_string(response).map_err(OperationError::Json)?;
+    let jid = journal_id.to_owned();
+    store
+        .call_blocking(move |conns| {
+            let changed = conns.state.execute(
+                "UPDATE operation_journal SET response_record_json = ?1
+                 WHERE journal_id = ?2 AND state = 'posting'",
+                rusqlite::params![json, jid],
+            )?;
+            if changed != 1 {
+                return Err(DbError::Message("state conflict".into()));
+            }
+            Ok(())
+        })
+        .map_err(OperationError::from)
+}
 /// Record a readback against a journal without changing its state.
 ///
 /// This is how `accepted` becomes `observed`: the readback showed the id the
@@ -846,17 +915,17 @@ fn active_for_target(
     store: &Store,
     target: &OperationTarget,
 ) -> Result<Vec<String>, OperationError> {
-    let (course_id, topic_id, _, conversation_id, _) = target_columns(target);
+    let (course_id, topic_id, _, conversation_id, _, quiz_id) = target_columns(target);
     Ok(store.call_blocking(move |conns| {
         let mut stmt = conns.state.prepare(
             "SELECT journal_id FROM operation_journal
              WHERE state IN ('planned','posting')
-               AND (topic_id IS ?1 AND conversation_id IS ?2)
+               AND (topic_id IS ?1 AND conversation_id IS ?2 AND quiz_id IS ?3)
              ORDER BY created_at ASC",
         )?;
         let _ = course_id;
         Ok(stmt
-            .query_map(params![topic_id, conversation_id], |r| {
+            .query_map(params![topic_id, conversation_id, quiz_id], |r| {
                 r.get::<_, String>(0)
             })?
             .collect::<Result<Vec<_>, _>>()?)

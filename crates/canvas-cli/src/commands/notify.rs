@@ -1,4 +1,4 @@
-//! `canvas notify`: desktop alerts derived from the event log (REPORT §3.6).
+//! `canvas notify`: desktop alerts derived from the event log.
 //!
 //! Notify has one data source: the `events` table item 4 writes. It never
 //! reads Canvas, never refreshes a dataset, and never invents a change. It

@@ -123,6 +123,22 @@ pub fn push_opt_i64(
     }
 }
 
+/// Push an optional f64 as a decimal string.
+pub fn push_opt_f64(
+    fields: &mut Vec<FieldWrite>,
+    name: &'static str,
+    group: FieldGroup,
+    value: Option<f64>,
+) {
+    if let Some(v) = value {
+        fields.push(FieldWrite {
+            name,
+            group,
+            value: Some(v.to_string()),
+        });
+    }
+}
+
 /// Push an optional timestamp as its RFC3339 string.
 pub fn push_opt_ts(
     fields: &mut Vec<FieldWrite>,

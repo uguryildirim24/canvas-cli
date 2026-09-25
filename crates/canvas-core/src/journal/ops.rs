@@ -75,7 +75,7 @@ pub struct CreateOpts {
     pub baseline_submission_id: Option<i64>,
 }
 
-/// The approved plan a journal is created for (REPORT §3.5).
+/// The approved plan a journal is created for.
 ///
 /// Linking happens inside the journal insert transaction, so a journal and its
 /// plan link are published together or not at all. The unique index on
@@ -173,7 +173,7 @@ pub fn create(
 ///
 /// With `plan = None` this is [`create`]. With a link, the plan moves to
 /// `executed` and its approval audit is copied into the journal row inside the
-/// one transaction REPORT §3.5 requires; nothing uploads before it commits.
+/// one transaction the design note requires; nothing uploads before it commits.
 pub fn create_linked(
     store: &Store,
     identity_dir: &Path,

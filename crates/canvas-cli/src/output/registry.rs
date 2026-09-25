@@ -45,6 +45,11 @@ pub const SCHEMA_DISCUSSION: &str = "canvas-cli/discussion@1";
 pub const SCHEMA_INBOX: &str = "canvas-cli/inbox@1";
 pub const SCHEMA_CONVERSATION: &str = "canvas-cli/conversation@1";
 pub const SCHEMA_INBOX_UNREAD: &str = "canvas-cli/inbox_unread@1";
+pub const SCHEMA_QUIZZES: &str = "canvas-cli/quizzes@1";
+pub const SCHEMA_QUIZ: &str = "canvas-cli/quiz@1";
+pub const SCHEMA_QUIZ_QUESTIONS: &str = "canvas-cli/quiz_questions@1";
+pub const SCHEMA_NEW_QUIZZES: &str = "canvas-cli/new-quizzes@1";
+pub const SCHEMA_NEW_QUIZ: &str = "canvas-cli/new-quiz@1";
 pub const SCHEMA_HERE: &str = "canvas-cli/here@1";
 pub const SCHEMA_NOTE: &str = "canvas-cli/note@1";
 pub const SCHEMA_FOLLOW: &str = "canvas-cli/follow@1";
@@ -321,6 +326,36 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
             fixture: include_str!("schemas/inbox_unread.json"),
         },
         SchemaEntry {
+            id: SCHEMA_QUIZZES,
+            command: Some("quizzes"),
+            variant: None,
+            fixture: include_str!("schemas/quizzes.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_QUIZ,
+            command: Some("quiz"),
+            variant: None,
+            fixture: include_str!("schemas/quiz.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_QUIZ_QUESTIONS,
+            command: Some("quiz questions"),
+            variant: None,
+            fixture: include_str!("schemas/quiz_questions.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_NEW_QUIZZES,
+            command: Some("new-quizzes"),
+            variant: None,
+            fixture: include_str!("schemas/new_quizzes.json"),
+        },
+        SchemaEntry {
+            id: SCHEMA_NEW_QUIZ,
+            command: Some("new-quiz"),
+            variant: None,
+            fixture: include_str!("schemas/new_quiz.json"),
+        },
+        SchemaEntry {
             id: SCHEMA_VERSION,
             command: Some("version"),
             variant: None,
@@ -434,6 +469,60 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
     ]
 }
 
+/// Commands that print a document another entry already describes.
+///
+/// One schema can serve several commands: the three M8-b writes and the M10-a
+/// quiz submit all print the operation journal `operation status` prints,
+/// every `alias` subcommand prints the same listing, and every `open`
+/// subcommand prints the same launch result. The registry holds one entry per *result shape*, so these
+/// names resolve through the entry that owns the shape instead of repeating
+/// its fixture. `canvas schema "discussion reply"` therefore answers, and
+/// `canvas schema --list` names it.
+///
+/// A name belongs here only when the command really prints that document. A
+/// command with no §7 envelope at all — `completions`, `notify`, `schema`,
+/// `config edit`, `auth token --reveal`, `bridge host` — is absent on
+/// purpose, and exits 6 as it always did.
+const COMMAND_ALIASES: &[(&str, &str)] = &[
+    ("discussion reply", SCHEMA_OPERATION),
+    ("inbox send", SCHEMA_OPERATION),
+    ("inbox reply", SCHEMA_OPERATION),
+    ("quiz submit", SCHEMA_OPERATION),
+    ("alias set", SCHEMA_ALIAS),
+    ("alias remove", SCHEMA_ALIAS),
+    ("open assignment", SCHEMA_OPEN),
+    ("open file", SCHEMA_OPEN),
+    ("open announcement", SCHEMA_OPEN),
+    // `auth token` without `--reveal` is `auth status`; with it, the raw
+    // token is the whole output and `--json` is refused.
+    ("auth token", SCHEMA_AUTH_STATUS),
+];
+
+/// The command names that resolve through another entry's shape.
+#[must_use]
+pub fn command_aliases() -> &'static [(&'static str, &'static str)] {
+    COMMAND_ALIASES
+}
+
+/// The canonical spelling of an alias, when `name` is one.
+///
+/// A name a registry entry owns is not an alias, however it is spelled, so a
+/// document about `receipts show` keeps saying `receipts show`.
+#[must_use]
+pub fn alias_command(name: &str) -> Option<&'static str> {
+    let wanted = normalize_command(name);
+    if all_schemas().iter().any(|entry| {
+        normalize_command(&crate::output::entry_command(entry)) == wanted
+            || normalize_command(&crate::output::command_name(entry.id)) == wanted
+    }) {
+        return None;
+    }
+    COMMAND_ALIASES
+        .iter()
+        .find(|(alias, _)| normalize_command(alias) == wanted)
+        .map(|(alias, _)| *alias)
+}
+
 /// The registered schema a command name belongs to.
 ///
 /// The name is the command path with any separator: `auth status`,
@@ -442,7 +531,8 @@ pub fn all_schemas() -> &'static [SchemaEntry] {
 /// A schema with several result shapes has one entry per shape, named after
 /// the subcommand that emits it, so `receipts show` finds the `show` entry.
 /// A bare `receipts` finds the first entry, which is what the bare command
-/// prints.
+/// prints. A name in [`COMMAND_ALIASES`] finds the entry that owns the shape
+/// that command prints.
 #[must_use]
 pub fn entry_for_command(name: &str) -> Option<&'static SchemaEntry> {
     let wanted = normalize_command(name);
@@ -453,6 +543,12 @@ pub fn entry_for_command(name: &str) -> Option<&'static SchemaEntry> {
             all_schemas()
                 .iter()
                 .find(|entry| normalize_command(&crate::output::command_name(entry.id)) == wanted)
+        })
+        .or_else(|| {
+            COMMAND_ALIASES
+                .iter()
+                .find(|(alias, _)| normalize_command(alias) == wanted)
+                .and_then(|(_, id)| entry_for_schema(id, None))
         })
 }
 
@@ -607,7 +703,7 @@ pub struct SyncResult {
     pub datasets: Vec<SyncDatasetJson>,
 }
 
-/// One `canvas-cli/event@1` line document (REPORT §3.6).
+/// One `canvas-cli/event@1` line document.
 ///
 /// A stream line is self-describing: it names its own schema, so a consumer
 /// that reads `canvas watch --jsonl` needs no envelope around it. §7 is
@@ -706,9 +802,10 @@ pub struct SubmitResult {
     pub journal_id: String,
     /// True when this envelope reports a journal that already existed.
     ///
-    /// `submission.execute` on a plan that is already executed returns the
-    /// linked journal rather than a second one (SPEC §19 item 17). The human
-    /// `submit` never reaches that path, so it always reports `false`.
+    /// `submission.execute` returned the linked journal rather than a second
+    /// one when a plan was already executed (SPEC §19 item 17). That tool left
+    /// the catalog in M9, so nothing reaches the path now and the field is
+    /// always `false`; §19 items 17 and 49 own the rule (SPEC §12.2).
     #[serde(default)]
     pub replayed: bool,
     #[serde(default)]
@@ -971,7 +1068,7 @@ pub struct PlanApprovalJson {
     pub plan_sha256: String,
 }
 
-/// A frozen plan (REPORT §3.5).
+/// A frozen plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlanJson {
     pub plan_id: String,
@@ -1175,6 +1272,8 @@ pub struct OperationTargetJson {
     pub parent_entry_id: Option<String>,
     pub conversation_id: Option<String>,
     pub conversation_subject: Option<String>,
+    pub quiz_id: Option<String>,
+    pub quiz_title: Option<String>,
     pub recipients: Vec<String>,
     pub recipient_names: Vec<String>,
 }
@@ -1253,6 +1352,8 @@ impl OperationTargetJson {
             parent_entry_id: None,
             conversation_id: conversation_id.map(str::to_owned),
             conversation_subject: labels.conversation_subject.clone(),
+            quiz_id: None,
+            quiz_title: labels.quiz_title.clone(),
             recipients: Vec::new(),
             recipient_names: labels.recipients.clone(),
         };
@@ -1268,6 +1369,9 @@ impl OperationTargetJson {
             T::InboxSend { recipients } => json.recipients.clone_from(recipients),
             T::InboxReply { conversation_id } => {
                 json.conversation_id = Some(conversation_id.to_string());
+            }
+            T::QuizSubmit { quiz_id, .. } => {
+                json.quiz_id = Some(quiz_id.to_string());
             }
         }
         json
@@ -1474,7 +1578,7 @@ mod tests {
                         panic!("fixture for {} is not JSON: {e}", entry.id);
                     });
                 // A stream document is a whole line, not a `result` payload:
-                // `canvas watch --jsonl` writes it as it stands (REPORT §3.6).
+                // `canvas watch --jsonl` writes it as it stands.
                 if entry.id == SCHEMA_EVENT {
                     assert_eq!(result["schema"], entry.id);
                     let _: EventJson = serde_json::from_value(result.clone())
@@ -1858,11 +1962,11 @@ mod tests {
                 serde_json::from_str(include_str!("schemas/courses.json")).unwrap();
             let mut env = Envelope::new(
                 SCHEMA_COURSES,
-                Some("lasell"),
+                Some("school"),
                 Some(IdentityRef {
-                    origin: "https://lasell.instructure.com".into(),
+                    origin: "https://canvas.example.edu".into(),
                     user_id: "12345".into(),
-                    key: "lasell.instructure.com-12345-3f9a1c2e".into(),
+                    key: "canvas.example.edu-12345-3f9a1c2e".into(),
                 }),
             )
             .with_result(result);
@@ -1881,7 +1985,7 @@ mod tests {
     }
 }
 
-// --- M8-a richer reads (Appendix D v2, `docs/reads-v2.md`) ---
+// --- M8-a richer reads (SPEC §23, Appendix D) ---
 
 /// One piece of content the Markdown cannot carry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1948,6 +2052,152 @@ pub struct PageDetailJson {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageResult {
     pub page: PageDetailJson,
+}
+
+/// One quiz row of a `quizzes@1` listing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizSummaryJson {
+    pub id: String,
+    pub title: Option<String>,
+    pub quiz_type: Option<String>,
+    pub due_at: Option<String>,
+    pub question_count: Option<u64>,
+    pub points_possible: Option<f64>,
+    pub time_limit: Option<u64>,
+    pub allowed_attempts: Option<i64>,
+    pub published: Option<bool>,
+    pub locked_for_user: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizzesResult {
+    pub course_id: String,
+    pub quizzes: Vec<QuizSummaryJson>,
+}
+
+/// One quiz with everything the description could not show.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizDetailJson {
+    pub id: String,
+    pub course_id: String,
+    pub title: Option<String>,
+    pub quiz_type: Option<String>,
+    pub time_limit: Option<u64>,
+    pub allowed_attempts: Option<i64>,
+    pub question_count: Option<u64>,
+    pub points_possible: Option<f64>,
+    pub cant_go_back: Option<bool>,
+    pub one_question_at_a_time: Option<bool>,
+    pub require_lockdown_browser: Option<bool>,
+    pub ip_filtered: Option<bool>,
+    pub published: Option<bool>,
+    pub unlocked_for_user: Option<bool>,
+    pub locked_for_user: Option<bool>,
+    pub lock_explanation: Option<String>,
+    /// `assignment`, when the quiz keeps a score in the gradebook.
+    pub assignment_id: Option<String>,
+    pub html_url: Option<String>,
+    pub due_at: Option<String>,
+    pub unlock_at: Option<String>,
+    pub lock_at: Option<String>,
+    pub description_markdown: Option<String>,
+    /// True when the description was cut at 64 KiB.
+    pub truncated: bool,
+    pub embedded: Vec<EmbeddedJson>,
+    pub files: Vec<FileRefJson>,
+    pub external_links: Vec<ExternalLinkJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizResult {
+    pub quiz: QuizDetailJson,
+}
+
+/// One answer a question offers: the id the answers POST names.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizAnswerOptionJson {
+    pub id: Option<String>,
+    pub text: Option<String>,
+}
+
+/// One question of a live session, censored. Correctness never appears: an
+/// agent reads the choices, never the key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizQuestionJson {
+    pub id: String,
+    pub position: Option<i64>,
+    pub name: Option<String>,
+    pub question_type: Option<String>,
+    pub points_possible: Option<f64>,
+    pub text_markdown: Option<String>,
+    /// The answer this session already holds, or `null`.
+    pub answer: Option<serde_json::Value>,
+    pub answers: Vec<QuizAnswerOptionJson>,
+}
+
+/// `quiz_questions@1`: the live session and its questions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuizQuestionsResult {
+    pub course_id: String,
+    pub quiz_id: String,
+    pub attempt: Option<i64>,
+    pub started_at: Option<String>,
+    pub end_at: Option<String>,
+    /// True when the session was started by this command.
+    pub started: bool,
+    pub questions: Vec<QuizQuestionJson>,
+}
+
+/// One New Quiz row of a `new-quizzes@1` listing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NewQuizSummaryJson {
+    pub id: String,
+    /// The assignment id the detail route takes.
+    pub assignment_id: Option<String>,
+    pub title: Option<String>,
+    pub due_at: Option<String>,
+    pub points_possible: Option<f64>,
+    pub time_limit_seconds: Option<u64>,
+    pub max_attempts: Option<String>,
+    pub published: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NewQuizzesResult {
+    pub course_id: String,
+    pub quizzes: Vec<NewQuizSummaryJson>,
+}
+
+/// One New Quiz with its instructions and taking rules.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NewQuizDetailJson {
+    pub id: String,
+    pub course_id: String,
+    pub assignment_id: Option<String>,
+    pub title: Option<String>,
+    pub points_possible: Option<f64>,
+    pub time_limit_seconds: Option<u64>,
+    pub max_attempts: Option<String>,
+    pub score_to_keep: Option<String>,
+    pub one_at_a_time: Option<String>,
+    pub shuffle_answers: Option<bool>,
+    pub access_code_required: Option<bool>,
+    pub published: Option<bool>,
+    pub due_at: Option<String>,
+    pub unlock_at: Option<String>,
+    pub lock_at: Option<String>,
+    pub html_url: Option<String>,
+    pub instructions_markdown: Option<String>,
+    /// True when the instructions were cut at 64 KiB.
+    pub truncated: bool,
+    pub embedded: Vec<EmbeddedJson>,
+    pub files: Vec<FileRefJson>,
+    pub external_links: Vec<ExternalLinkJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NewQuizResult {
+    pub quiz: NewQuizDetailJson,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -2179,7 +2429,7 @@ pub struct InboxUnreadResult {
     pub pending_journals: Vec<String>,
 }
 
-// --- M7-a typed result payloads (`here@1`, `bridge@1`; REPORT §3.2, §3.3) ---
+// --- M7-a typed result payloads (`here@1`, `bridge@1`; the design note, §3.3) ---
 
 /// The identity a bundle belongs to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -2189,7 +2439,7 @@ pub struct HereIdentityJson {
 }
 
 /// The API side of `ContextBundle@1`: whole §7 envelopes, each with its own
-/// freshness. A browser extract never updates one of these (REPORT §3.1).
+/// freshness. A browser extract never updates one of these.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HereApiJson {
     /// A `canvas-cli/course@1` envelope, when the route named a course.
@@ -2204,7 +2454,7 @@ pub struct HereApiJson {
 /// The browser side of `ContextBundle@1`.
 ///
 /// Everything here is an observation of one document at one moment. `ttl_ms`
-/// is zero: browser context is never cacheable (REPORT §3.2).
+/// is zero: browser context is never cacheable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HereBrowserJson {
     pub origin: String,
@@ -2231,19 +2481,19 @@ pub struct HereBrowserJson {
     /// Why `selection` and `text` are absent, when they are: `zone_opaque`,
     /// `validating`, or `account_mismatch`.
     pub content_reason: Option<String>,
-    /// The last `context.follow` this consumer asked for, with the load
+    /// The last `canvas open --follow` this consumer asked for, with the load
     /// outcome as it stands now. `null` when none was asked for.
     ///
     /// It lives in `browser` because it is an observation of the browser, and
     /// it is where the **load outcome** of a navigation is reported: the
     /// `follow@1` answer carries the dispatch acknowledgement alone
-    /// (REPORT §3.2).
+    ///.
     pub follow: Option<FollowJson>,
     /// The notes the panel is holding for this attachment, oldest first.
     pub notes: Vec<NoteJson>,
 }
 
-/// One `context.follow`, from dispatch to load.
+/// One `canvas open --follow`, from dispatch to load.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowJson {
     pub request_id: String,
@@ -2314,7 +2564,7 @@ pub struct HereAccountJson {
 /// `note@1` result: the note the panel is now holding.
 ///
 /// The note is inert. It is displayed to the person and decides nothing: no
-/// note can approve, decline, or cancel a plan (REPORT §3.5).
+/// note can approve, decline, or cancel a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct NoteResult {
     /// The attachment the note belongs to; `null` when none was held.
@@ -2333,7 +2583,7 @@ pub struct NoteResult {
 ///
 /// `dispatch` is what this answer knows: the companion accepted the
 /// navigation. `load` is `unknown` here by design, and the settled outcome
-/// arrives later on the `here@1` bundle (REPORT §3.2).
+/// arrives later on the `here@1` bundle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowResult {
     /// The attachment whose tab was asked to move; `null` when none was.
@@ -2356,7 +2606,7 @@ pub struct FollowResult {
     pub reason: Option<String>,
 }
 
-/// `here@1` = `ContextBundle@1` (REPORT §3.3).
+/// `here@1` = `ContextBundle@1`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HereResult {
     /// The opaque attachment id, when one was resolved.

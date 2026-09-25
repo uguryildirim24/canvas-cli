@@ -20,6 +20,8 @@
     "parent_entry_id": "4002",
     "conversation_id": null,
     "conversation_subject": null,
+    "quiz_id": null,
+    "quiz_title": null,
     "recipients": [],
     "recipient_names": []
   },

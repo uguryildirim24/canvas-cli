@@ -1,6 +1,6 @@
 //! M8-a acceptance: pages, syllabus, discussions, and inbox reads.
 //!
-//! Every case here is one row of the REPORT §4 M8-a acceptance column.
+//! Every case here is one row of the M8-a acceptance column.
 
 use std::process::Command;
 

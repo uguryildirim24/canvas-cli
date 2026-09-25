@@ -943,6 +943,8 @@ expression: rendered
         "course_id": "101",
         "kind": "discussion_reply",
         "parent_entry_id": "4002",
+        "quiz_id": null,
+        "quiz_title": null,
         "recipient_names": [],
         "recipients": [],
         "topic_id": "3001",
@@ -2165,6 +2167,298 @@ expression: rendered
     "exit": 0,
     "freshness": [],
     "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course_id": "101",
+      "quizzes": [
+        {
+          "allowed_attempts": 2,
+          "due_at": "2026-09-18T23:59:00Z",
+          "id": "101",
+          "locked_for_user": false,
+          "points_possible": 10.0,
+          "published": true,
+          "question_count": 5,
+          "quiz_type": "assignment",
+          "time_limit": 30,
+          "title": "Week 3 Reading Quiz"
+        },
+        {
+          "allowed_attempts": 1,
+          "due_at": "2026-09-25T23:59:00Z",
+          "id": "102",
+          "locked_for_user": false,
+          "points_possible": 8.0,
+          "published": true,
+          "question_count": 4,
+          "quiz_type": "assignment",
+          "time_limit": null,
+          "title": "Week 4 Reading Quiz"
+        }
+      ]
+    },
+    "schema": "canvas-cli/quizzes@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "quiz": {
+        "allowed_attempts": 2,
+        "assignment_id": "9012",
+        "cant_go_back": false,
+        "course_id": "101",
+        "description_markdown": "Chapters 4 and 5. Two attempts, highest score kept.",
+        "due_at": "2026-09-18T23:59:00Z",
+        "embedded": [],
+        "external_links": [],
+        "files": [],
+        "html_url": "https://school.test/courses/101/quizzes/101",
+        "id": "101",
+        "ip_filtered": false,
+        "lock_at": null,
+        "lock_explanation": null,
+        "locked_for_user": false,
+        "one_question_at_a_time": false,
+        "points_possible": 10.0,
+        "published": true,
+        "question_count": 5,
+        "quiz_type": "assignment",
+        "require_lockdown_browser": false,
+        "time_limit": 30,
+        "title": "Week 3 Reading Quiz",
+        "truncated": false,
+        "unlock_at": "2026-09-14T00:00:00Z",
+        "unlocked_for_user": true
+      }
+    },
+    "schema": "canvas-cli/quiz@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "attempt": 1,
+      "course_id": "101",
+      "end_at": "2026-09-11T14:30:00Z",
+      "questions": [
+        {
+          "answer": null,
+          "answers": [
+            {
+              "id": "4811",
+              "text": "Phenolphthalein"
+            },
+            {
+              "id": "4812",
+              "text": "Litmus"
+            },
+            {
+              "id": "4813",
+              "text": "Methyl orange"
+            },
+            {
+              "id": "4814",
+              "text": "Starch"
+            }
+          ],
+          "id": "901",
+          "name": "Question 1",
+          "points_possible": 2.0,
+          "position": 1,
+          "question_type": "multiple_choice_question",
+          "text_markdown": "Which reagent marks the end point?"
+        },
+        {
+          "answer": null,
+          "answers": [],
+          "id": "902",
+          "name": "Question 2",
+          "points_possible": 4.0,
+          "position": 2,
+          "question_type": "essay_question",
+          "text_markdown": "Name two sources of error, and how each biases the result."
+        },
+        {
+          "answer": null,
+          "answers": [
+            {
+              "id": "4901",
+              "text": "True"
+            },
+            {
+              "id": "4902",
+              "text": "False"
+            }
+          ],
+          "id": "903",
+          "name": "Question 3",
+          "points_possible": 2.0,
+          "position": 3,
+          "question_type": "true_false_question",
+          "text_markdown": "A buffer resists pH change on dilution."
+        },
+        {
+          "answer": null,
+          "answers": [
+            {
+              "id": "5101",
+              "text": "Rinse the burette with the titrant"
+            },
+            {
+              "id": "5102",
+              "text": "Record the initial volume"
+            },
+            {
+              "id": "5103",
+              "text": "Add the indicator to the flask"
+            },
+            {
+              "id": "5104",
+              "text": "Drain to the end point"
+            }
+          ],
+          "id": "904",
+          "name": "Question 4",
+          "points_possible": 2.0,
+          "position": 4,
+          "question_type": "multiple_answers_question",
+          "text_markdown": "Select every step of the procedure that runs before titration begins."
+        }
+      ],
+      "quiz_id": "101",
+      "started": true,
+      "started_at": "2026-09-11T14:00:00Z"
+    },
+    "schema": "canvas-cli/quiz_questions@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "course_id": "101",
+      "quizzes": [
+        {
+          "assignment_id": "9013",
+          "due_at": "2026-09-18T23:59:00Z",
+          "id": "201",
+          "max_attempts": "2",
+          "points_possible": 12.0,
+          "published": true,
+          "time_limit_seconds": 1800,
+          "title": "Week 3 New Quiz"
+        }
+      ]
+    },
+    "schema": "canvas-cli/new-quizzes@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
+    "identity": {
+      "key": "example.instructure.com-1-deadbeef",
+      "origin": "https://example.instructure.com",
+      "user_id": "1"
+    },
+    "outcome": "ok",
+    "partial": [],
+    "profile": "default",
+    "requests": {
+      "api": 0,
+      "cost": null,
+      "storage": 0
+    },
+    "result": {
+      "quiz": {
+        "access_code_required": false,
+        "assignment_id": "9013",
+        "course_id": "101",
+        "due_at": "2026-09-18T23:59:00Z",
+        "embedded": [],
+        "external_links": [],
+        "files": [],
+        "html_url": "https://school.test/courses/101/assignments/9013",
+        "id": "201",
+        "instructions_markdown": "Answer every question. Two attempts, highest score kept.",
+        "lock_at": null,
+        "max_attempts": "2",
+        "one_at_a_time": "none",
+        "points_possible": 12.0,
+        "published": true,
+        "score_to_keep": "highest",
+        "shuffle_answers": true,
+        "time_limit_seconds": 1800,
+        "title": "Week 3 New Quiz",
+        "truncated": false,
+        "unlock_at": "2026-09-14T00:00:00Z"
+      }
+    },
+    "schema": "canvas-cli/new-quiz@1",
+    "warnings": []
+  },
+  {
+    "exit": 0,
+    "freshness": [],
+    "generated_at": "2026-09-09T17:05:12Z",
     "identity": null,
     "outcome": "ok",
     "partial": [],
@@ -2621,7 +2915,7 @@ expression: rendered
           "load": "loaded",
           "load_at": "2026-09-10T16:04:40Z",
           "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
-          "url": "https://lasell.instructure.com/courses/45679/assignments/98765"
+          "url": "https://canvas.example.edu/courses/45679/assignments/98765"
         },
         "frame_id": 0,
         "navigation_generation": 3,
@@ -2632,13 +2926,13 @@ expression: rendered
             "generation": 3,
             "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
             "source_refs": [
-              "https://lasell.instructure.com/courses/45679/assignments/98765"
+              "https://canvas.example.edu/courses/45679/assignments/98765"
             ],
             "text": "The rubric asks for two sources. See the assignment page."
           }
         ],
         "observed_at": "2026-09-10T16:04:40Z",
-        "origin": "https://lasell.instructure.com",
+        "origin": "https://canvas.example.edu",
         "page_kind": "assignment",
         "page_url": null,
         "quiz_id": null,
@@ -2650,13 +2944,13 @@ expression: rendered
         "topic_id": null,
         "truncated": false,
         "ttl_ms": 0,
-        "url": "https://lasell.instructure.com/courses/45679/assignments/98765",
+        "url": "https://canvas.example.edu/courses/45679/assignments/98765",
         "zone": "open"
       },
       "consumer": "mcp:claude-code",
       "identity": {
         "generation": "01932f3a-7a1b-7c3d-8e90-123456789abc",
-        "key": "lasell.instructure.com-12345-3f9a1c2e"
+        "key": "canvas.example.edu-12345-3f9a1c2e"
       },
       "reason": null,
       "state": "attached"
@@ -2691,7 +2985,7 @@ expression: rendered
         "generation": 3,
         "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
         "source_refs": [
-          "https://lasell.instructure.com/courses/45679/assignments/98765"
+          "https://canvas.example.edu/courses/45679/assignments/98765"
         ],
         "text": "The rubric asks for two sources. See the assignment page."
       },
@@ -2728,7 +3022,7 @@ expression: rendered
         "load": "unknown",
         "load_at": null,
         "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
-        "url": "https://lasell.instructure.com/courses/45679/assignments/98765"
+        "url": "https://canvas.example.edu/courses/45679/assignments/98765"
       },
       "id": "98765",
       "reason": null,
@@ -2736,7 +3030,7 @@ expression: rendered
         "the browser loads the page, and Canvas' own page controllers run: a discussion page marks itself read"
       ],
       "target_kind": "assignment",
-      "url": "https://lasell.instructure.com/courses/45679/assignments/98765"
+      "url": "https://canvas.example.edu/courses/45679/assignments/98765"
     },
     "schema": "canvas-cli/follow@1",
     "warnings": []
@@ -2767,17 +3061,17 @@ expression: rendered
             "mcp:claude-code"
           ],
           "navigation_generation": 3,
-          "origin": "https://lasell.instructure.com",
+          "origin": "https://canvas.example.edu",
           "state": "attached",
           "zone": "open"
         }
       ],
-      "endpoint": "/Users/rolf/.local/share/canvas-cli/bridge/lasell.instructure.com-12345-3f9a1c2e.sock",
+      "endpoint": "/Users/you/.local/share/canvas-cli/bridge/canvas.example.edu-12345-3f9a1c2e.sock",
       "manifest": {
         "browser": "chrome",
         "extension_id": "abcdefghijklmnopabcdefghijklmnop",
         "host_name": "com.canvas_cli.bridge",
-        "path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+        "path": "/Users/you/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
         "present": true
       },
       "owner": {
@@ -2811,7 +3105,7 @@ expression: rendered
       "browser": "chrome",
       "extension_id": "abcdefghijklmnopabcdefghijklmnop",
       "host_name": "com.canvas_cli.bridge",
-      "manifest_path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+      "manifest_path": "/Users/you/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
       "steps": [
         "Open chrome://extensions and turn on Developer mode.",
         "Choose \"Load unpacked\" and select the `extension/` directory of this checkout.",

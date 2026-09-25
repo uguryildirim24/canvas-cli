@@ -60,6 +60,11 @@ const SHAPES: &[Shape] = shapes![
         "canvas-cli/operation_reconcile@1",
         "operation_reconcile.json"
     ),
+    ("canvas-cli/quizzes@1", "quizzes.json"),
+    ("canvas-cli/quiz@1", "quiz.json"),
+    ("canvas-cli/quiz_questions@1", "quiz_questions.json"),
+    ("canvas-cli/new-quizzes@1", "new_quizzes.json"),
+    ("canvas-cli/new-quiz@1", "new_quiz.json"),
     ("canvas-cli/grades@1", "grades.json"),
     ("canvas-cli/files@1", "files.json"),
     ("canvas-cli/modules@1", "modules.json"),
@@ -131,6 +136,11 @@ const NULLABLE_WITH_EXAMPLE: &[&str] = &[
     "canvas-cli/grades@1:course",
     "canvas-cli/grades@1:courses[].grades.period.id",
     "canvas-cli/grades@1:courses[].grades.period.title",
+    "canvas-cli/operation@1:target.course_code",
+    "canvas-cli/operation@1:target.topic_id",
+    "canvas-cli/operation@1:target.topic_title",
+    "canvas-cli/operation@1:target.parent_entry_id",
+    "canvas-cli/operation@1:response.body_sha256",
     "canvas-cli/plan@1:plan.approval",
     "canvas-cli/plan@1:plan.assignment_name",
     "canvas-cli/plan@1:plan.comment_chars",
@@ -170,7 +180,7 @@ const NULLABLE_WITH_EXAMPLE: &[&str] = &[
     "canvas-cli/todo@1:items[].scheduled_at_local",
     "canvas-cli/todo@1:items[].status.graded",
     "canvas-cli/todo@1:items[].status.submitted",
-    // `here@1` = `ContextBundle@1` (REPORT §3.3). Every one of these is
+    // `here@1` = `ContextBundle@1`. Every one of these is
     // absent when the answer does not carry it, and the fixture shows the
     // populated form so the shape stays described.
     "canvas-cli/here@1:attachment",
@@ -551,7 +561,7 @@ fn repo_path(relative: &str) -> PathBuf {
 /// A journal created before plans exposes `plan_id` and `approval` as null.
 ///
 /// Appendix D's nullable convention makes that the correct legacy shape, and
-/// REPORT §3.5 makes `plan@1`'s `approval` null until a person approves. Every
+/// the design makes `plan@1`'s `approval` null until a person approves. Every
 /// submission in this suite runs through the plan path, so no snapshot carries
 /// the legacy shape yet and nothing else would notice a fixture that declares
 /// these fields as always-present.

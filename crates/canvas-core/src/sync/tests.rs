@@ -22,11 +22,7 @@ fn ts(secs: i64) -> Timestamp {
 
 fn setup() -> (TempDir, OpenIdentity) {
     let dir = TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://lasell.instructure.com",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.edu", 12345, "2026-01-01T00:00:00Z");
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
     fs::create_dir_all(paths.lock_path.parent().unwrap()).unwrap();
@@ -319,4 +315,85 @@ fn sample_course(id: i64, name: &str) -> canvas_api::models::Course {
         html_url: Supplied::Absent,
         ..Default::default()
     }
+}
+
+#[test]
+fn quizzes_ingest_stores_the_listing_and_a_detail_merges_into_it() {
+    use super::quizzes::{
+        QuizDetailDataset, QuizzesDataset, default_ttl_quizzes, quiz_to_entity,
+        quizzes_to_ingest_page,
+    };
+    use canvas_api::models::Quiz;
+
+    let listing = Quiz {
+        id: 77,
+        title: Some("Week 3 Reading Quiz".to_owned()),
+        description: Some("<p>Chapters 4 and 5.</p>".to_owned()),
+        ..Quiz::default()
+    };
+    let page = quizzes_to_ingest_page(&[listing], 5, ts(100));
+
+    let (_dir, open) = setup();
+    let ds = QuizzesDataset::new(5, default_ttl_quizzes());
+    open.store
+        .call_blocking({
+            let ds = ds.clone();
+            move |conns| {
+                let epoch = read_scope_epoch(&conns.state, &ds.epoch_scope())?;
+                ds.ingest(&[page], &ingest_ok(epoch), conns)
+                    .map_err(|e| crate::store::DbError::Message(e.to_string()))?;
+                Ok(())
+            }
+        })
+        .unwrap();
+
+    // The listing row is there, with its detail fields.
+    let title: String = open
+        .store
+        .call_blocking(|conns| {
+            Ok(conns
+                .cache
+                .query_row("SELECT title FROM quizzes WHERE id = 77", [], |r| r.get(0))?)
+        })
+        .unwrap();
+    assert_eq!(title, "Week 3 Reading Quiz");
+
+    // A detail fetch merges into the same row without replacing the listing.
+    let detail = Quiz {
+        id: 77,
+        title: Some("Week 3 Reading Quiz".to_owned()),
+        description: Some("<p>Chapters 4 and 5.</p>".to_owned()),
+        time_limit: Some(30),
+        ..Quiz::default()
+    };
+    let ds = QuizDetailDataset::new(5, 77, default_ttl_quizzes());
+    open.store
+        .call_blocking({
+            let ds = ds.clone();
+            move |conns| {
+                let epoch = read_scope_epoch(&conns.state, &ds.epoch_scope())?;
+                ds.ingest(
+                    &[crate::store::IngestPage {
+                        fetched_at: ts(200),
+                        entities: vec![quiz_to_entity(&detail, 5)],
+                    }],
+                    &ingest_ok(epoch),
+                    conns,
+                )
+                .map_err(|e| crate::store::DbError::Message(e.to_string()))?;
+                Ok(())
+            }
+        })
+        .unwrap();
+    let limit: Option<String> = open
+        .store
+        .call_blocking(|conns| {
+            Ok(conns.cache.query_row(
+                "SELECT json_extract(data_json, '$.time_limit') FROM quizzes WHERE id = 77",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(limit.as_deref(), Some("30"));
 }

@@ -5,9 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use canvas_core::journal::{State, get_journal};
-use canvas_core::plan::{
-    Admission, ApprovalChannel, PlanError, PlanState, PrepareRequest, Prepared,
-};
+use canvas_core::plan::{Admission, ApprovalChannel, PlanError, PrepareRequest, Prepared};
 use canvas_core::submit::{
     ExecuteError, ExecuteOutcome, FreezeError, FrozenInput, InputKind, Plan, PreflightError,
     SubmitError, TextSource, execute, freeze_files, freeze_html, freeze_text, freeze_url,
@@ -17,8 +15,8 @@ use super::Globals;
 use super::emit::{base_envelope, emit_error, require_client, session_error, sync_error};
 use super::handled::Handled;
 use crate::output::{
-    Freshness, Outcome, PlanJson, PlanResult, SCHEMA_PLAN, SCHEMA_SUBMIT, SubmitCandidateJson,
-    SubmitFileJson, SubmitResult, SubmitTextJson,
+    Freshness, Outcome, SCHEMA_SUBMIT, SubmitCandidateJson, SubmitFileJson, SubmitResult,
+    SubmitTextJson,
 };
 use crate::session::Session;
 
@@ -83,7 +81,7 @@ pub async fn handle(globals: &Globals, args: SubmitArgs) -> Handled {
     };
     // The human flow cannot reach a replay: it approves the plan it just
     // froze, so a plan that already has a journal is a refusal (§19 item 17).
-    run_plan(&session, client, &plan_id, freshness, OnExisting::Refuse).await
+    run_plan(&session, client, &plan_id, freshness).await
 }
 
 /// A frozen plan, the session holding it, and the reads it cost.
@@ -95,19 +93,10 @@ struct Frozen {
     interest: Option<canvas_core::coord::Interest>,
 }
 
-/// What [`run_plan`] does with a plan that already admitted a journal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OnExisting {
-    /// Refuse with exit 8: only `canvas submit` uses this.
-    Refuse,
-    /// Return the linked journal with `replayed: true` (SPEC §19 item 17).
-    Replay,
-}
-
 /// Run pre-flight and freeze one plan, without approving anything.
 ///
 /// The stored plan is `prepared` and no lock is held when this returns, so a
-/// person can take as long as they need to decide (REPORT §3.5).
+/// person can take as long as they need to decide.
 async fn freeze_plan(
     globals: &Globals,
     args: SubmitArgs,
@@ -176,7 +165,7 @@ async fn freeze_plan(
         } else {
             InputKind::OnlineTextEntry
         };
-        // REPORT §3.6: foreground submission interest, registered as early as
+        // Foreground submission interest, registered as early as
         // it can be and held until the command finishes. An interest is keyed
         // by assignment, so it cannot be registered before the resolution read
         // that produces the id: the token validation and `resolve_target`
@@ -272,7 +261,6 @@ async fn run_plan(
     client: &canvas_api::Client,
     plan_id: &str,
     freshness: Vec<Freshness>,
-    on_existing: OnExisting,
 ) -> Handled {
     let (journal_id, owner, frozen, past_due) = match canvas_core::plan::execute(
         client,
@@ -291,15 +279,12 @@ async fn run_plan(
             past_due,
         }) => (journal_id, owner, *frozen, past_due),
         Ok(Admission::Existing { journal_id }) => {
-            return match on_existing {
-                OnExisting::Refuse => selected_error(
-                    session,
-                    "refused",
-                    &format!("plan already executed as journal {journal_id}"),
-                    8,
-                ),
-                OnExisting::Replay => replayed_journal(session, &journal_id, freshness),
-            };
+            return selected_error(
+                session,
+                "refused",
+                &format!("plan already executed as journal {journal_id}"),
+                8,
+            );
         }
         Err(e) => return map_plan_error(session, e),
     };
@@ -325,35 +310,6 @@ async fn run_plan(
         }
         Err(e) => map_execute_error(session, &journal_id, e, freshness),
     }
-}
-
-/// The `submit@1` envelope of the journal a plan already admitted.
-///
-/// A replayed acceptance, a second execute in flight, and a lost response all
-/// arrive here. Each one reports the journal that exists, with that journal's
-/// own outcome and exit and `replayed: true`. No second journal is created,
-/// and no bare refusal is returned (SPEC §19 item 17).
-fn replayed_journal(session: &Session, journal_id: &str, freshness: Vec<Freshness>) -> Handled {
-    let Ok(Some(row)) = get_journal(&session.open.store, journal_id) else {
-        return selected_error(
-            session,
-            "local",
-            &format!("plan is linked to journal {journal_id}, which is missing"),
-            13,
-        );
-    };
-    let receipt = canvas_core::receipts::document_from_row(&row).ok();
-    let exec = ExecuteOutcome {
-        state: row.state,
-        journal_id: journal_id.to_owned(),
-        receipt_id: receipt.as_ref().map(|doc| doc.receipt_id.clone()),
-        attribution: receipt.as_ref().map(|doc| doc.attribution.clone()),
-        post_status: row.post_status,
-        response_kind: row.response_kind.as_deref().and_then(|s| s.parse().ok()),
-        reconcile: None,
-        warning: None,
-    };
-    emit_submit_ok(session, &exec, &empty_input(), freshness, true)
 }
 
 fn freeze_inputs(
@@ -600,7 +556,7 @@ pub fn cancel_plan(session: &Session, plan_id: &str) {
 
 /// Map a plan-layer failure onto the §14 exit codes.
 ///
-/// Every plan refusal is exit 8 and carries the REPORT §3.2 reason
+/// Every plan refusal is exit 8 and carries the refusal reason
 /// (`expired`, `invalidated`, or `approval_required`) in `details`.
 pub fn map_plan_error(session: &Session, err: PlanError) -> Handled {
     if let Some(reason) = err.refusal_reason() {
@@ -621,7 +577,7 @@ pub fn map_plan_error(session: &Session, err: PlanError) -> Handled {
     }
 }
 
-/// A plan refusal: exit 8 with the REPORT §3.2 reason in `details`.
+/// A plan refusal: exit 8 with the refusal reason in `details`.
 pub fn plan_refusal(session: &Session, reason: &str, message: &str) -> Handled {
     plan_refusal_with(session, message, serde_json::json!({ "reason": reason }))
 }
@@ -642,316 +598,6 @@ pub(super) fn plan_refusal_with(
     env.requests = session.requests();
     let line = env.result.message.clone();
     Handled::error_envelope(env, line)
-}
-
-// ------------------------------------------------------- the agent surface
-//
-// `submission.prepare` and `submission.execute` (REPORT §3.2) are the same
-// three steps `canvas submit` runs, split across two round trips so the
-// approval can be a person's answer in a host instead of a TTY prompt. The
-// plan core is the enforcement: a handle is server-issued, bound to one plan
-// and one consumer, and spent once.
-
-/// A prepared plan and the handle that can approve it.
-pub struct Pending {
-    /// The plan waiting for a decision.
-    pub plan_id: String,
-    /// The server-issued handle, bound to this plan and this consumer.
-    pub handle: String,
-    /// The plan as `plan@1` renders it, for the host to show a person.
-    pub plan: PlanJson,
-    /// One line naming what is about to be sent.
-    pub summary: String,
-}
-
-/// What `submission.execute` produced.
-pub enum Admitted {
-    /// The plan ran, replayed, or was refused: this is its envelope.
-    Done(Handled),
-    /// The plan needs a recorded human decision first.
-    NeedsApproval(Box<Pending>),
-}
-
-/// How a person ended an approval round trip without approving.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Refusal {
-    /// The person declined this plan.
-    Declined,
-    /// The person cancelled the operation.
-    Cancelled,
-}
-
-/// `submission.prepare`: freeze a plan and stop (REPORT §3.2).
-///
-/// Nothing reaches Canvas here. The stored plan is `prepared`, the envelope is
-/// `plan@1`, and `plan_id` is what `submission.execute` needs next.
-pub async fn agent_prepare(globals: &Globals, args: SubmitArgs, consumer: &str) -> Handled {
-    let frozen = match freeze_plan(globals, args, Some(consumer)).await {
-        Ok(frozen) => frozen,
-        Err(handled) => return handled,
-    };
-    let Frozen {
-        session,
-        prepared,
-        freshness,
-        // Held until this function returns: the whole foreground submission.
-        interest: _interest,
-    } = *frozen;
-    let result = PlanResult {
-        plan: PlanJson::of(&prepared.plan),
-    };
-    let mut envelope = base_envelope(SCHEMA_PLAN, &session, result);
-    envelope.freshness = freshness;
-    envelope.requests = session.requests();
-    envelope
-        .warnings
-        .push("this plan needs a recorded human approval before anything is sent".to_owned());
-    Handled::new(envelope, move |envelope| {
-        render_plan(io::stdout(), &envelope.result)
-    })
-}
-
-/// `submission.execute`: run an approved plan, or ask for the approval.
-///
-/// A prepared plan yields a [`Pending`] and dispatches nothing. An executed
-/// plan replays its journal. Every other state is the plan layer's refusal.
-pub async fn agent_execute(globals: &Globals, plan_id: &str, consumer: &str) -> Admitted {
-    let session = match globals.open_session() {
-        Ok(s) => s,
-        Err(e) => return Admitted::Done(session_error(e, globals.profile.clone())),
-    };
-    let plan = match canvas_core::plan::require(&session.open.store, plan_id) {
-        Ok(plan) => plan,
-        Err(e) => return Admitted::Done(map_plan_error(&session, e)),
-    };
-    // The mirror of the guard `operation::agent_execute` carries. A discussion
-    // or inbox plan is admitted by `canvas_core::operations::execute`, which
-    // revalidates its own target; sending one down the submission road would
-    // otherwise take the assignment admission lock and re-read assignment 0
-    // before the plan layer refused it.
-    if plan.kind.is_operation() {
-        return Admitted::Done(plan_refusal(
-            &session,
-            "invalidated",
-            "this plan is a discussion or inbox write; use its own execute tool",
-        ));
-    }
-    // A plan that already admitted a journal replays it, and that is a local
-    // read: it answers even when the network is gone (SPEC §19 item 17).
-    if plan.state == PlanState::Executed {
-        return Admitted::Done(match &plan.journal_id {
-            Some(journal_id) => replayed_journal(&session, journal_id, Vec::new()),
-            None => plan_refusal(&session, "invalidated", "executed plan has no journal"),
-        });
-    }
-    if plan.state == PlanState::Prepared {
-        let handle =
-            match canvas_core::plan::issue_handle(&session.open.store, plan_id, Some(consumer)) {
-                Ok(handle) => handle,
-                Err(e) => return Admitted::Done(map_plan_error(&session, e)),
-            };
-        return Admitted::NeedsApproval(Box::new(Pending {
-            plan_id: plan.plan_id.clone(),
-            handle,
-            summary: plan_summary(&plan),
-            plan: PlanJson::of(&plan),
-        }));
-    }
-    let client = match require_client(globals, &session) {
-        Ok(c) => c,
-        Err(code) => return Admitted::Done(code),
-    };
-    Admitted::Done(run_plan(&session, client, plan_id, Vec::new(), OnExisting::Replay).await)
-}
-
-/// Record an elicited approval and dispatch the plan.
-///
-/// The handle is validated against the stored row inside `approve`, so an
-/// echoed request state that names a handle this server never issued cannot
-/// approve anything.
-pub async fn agent_approve(
-    globals: &Globals,
-    plan_id: &str,
-    handle: &str,
-    consumer: &str,
-) -> Handled {
-    let session = match globals.open_session() {
-        Ok(s) => s,
-        Err(e) => return session_error(e, globals.profile.clone()),
-    };
-    // An approval is recorded the same way for both kinds of plan; only the
-    // dispatch that follows differs, so an operation plan goes to its own
-    // module here rather than through the submission execute path.
-    if is_operation_plan(&session, plan_id) {
-        return super::operation::agent_approve(globals, plan_id, handle, consumer).await;
-    }
-    if let Err(e) = canvas_core::plan::approve(
-        &session.open.store,
-        plan_id,
-        handle,
-        ApprovalChannel::Elicitation,
-        Some(consumer),
-        crate::output::now_timestamp(),
-    ) {
-        return map_plan_error(&session, e);
-    }
-    let client = match require_client(globals, &session) {
-        Ok(c) => c,
-        Err(code) => return code,
-    };
-    run_plan(&session, client, plan_id, Vec::new(), OnExisting::Replay).await
-}
-
-/// A person declined or cancelled the plan: invalidate it and say so.
-///
-/// Declining and cancelling both spend every handle issued for the plan, so
-/// neither the plan nor a handle can be replayed afterwards.
-pub fn agent_refuse(globals: &Globals, plan_id: &str, refusal: Refusal) -> Handled {
-    let session = match globals.open_session() {
-        Ok(s) => s,
-        Err(e) => return session_error(e, globals.profile.clone()),
-    };
-    if is_operation_plan(&session, plan_id) {
-        return super::operation::agent_refuse(globals, plan_id, refusal);
-    }
-    let invalidated = match refusal {
-        Refusal::Declined => canvas_core::plan::decline(&session.open.store, plan_id),
-        Refusal::Cancelled => canvas_core::plan::cancel(&session.open.store, plan_id),
-    };
-    if let Err(e) = invalidated {
-        return map_plan_error(&session, e);
-    }
-    let message = match refusal {
-        Refusal::Declined => "submission declined",
-        Refusal::Cancelled => "submission cancelled",
-    };
-    selected_error(&session, "cancelled", message, 11)
-}
-
-/// The refusal a host that cannot ask a person gets (REPORT §3.2).
-///
-/// Outcome `refused`, exit 8, reason `approval_required`. The handle travels
-/// so the approval can still be recorded through another channel, and nothing
-/// is dispatched.
-pub fn agent_approval_required(globals: &Globals, pending: &Pending) -> Handled {
-    if pending.plan.operation.is_some() {
-        return super::operation::agent_approval_required(globals, pending);
-    }
-    let session = match globals.open_session() {
-        Ok(s) => s,
-        Err(e) => return session_error(e, globals.profile.clone()),
-    };
-    plan_refusal_with(
-        &session,
-        "this submission needs a recorded human approval, and this host declared no elicitation support",
-        serde_json::json!({
-            "reason": "approval_required",
-            "plan_id": pending.plan_id,
-            "handle": pending.handle,
-        }),
-    )
-}
-
-/// Whether a stored plan is one of the three M8-b operations.
-///
-/// A plan that cannot be read is treated as a submission, so the caller sees
-/// the plan layer's own error instead of a misrouted one.
-fn is_operation_plan(session: &Session, plan_id: &str) -> bool {
-    canvas_core::plan::require(&session.open.store, plan_id)
-        .is_ok_and(|plan| plan.kind.is_operation())
-}
-
-/// One line naming what a plan is about to send.
-fn plan_summary(plan: &canvas_core::plan::PlanRow) -> String {
-    if plan.kind.is_operation() {
-        return super::operation::plan_summary(plan);
-    }
-    let name = plan
-        .payload
-        .assignment_name
-        .as_deref()
-        .unwrap_or("this assignment");
-    let what = match plan.kind.submission() {
-        Some(InputKind::OnlineUpload) => {
-            let count = plan.payload.files.len();
-            let bytes: u64 = plan.payload.files.iter().map(|f| f.size).sum();
-            format!("{count} file(s), {bytes} bytes")
-        }
-        Some(InputKind::OnlineTextEntry) => "a text entry".to_owned(),
-        Some(InputKind::OnlineHtml) => "an HTML entry".to_owned(),
-        Some(InputKind::OnlineUrl) => "a website URL".to_owned(),
-        // An operation plan never reaches the submission summary.
-        None => plan.kind.as_str().to_owned(),
-    };
-    let due = plan
-        .payload
-        .due_at
-        .as_deref()
-        .map_or_else(|| "no due date".to_owned(), |due| format!("due {due}"));
-    format!(
-        "Submit {what} to \"{name}\" as attempt {} ({due}).",
-        plan.baseline_attempt + 1
-    )
-}
-
-/// Human form of `plan@1`.
-///
-/// One document covers a submission plan and an operation plan, so the halves
-/// that do not apply are simply not printed. A `null` course or assignment is
-/// what an inbox operation has, not an unknown value.
-pub(super) fn render_plan(mut out: impl Write, result: &PlanResult) -> io::Result<()> {
-    let plan = &result.plan;
-    writeln!(out, "plan {}  {}", plan.plan_id, plan.state)?;
-    writeln!(
-        out,
-        "course {}  assignment {}  kind {}",
-        plan.course_id.as_deref().unwrap_or("-"),
-        plan.assignment_id.as_deref().unwrap_or("-"),
-        plan.kind
-    )?;
-    if let Some(operation) = &plan.operation {
-        crate::commands::operation::render_target(&mut out, &operation.target)?;
-        if let Some(subject) = &operation.subject {
-            writeln!(out, "subject {subject}")?;
-        }
-        for attachment in &operation.attachments {
-            writeln!(
-                out,
-                "attach {} ({} bytes, sha256 {})",
-                attachment.name, attachment.size, attachment.sha256
-            )?;
-        }
-        writeln!(
-            out,
-            "text transform={}  input_sha256={}  sent_sha256={}",
-            operation.text.transform, operation.text.input_sha256, operation.text.sent_sha256
-        )?;
-        writeln!(out, "expires {}", plan.expires_at)?;
-        return Ok(());
-    }
-    writeln!(
-        out,
-        "attempt {}  expires {}",
-        plan.estimated_attempt, plan.expires_at
-    )?;
-    for file in &plan.files {
-        writeln!(
-            out,
-            "file {} ({} bytes, sha256 {})",
-            file.name, file.size, file.sha256
-        )?;
-    }
-    if let Some(text) = &plan.text {
-        writeln!(
-            out,
-            "text transform={}  input_sha256={}  sent_sha256={}",
-            text.transform, text.input_sha256, text.sent_sha256
-        )?;
-    }
-    if let Some(url) = &plan.url {
-        writeln!(out, "url {url}")?;
-    }
-    Ok(())
 }
 
 fn map_preflight_error(session: &Session, err: PreflightError) -> Handled {

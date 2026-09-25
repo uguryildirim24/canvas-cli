@@ -1,0 +1,33 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 8,
+  "freshness": [],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "refused",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 2,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "code": "refused",
+    "details": {
+      "reason": "locked"
+    },
+    "http_status": null,
+    "message": "the quiz closed at midnight",
+    "server_errors": []
+  },
+  "schema": "canvas-cli/error@1",
+  "warnings": []
+}

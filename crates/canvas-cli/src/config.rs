@@ -97,6 +97,8 @@ pub struct CacheConfig {
     pub ttl_discussions: String,
     #[serde(default = "ttl_inbox")]
     pub ttl_inbox: String,
+    #[serde(default = "ttl_hour")]
+    pub ttl_quizzes: String,
 }
 
 fn ttl_courses() -> String {
@@ -130,6 +132,7 @@ impl Default for CacheConfig {
             ttl_pages: ttl_hour(),
             ttl_discussions: ttl_announcements(),
             ttl_inbox: ttl_inbox(),
+            ttl_quizzes: ttl_hour(),
         }
     }
 }
@@ -359,6 +362,7 @@ const KNOWN_TOP: &[&str] = &[
     "cache.ttl_pages",
     "cache.ttl_discussions",
     "cache.ttl_inbox",
+    "cache.ttl_quizzes",
     "network.api_concurrency",
     "network.storage_concurrency",
     "output.color",
@@ -423,6 +427,7 @@ fn apply_set(config: &mut Config, key: &str, value: &str) -> Result<(), CliError
         "cache.ttl_pages" => config.cache.ttl_pages = value.to_owned(),
         "cache.ttl_discussions" => config.cache.ttl_discussions = value.to_owned(),
         "cache.ttl_inbox" => config.cache.ttl_inbox = value.to_owned(),
+        "cache.ttl_quizzes" => config.cache.ttl_quizzes = value.to_owned(),
         "network.api_concurrency" => config.network.api_concurrency = parse_u32(value)?,
         "network.storage_concurrency" => {
             config.network.storage_concurrency = parse_u32(value)?;

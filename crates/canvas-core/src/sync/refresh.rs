@@ -512,7 +512,7 @@ enum Admitted {
     Served(Result<RefreshOutcome, SyncError>),
 }
 
-/// Take the single-flight lock for one dataset scope (REPORT §3.6).
+/// Take the single-flight lock for one dataset scope.
 ///
 /// A caller that never waited fetches. A caller that waited re-reads the cache
 /// first: the process it waited for has usually just written the coverage it
@@ -638,7 +638,7 @@ where
     }
 
     // Single-flight: one process fetches this dataset scope, the others read
-    // what it wrote (REPORT §3.6).
+    // what it wrote.
     let single_flight = match admit_refresh(store, dataset, now, fresh, window_lookup).await? {
         Admitted::Fetch(guard) => guard,
         Admitted::Served(outcome) => return outcome,
@@ -903,7 +903,7 @@ pub(super) async fn ingest_success<D: Dataset + Clone + Send + Sync + 'static>(
         .await?;
 
     // The cache is committed; the observation and its events are a separate
-    // transaction, recorded before the comparison (REPORT §3.6).
+    // transaction, recorded before the comparison.
     crate::events::observe_refresh(store, dataset.name(), dataset.scope_key()).await?;
 
     Ok(RefreshOutcome {

@@ -135,7 +135,7 @@ async fn storage_permits_stay_per_process() {
     let one = FilePermits::new(&locks, 1, 1).unwrap();
     let two = FilePermits::new(&locks, 1, 1).unwrap();
     // Two `FilePermits` over the same directory are two processes for the API
-    // lane, but each keeps its own storage cap (REPORT §3.6).
+    // lane, but each keeps its own storage cap.
     let a = Governor::with_seams(
         GovernorConfig {
             api_concurrency: 1,

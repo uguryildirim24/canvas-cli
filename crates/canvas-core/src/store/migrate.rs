@@ -11,15 +11,17 @@
 //! | `0002_reads` | cache | M8-a | `pages`, `discussion_topics`, `discussion_entries`, `conversations` |
 //! | `0003_events` | state | M6-c | `governor`, `interest`, `observations`, `baselines`, `events` |
 //! | `0004_operations` | state | M8-b | `operation_journal`, and `plans.operation_json` |
+//! | `0003_quizzes` | cache | M10-a | `quizzes` |
+//! | `0005_quizzes` | state | M10-a | `operation_journal.quiz_submit` and `quiz_id`, `quiz_session` |
 
 use rusqlite::Connection;
 
 use super::db::DbError;
 
 /// Current cache.sqlite schema version.
-pub const CACHE_USER_VERSION: i32 = 2;
+pub const CACHE_USER_VERSION: i32 = 3;
 /// Current state.sqlite schema version.
-pub const STATE_USER_VERSION: i32 = 4;
+pub const STATE_USER_VERSION: i32 = 5;
 
 /// Apply cache migrations from `from` up to [`CACHE_USER_VERSION`].
 pub fn migrate_cache(conn: &Connection, from: i32) -> Result<(), DbError> {
@@ -28,6 +30,9 @@ pub fn migrate_cache(conn: &Connection, from: i32) -> Result<(), DbError> {
     }
     if from < 2 {
         conn.execute_batch(CACHE_0002)?;
+    }
+    if from < 3 {
+        conn.execute_batch(CACHE_0003)?;
     }
     Ok(())
 }
@@ -45,6 +50,9 @@ pub fn migrate_state(conn: &Connection, from: i32) -> Result<(), DbError> {
     }
     if from < 4 {
         conn.execute_batch(STATE_0004)?;
+    }
+    if from < 5 {
+        conn.execute_batch(STATE_0005)?;
     }
     Ok(())
 }
@@ -178,6 +186,127 @@ CREATE TABLE conversation_unread (
     observed_at_core TEXT,
     observed_at_detail TEXT,
     observed_at_status TEXT
+);
+";
+
+/// Classic Quizzes entities (M10-a).
+///
+/// One table serves the `quizzes` listing and the `quiz` detail scope: the
+/// per-field write rule (§10) merges a detail fetch into the row the listing
+/// already wrote. `description` is Core because Canvas sends it on both
+/// routes; everything the CLI does not filter on lives in `data_json`.
+const CACHE_0003: &str = r"
+CREATE TABLE quizzes (
+    id INTEGER PRIMARY KEY NOT NULL,
+    course_id INTEGER,
+    title TEXT,
+    description TEXT,
+    due_at TEXT,
+    unlock_at TEXT,
+    lock_at TEXT,
+    data_json TEXT NOT NULL DEFAULT '{}',
+    observed_at_core TEXT,
+    observed_at_detail TEXT,
+    observed_at_status TEXT
+);
+
+CREATE INDEX quizzes_course ON quizzes(course_id);
+";
+
+/// Quiz taking: the operation journal learns `quiz_submit`, and a
+/// `quiz_session` row holds the live taking session (M10-a).
+///
+/// `operation_journal.kind` carries a CHECK that names the three M8-b kinds, so
+/// widening it means a rebuild: create a new table with the same columns plus
+/// `quiz_id`, copy the rows, drop the old one, rename. Nothing references
+/// `operation_journal` by a foreign key — `plans.journal_id` is a logical
+/// link, not a constraint — so the rebuild runs inside one transaction with
+/// `PRAGMA foreign_keys` on, exactly as the opener runs migrations.
+///
+/// `quiz_session` holds the one live session per quiz: the Canvas quiz
+/// submission id, the attempt, and the `validation_token` that authorizes
+/// answering and completing. The token is the local key for the write and is
+/// never printed; `canvas quiz questions` writes the row, `canvas quiz
+/// submit` reads it.
+const STATE_0005: &str = r"
+CREATE TABLE operation_journal_new (
+    journal_id TEXT PRIMARY KEY NOT NULL,
+    identity_key TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('discussion_reply','inbox_send','inbox_reply','quiz_submit')),
+    course_id INTEGER,
+    topic_id INTEGER,
+    parent_entry_id INTEGER,
+    conversation_id INTEGER,
+    quiz_id INTEGER,
+    recipients_json TEXT,
+    subject TEXT,
+    input_sha256 TEXT NOT NULL,
+    sent_sha256 TEXT NOT NULL,
+    intended_json TEXT NOT NULL,
+    approval_json TEXT,
+    state TEXT NOT NULL CHECK (state IN
+        ('planned','posting','posted','matched','outcome_unknown','refused','failed')),
+    post_status INTEGER,
+    response_kind TEXT,
+    not_posted_evidence TEXT,
+    attribution TEXT NOT NULL DEFAULT 'none',
+    response_record_json TEXT,
+    readback_json TEXT,
+    server_match_json TEXT,
+    receipt_record_json TEXT,
+    uploaded_file_ids_json TEXT NOT NULL DEFAULT '[]',
+    error_text TEXT,
+    created_at TEXT NOT NULL,
+    planned_at TEXT,
+    posting_at TEXT,
+    posting_started_at TEXT,
+    posted_at TEXT,
+    matched_at TEXT,
+    outcome_unknown_at TEXT,
+    refused_at TEXT,
+    failed_at TEXT,
+    terminal_at TEXT,
+    acknowledged_at TEXT
+);
+
+INSERT INTO operation_journal_new (
+    journal_id, identity_key, plan_id, kind, course_id, topic_id, parent_entry_id,
+    conversation_id, recipients_json, subject, input_sha256, sent_sha256, intended_json,
+    approval_json, state, post_status, response_kind, not_posted_evidence, attribution,
+    response_record_json, readback_json, server_match_json, receipt_record_json,
+    uploaded_file_ids_json, error_text, created_at, planned_at, posting_at, posting_started_at,
+    posted_at, matched_at, outcome_unknown_at, refused_at, failed_at, terminal_at,
+    acknowledged_at)
+SELECT
+    journal_id, identity_key, plan_id, kind, course_id, topic_id, parent_entry_id,
+    conversation_id, recipients_json, subject, input_sha256, sent_sha256, intended_json,
+    approval_json, state, post_status, response_kind, not_posted_evidence, attribution,
+    response_record_json, readback_json, server_match_json, receipt_record_json,
+    uploaded_file_ids_json, error_text, created_at, planned_at, posting_at, posting_started_at,
+    posted_at, matched_at, outcome_unknown_at, refused_at, failed_at, terminal_at,
+    acknowledged_at
+FROM operation_journal;
+
+DROP TABLE operation_journal;
+ALTER TABLE operation_journal_new RENAME TO operation_journal;
+
+CREATE UNIQUE INDEX operation_journal_plan ON operation_journal(plan_id);
+CREATE INDEX operation_journal_state ON operation_journal(state, created_at);
+CREATE INDEX operation_journal_course ON operation_journal(course_id);
+
+CREATE TABLE quiz_session (
+    identity_key TEXT NOT NULL,
+    quiz_id INTEGER NOT NULL,
+    course_id INTEGER NOT NULL,
+    quiz_submission_id INTEGER NOT NULL,
+    attempt INTEGER NOT NULL,
+    validation_token TEXT NOT NULL,
+    started_at TEXT,
+    end_at TEXT,
+    workflow_state TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (identity_key, quiz_id)
 );
 ";
 
@@ -520,7 +649,7 @@ CREATE TABLE destinations (
 );
 ";
 
-/// Coordinator, observation, and event tables (REPORT §3.6, migration `0003_events`).
+/// Coordinator, observation, and event tables (the design note, migration `0003_events`).
 const STATE_0003: &str = r"
 -- The shared rate-limit governor (SPEC §11). One row, id 1.
 CREATE TABLE governor (
@@ -591,7 +720,7 @@ CREATE INDEX events_observation ON events(observation_id);
 
 -- How far a derived consumer has read the log. `notify` keeps its position
 -- here, so a second run posts nothing the first one already posted: alerts are
--- deduplicated by cursor, never by content (REPORT §3.6).
+-- deduplicated by cursor, never by content.
 CREATE TABLE consumer_cursor (
     consumer TEXT PRIMARY KEY NOT NULL,
     cursor INTEGER NOT NULL,
@@ -599,7 +728,7 @@ CREATE TABLE consumer_cursor (
 );
 ";
 
-/// Operation plans and the approval record (M6-a; REPORT §3.5).
+/// Operation plans and the approval record (M6-a; the design note).
 ///
 /// `plan_sha256` covers the canonical plan document, so an approval names
 /// exact bytes. The journal link is unique: one plan can admit at most one

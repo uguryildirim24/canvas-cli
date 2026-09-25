@@ -1,6 +1,6 @@
 //! What the side panel is shown, and the one decision it can send back.
 //!
-//! The panel is an extension-owned surface (REPORT §3.4). It opens no
+//! The panel is an extension-owned surface. It opens no
 //! database, makes no request, and has no model behind it: everything it
 //! displays is computed here, by the host, and pushed over native messaging.
 //!
@@ -104,7 +104,7 @@ impl DecisionRefusal {
 /// Apply one decision the person made in the panel.
 ///
 /// The order is deliberate: everything is checked before anything moves, and
-/// the checks are the ones REPORT §3.5 names — handle, digest, identity
+/// the checks are the ones the design names — handle, digest, identity
 /// generation, consumer. A decision that fails any of them changes nothing at
 /// all, which is what the forgery tests assert.
 pub fn apply_decision(
@@ -292,7 +292,7 @@ pub fn cursor(session: &Session, since: i64) -> (i64, bool) {
 ///
 /// `offline` is not a preference here. The panel is drawn whenever the log
 /// moves or the person opens it, and a surface that fetched on every redraw
-/// would make the browser the reason Canvas is called (REPORT §3.2).
+/// would make the browser the reason Canvas is called.
 pub async fn api(
     globals: &crate::commands::Globals,
     browser: Option<&canvas_core::bridge::ipc::Context>,

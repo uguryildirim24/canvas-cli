@@ -1,7 +1,7 @@
 //! `canvas bridge host`: the broker process.
 //!
 //! Chrome starts it with the caller origin as the first argument and speaks
-//! length-prefixed JSON on the pipes (REPORT §3.4). It is the **broker owner**
+//! length-prefixed JSON on the pipes. It is the **broker owner**
 //! for exactly one identity:
 //!
 //! - it holds the shared identity lock (§10) for its lifetime, and answers
@@ -48,7 +48,7 @@ pub(crate) const TEXT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long a `follow` waits for the companion's dispatch acknowledgement.
 ///
-/// REPORT §3.2 proposes a p95 under 300 ms for the acknowledgement, so a wait
+/// the design proposed a p95 under 300 ms for the acknowledgement, so a wait
 /// several times that is generous and still well inside the client's own
 /// timeout. Exceeding it is `navigation_timeout`, not a claim that the page
 /// did or did not load.
@@ -493,7 +493,7 @@ async fn decide(host: &Arc<Host>, plan_id: &str, handle: &str, digest: &str, dec
 /// Compute the panel's whole view and send it.
 ///
 /// The bundle the panel sees is the CLI's own: the host reads it with neither
-/// an attachment id nor a consumer, which is the reading REPORT §3.2 permits
+/// an attachment id nor a consumer, which is the reading the design permits
 /// the local side. It never asks the browser for text.
 async fn push_panel(host: &Arc<Host>) {
     let context = host.broker.lock().await.context(None, None, false).ok();
@@ -706,7 +706,7 @@ async fn answer(host: &Arc<Host>, request: ipc::Request) -> Body {
 /// the browser hears anything, so an unentitled caller and a cross-origin
 /// target never move the person's tab. What comes back is the dispatch
 /// acknowledgement; whether the page loaded arrives later, as a state on the
-/// bundle (REPORT §3.2).
+/// bundle.
 async fn follow(
     host: &Arc<Host>,
     attachment_id: Option<String>,
@@ -778,7 +778,7 @@ async fn follow(
 ///
 /// Metadata is served from the broker's last validated state. Text is
 /// released only after the extension re-probed the account for **this**
-/// document (REPORT §3.3 step 4), and an account that no longer matches
+/// document, and an account that no longer matches
 /// refuses the whole answer rather than returning a bundle without it.
 ///
 /// The order matters: the caller's capability is checked before the probe is

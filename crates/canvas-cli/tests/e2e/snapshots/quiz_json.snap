@@ -1,0 +1,73 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: value
+---
+{
+  "exit": 0,
+  "freshness": [
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "quizzes",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "course:100",
+      "source": "network",
+      "stale": false
+    },
+    {
+      "complete": true,
+      "count": 1,
+      "dataset": "quiz",
+      "fetched_at": "2026-09-09T17:05:12Z",
+      "scope": "quiz:100:101",
+      "source": "network",
+      "stale": false
+    }
+  ],
+  "generated_at": "2026-09-09T17:05:12Z",
+  "identity": {
+    "key": "<identity>",
+    "origin": "<origin>",
+    "user_id": "1"
+  },
+  "outcome": "ok",
+  "partial": [],
+  "profile": null,
+  "requests": {
+    "api": 2,
+    "cost": null,
+    "storage": 0
+  },
+  "result": {
+    "quiz": {
+      "allowed_attempts": 2,
+      "assignment_id": "9012",
+      "cant_go_back": false,
+      "course_id": "100",
+      "description_markdown": "Chapters 4 and 5. Two attempts, highest score kept.",
+      "due_at": "2026-09-18T23:59:00Z",
+      "embedded": [],
+      "external_links": [],
+      "files": [],
+      "html_url": "<origin>/courses/100/quizzes/101",
+      "id": "101",
+      "ip_filtered": false,
+      "lock_at": null,
+      "lock_explanation": null,
+      "locked_for_user": false,
+      "one_question_at_a_time": false,
+      "points_possible": 10.0,
+      "published": true,
+      "question_count": 5,
+      "quiz_type": "assignment",
+      "require_lockdown_browser": false,
+      "time_limit": 30,
+      "title": "Week 3 Reading Quiz",
+      "truncated": false,
+      "unlock_at": "2026-09-14T00:00:00Z",
+      "unlocked_for_user": true
+    }
+  },
+  "schema": "canvas-cli/quiz@1",
+  "warnings": []
+}

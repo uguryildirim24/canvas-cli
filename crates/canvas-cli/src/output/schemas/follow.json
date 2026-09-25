@@ -3,10 +3,10 @@
   "consumer": "mcp:claude-code",
   "target_kind": "assignment",
   "id": "98765",
-  "url": "https://lasell.instructure.com/courses/45679/assignments/98765",
+  "url": "https://canvas.example.edu/courses/45679/assignments/98765",
   "follow": {
     "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
-    "url": "https://lasell.instructure.com/courses/45679/assignments/98765",
+    "url": "https://canvas.example.edu/courses/45679/assignments/98765",
     "dispatched": true,
     "dispatched_at": "2026-09-10T16:04:39Z",
     "dispatch_ms": 41,

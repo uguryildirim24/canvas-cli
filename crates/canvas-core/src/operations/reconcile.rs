@@ -147,8 +147,8 @@ async fn run(
 
     // The owner was absent. `reconcile` is a recoverer (SPEC §12.2 names
     // them); `status` is not, so it reports the row it found and leaves the
-    // state alone — `docs/writes-v2.md` choice 9, and what the tool
-    // description promises a host.
+    // state alone — SPEC §25.5, and what the tool description promises a
+    // host.
     let row = if may_transition {
         ops::recover_owned(store, &owner, journal_id)?;
         ops::require(store, journal_id)?
@@ -173,7 +173,17 @@ async fn run(
     let mut warning = None;
 
     if may_transition && row.state == OpState::OutcomeUnknown {
-        if let Some(candidate) = found.clone() {
+        if row.kind == crate::operations::OperationKind::QuizSubmit
+            && let Some(candidate) = quiz_observed(&row, &readback)
+        {
+            // The readback shows this operation's own submission, completed at
+            // its attempt with the answers it sent. An id links the journal
+            // to the object, so this is `posted` with `observed`, not
+            // `matched` with `unproven`.
+            ops::commit_observed(store, &owner, journal_id, &candidate, &readback)?;
+            persist_identity(store, journal_id)?;
+            verdict = Verdict::Observed;
+        } else if let Some(candidate) = found.clone() {
             // A digest match with no id link is exactly `unproven`, and the
             // state that carries it is `matched`.
             ops::commit_matched(store, &owner, journal_id, &candidate, &readback)?;
@@ -182,7 +192,7 @@ async fn run(
         } else if assume_not_posted {
             // A readback that did not cover the whole thread cannot prove
             // absence, so it cannot support the assertion that nothing was
-            // posted either (`docs/writes-v2.md` choice 8). The exposed case
+            // posted either (SPEC §25.5). The exposed case
             // is an `inbox_send` Canvas never named a conversation for: there
             // is no thread to read at all, and asserting "never sent" there
             // invites a resend that would be a second message.
@@ -270,6 +280,13 @@ fn persist_identity(store: &Store, journal_id: &str) -> Result<(), OperationErro
 /// reading never marks anything read. A new conversation is read back through
 /// the conversation Canvas said it created, and when Canvas never said, there
 /// is nothing to read.
+///
+/// A quiz is read back through its own submission: the submission the plan
+/// froze is compared by id, and the recorded answers by digest. A digest on a
+/// session that is still open does not close the journal; only a complete
+/// session moves it, to `posted` with attribution `observed`, because the
+/// readback shows the submitted object itself. Answers recorded on an open
+/// session only enrich the journal, which is what `status` reports.
 pub async fn readback(
     client: &Client,
     store: &Store,
@@ -321,6 +338,23 @@ async fn read_thread(
             };
             messages_of(client, conversation_id).await?
         }
+        OperationTarget::QuizSubmit {
+            course_id,
+            quiz_id,
+            quiz_submission_id,
+            attempt,
+        } => {
+            return quiz_readback(
+                client,
+                &read_at,
+                *course_id,
+                *quiz_id,
+                *quiz_submission_id,
+                *attempt,
+                &sent_digest(row),
+            )
+            .await;
+        }
     };
     let scanned = u32::try_from(objects.len()).unwrap_or(u32::MAX);
     let mut readback = OperationReadback {
@@ -363,6 +397,124 @@ async fn read_thread(
             .collect();
     }
     Ok(readback)
+}
+
+/// Read one quiz submission back.
+///
+/// The submission the plan froze is compared by id: a different session, or
+/// none at all, is a covered readback that found nothing. On the frozen
+/// session the readback names the object, its completion time, and its
+/// author, and carries the digest of the answers Canvas holds when the
+/// session is complete.
+async fn quiz_readback(
+    client: &Client,
+    read_at: &str,
+    course_id: i64,
+    quiz_id: i64,
+    quiz_submission_id: i64,
+    attempt: i64,
+    frozen_digest: &str,
+) -> Result<OperationReadback, OperationError> {
+    let empty = OperationReadback {
+        read_at: read_at.to_owned(),
+        complete: false,
+        ..OperationReadback::default()
+    };
+    let Some(submission) = crate::quiz::own_submission(client, course_id, quiz_id).await? else {
+        return Ok(empty);
+    };
+    if submission.id != quiz_submission_id {
+        // Another session, or none worth naming: the readback covered the
+        // quiz and this operation is not in it.
+        return Ok(OperationReadback {
+            read_at: read_at.to_owned(),
+            complete: true,
+            ..OperationReadback::default()
+        });
+    }
+    if submission.attempt != Some(attempt) {
+        return Ok(OperationReadback {
+            read_at: read_at.to_owned(),
+            complete: true,
+            ..OperationReadback::default()
+        });
+    }
+    let mut readback = OperationReadback {
+        read_at: read_at.to_owned(),
+        scanned: 1,
+        complete: true,
+        id: Some(submission.id.to_string()),
+        created_at: submission.finished_at.map(|t| t.to_string()),
+        user_id: Some(submission.user_id.to_string()),
+        ..OperationReadback::default()
+    };
+    readback.created_at_local = super::receipt::local(readback.created_at.as_deref());
+    // The digest moves only a completed session to `posted`: answers on an
+    // open session enrich the journal, and a second answer round would be a
+    // new operation.
+    if submission.is_complete() {
+        let recorded = recorded_answers_digest(client, submission.id).await?;
+        if recorded.as_deref() == Some(frozen_digest) {
+            readback.body_sha256 = recorded;
+            readback.attachment_ids = vec![submission.id.to_string()];
+        }
+    }
+    Ok(readback)
+}
+
+/// The digest of the answers one session holds, in canonical order.
+///
+/// Built from the same `QuizAnswer` struct the prepare freezes, in the same
+/// id order, so the bytes digest identically. `serde_json::Map` sorts its
+/// keys, which a `json!` value would not share with the struct's field
+/// order — hence the struct here rather than the shorter literal.
+async fn recorded_answers_digest(
+    client: &Client,
+    quiz_submission_id: i64,
+) -> Result<Option<String>, OperationError> {
+    let questions = crate::quiz::questions(client, quiz_submission_id).await?;
+    let mut answers: Vec<canvas_api::models::QuizAnswer> = questions
+        .iter()
+        .map(|q| canvas_api::models::QuizAnswer {
+            id: q.id,
+            answer: q.answer.clone().unwrap_or(serde_json::Value::Null),
+        })
+        .collect();
+    answers.sort_by_key(|a| a.id);
+    let rendered = serde_json::to_string(&answers).map_err(OperationError::Json)?;
+    Ok(Some(hex_sha256(rendered.as_bytes())))
+}
+
+/// Whether the readback shows this operation's own completion.
+///
+/// Both halves must hold: the submission is complete at the frozen attempt,
+/// and the answers Canvas holds digest to the ones this operation sent. The
+/// match commits to `posted` with attribution `observed`, never to `matched`.
+fn quiz_observed(
+    row: &super::record::OperationRow,
+    readback: &OperationReadback,
+) -> Option<ServerMatch> {
+    let OperationTarget::QuizSubmit {
+        quiz_submission_id, ..
+    } = row.intended.target
+    else {
+        return None;
+    };
+    let digest = sent_digest(row);
+    if readback.complete
+        && readback.id.as_deref() == Some(&quiz_submission_id.to_string())
+        && readback.body_sha256.as_deref() == Some(digest.as_str())
+        && readback.created_at.is_some()
+    {
+        return Some(ServerMatch {
+            id: quiz_submission_id.to_string(),
+            created_at: readback.created_at.clone(),
+            created_at_local: readback.created_at_local.clone(),
+            user_id: readback.user_id.clone(),
+            body_sha256: digest,
+        });
+    }
+    None
 }
 
 /// Whether this identity wrote the object, as far as Canvas says.

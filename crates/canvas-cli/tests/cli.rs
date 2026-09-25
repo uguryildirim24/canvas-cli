@@ -1,12 +1,32 @@
 use assert_cmd::Command;
 
+/// One empty config and data root for every test in this file.
+///
+/// These tests assert what the binary does with nothing set up. Without the
+/// two overrides below the binary reads the real `~/.config/canvas-cli` and
+/// data root of whoever runs the suite, and the assertions then depend on
+/// whether that person happens to have an identity configured.
+fn sandbox() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| tempfile::TempDir::new().expect("sandbox"))
+        .path()
+}
+
+/// `canvas`, bound to that empty config and data root.
+fn canvas() -> Command {
+    let mut cmd = Command::cargo_bin("canvas").expect("canvas binary");
+    cmd.env("CANVAS_CONFIG_DIR", sandbox().join("config"))
+        .env("CANVAS_DATA_ROOT", sandbox().join("data"))
+        .env_remove("CANVAS_IDENTITY_KEY")
+        .env_remove("CANVAS_TOKEN")
+        .env_remove("CANVAS_HOST")
+        .env_remove("CANVAS_PROFILE");
+    cmd
+}
+
 #[test]
 fn version_prints_crate_version() {
-    let assert = Command::cargo_bin("canvas")
-        .unwrap()
-        .arg("version")
-        .assert()
-        .success();
+    let assert = canvas().arg("version").assert().success();
     let output = String::from_utf8_lossy(&assert.get_output().stdout);
     assert!(
         output.contains(env!("CARGO_PKG_VERSION")),
@@ -18,9 +38,9 @@ fn version_prints_crate_version() {
 fn todo_is_stub() {
     // M1-c implements todo; without identity it exits auth (3).
     let empty = tempfile::TempDir::new().unwrap();
-    Command::cargo_bin("canvas")
-        .unwrap()
+    canvas()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path().join("config"))
         .env_remove("CANVAS_IDENTITY_KEY")
         .arg("todo")
         .assert()
@@ -29,11 +49,7 @@ fn todo_is_stub() {
 
 #[test]
 fn help_lists_v1_commands() {
-    let assert = Command::cargo_bin("canvas")
-        .unwrap()
-        .arg("--help")
-        .assert()
-        .success();
+    let assert = canvas().arg("--help").assert().success();
     let help = String::from_utf8_lossy(&assert.get_output().stdout);
     let commands = help.split("\nOptions:").next().unwrap();
     for name in [
@@ -74,8 +90,7 @@ fn help_lists_v1_commands() {
 
 #[test]
 fn fresh_conflicts_with_offline() {
-    let assert = Command::cargo_bin("canvas")
-        .unwrap()
+    let assert = canvas()
         .args(["todo", "--fresh", "--offline"])
         .assert()
         .code(2);
@@ -88,8 +103,7 @@ fn fresh_conflicts_with_offline() {
 
 /// M2-b commands are wired: they must not print the Round-3 peer stub.
 fn assert_m2b_callable(args: &[&str]) {
-    let output = Command::cargo_bin("canvas")
-        .unwrap()
+    let output = canvas()
         .env_remove("CANVAS_IDENTITY_KEY")
         .env_remove("CANVAS_TOKEN")
         .args(args)
@@ -109,12 +123,7 @@ fn assert_m2b_callable(args: &[&str]) {
 }
 
 fn assert_usage_error(args: &[&str]) {
-    let assert = Command::cargo_bin("canvas")
-        .unwrap()
-        .args(args)
-        .assert()
-        .code(2)
-        .stdout("");
+    let assert = canvas().args(args).assert().code(2).stdout("");
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(stderr.contains("error:"), "stderr={stderr:?}");
     assert!(
@@ -150,9 +159,9 @@ fn mixed_commands_accept_typed_and_positional_forms() {
         vec!["open", "announcement", "chem", "123"],
         vec!["open", "--", "assignment"],
     ] {
-        Command::cargo_bin("canvas")
-            .unwrap()
+        canvas()
             .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path().join("config"))
             .env_remove("CANVAS_IDENTITY_KEY")
             .args(&args)
             .assert()
@@ -237,11 +246,7 @@ fn mixed_command_help_lists_real_operands() {
         ("submission", vec!["COURSE", "ASSIGNMENT", "--history"]),
         ("open", vec!["TARGET"]),
     ] {
-        let assert = Command::cargo_bin("canvas")
-            .unwrap()
-            .args([command, "--help"])
-            .assert()
-            .success();
+        let assert = canvas().args([command, "--help"]).assert().success();
         let help = String::from_utf8_lossy(&assert.get_output().stdout);
         for operand in expected {
             assert!(help.contains(operand), "help={help}");
@@ -290,9 +295,9 @@ fn command_choices_accept_documented_forms() {
         "future",
         "all",
     ] {
-        Command::cargo_bin("canvas")
-            .unwrap()
+        canvas()
             .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path().join("config"))
             .env_remove("CANVAS_IDENTITY_KEY")
             .args(["assignments", "chem", "--bucket", bucket])
             .assert()
@@ -313,11 +318,7 @@ fn command_choices_accept_documented_forms() {
         ],
     ] {
         // M3-b is implemented: without an identity these exit 3 (auth).
-        Command::cargo_bin("canvas")
-            .unwrap()
-            .args(&args)
-            .assert()
-            .code(3);
+        canvas().args(&args).assert().code(3);
     }
     for args in [
         vec![
@@ -374,9 +375,9 @@ fn m4b_commands_need_an_identity() {
         vec!["calendar"],
         vec!["calendar", "--days", "7", "--ics", "-"],
     ] {
-        Command::cargo_bin("canvas")
-            .unwrap()
+        canvas()
             .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path().join("config"))
             .env_remove("CANVAS_IDENTITY_KEY")
             .args(&args)
             .assert()
@@ -387,9 +388,9 @@ fn m4b_commands_need_an_identity() {
 #[test]
 fn nonraw_variants_continue_to_accept_json() {
     let empty = tempfile::TempDir::new().unwrap();
-    Command::cargo_bin("canvas")
-        .unwrap()
+    canvas()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path().join("config"))
         .env_remove("CANVAS_IDENTITY_KEY")
         .args(["calendar", "--ics", "calendar.ics", "--json"])
         .assert()
@@ -421,11 +422,7 @@ fn nested_help_lists_registered_commands() {
         ("alias", vec!["set", "list", "remove"]),
         ("open", vec!["assignment", "file", "announcement"]),
     ] {
-        let assert = Command::cargo_bin("canvas")
-            .unwrap()
-            .args([parent, "--help"])
-            .assert()
-            .success();
+        let assert = canvas().args([parent, "--help"]).assert().success();
         let help = String::from_utf8_lossy(&assert.get_output().stdout);
         let commands = help.split("\nOptions:").next().unwrap();
         for name in names {
@@ -480,9 +477,9 @@ fn m1b_commands_exit_auth_without_identity() {
         vec!["modules", "chem"],
         vec!["download", "chem", "--dest", "/tmp/out"],
     ] {
-        let assert = Command::cargo_bin("canvas")
-            .unwrap()
+        let assert = canvas()
             .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path().join("config"))
             .env_remove("CANVAS_IDENTITY_KEY")
             .env_remove("CANVAS_TOKEN")
             .env_remove("HOME")
@@ -506,8 +503,7 @@ fn m1b_commands_exit_auth_without_identity() {
 #[test]
 fn completions_support_every_documented_shell() {
     for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
-        let assert = Command::cargo_bin("canvas")
-            .unwrap()
+        let assert = canvas()
             .args(["completions", shell])
             .assert()
             .success()
@@ -523,8 +519,7 @@ fn completions_support_every_documented_shell() {
 
 #[test]
 fn version_json_is_a_single_identity_free_envelope() {
-    let result = Command::cargo_bin("canvas")
-        .unwrap()
+    let result = canvas()
         .args(["version", "--json", "--color", "always"])
         .assert()
         .success();

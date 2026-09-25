@@ -14,14 +14,16 @@ use crate::output::registry::{
     self, AliasResult, AnnouncementResult, AnnouncementsResult, CacheStatsResult, CalendarResult,
     ConversationResult, CourseResult, CoursesResult, DiscussionResult, DiscussionsResult,
     DownloadResult, EventJson, FilesResult, FollowResult, GradesResult, HereResult, InboxResult,
-    InboxUnreadResult, ModulesResult, NoteResult, OperationReconcileResult, OperationResult,
-    PageResult, PagesResult, PlanResult, SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT, SCHEMA_ANNOUNCEMENTS,
-    SCHEMA_CACHE, SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE, SCHEMA_COURSES,
-    SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_ERROR, SCHEMA_EVENT,
-    SCHEMA_FILES, SCHEMA_FOLLOW, SCHEMA_GRADES, SCHEMA_HERE, SCHEMA_INBOX, SCHEMA_INBOX_UNREAD,
-    SCHEMA_MODULES, SCHEMA_NOTE, SCHEMA_OPERATION, SCHEMA_OPERATION_RECONCILE, SCHEMA_PAGE,
-    SCHEMA_PAGES, SCHEMA_PLAN, SCHEMA_SUBMIT, SCHEMA_SYLLABUS, SCHEMA_SYNC, SCHEMA_WATCH,
-    SchemaEntry, SubmitResult, SyllabusResult, SyncResult, WatchResult,
+    InboxUnreadResult, ModulesResult, NewQuizResult, NewQuizzesResult, NoteResult,
+    OperationReconcileResult, OperationResult, PageResult, PagesResult, PlanResult,
+    QuizQuestionsResult, QuizResult, QuizzesResult, SCHEMA_ALIAS, SCHEMA_ANNOUNCEMENT,
+    SCHEMA_ANNOUNCEMENTS, SCHEMA_CACHE, SCHEMA_CALENDAR, SCHEMA_CONVERSATION, SCHEMA_COURSE,
+    SCHEMA_COURSES, SCHEMA_DISCUSSION, SCHEMA_DISCUSSIONS, SCHEMA_DOWNLOAD, SCHEMA_ERROR,
+    SCHEMA_EVENT, SCHEMA_FILES, SCHEMA_FOLLOW, SCHEMA_GRADES, SCHEMA_HERE, SCHEMA_INBOX,
+    SCHEMA_INBOX_UNREAD, SCHEMA_MODULES, SCHEMA_NEW_QUIZ, SCHEMA_NEW_QUIZZES, SCHEMA_NOTE,
+    SCHEMA_OPERATION, SCHEMA_OPERATION_RECONCILE, SCHEMA_PAGE, SCHEMA_PAGES, SCHEMA_PLAN,
+    SCHEMA_QUIZ, SCHEMA_QUIZ_QUESTIONS, SCHEMA_QUIZZES, SCHEMA_SUBMIT, SCHEMA_SYLLABUS,
+    SCHEMA_SYNC, SCHEMA_WATCH, SchemaEntry, SubmitResult, SyllabusResult, SyncResult, WatchResult,
 };
 
 /// The contract version of the document `canvas schema` prints.
@@ -95,6 +97,11 @@ fn result_schema(entry: &SchemaEntry) -> (Value, &'static str) {
         (SCHEMA_CACHE, Some("stats")) => Some(schema_of::<CacheStatsResult>()),
         (SCHEMA_SUBMIT, _) => Some(schema_of::<SubmitResult>()),
         (SCHEMA_PLAN, _) => Some(schema_of::<PlanResult>()),
+        (SCHEMA_QUIZZES, _) => Some(schema_of::<QuizzesResult>()),
+        (SCHEMA_QUIZ, _) => Some(schema_of::<QuizResult>()),
+        (SCHEMA_QUIZ_QUESTIONS, _) => Some(schema_of::<QuizQuestionsResult>()),
+        (SCHEMA_NEW_QUIZZES, _) => Some(schema_of::<NewQuizzesResult>()),
+        (SCHEMA_NEW_QUIZ, _) => Some(schema_of::<NewQuizResult>()),
         (SCHEMA_HERE, _) => Some(schema_of::<HereResult>()),
         (SCHEMA_NOTE, _) => Some(schema_of::<NoteResult>()),
         (SCHEMA_FOLLOW, _) => Some(schema_of::<FollowResult>()),
@@ -258,21 +265,20 @@ pub fn document(entry: &SchemaEntry) -> Value {
 }
 
 /// The `schema@1` document for a command name, if one is registered.
+///
+/// A command that shares another command's result shape answers under its own
+/// name: `canvas schema "discussion reply"` describes the operation journal
+/// and says `discussion reply`, not `operation status`.
 #[must_use]
 pub fn document_for_command(name: &str) -> Option<Value> {
-    registry::entry_for_command(name).map(document)
-}
-
-/// The `schema@1` document for a schema id and one of its result shapes.
-///
-/// `canvas mcp` describes a tool's output this way, so a tool and the CLI
-/// cannot disagree about the shape of the same result. A schema whose
-/// Appendix D row lists several shapes — `receipts@1`, `cache@1`, `config@1`,
-/// `identity@1` — has one entry per shape, so the variant selects which one;
-/// `None` takes the first, which is the shape the bare command prints.
-#[must_use]
-pub fn document_for_schema(schema_id: &str, variant: Option<&str>) -> Option<Value> {
-    registry::entry_for_schema(schema_id, variant).map(document)
+    let entry = registry::entry_for_command(name)?;
+    let mut document = document(entry);
+    if let Some(alias) = registry::alias_command(name)
+        && let Some(object) = document.as_object_mut()
+    {
+        object.insert("command".into(), json!(alias));
+    }
+    Some(document)
 }
 
 /// The name of one entry: the command that prints it, as a person types it.
@@ -329,6 +335,13 @@ pub fn list() -> String {
             )
         })
         .collect();
+    // A command that prints another entry's shape is still a command a person
+    // can run, so it is listed as one.
+    lines.extend(
+        registry::command_aliases()
+            .iter()
+            .map(|(name, id)| format!("{name}\t{id}\tcommand")),
+    );
     lines.sort();
     lines.push(String::new());
     lines.join("\n")
@@ -481,11 +494,31 @@ mod tests {
         let list = list();
         assert_eq!(
             list.lines().count(),
-            registry::all_schemas().len(),
+            registry::all_schemas().len() + registry::command_aliases().len(),
             "list={list}"
         );
         assert!(list.contains("todo\tcanvas-cli/todo@1\tcommand"));
+        // A command that prints another entry's shape is listed too, or a
+        // caller has no way to learn that `canvas schema` answers for it.
+        assert!(list.contains("discussion reply\tcanvas-cli/operation@1\tcommand"));
         assert!(list.ends_with('\n'));
+    }
+
+    /// Every alias resolves, to the entry that owns the shape it prints, and
+    /// the document it answers with names the command that was asked for.
+    #[test]
+    fn an_alias_resolves_to_the_shape_it_prints_and_answers_under_its_own_name() {
+        for (alias, id) in registry::command_aliases() {
+            let entry = registry::entry_for_command(alias)
+                .unwrap_or_else(|| panic!("{alias} does not resolve"));
+            assert_eq!(entry.id, *id, "{alias} resolves to another schema");
+            let document = document_for_command(alias).expect(alias);
+            assert_eq!(document["command"], json!(alias));
+            assert_eq!(document["schema"], json!(id));
+        }
+        // A name an entry owns is never rewritten by the alias table.
+        let document = document_for_command("operation status").expect("operation status");
+        assert_eq!(document["command"], json!("operation status"));
     }
 
     /// Every name the listing prints must resolve, and every command it calls
@@ -527,6 +560,9 @@ mod tests {
                 assert!(path_exists(command), "`canvas {command}` is not a command");
             }
         }
+        for (alias, _) in registry::command_aliases() {
+            assert!(path_exists(alias), "`canvas {alias}` is not a command");
+        }
     }
 
     /// Every registry fixture must satisfy the document that describes it.
@@ -534,7 +570,7 @@ mod tests {
     /// A fixture is the example Appendix D publishes and the shape the MCP
     /// `outputSchema` advertises, so a fixture the document rejects means a
     /// host validating a legitimate answer would reject it too. This is the
-    /// defect `docs/reviews/code-M8-a2.md` found on the eight M8-a schemas:
+    /// defect review found on the eight M8-a schemas:
     /// their documents were inferred from the fixture and declared every
     /// nullable field non-nullable.
     #[test]

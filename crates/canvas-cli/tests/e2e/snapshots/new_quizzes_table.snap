@@ -1,0 +1,9 @@
+---
+source: crates/canvas-cli/tests/e2e/harness.rs
+expression: body
+---
+exit: 0
+--- stdout ---
+  ID     ASSIGNMENT    TITLE              DUE                     POINTS    TIME    ATTEMPTS  
+  201    9013          Week 3 New Quiz    2026-09-18T23:59:00Z    12        30m     2         
+--- stderr ---

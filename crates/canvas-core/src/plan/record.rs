@@ -1,4 +1,4 @@
-//! Plan, observation, and approval records (REPORT §3.5).
+//! Plan, observation, and approval records.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -23,6 +23,8 @@ pub enum PlanKind {
     InboxSend,
     /// A message added to an existing conversation (M8-b).
     InboxReply,
+    /// Quiz answers and their completion (M10-a).
+    QuizSubmit,
 }
 
 impl PlanKind {
@@ -34,6 +36,7 @@ impl PlanKind {
             Self::DiscussionReply => "discussion_reply",
             Self::InboxSend => "inbox_send",
             Self::InboxReply => "inbox_reply",
+            Self::QuizSubmit => "quiz_submit",
         }
     }
 
@@ -44,6 +47,7 @@ impl PlanKind {
             "discussion_reply" => Some(Self::DiscussionReply),
             "inbox_send" => Some(Self::InboxSend),
             "inbox_reply" => Some(Self::InboxReply),
+            "quiz_submit" => Some(Self::QuizSubmit),
             other => InputKind::parse_plan_name(other).map(Self::Submission),
         }
     }
@@ -122,7 +126,7 @@ impl std::fmt::Display for PlanState {
 /// Where a human decision arrived from.
 ///
 /// `yes_flag` records an explicit CLI `--yes`. It never claims an interactive
-/// decision, and the agent adapters never present it as one (REPORT §3.5).
+/// decision, and the agent adapters never present it as one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ApprovalChannel {
@@ -178,7 +182,7 @@ pub struct Approval {
 
 /// The facts execute compares against; a change means a fresh plan is needed.
 ///
-/// These are the "meaningful eligibility and date observations" of REPORT §3.5
+/// These are the "meaningful eligibility and date observations" of the design note
 /// and the inputs to SPEC §12.2 pre-flight steps 3 and 4. `allowed_extensions`
 /// is included because §3.5 names allowed extensions among the facts to
 /// revalidate.
@@ -348,7 +352,7 @@ impl PlanRow {
     /// True when `now` is at or after the admission deadline.
     ///
     /// Expiry gates first admission only. A status read of an executed plan
-    /// never expires it (REPORT §3.5).
+    /// never expires it.
     #[must_use]
     pub fn is_expired(&self, now: jiff::Timestamp) -> bool {
         self.expires_at

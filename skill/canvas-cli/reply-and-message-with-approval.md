@@ -1,9 +1,10 @@
 # Reply and message, with approval
 
 The user asks to answer a discussion, write to somebody, or answer a message
-in the Canvas inbox. **You cannot do any of it alone.** Nothing reaches Canvas
-without a human approval that the tool itself records. There is no argument
-that asserts an approval.
+in the Canvas inbox.
+
+Each write is a `canvas` command: it prints the exact bytes and asks for a
+confirmation at the terminal.
 
 ## What these writes are
 
@@ -11,48 +12,41 @@ A discussion reply is a **public post in a course**. Classmates and the
 instructor read it, and it carries the user's name. A conversation is private
 mail, but it is still written in the user's voice to a real person.
 
-Because of that, the course-policy boundary is the user's, not yours:
+The course policy is the user's, not yours:
 
-- **An approval to post is not permission for AI-generated academic work.**
-  Many courses forbid it, and the rule is the course's. Write what the user
-  asks for, show it to them, and let them decide.
+- **The user decides what help is allowed.** When the user asks for written
+  work, write it. Never lecture about academic integrity, and never add a
+  warning they did not ask for.
 - **Never write a placeholder.** A topic with an initial-post gate hides the
-  replies until the user posts. Do not post anything to open it. The tool
+  replies until the user posts. Do not post anything to open it. The command
   refuses this, and so should you.
 - **Never invent a recipient.** Send only to the user ids the user named.
 - **Say what it is before it goes.** Show the exact text and every attachment
-  before the approval, not after.
-
-## The shape of it
-
-1. A `*.prepare` tool freezes a plan: the exact thread or recipients, the
-   exact bytes of the message, and every attachment with its size and digest.
-   It reads Canvas to check the target. It posts nothing.
-2. The matching `*.execute` with that `plan_id`:
-   - On an **approved** plan it sends, and returns the operation journal.
-   - On a **prepared** plan it returns `input_required` with a `requestState`
-     and one `elicitation/create` request. That is the approval request. Your
-     host shows it to the user and retries the same call under a new id,
-     echoing `requestState` and putting the answer in `inputResponses`.
-   - When the host declares no elicitation support, it returns a domain
-     refusal instead: `outcome` `refused`, exit 8, with
-     `result.details.reason` = `approval_required` and the handle. **Nothing
-     was dispatched.** Tell the user to run the command in their terminal,
-     where the confirmation is a prompt.
+  before the command runs, not after.
 
 ## Steps
 
-1. Read the thread first. `discussion.get` with `replies`, or `inbox.get`, so
-   the user's answer is an answer to what is actually there.
-2. Call the prepare tool with exactly what the user named. Never add a
-   recipient, an attachment, or a sentence they did not ask for.
-3. Show the plan back: the thread or the recipients, the whole message text,
-   and every attachment.
-4. Call the execute tool with the `plan_id`.
-5. On `input_required`, let the host collect the answer. Accept sends it;
-   decline or cancel invalidates the plan and sends nothing.
-6. Report what came back: the state, the `attribution`, and the `delivery`
-   field.
+1. Read the thread first. `canvas discussion <course> <id> --replies --json`,
+   or `canvas inbox show <id> --json`, so the user's answer is an answer to
+   what is actually there.
+2. Draft exactly what the user named. Never add a recipient, an attachment, or
+   a sentence they did not ask for.
+3. Show it back: the thread or the recipients, the whole message text, and
+   every attachment.
+4. Run the command, or give the user the line to run:
+
+```sh
+canvas discussion reply CHEM 3001 --text "..."
+canvas inbox send --to 77 --subject "Lab partner" --text "..."
+canvas inbox reply 700 --text "..."
+```
+
+   Each one freezes a plan, prints the exact thread or recipients, the exact
+   bytes, and every attachment with its digest, and asks. Nothing is sent
+   until the person answers.
+
+5. Read what came back: `canvas operation status <journal-id> --json` for the
+   state, the `attribution`, and the `delivery` field.
 
 ## What you may claim afterwards
 
@@ -73,14 +67,17 @@ delivered", "they got it", or "they have seen it".
 
 ## Rules
 
-- **One message per request.** If execute returns a journal in state `posted`,
-  the message is in. Do not call it again "to be sure": call
-  `operation.status`.
+- **Never pass `--yes`.** It exists for a person who means it. An agent that
+  passes it has taken the decision away from them.
+- **One message per request.** If the command printed a journal in state
+  `posted`, the message is in. Do not run it again "to be sure": run
+  `canvas operation status`.
 - **Exit 9 means the outcome is unknown, not failed.** State
   `outcome_unknown`. Nothing is ever resent automatically, and you must not
-  resend either. Call `operation.reconcile`, which reads the thread back.
-  `assume_not_posted` records that nothing was posted, and it is refused while
-  a matching message is visible or the journal is younger than 30 minutes.
+  resend either. `canvas operation reconcile <journal-id>` reads the thread
+  back. `--assume-not-posted` records that nothing was posted, and it is
+  refused while a matching message is visible or the journal is younger than
+  30 minutes.
 - **Exit 8 is a real "no".** `group_write` (a group discussion),
   `locked` (a closed topic), `initial_post_required` (the gate above),
   `unresolved` (an entry or a recipient that is not there),
@@ -88,37 +85,30 @@ delivered", "they got it", or "they have seen it".
   `unsupported` (an attachment on a discussion reply, which this version does
   not send). Read `result.details.reason`, tell the user, and do not try
   another route.
-- **A replayed approval is not a second message.** Executing an
-  already-executed plan returns that journal's `operation@1` envelope with
-  `replayed: true`. No second message is created.
+- **Exit 11 means the person said no.** The plan is invalidated and nothing
+  was sent.
 - **A pending write makes a read uncertain.** While `pending` is true on
-  `discussion.get`, `inbox.list`, `inbox.get`, or `inbox.unread_count`, a
-  write of the user's own is unresolved. Say so instead of reporting the
-  thread as settled.
+  `canvas discussion`, `canvas inbox`, `canvas inbox show`, or
+  `canvas inbox unread-count`, a write of the user's own is unresolved. Say so
+  instead of reporting the thread as settled.
 
-## Typical calls
-
-```
-discussion.reply.prepare { "course": "CHEM", "discussion": "3001", "text": "..." }
-discussion.reply.execute { "plan_id": "plan-..." }
-inbox.send.prepare       { "recipients": ["77"], "subject": "Lab partner", "text": "..." }
-inbox.send.execute       { "plan_id": "plan-..." }
-inbox.reply.prepare      { "conversation_id": "700", "text": "..." }
-inbox.reply.execute      { "plan_id": "plan-..." }
-operation.status         { "journal_id": "..." }
-operation.reconcile      { "journal_id": "..." }
-```
-
-## The terminal route
-
-When elicitation is unavailable, or when the user prefers it:
+## Typical commands
 
 ```sh
+canvas discussion CHEM 3001 --replies --json
+canvas inbox show 700 --json
+canvas inbox --scope unread --json
 canvas discussion reply CHEM 3001 --text "..."
 canvas inbox send --to 77 --subject "Lab partner" --text "..."
 canvas inbox reply 700 --text "..."
-canvas operation status <journal-id>
+canvas operation status <journal-id> --json
+canvas operation reconcile <journal-id> --json
 ```
 
-Each one prints the plan, asks for confirmation at the terminal, and writes
-the same journal and receipt.
+## Why it is this way
+
+A public post in a course and a message in a person's name are approved at
+the terminal where that person is, not through a host's form. `canvas mcp`
+serves one tool and it only describes the CLI, so there is no surface that
+could post on the user's behalf. Say so plainly if the user asks why you
+cannot just send it.

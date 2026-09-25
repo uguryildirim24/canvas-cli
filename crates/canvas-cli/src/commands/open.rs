@@ -22,7 +22,7 @@ use crate::output::{
 /// The API previews of this project promise not to change anything. Handing a
 /// URL to the browser promises no such thing: Canvas' own page controllers
 /// run, and the discussion controller marks a topic read when it renders it
-/// (REPORT §3.3 step 7, source S13). The two are different acts and the
+/// (the design note, source S13). The two are different acts and the
 /// output says so.
 pub const NAVIGATION_SIDE_EFFECTS: &str = "the browser loads the page, and Canvas' own page controllers run: a discussion page \
      marks itself read";
@@ -49,25 +49,13 @@ fn db_fail(session: &crate::session::Session, err: impl ToString) -> Handled {
     )
 }
 
-/// Whether the resolved URL is also handed to the browser.
-///
-/// `canvas open` launches it. The `open.url` tool resolves only: an agent
-/// surface must not start a program on the user's machine (REPORT §3.2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Launch {
-    Yes,
-    No,
-}
-
 /// Run `canvas open` for the CLI: one envelope, one exit code.
 pub async fn run(
     globals: &Globals,
     command: Option<OpenCommand>,
     target: Option<String>,
 ) -> ExitCode {
-    handle(globals, command, target, Launch::Yes)
-        .await
-        .emit(globals.json)
+    handle(globals, command, target).await.emit(globals.json)
 }
 
 /// Run `canvas open`.
@@ -75,7 +63,6 @@ pub async fn handle(
     globals: &Globals,
     command: Option<OpenCommand>,
     target: Option<String>,
-    browser: Launch,
 ) -> Handled {
     let session = match globals.open_local_session() {
         Ok(s) => s,
@@ -86,7 +73,7 @@ pub async fn handle(
         Err(handled) => return handled,
     };
     let Resolved { kind, id, url } = resolved;
-    let result = launch_result(kind, &id, &url, || browser == Launch::Yes && launch(&url));
+    let result = launch_result(kind, &id, &url, || launch(&url));
     let envelope = base_envelope(SCHEMA_OPEN, &session, result);
     Handled::new(envelope, move |envelope| {
         writeln!(io::stdout(), "{}", human_result(&envelope.result))
@@ -227,14 +214,17 @@ async fn resolve(
     Ok(Resolved { kind, id, url })
 }
 
-/// `canvas open <target> --follow` and `context.follow`.
+/// `canvas open <target> --follow`.
+///
+/// The `context.follow` tool called this too until 2026-09-10; there is no
+/// tool now (SPEC §19 item 48).
 ///
 /// The target is resolved through the ordinary `open` resolver — the same
 /// code, the same cross-origin refusal at exit 6, and no fetch — and only
 /// then is the companion asked to move the tab. What comes back is the
 /// **dispatch acknowledgement**: the companion took the navigation. Whether
 /// the page loaded is a separate fact, and it arrives later, on the `here@1`
-/// bundle's `browser.follow` (REPORT §3.2).
+/// bundle's `browser.follow`.
 pub async fn follow(
     globals: &Globals,
     command: Option<OpenCommand>,

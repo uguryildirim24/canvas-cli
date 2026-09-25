@@ -5,7 +5,7 @@ import { companion, fixture } from "./load.js";
 
 const { linkPolicy, renderMarkdown } = companion;
 
-const ORIGIN = "https://lasell.instructure.com";
+const ORIGIN = "https://canvas.example.edu";
 
 /** Every string a rendered note would put on screen, in order. */
 function words(nodes) {
@@ -98,7 +98,7 @@ test("a hostile note is inert: no script, no HTML, no image, no foreign link", (
   assert.deepEqual(blocked, [
     "javascript:alert(1",
     "https://evil.test/steal",
-    "https://user:pw@lasell.instructure.com/courses/1",
+    "https://user:pw@canvas.example.edu/courses/1",
   ]);
   assert.equal(nodes.some((node) => node.type === "link"), false);
 
@@ -125,10 +125,10 @@ test("a link is judged by protocol, host, and credentials", () => {
   assert.equal(linkPolicy("canvas://plans/7c1d", ORIGIN), "ref");
   for (const href of [
     "canvas://",
-    "http://lasell.instructure.com/courses/1",
-    "https://lasell.instructure.com.evil.test/",
-    "https://user@lasell.instructure.com/courses/1",
-    "https://:pw@lasell.instructure.com/courses/1",
+    "http://canvas.example.edu/courses/1",
+    "https://canvas.example.edu.evil.test/",
+    "https://user@canvas.example.edu/courses/1",
+    "https://:pw@canvas.example.edu/courses/1",
     "javascript:alert(1)",
     "data:text/html,<script>alert(1)</script>",
     "file:///etc/passwd",

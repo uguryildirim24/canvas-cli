@@ -55,6 +55,8 @@ expression: "normalized(out, &server.uri())"
       "course_id": "5",
       "kind": "discussion_reply",
       "parent_entry_id": null,
+      "quiz_id": null,
+      "quiz_title": null,
       "recipient_names": [],
       "recipients": [],
       "topic_id": "55",

@@ -133,6 +133,7 @@ pub const CACHE_TABLES: &[&str] = &[
     "announcements",
     "calendar_events",
     "pages",
+    "quizzes",
     "discussion_topics",
     "discussion_entries",
     "conversations",

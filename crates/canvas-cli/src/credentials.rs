@@ -330,6 +330,16 @@ pub fn delete_token(
                     _ => Err(CredError::NotFound),
                 };
             }
+            if !keyring_available() {
+                // A machine with no credential store is not holding an entry
+                // to delete. Reporting the absent store as a failed deletion
+                // would make `identity remove` and `auth logout` impossible on
+                // a headless Linux box, a container, or a CI runner — exactly
+                // the machines where `auth login` put the token in the
+                // fallback file because there was nowhere else to put it. A
+                // store that exists and refuses is still a failure.
+                return Err(CredError::NotFound);
+            }
             let entry = Entry::new(SERVICE, key.as_str()).map_err(map_keyring_error)?;
             match entry.delete_credential() {
                 Ok(()) => Ok(()),

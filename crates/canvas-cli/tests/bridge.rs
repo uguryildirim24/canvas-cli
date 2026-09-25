@@ -328,10 +328,17 @@ fn install_writes_the_manifest_and_the_steps() {
     assert!(human.contains("Load unpacked"), "{human}");
 }
 
-/// M7-a acceptance: two consumers, and only the one that opted in sees the
-/// bundle. The resource attaches nobody.
+/// M7-a acceptance, as M9-b leaves it: the MCP surface cannot reach the
+/// browser at all, and the person's own `canvas here` still sees the page.
+///
+/// The tools that opted a consumer in — `context.attach`, `context.here`,
+/// `context.detach` — left the catalog with the read-only decision
+/// (§19 item 48), and the `context/` resource that answered under a consumer
+/// handle was deleted with the whole resource namespace (§19 item 50). What
+/// is pinned here is that both are gone from the wire, and that neither the
+/// page nor the handle is readable through MCP by any route.
 #[test]
-fn only_the_consumer_that_attached_reads_the_bundle() {
+fn no_mcp_consumer_can_reach_the_browser_and_the_person_still_can() {
     let f = Fixture::new();
     let mut host = f.host(EXTENSION);
     host.recv_type("ready");
@@ -341,102 +348,77 @@ fn only_the_consumer_that_attached_reads_the_bundle() {
     wait_for("the endpoint", || exists(&f.endpoint()));
 
     let mut alpha = f.mcp("alpha");
-    let mut beta = f.mcp("beta");
+
+    // One tool, and it is not a browser tool.
+    let listed = alpha.call("tools/list", json!({}));
+    let tools = listed["result"]["tools"].as_array().expect("tools");
+    assert_eq!(tools.len(), 1, "{listed}");
+    assert_eq!(tools[0]["name"], "getclitools");
+
+    // Every name that opted a consumer in or read the page is unroutable.
+    for name in [
+        "context.attach",
+        "context.here",
+        "context.detach",
+        "context.note",
+        "context.follow",
+    ] {
+        let refused = alpha.call(
+            "tools/call",
+            json!({ "name": name, "arguments": json!({}) }),
+        );
+        assert_eq!(
+            refused["error"]["code"], -32601,
+            "{name} is still reachable: {refused}"
+        );
+    }
+
+    // The `context/` resource is gone with the rest of the namespace: a
+    // handle is not a name anyone may read under, because nothing is.
     let prefix = format!(
         "canvas://{}/{}/context",
         f.doc.key.as_str(),
         f.doc.generation
     );
-
-    // Nobody has opted in, so nobody reads the page.
-    let before = alpha.tool("context.here", &json!({}));
-    assert_eq!(before["outcome"], "refused", "{before}");
-    assert_eq!(before["result"]["reason"], "not_attached");
-    assert_eq!(before["result"]["browser"], Value::Null);
-
-    // Reading the resource is not an opt-in either.
-    let read = alpha.call(
-        "resources/read",
-        json!({ "uri": format!("{prefix}/mcp:alpha") }),
-    );
-    let text = read["result"]["contents"][0]["text"]
-        .as_str()
-        .expect("text");
-    let document: Value = serde_json::from_str(text).expect("json");
-    assert_eq!(document["result"]["reason"], "not_attached", "{document}");
-
-    // Alpha opts in. The handle comes back; the page does not.
-    let attached = alpha.tool("context.attach", &json!({}));
-    assert_eq!(attached["outcome"], "ok", "{attached}");
-    assert_eq!(attached["result"]["state"], "attached");
-    assert_eq!(attached["result"]["consumer"], "mcp:alpha");
-    assert_eq!(attached["result"]["browser"], Value::Null);
-    let handle = attached["result"]["attachment"]
-        .as_str()
-        .expect("an attachment handle")
-        .to_owned();
-
-    // Now alpha reads the page, through the tool and through its resource.
-    let here = alpha.tool("context.here", &json!({}));
-    assert_eq!(here["outcome"], "ok", "{here}");
-    assert_eq!(here["result"]["consumer"], "mcp:alpha");
-    assert_eq!(here["result"]["browser"]["title"], "Essay 1");
-    let read = alpha.call(
-        "resources/read",
-        json!({ "uri": format!("{prefix}/mcp:alpha") }),
-    );
-    let text = read["result"]["contents"][0]["text"]
-        .as_str()
-        .expect("text");
-    let document: Value = serde_json::from_str(text).expect("json");
-    assert_eq!(document["result"]["browser"]["title"], "Essay 1");
-    assert_eq!(read["result"]["ttlMs"], 0);
-
-    // Beta never opted in. Alpha's handle does not serve beta either.
-    let refused = beta.tool("context.here", &json!({}));
-    assert_eq!(refused["result"]["reason"], "not_attached", "{refused}");
-    // Nor does alpha's *resource*: a consumer handle is not a name anyone may
-    // read under (REPORT section 3.2).
-    let borrowed = beta.call(
-        "resources/read",
-        json!({ "uri": format!("{prefix}/mcp:alpha") }),
-    );
-    let text = borrowed["result"]["contents"][0]["text"]
-        .as_str()
-        .expect("text");
-    let document: Value = serde_json::from_str(text).expect("json");
+    for handle in ["mcp:alpha", "mcp:beta"] {
+        let read = alpha.call(
+            "resources/read",
+            json!({ "uri": format!("{prefix}/{handle}") }),
+        );
+        assert_eq!(
+            read["error"]["code"], -32601,
+            "{handle} still reads: {read}"
+        );
+        assert!(read["result"].is_null(), "{handle}: {read}");
+    }
+    let listed = alpha.call("resources/list", json!({}));
     assert_eq!(
-        document["result"]["reason"], "not_attached",
-        "beta read alpha's context: {document}"
+        listed["result"]["resources"].as_array().map(Vec::len),
+        Some(0),
+        "the server still lists a resource: {listed}"
     );
-    assert!(document["result"]["browser"].is_null(), "{document}");
-    assert!(
-        !text.contains("Essay 1"),
-        "beta read alpha's page: {document}"
-    );
-    let stolen = beta.tool("context.here", &json!({ "attachment_id": handle }));
-    assert_eq!(stolen["result"]["reason"], "not_attached", "{stolen}");
-    let read = beta.call(
-        "resources/read",
-        json!({ "uri": format!("{prefix}/mcp:beta") }),
-    );
-    let text = read["result"]["contents"][0]["text"]
-        .as_str()
-        .expect("text");
-    let document: Value = serde_json::from_str(text).expect("json");
-    assert_eq!(document["result"]["reason"], "not_attached", "{document}");
 
-    // Alpha lets go. The tab stays attached for the person.
-    let detached = alpha.tool("context.detach", &json!({}));
-    assert_eq!(detached["outcome"], "ok", "{detached}");
-    assert_eq!(detached["result"]["detached"], true);
-    let after = alpha.tool("context.here", &json!({}));
-    assert_eq!(after["result"]["reason"], "not_attached", "{after}");
+    // The reference the one tool hands out names `canvas here`, which is
+    // where the browser context actually lives.
+    let answer = alpha.call(
+        "tools/call",
+        json!({ "name": "getclitools", "arguments": {} }),
+    );
+    let text = answer["result"]["content"][0]["text"]
+        .as_str()
+        .expect("the reference");
+    assert!(
+        text.contains("### canvas here"),
+        "the reference omits `here`"
+    );
+    assert!(!text.contains("Essay 1"), "a page reached MCP: {text}");
+
+    // The person's own view is untouched: the tab is still attached, and the
+    // CLI still reads it.
     let (still, code) = f.json(&["--offline", "here"]);
     assert_eq!(code, 0, "{still}");
     assert_eq!(still["result"]["browser"]["title"], "Essay 1");
 
     alpha.stop();
-    beta.stop();
     host.stop();
 }

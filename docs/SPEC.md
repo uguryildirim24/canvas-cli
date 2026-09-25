@@ -1,12 +1,12 @@
 # canvas-cli — Specification
 
-Status: v0.9, 2026-09-10. Owner: Rolf. Supersedes v0.8. Research inputs: `docs/research/r1-canvas-api.md`, `r2-prior-art.md`, `r3-rust-stack.md`, and `docs/agent-ux/REPORT.md` for the post-v1 rounds. §§1–19 and Appendices A–E are the v1 contract. §§20–25 record what the post-v1 packages **built**, as `main` has them; Appendix C names those packages and their review files. There are no placeholders left: every section of this document describes code on `main`. §19 holds the questions still open for the owner, and Appendix E maps every round-1 to round-7 finding to its resolution.
+Status: v0.9. This document is the contract the code implements. §§1–19 and Appendices A–D describe v1; §§20–25 record what the packages after v1 built, as `main` has them. Every section describes code that exists: there are no placeholders. §19 records the design questions that are still open and the decisions taken along the way.
 
 ## 0. Summary
 
 `canvas-cli` is a Rust command-line client for Canvas LMS (Instructure), built for **students only**. One binary, `canvas`, gives a student their deadlines, Canvas-reported grades, course files, announcements, and a way to submit work with a durable journal and a local receipt, without opening the Canvas web app. It is fast because it keeps a local SQLite cache. It is safe because the API token lives in the OS credential store and is sent only to its own origin. It is scriptable because every data command has a defined `--json` schema.
 
-The first user is the owner, a student at Lasell University (`lasell.instructure.com`). The owner confirmed on 2026-09-09 that a personal access token works on that instance. The design works for any Canvas instance.
+It was built against one real Canvas instance and is written to work with any of them: the host is whatever you authenticate to, and nothing in the code assumes a particular school.
 
 ## 1. Goals and non-goals
 
@@ -23,7 +23,7 @@ The first user is the owner, a student at Lasell University (`lasell.instructure
 ### Non-goals
 
 - **No teacher, TA, or admin tools.** Only endpoints a student role can call.
-- **No quiz taking.** Quizzes appear in `todo` and `assignments` with a browser handoff.
+- **Quiz taking is Classic Quizzes only (§12.7).** New Quizzes runs as an LTI tool and stays a browser handoff, and LockDown, IP-filtered, one-question-at-a-time, and no-going-back quizzes are refused with a browser hint.
 - **No LTI launches.** External-tool assignments get an "opens in browser" action only.
 - **No group submissions in v1.** Assignments with a group category are refused before upload with a browser hint.
 - **No OAuth2 developer-key flow in v1.** Personal access tokens only. Canvas requires OAuth for applications used by many users, so distribution to other students is conditional on adding OAuth later.
@@ -174,11 +174,18 @@ canvas open <target> --follow [--attachment ID]
 canvas discussion reply <course> <topic|URL> [--to ENTRY_ID] (--text T | --text-file P | --text -) [--attach P]… [--yes]
 canvas inbox send --to USER_ID[,…] [--subject S] (--text T | --text-file P | --text -) [--attach P]… [--yes]
 canvas inbox reply <conversation_id> (--text T | --text-file P | --text -) [--attach P]… [--yes]
-canvas operation status <journal_id>
-canvas operation reconcile <journal_id> [--assume-not-posted]
+canvas operation status <journal-id>
+canvas operation reconcile <journal-id> [--assume-not-posted]
+
+canvas quizzes <course>
+canvas quiz <course> <id|title|URL>
+canvas quiz questions <course> <id|title|URL> [--access-code CODE] [--yes]
+canvas quiz submit <course> <id|title|URL> --answers FILE|- [--access-code CODE] [--yes]
+canvas new-quizzes <course>
+canvas new-quiz <course> <assignment-id>
 ```
 
-`pages`, `page`, `syllabus`, `discussions`, `discussion`, and `inbox *` are §23. `watch` and `notify` are §22. `schema` and `mcp` are §21. `bridge *`, `here`, `note`, and `open --follow` are §24. `discussion reply`, `inbox send`, `inbox reply`, and `operation *` are §25.
+`pages`, `page`, `syllabus`, `discussions`, `discussion`, and `inbox *` are §23. `watch` and `notify` are §22. `schema` and `mcp` are §21. `bridge *`, `here`, `note`, and `open --follow` are §24. `discussion reply`, `inbox send`, `inbox reply`, and `operation *` are §25. `quizzes`, `quiz`, `quiz questions`, and `quiz submit` are §12.7. `new-quizzes` and `new-quiz` are §12.7 metadata reads.
 
 Command names still reserved for a later round (no contract in this document): `grades estimate|what-if|target`, `dashboard`, and `submit --resume`.
 
@@ -254,8 +261,8 @@ Exactly one JSON document per invocation on stdout. Envelope:
 {
   "schema": "canvas-cli/todo@1",
   "generated_at": "2026-09-09T17:05:12Z",
-  "profile": "lasell",
-  "identity": { "origin": "https://lasell.instructure.com", "user_id": "12345", "key": "lasell.instructure.com-12345-3f9a1c2e" },
+  "profile": "school",
+  "identity": { "origin": "https://canvas.example.edu", "user_id": "12345", "key": "canvas.example.edu-12345-3f9a1c2e" },
   "freshness": [ { "dataset": "courses", "scope": "active", "source": "cache", "fetched_at": "…", "complete": true, "count": 5, "stale": false } ],
   "requests": { "api": 0, "storage": 0, "cost": null },
   "partial": [ { "scope": "announcements:course:45679", "http_status": 403, "message": "…" } ],
@@ -297,14 +304,14 @@ host-slug = host with every character outside [a-z0-9.-] replaced by "_"
 digest8   = first 8 hex characters of SHA-256(origin + "\n" + user_id)
 ```
 
-Examples: `lasell.instructure.com-12345-3f9a1c2e`; origin `https://[::1]:8443`, user 7 → host slug `___1_`, key `___1__8443-7-<digest8>`. Each identity directory holds `identity.json` = `{ "origin", "user_id", "key", "created_at", "generation": "<uuid>" }`. The CLI verifies origin, user id, and key on every open and refuses a mismatch (exit 13). Display uses the full origin and user id, never the key alone.
+Examples: `canvas.example.edu-12345-3f9a1c2e`; origin `https://[::1]:8443`, user 7 → host slug `___1_`, key `___1__8443-7-<digest8>`. Each identity directory holds `identity.json` = `{ "origin", "user_id", "key", "created_at", "generation": "<uuid>" }`. The CLI verifies origin, user id, and key on every open and refuses a mismatch (exit 13). Display uses the full origin and user id, never the key alone.
 
 ### Selection matrix
 
 Selection runs per command class (§5).
 
 | Inputs | Class A | Classes B, C | Class D |
-|---|---|---|---|
+|---|---|---|
 | `--profile X` or `CANVAS_PROFILE=X` | ignored | X must exist (exit 3); its identity is used | same; `auth login` may name a new X |
 | no profile input, `CANVAS_HOST` + `CANVAS_TOKEN` | ignored | ephemeral profile `env`: identity from the env binding file (below) when present; otherwise class B exits 3 (`run any online command or auth login to bind this token`), class C exits 3 with `--offline` or validates online | validated online; `auth login` treats them as host and token inputs |
 | exactly one of `CANVAS_HOST`, `CANVAS_TOKEN` | ignored | `CANVAS_TOKEN` alone applies to the selected or default profile; `CANVAS_HOST` alone is exit 2 | same |
@@ -375,13 +382,13 @@ XDG layout on every Unix, including macOS. Windows uses AppData. Implemented wit
 `config.toml` example:
 
 ```toml
-default_profile = "lasell"
+default_profile = "school"
 
-[profiles.lasell]
-origin    = "https://lasell.instructure.com"
+[profiles.school]
+origin    = "https://canvas.example.edu"
 user_id   = 12345
-key       = "lasell.instructure.com-12345-3f9a1c2e"
-name      = "Rolf"
+key       = "canvas.example.edu-12345-3f9a1c2e"
+name      = "Sam Rivera"
 time_zone = "America/New_York"
 
 [download]
@@ -401,6 +408,7 @@ ttl_calendar      = "1h"
 ttl_pages         = "1h"
 ttl_discussions   = "15m"
 ttl_inbox         = "5m"
+ttl_quizzes       = "1h"
 
 [bridge]
 extension_id       = "abcdefghijklmnopabcdefghijklmnop"
@@ -416,7 +424,7 @@ color = "auto"
 
 Precedence: defaults → `config.toml` → `CANVAS_*` env → flags, via `figment`. `config set` validates keys.
 
-`cache.ttl_pages`, `cache.ttl_discussions`, and `cache.ttl_inbox` were added by M8-a (§23). M7-a added the two `bridge.*` keys (§24):
+`cache.ttl_pages`, `cache.ttl_discussions`, and `cache.ttl_inbox` were added by M8-a (§23). M10-a added `cache.ttl_quizzes` (§12.7). M7-a added the two `bridge.*` keys (§24):
 
 | Key | Default | What it does |
 |---|---|---|
@@ -440,7 +448,7 @@ The `governor`, `interest`, `observations`, `baselines`, `events`, `consumer_cur
 Each database keeps its own `PRAGMA user_version` and its own ordered batch list. A batch is applied inside one transaction, and a database already at its current version runs none.
 
 | Migration | Database | Package | Adds |
-|---|---|---|---|
+|---|---|---|
 | `0001_initial` | both | M1-a | the v1 cache and state schema |
 | `0002_reads` | cache | M8-a | `pages`, `discussion_topics`, `discussion_entries`, `conversations`, `conversation_unread` (§23) |
 | `0002_plans` | state | M6-a | `plans`, `approval_handles`, the journal plan link and its partial unique index (§20) |
@@ -485,6 +493,8 @@ A list refresh downloads every page, then in one transaction upserts entities pe
 | `inbox` | `scope:<inbox\|unread\|sent\|archived>` | `GET /conversations?scope=…&auto_mark_as_read=false` | `ttl_inbox` | all pages, or a recorded denial |
 | `conversation` | `conversation:<id>` | `GET /conversations/:id?auto_mark_as_read=false` | `ttl_inbox` | one object |
 | `inbox_unread` | `all` | `GET /conversations/unread_count` | `ttl_inbox` | one object |
+| `quizzes` | `course:<id>` | `GET /courses/:id/quizzes?per_page=100` | `ttl_quizzes` | all pages |
+| `quiz` | `quiz:<course>:<id>` | `GET /courses/:id/quizzes/:qid` | `ttl_quizzes` | one object |
 
 **Hit predicate.** A dataset (or window) request is served from cache when a `fetch_log` row of that dataset and scope (for windows: with the same context hash, `window_start ≤ requested start`, `window_end ≥ requested end`) has `complete = 1`, `stale = 0`, `epoch_seen ≥ state epoch for that scope` (below), and age within TTL. Otherwise: online, refresh; if the refresh fails and a row exists, serve it with `stale: true`; `--offline` serves any existing complete row with `stale: true`, and exits 7 when none exists.
 
@@ -499,6 +509,7 @@ An operation journal reaching `posted` or `matched` bumps its own scopes in the 
 | `discussion_reply` | `discussion:topic:<tid>`, `discussion:topic:<tid>:replies`, `discussions:course:<cid>` |
 | `inbox_send` | `inbox:*`, `inbox_unread:*` |
 | `inbox_reply` | `conversation:conversation:<id>`, `inbox:*`, `inbox_unread:*` |
+| `quiz_submit` | `quizzes:course:<cid>` |
 
 A refresh records `epoch_seen` = the state epoch read **before** its first request; at commit, inside `BEGIN IMMEDIATE` on the cache DB, it re-reads the state epoch and aborts (leaving the previous rows) if it advanced. Because the epoch lives in the durable DB and is written with the journal transition, a crash between the journal transition and any cache work cannot leave a falsely fresh cache, and `cache clear` cannot reset it.
 
@@ -594,7 +605,7 @@ Best-case baselines; `requests` in the JSON envelope reports actual counts.
 **Failure states and exits.**
 
 | State | Meaning | Exit | Recovery |
-|---|---|---|---|
+|---|---|---|
 | `upload_incomplete` | an upload failed; nothing posted | 9 | re-run `submit` (re-uploads; `--resume` is v2) |
 | `uploaded_not_submitted` | all files have IDs and the `POST` was never sent (owner-absent recovery from `uploaded`, `not_submitted_evidence = "never_sent"`), **or** the user assumed it after 30 minutes with no attempt visible (`"assumed"`) | 9 | re-run `submit` |
 | `outcome_unknown` | `POST` outcome not observed, or observed error with a matching attempt that this CLI cannot attribute | 9 | `submission reconcile <journal>` |
@@ -613,7 +624,7 @@ It fetches `submissions/self?include[]=submission_history` and evaluates history
 {
   "receipt_id": "…", "journal_id": "…",
   "plan_id": "…", "approval": { "channel": "tty", "at": "…", "consumer": null, "plan_sha256": "…" },
-  "identity": { "origin": "https://lasell.instructure.com", "user_id": "12345", "key": "lasell.instructure.com-12345-3f9a1c2e" },
+  "identity": { "origin": "https://canvas.example.edu", "user_id": "12345", "key": "canvas.example.edu-12345-3f9a1c2e" },
   "course_id": "45678", "course_code": "CHEM301",
   "assignment_id": "91011", "assignment_name": "Problem Set 3",
   "kind": "online_upload",
@@ -710,6 +721,24 @@ Active courses are batched into ≤10 `context_codes[]` per request, paginated, 
 
 **v2 note (kept for the future design, not a v1 contract):** conversation detail defaults to marking a thread read (`auto_mark_as_read`), discussion views can be permission-limited and replies can require an initial post, and those routes must be specified explicitly before `inbox` or `discussions` return.
 
+### 12.7 Quizzes (M10-a)
+
+Classic Quizzes only: `GET /courses/:cid/quizzes`, `GET /courses/:cid/quizzes/:qid`, the Quiz Submissions routes, and the Quiz Submission Questions routes (Appendix B). Quizzes appear in `todo` and `assignments` as before; these commands take them.
+
+**Which kind one quiz is.** The listing below names Classic Quizzes only — New Quizzes never appear in it. A quiz that is not listed is a New Quiz or another LTI tool: it shows as an assignment with an `external_tool` submission type, and it is taken in the browser. `canvas quiz` resolves against the cached listing, so a New Quiz title is exit 6, not a refusal; the skill routes it to the browser from the assignment. Instructure is retiring Classic Quizzes creation through 2026–2027 while existing ones stay takeable (§19 item 52); nothing here takes a New Quiz.
+
+**New Quiz metadata (class D, M10-b).** The New Quizzes REST API builds and describes quizzes; it has no session, answer, or completion endpoint, so taking one is out of reach of any token (§19 item 53). `canvas new-quizzes <course>` lists them (`GET /api/quiz/v1/courses/:cid/quizzes`) and `canvas new-quiz <course> <assignment-id>` shows one (`GET /api/quiz/v1/courses/:cid/quizzes/:aid`): title, instructions as Markdown, due and lock times, points, time limit, attempts, and the one-at-a-time, shuffle, and access-code rules. Both fetch on demand and keep no cache: the LTI engine owns the state, and the CLI never stores what it cannot reconcile. A New Quiz is addressed by its assignment id — the id Canvas prints beside it, and the id the detail route takes.
+
+**Reads (class C).** `canvas quizzes <course>` lists the course's quizzes from the `quizzes` dataset (`course:<id>`, `ttl_quizzes` = 1 hour); `canvas quiz <course> <id|title|URL>` shows one from the `quiz` detail dataset (`quiz:<course>:<id>`). A title resolves against the complete listing, exactly as an assignment name resolves against its own; an id or a `/courses/:cid/quizzes/:qid` URL resolves directly. The description is Markdown, bounded at 64 KiB like every other body.
+
+**The session (class D).** `canvas quiz questions` joins the session in progress, or starts one: `GET …/quizzes/:qid/submission` first, and `POST …/quizzes/:qid/submissions` (with `access_code` when given) when none is live. A live session is a plain read and asks nothing. Starting begins an attempt and, on a timed quiz, the clock — so it is confirmed at the terminal, or recorded with `--yes`; without either it is exit 2. The started-or-joined session (quiz submission id, attempt, `validation_token`, `started_at`, `end_at`) is stored in `state.sqlite` (`quiz_session`, one row per quiz); the token authorizes answering and completing and is never printed. The command then prints the censored questions (`quiz_questions@1`): id, position, name, type, points, Markdown text, the recorded answer or `null`, and the choices. Correctness never appears.
+
+A `409` on the start means a session is already in progress and the command joins it. A `400` is `locked`, a rejected code is `access_code`, and anything the API cannot take — LockDown, an IP filter, one question at a time, no going back — is exit 8 with a browser hint, decided at prepare before anything is sent (§14).
+
+**The write (class D).** `canvas quiz submit` answers every question and turns the quiz in. It freezes the canonical answer set — every session question in id order, `null` for a blank — as a `quiz_submit` operation plan, prints it, and asks; `--yes` records the decision. Prepare refuses everything `questions` refuses, plus `no_session` (no session in progress), `unresolved` (an answer for a question the session does not hold, or one answered twice), and `empty_body`. Execute revalidates the quiz and the session, posts the answers (`POST /quiz_submissions/:id/questions`), then completes (`POST …/submissions/:id/complete`), all inside one `posting` journal. On success the stored session is forgotten.
+
+The journal is an operation journal (§25) with target `quiz:<qid>`: admission serializes on the quiz, the mutation epoch is `quizzes:course:<cid>`, and `operation status|reconcile` read it back through the submission and its questions. A readback that shows the frozen session completed at its attempt with the sent answers moves an unknown outcome to `posted` with attribution `observed` (§19 item 52 records why this is `posted`, not `matched`). Answers recorded on a session that is still open only enrich the journal; preparing again and approving again is a new operation, and the answers overwrite, never duplicate.
+
 ## 13. Architecture
 
 Cargo workspace, edition 2024, MSRV **1.88**, `unsafe_code = "forbid"`.
@@ -721,7 +750,7 @@ canvas-cli/
   crates/canvas-core/    # store (cache + state), sync, resolvers, todo, journal/receipts, download, ics, markdown, io bridge
   crates/canvas-cli/     # binary: clap, renderers, JSON schema registry, config, credentials; tests/
   xtask/                 # record, sanitize, dist-assets, bench
-  docs/  tasks/
+  docs/
 ```
 
 - `canvas-api` owns `Secret` and knows nothing about disk, config, or output.
@@ -730,7 +759,7 @@ canvas-cli/
 
 Runtime: `#[tokio::main(flavor = "current_thread")]` plus the blocking pool above. Credential-store access happens only when a network call needs the token, except for the class-B commands listed in §5 that inspect or change the store.
 
-Performance targets are measured by `xtask bench` (M5): cached `todo` first output p50 < 50 ms, p95 < 150 ms; full cached `todo` p95 < 250 ms; cold-start (empty page cache) p95 < 400 ms; all with a 5-course fixture and once more while one download stream is active. Numbers are recorded in `docs/bench.md`. `cargo xtask bench --watch` measures the same targets again with a resident `canvas watch` on the same identity and records one tick's cost; `cargo xtask bench --mcp` measures a warm `todo.list` round trip over a real stdio pipe and the size of the `tools/list` catalog (§21). Neither has a §13 target of its own.
+Performance targets are measured by `xtask bench` (M5): cached `todo` first output p50 < 50 ms, p95 < 150 ms; full cached `todo` p95 < 250 ms; cold-start (empty page cache) p95 < 400 ms; all with a 5-course fixture and once more while one download stream is active. Numbers are recorded in `docs/bench.md`. `cargo xtask bench --watch` measures the same targets again with a resident `canvas watch` on the same identity and records one tick's cost; `cargo xtask bench --mcp` measures a warm `getclitools` round trip over a real stdio pipe, the size of `tools/list`, and the size of the command reference that one tool answers with (§21). Neither has a §13 target of its own.
 
 ## 14. Errors and exit codes
 
@@ -746,8 +775,8 @@ Single-invocation rule: exactly one JSON envelope (§7). Aborts use the `error` 
 | 5 | Rate limited | retries exhausted |
 | 6 | Resolution | zero or many matches; cross-origin URL; course/URL disagreement |
 | 7 | Offline miss | `--offline` and no coverage for a needed dataset |
-| 8 | Refused | lock, `can_submit = false`, attempts exhausted, group assignment, disallowed extension, `external_tool` only, file changed during submit, `422`, destination bound to another identity, receipt invalid, URL receipt verify, `in_progress` journal, `reconcile`/`export` on an ineligible journal |
-| 9 | Submission recovery | final journal state `upload_incomplete`, `uploaded_not_submitted`, or `outcome_unknown` (including a text/URL server match); `reconcile` on a journal with a live owner. The HTTP status of the `POST` never decides the exit or the state: a `5xx` that immediately resolves to `matched` exits 0; an error that shows no attempt stays unknown |
+| 8 | Refused | lock, `can_submit = false`, attempts exhausted, group assignment, disallowed extension, `external_tool` only, file changed during submit, `422`, destination bound to another identity, receipt invalid, URL receipt verify, `in_progress` journal, `reconcile`/`export` on an ineligible journal, quiz refused (locked, no session, browser-only) |
+| 9 | Submission recovery | final journal state `upload_incomplete`, `uploaded_not_submitted`, or `outcome_unknown` (including a text/URL server match); `reconcile` on a journal with a live owner. The HTTP status of the `POST` never decides the exit or the state: a `5xx` that immediately resolves to `matched` exits 0; an error that shows no attempt stays unknown. A quiz operation whose completion was never observed exits 9 the same way |
 | 10 | Verification mismatch | `submission verify`, `download --verify` |
 | 11 | Cancelled | user answered no, or Ctrl-C at a confirmation |
 | 12 | Partial | some files, courses, or batches failed, were unavailable, or were refused as `unsafe_path`/`unresolved_move`; `verify` `unavailable` |
@@ -773,12 +802,15 @@ Single-invocation rule: exactly one JSON envelope (§7). Aborts use the `error` 
 | `origin_mismatch` | a follow target outside the granted origin (§24) |
 | `navigation_timeout` | the companion did not acknowledge a follow within two seconds; the tab may still have moved (§24) |
 | `group_write` | the discussion topic is a group topic (§25) |
-| `locked` | the discussion topic is locked or closed for comments (§25) |
+| `locked` | the discussion topic is locked or closed for comments (§25); the quiz is locked (§12.7) |
 | `initial_post_required` | the topic gates its replies and this identity has not posted (§25) |
-| `unresolved` | a `--to` entry outside the topic, a recipient id Canvas does not return, or an unreadable attachment path (§25) |
-| `empty_body` | the body is empty or only whitespace (§25) |
-| `denied` | a `401`/`403` on the course, topic, or conversation at prepare (§25) |
-| `unsupported` | an attachment on a discussion reply, a body over 1 MiB, or more than 10 attachments (§25) |
+| `unresolved` | a `--to` entry outside the topic, a recipient id Canvas does not return, an unreadable attachment path (§25); an answer for a question the session does not hold, or one answered twice (§12.7) |
+| `empty_body` | the body is empty or only whitespace (§25); the answer set is empty (§12.7) |
+| `denied` | a `401`/`403` on the course, topic, or conversation at prepare (§25); a `401`/`403`/`404` on the quiz (§12.7) |
+| `unsupported` | an attachment on a discussion reply, a body over 1 MiB, or more than 10 attachments (§25); a quiz that needs the browser — LockDown, an IP filter, one question at a time, no going back — or answers over 1 MiB (§12.7) |
+| `no_session` | the quiz has no session in progress; `quiz questions` starts or joins one first (§12.7) |
+| `access_code` | the access code was not accepted (§12.7) |
+| `session_expired` | the session is live but Canvas gave no validation token; the quiz needs the browser (§12.7) |
 
 `zone_opaque` is the one companion reason that is **not** a refusal: the attachment is healthy, the page carries nothing, and the exit is 0 (§24.7).
 
@@ -791,7 +823,7 @@ Single-invocation rule: exactly one JSON envelope (§7). Aborts use the `error` 
 - Token bound to one origin; never in the cache DB, state DB, receipts, journals, logs, or JSON. Only its SHA-256 is stored.
 - No raw response bodies on disk; allowlisted records only (§12.2). Journals, receipts, and exports are mode `0600`. Fixtures pass through `xtask sanitize`, which applies the same allowlist and strips URLs.
 - Everything runs locally. No telemetry, proxy, or shared server. Identifiable `User-Agent`.
-- Honor `locked_for_user`, `hidden`, `unlock_at`, `can_submit`. No ID enumeration. No quiz-taking, no group submissions, no teacher endpoints.
+- Honor `locked_for_user`, `hidden`, `unlock_at`, `can_submit`. No ID enumeration. No group submissions, no teacher endpoints. Quiz taking is Classic Quizzes only, with the §12.7 refusals.
 - Governor per §11; conservative, adaptive, not a guarantee.
 - Downloads and verification write only inside capability-scoped directories with no-follow traversal (§12.3).
 - `cargo deny` blocks copyleft licenses and known advisories.
@@ -801,12 +833,12 @@ Single-invocation rule: exactly one JSON envelope (§7). Aborts use the `error` 
 | Layer | Tool | What |
 |---|---|---|
 | `canvas-api` | `wiremock` | pagination over 3 pages; cross-origin `next` rejected; governor: delayed high sample discarded, delayed **low** sample applied, the 3-low → 1-lower → 2-high arrival order keeps cooldown (watermark), first low header enters cooldown, refill bootstrap with `refill = 0` and probe timer, absent headers ageing with and without in-flight requests, cooldown recovery under a continuous cost-1 workload (headroom), `Retry-After`, initial + 4 retries with exact delays; upload completion handoff on `3xx` and `201`; API redirects: same-origin 303/307, off-origin rejected, 301 on POST rejected; transfer redirects off-origin without token; upload with `file` last; completion on `3xx`, `201` with body, `201` empty body + `Location`, missing/off-origin `Location`; download: same-origin token, off-origin strip, `Accept-Encoding: identity`, missing `Content-Length` with wrong size, storage `403` → `StorageExpired`; redaction of every listed key; the allowlisted response record from a submission response with signed attachment URLs contains no capability-bearing URL (the submitted `url` field is retained); absent/null/value model fixture |
-| `canvas-core` | `#[test]` + fixtures | todo merge (overdue graded quiz and graded discussion in both sources; dismissed missing work stays visible; unlocked assignment with `can_submit = false`; checkpoint and peer-review kinds; unknown kind retained); resolver ambiguity and incompleteness; journal state machine with failure injection after every phase incl. a kill at every lock/insert boundary and in `planned`; two simultaneous confirmations for one assignment (admission lock and unique index); a second process running `todo`, `receipts`, and `reconcile` during every active phase (no state change while the owner is live); two recoverers; owner-absent recovery per state with expected-state guards; `POST` answered by a Canvas-shaped `500` after the server committed (immediate resolution finds the attempt → `matched`); `POST` answered by JSON `400` after the server committed (comment validation → `matched`); Canvas-shaped `400` before commit (stays `outcome_unknown`, no automatic negative); branded JSON `504` with a request-id header → empty read → the original `POST` commits later → state stayed `outcome_unknown` and a later reconcile finds `matched`; timeout with zero entries stays unknown; `--assume-not-submitted` refused before 30 minutes and when an attempt is visible; login after a failed logout with the chosen store's cleanup flag set does not delete the new token; comment over 65,535 characters exits 2; crash immediately after the success transaction (receipt exists, export rebuilds); successful `POST` then failed readback (`readback = null`, reconcile enriches); another client submits the fresh upload IDs first (state `matched`, `attribution = unproven`); identical text posted by another client during `posting` (server match, stays unknown); file reconcile with 0/1/2 matching entries; unknown text journal followed by a confirmed new attempt (superseded, pending clears); `receipts acknowledge`; `reconcile` on a `submitted` journal is idempotent; identity removal with a waiting opener; scoped enrollment values P→Q→cached P incl. out-of-order P (t=30) then Q (t=20) observations on the same enrollment; out-of-order partial/full arrival per field (full t=10, thin t=30 without score, full t=20 with score → score from t=20 wins and `observed_at(score)=20`); a full refresh that omits `can_submit` does not refresh its age; fresh `can_submit=false`; `cache clear` cannot reset an epoch; crash after `submitted` before any cache work; path sanitization incl. Windows names; containment against `..`, absolute paths, in-root symlinked parent, symlinked final path, symlink swapped between inspection and open; clobber table rows incl. first-run unmanaged file and two competing installers; modified-owned file; crash after rename before commit for a new install (`unmanaged`) and for a replacement with and without `--verify`; copied `.canvas-cli` metadata between two roots (refused, also after the original root was renamed away); same-filesystem rename (transparent, `canonical_path` updated); cross-filesystem move (refused, files kept unmanaged); crash between `dest.json` creation and row insert (repaired); `dest.json` bound to identity A opened under identity B with no B registry or manifest (exit 8 before any write); `dest.json` without a row but with an existing manifest (orphan refused); damaged `dest.json`; two roots with the same `dest_id` serialize on the identity-side lock; module rename move with remote unchanged, remote changed, and target occupied; marker recovery with new/old/both/neither matching and an occupied same-size target; manifest DB newer schema refused; destination symlinked to another directory; generated-name versus literal-name collision; empty component; superscript device names; text transform (CRLF, empty, escaping); ICS escaping, folding, all-day west-of-UTC, all-day across DST, equal start/end all-day; grading periods wrapper across two pages; two-process DB access; interrupted multi-page refresh; epoch abort; newer schema refused; `cache clear` with a concurrent reader |
-| `canvas-cli` | `assert_cmd` + `wiremock` + `insta` | every v1 command in table and `--json` mode at `COLUMNS=100 --color never`, `TZ` fixed, `CANVAS_NOW` frozen (test builds); every exit code in §14 incl. precedence; account switch refused; env-pair identity offline exit 3 then online validation and binding-file lookup; `auth login --profile NEW`; credential activation crash between each step (stray, pending cleanup, recovery on next login/logout); repeated fallback login with the keyring still unavailable; logout with two deletion failures leaves `active_source = none` and both flags; resolution rejects `none`; concurrent env-binding writes; class-B command with an unbound env pair and no default profile; `identity remove <key>` with no default profile; IPv6 origin identity key on Windows path rules |
+| `canvas-core` | `#[test]` + fixtures | todo merge (overdue graded quiz and graded discussion in both sources; dismissed missing work stays visible; unlocked assignment with `can_submit = false`; checkpoint and peer-review kinds; unknown kind retained); resolver ambiguity and incompleteness; journal state machine with failure injection after every phase incl. a kill at every lock/insert boundary and in `planned`; two simultaneous confirmations for one assignment (admission lock and unique index); a second process running `todo`, `receipts`, and `reconcile` during every active phase (no state change while the owner is live); two recoverers; owner-absent recovery per state with expected-state guards; `POST` answered by a Canvas-shaped `500` after the server committed (immediate resolution finds the attempt → `matched`); `POST` answered by JSON `400` after the server committed (comment validation → `matched`); Canvas-shaped `400` before commit (stays `outcome_unknown`, no automatic negative); branded JSON `504` with a request-id header → empty read → the original `POST` commits later → state stayed `outcome_unknown` and a later reconcile finds `matched`; timeout with zero entries stays unknown; `--assume-not-submitted` refused before 30 minutes and when an attempt is visible; login after a failed logout with the chosen store's cleanup flag set does not delete the new token; comment over 65,535 characters exits 2; crash immediately after the success transaction (receipt exists, export rebuilds); successful `POST` then failed readback (`readback = null`, reconcile enriches); another client submits the fresh upload IDs first (state `matched`, `attribution = unproven`); identical text posted by another client during `posting` (server match, stays unknown); file reconcile with 0/1/2 matching entries; unknown text journal followed by a confirmed new attempt (superseded, pending clears); `receipts acknowledge`; `reconcile` on a `submitted` journal is idempotent; identity removal with a waiting opener; scoped enrollment values P→Q→cached P incl. out-of-order P (t=30) then Q (t=20) observations on the same enrollment; out-of-order partial/full arrival per field (full t=10, thin t=30 without score, full t=20 with score → score from t=20 wins and `observed_at(score)=20`); a full refresh that omits `can_submit` does not refresh its age; fresh `can_submit=false`; `cache clear` cannot reset an epoch; crash after `submitted` before any cache work; path sanitization incl. Windows names; containment against `..`, absolute paths, in-root symlinked parent, symlinked final path, symlink swapped between inspection and open; clobber table rows incl. first-run unmanaged file and two competing installers; modified-owned file; crash after rename before commit for a new install (`unmanaged`) and for a replacement with and without `--verify`; copied `.canvas-cli` metadata between two roots (refused, also after the original root was renamed away); same-filesystem rename (transparent, `canonical_path` updated); cross-filesystem move (refused, files kept unmanaged); crash between `dest.json` creation and row insert (repaired); `dest.json` bound to identity A opened under identity B with no B registry or manifest (exit 8 before any write); `dest.json` without a row but with an existing manifest (orphan refused); damaged `dest.json`; two roots with the same `dest_id` serialize on the identity-side lock; module rename move with remote unchanged, remote changed, and target occupied; marker recovery with new/old/both/neither matching and an occupied same-size target; manifest DB newer schema refused; destination symlinked to another directory; generated-name versus literal-name collision; empty component; superscript device names; text transform (CRLF, empty, escaping); ICS escaping, folding, all-day west-of-UTC, all-day across DST, equal start/end all-day; grading periods wrapper across two pages; two-process DB access; interrupted multi-page refresh; epoch abort; newer schema refused; `cache clear` with a concurrent reader; quizzes listing and detail ingest merging into one row; quiz prepare refusals (locked, no session, unknown question, LockDown, one-at-a-time, no-going-back); quiz answers posted then completed in one journal with the session forgotten; a `500` on the completion staying unknown and reconciling to `posted` with `observed` on the committed session; answers recorded on an open session keeping the journal unknown; a kill between the two quiz `POST`s recovering unknown |
+| `canvas-cli` | `assert_cmd` + `wiremock` + `insta` | every v1 command in table and `--json` mode at `COLUMNS=100 --color never`, `TZ` fixed, `CANVAS_NOW` frozen (test builds); every exit code in §14 incl. precedence; account switch refused; env-pair identity offline exit 3 then online validation and binding-file lookup; `auth login --profile NEW`; credential activation crash between each step (stray, pending cleanup, recovery on next login/logout); repeated fallback login with the keyring still unavailable; logout with two deletion failures leaves `active_source = none` and both flags; resolution rejects `none`; concurrent env-binding writes; class-B command with an unbound env pair and no default profile; `identity remove <key>` with no default profile; IPv6 origin identity key on Windows path rules; `quizzes` and `quiz` in table and `--json` mode; `quiz questions` joining, starting with `--yes`, and refusing to start without one; `quiz submit` answering and completing in both modes with locked, no-session, and unknown-question refusals |
 | Runner | `cargo nextest` | |
 | Bench | `xtask bench` | §13 targets |
 
-Fixtures: a hand-written minimal set ships with M0-b; recordings from the owner's account via `xtask record` + `xtask sanitize` (M5) extend them. Fixtures live in `crates/canvas-api/tests/fixtures/`.
+Fixtures: a hand-written minimal set ships with M0-b; recordings from a real account via `xtask record` + `xtask sanitize` (M5) extend them. Fixtures live in `crates/canvas-api/tests/fixtures/`.
 
 Gates for every package: `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo nextest run --all-features`, `cargo deny check`, `cargo +1.88 check --workspace --all-targets`.
 
@@ -814,9 +846,9 @@ Gates for every package: `cargo fmt --all --check`, `cargo clippy --all-targets 
 
 Supported routes in v1: Homebrew tap `uguryildirim24/homebrew-tap`, `cargo install canvas-lms-cli` (if published), `cargo binstall`. `cargo dist` builds `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-pc-windows-msvc`, with man pages and completions in the archives. Direct archive downloads on macOS are not a supported route until signing and notarization exist. `release-plz` manages versions and the changelog.
 
-## 18. Milestones and work packages
+## 18. Work packages
 
-Three implementation lanes (`w1`, `w2`, `w3`), one git worktree and one private `CARGO_TARGET_DIR` each. Each package has one owner for its files; every parallel round names the owner of the three shared files (command enum in `canvas-cli`, JSON schema registry, migration list). Claude merges in the stated order; the Codex reviewer gates every merge.
+The work was cut into dependency-ordered packages, each owning a named set of files, so that the interfaces between them — the command enum in `canvas-cli`, the JSON schema registry, the migration list — were declared before the code that used them. The table records what each package owned and what it had to prove before it was merged.
 
 | # | Package | Owns | Depends on | Acceptance |
 |---|---|---|---|---|
@@ -837,79 +869,101 @@ Three implementation lanes (`w1`, `w2`, `w3`), one git worktree and one private 
 | M5-b | `cargo dist`, tap, README, man pages, completions | packaging | every package through R4 | `brew install` on a clean Mac |
 | M5-c | End-to-end snapshot suite for every command and exit-code precedence | `crates/canvas-cli/tests` | every package through R4 | §16 row 3 complete |
 
-**Rounds and shared-file owners**
 
-| Round | w1 | w2 | w3 | Enum owner | Registry owner | Migration owner | Merge order |
-|---|---|---|---|---|---|---|---|
-| R0 | M0-a | — | — | w1 | — | — | w1 |
-| R1 | M0-b | M1-a | M3-b-core | none (no enum edits) | none | w2 (creates the full schema) | w1, w2, w3 |
-| R2 | M0-c | M1-b | M2-a | w1 | w2 (creates the registry) | w3 (none expected; declares if needed) | w1, w2, w3 |
-| R3 | M1-c | M3-a | M2-b | w1 | w1 | w2 | w1, w2, w3 |
-| R4 | M4-a | M3-b | M4-b | w3 | w1 | w3 | w1, w2, w3 |
-| R5 | M5-a | M5-b | M5-c | w3 | w3 | none | w1, w2, w3 |
+## 19. Open questions and recorded decisions
 
-An owner adds the interface (enum variant, schema entry, migration) that the other lanes need at the start of the round and pushes it first; other lanes rebase on it. A package that depends on a sibling in the same round (M2-b on M1-c) is merged last and must pass its acceptance on the merged sibling. Interface requests between lanes go through Claude.
+Numbered so the code can cite an item. Some are still open; the ones marked as decisions record a choice that was made and why, because each reverses something an earlier section said.
 
-The table above stops at R5, which is the v1 plan. The rounds after it (R6 onward) follow the same lane model; `docs/agent-ux/REPORT.md` §4 holds their package list, and Appendix C names the ones that are on `main`.
-
-## 19. Open questions for the owner
-
-1. ~~Can a Lasell student create a personal access token?~~ **Resolved 2026-09-09: yes.**
+1. ~~Can a student create a personal access token on the target instance?~~ **Resolved 2026-09-09: yes.**
 2. Binary name: `canvas` as specified, or a Latin name?
 3. Config on macOS: `~/.config/canvas-cli` (specified) or `~/Library/Application Support`?
 4. Default download destination: suggest `~/School/<term>`; confirm.
-5. Fixture recording: OK to record sanitized API responses from the owner's account for tests?
+5. Fixture recording: OK to record sanitized API responses from a real account for tests?
 6. After M5: local grade estimator, or `inbox`/`notify` first?
-7. **Env override token validation (§8, raised by the M0-c code review 2026-09-09).** `credential.token_sha256` both authorizes the active stored token and records successful validation. If stored token A is active and an env token B validates for the same user, recording B there makes A unusable once the override disappears. Options: a separate validated-hash column, or an explicit exception that env overrides are never recorded. Current code: env pairs are validated per request, an identity mismatch is rejected, and the active store and hash stay unchanged (no persistent first-seen record for env tokens).
+7. **Env override token validation (§8, raised in review).** `credential.token_sha256` both authorizes the active stored token and records successful validation. If stored token A is active and an env token B validates for the same user, recording B there makes A unusable once the override disappears. Options: a separate validated-hash column, or an explicit exception that env overrides are never recorded. Current code: env pairs are validated per request, an identity mismatch is rejected, and the active store and hash stay unchanged (no persistent first-seen record for env tokens).
 8. **`doctor --network --offline` (§5 versus §8, same review).** The `doctor` note says network checks are `skipped` with `--offline`; the class table makes `doctor --network` class D, whose offline rule is exit 2 before any I/O. Current code keeps exit 2. Decide which rule wins.
-9. **`grades --period ID` without a course operand (§12.4, raised by the M4-a code review 2026-09-10).** `grading_periods` is scoped per course, so the overview cannot validate the ID or supply a title from one dataset without one request per active course (breaks the §10 budget). Current code: the ID is unknown (exit 6) only when Canvas reports no grades for it anywhere; `period.title` is `null` in the overview. Options: define the overview title as always `null`, or require a course operand with an explicit ID.
+9. **`grades --period ID` without a course operand (§12.4, raised in review).** `grading_periods` is scoped per course, so the overview cannot validate the ID or supply a title from one dataset without one request per active course (breaks the §10 budget). Current code: the ID is unknown (exit 6) only when Canvas reports no grades for it anywhere; `period.title` is `null` in the overview. Options: define the overview title as always `null`, or require a course operand with an explicit ID.
 10. **`grades <course> --period current` assignment groups (§12.4, same review).** The group fetch is pinned to an ID only for `--period ID`; under `current` the course view lists every assignment and closes with the current-period total. Alternative: resolve `current` to the course's current period ID and fetch groups with it (changes the request budget and the cache scope).
 11. **Overview default mode when courses disagree (§12.4 and Appendix D `grades@1`, same review).** `period_mode` is one value per run; current code picks `current` when any listed course has grading periods, so courses without periods report `unavailable`. Alternatives: `all` unless every course has periods, or a per-course mode in `grades@1`.
-12. **Human date suffix on non-deadline times (§7, raised by the M2-b integration review 2026-09-10).** §7 gives one human date form with a `(in 2d 4h)` / `(overdue 3h)` suffix, which reads every date as a deadline; on a submission, comment, or history time it would print `overdue 3h` for work submitted three hours ago. Current code: due dates keep the suffix; instants (submission time, comments, history rows in `submission`) print the absolute half only via `format_local_instant`; the `receipts`, `verify`, and `reconcile` renderers still print raw `_local` strings. Decide whether §7 says the suffix applies to due dates only (then align those three renderers) or everywhere.
-13. **Does `sync` refresh the per-assignment `submission` dataset? (§5 versus §10, raised by the M4-b code review 2026-09-10).** §5 lists "submissions" among what `sync` refreshes; the `submission` dataset is scoped per assignment, so warming it costs one request per assignment (about 150 for five courses of thirty), and §10's budget table says nothing about `sync`. Current code: `sync` refreshes `assignments` with `include[]=submission` only (7 requests for a one-course fixture). Reviewer's recommendation: keep that and amend §5 to say `assignments` carries submission status; otherwise add a scoping rule.
-14. **`auth status` emits `pending_cleanup` (Appendix D `auth_status@1`, raised by the M5-c code review 2026-09-10).** Since M0-c the command emits a seventh field, `pending_cleanup: [string]`, which reports the `cleanup_keyring` and `cleanup_file` flags a failed `auth logout` leaves behind (§16 row 3); the Appendix D row lists six fields. The code is unchanged and the registry fixture matches it. Options: add `pending_cleanup: [string]` to the row (reviewer's recommendation: a deletion we owe is not a stray credential, and `doctor` already reports the two apart), or fold the flags into `stray_sources` and drop the field.
-15. **Plan retention (§12.2 versus REPORT §3.5, raised by the M6-a code review 2026-09-10).** `plans` rows keep the full outbound bytes of every prepared submission, including declined ones; `expire` and `invalidate` change the state and leave the payload, and nothing prunes them. Before M6-a `submit` never persisted content it did not send. Decide whether expired and invalidated plans are pruned (suggested: payload cleared at the 15-minute expiry, row kept 30 days like events) and whether `doctor` reports the backlog.
-16. **Blocking wait on a contended admission lock (§12.2 step 2 versus REPORT §3.5, same review).** §12.2 takes admission non-blocking and reports `in_progress`; `plan::execute` waits up to 5 s for the same plan's concurrent execute to publish its journal, then returns that journal (never a second one). A different submit still gets `in_progress` at once. Decide whether §12.2 should describe the wait or whether the two cases must be told apart without blocking.
-17. **Outcome for "this plan already has a journal" (REPORT §3.2 exit table, same review).** §3.5 says a replayed acceptance returns the existing journal, but no outcome, reason, or exit is defined. Coordinator reading applied for M6-b until the owner rules: `submission.execute` on an executed plan returns the linked journal's `submit@1` envelope with that journal's own `outcome` and exit, plus `replayed: true`; the human `submit` cannot reach it.
-18. **`chrono` arrives transitively through `rmcp` (Appendix A, raised by the M6-b code review 2026-09-10).** §7 timestamps use `jiff`; the workspace otherwise has no `chrono`. Accept two time libraries in the lock file as an appendix exception, or ask upstream for a feature that drops it.
-19. **MCP catalog size (REPORT §3.2, same review).** `tools/list` costs about 41 900 tokens because every tool's output schema inlines the whole §7 envelope in both shapes (a host validator reads a definition on its own). `docs/bench.md` records it as the number to beat. Options: `$ref`s a host may not resolve, a smaller catalog, or a compact envelope schema per tool.
-20. **`schema@1` has no registry row (REPORT §3.2, same review).** The `canvas schema` document is raw output with no §7 envelope, so `all_schemas()` cannot carry a `schema@1` row and `canvas schema schema` exits 6; REPORT §3.2's table implies a row. Decide whether the table entry is documentation only (reviewer's reading) or the document must be self-describing through the registry.
-21. **Agent-surface annotations and bounds (REPORT §3.2, same review).** `download.plan` and `open.url` carry `readOnlyHint: true` because their effect is a dry run and a resolution (REPORT: annotations describe effects), though the same sentence lists downloads and navigation among non-reads; and `download.run` keeps the unbounded v1 `jobs` argument. Confirm the effect reading and say whether agent-facing `jobs` should be clamped.
-22. **The coordinator opens a second `state.sqlite` connection outside the single SQLite thread (§10, raised by the M6-c code review 2026-09-10).** The shared governor row is written on the request path through its own connection so it never queues behind a command's database work; WAL and `busy_timeout` keep it correct, but a contended `BEGIN IMMEDIATE` can block the `current_thread` runtime for up to 5 s. Options: an async `GovernorState` seam, a second dedicated database thread, or amend §10's one-thread rule for the coordinator.
-23. **Foreground priority is bounded per refresh, not per request (REPORT §3.6, same review).** A refresh already admitted finishes its own pagination while a submission waits; gating inside permit acquisition would park a `watch` tick while it holds the scope's single-flight lock. At `api_concurrency = 1` the residual wait is one dataset's pages. Decide whether the permit layer should learn about priority.
-24. **`canvas watch` without `--since` replays the whole retained log (REPORT §3.6, same review).** Up to 30 days of events stream before live ones. The alternative is to start at the head and let a consumer ask for history with `--since 0`. Cheap either way.
-25. **Cold cache plus a running `watch` can turn a foreground `--fresh` read into exit 13 (REPORT §3.6, same review).** If `watch` holds a scope's single-flight lock longer than the 30 s waiter and the cache has no complete row, the foreground reports the lock timeout instead of fetching; only `submit`/`plan execute` register interest. `todo --fresh` on a first run is the exposed case. Confirm the trade-off or let every `--fresh` read register interest.
-26. **Raw HTML bodies in the cache (§15, raised by the M8-a code review 2026-09-10).** `pages.body`, `discussion_topics.message`, `discussion_entries.message`, and the v1 `announcements.message` store the Canvas HTML and convert to Markdown at read time; the syllabus converts before storing. §15 says "no raw response bodies on disk; allowlisted records only". Decide whether an allowlisted body field may be stored as sent (write it down) or every body converts at ingest (changes the v1 announcements dataset and moves the 64 KiB bound).
+12. **Human date suffix on non-deadline times (§7, raised in review).** §7 gives one human date form with a `(in 2d 4h)` / `(overdue 3h)` suffix, which reads every date as a deadline; on a submission, comment, or history time it would print `overdue 3h` for work submitted three hours ago. Current code: due dates keep the suffix; instants (submission time, comments, history rows in `submission`) print the absolute half only via `format_local_instant`; the `receipts`, `verify`, and `reconcile` renderers still print raw `_local` strings. Decide whether §7 says the suffix applies to due dates only (then align those three renderers) or everywhere.
+13. **Does `sync` refresh the per-assignment `submission` dataset? (§5 versus §10, raised in review).** §5 lists "submissions" among what `sync` refreshes; the `submission` dataset is scoped per assignment, so warming it costs one request per assignment (about 150 for five courses of thirty), and §10's budget table says nothing about `sync`. Current code: `sync` refreshes `assignments` with `include[]=submission` only (7 requests for a one-course fixture). Reviewer's recommendation: keep that and amend §5 to say `assignments` carries submission status; otherwise add a scoping rule.
+14. **`auth status` emits `pending_cleanup` (Appendix D `auth_status@1`, raised in review).** Since M0-c the command emits a seventh field, `pending_cleanup: [string]`, which reports the `cleanup_keyring` and `cleanup_file` flags a failed `auth logout` leaves behind (§16 row 3); the Appendix D row lists six fields. The code is unchanged and the registry fixture matches it. Options: add `pending_cleanup: [string]` to the row (reviewer's recommendation: a deletion we owe is not a stray credential, and `doctor` already reports the two apart), or fold the flags into `stray_sources` and drop the field.
+15. **Plan retention (§12.2 versus the post-v1 design note, raised in review).** `plans` rows keep the full outbound bytes of every prepared submission, including declined ones; `expire` and `invalidate` change the state and leave the payload, and nothing prunes them. Before M6-a `submit` never persisted content it did not send. Decide whether expired and invalidated plans are pruned (suggested: payload cleared at the 15-minute expiry, row kept 30 days like events) and whether `doctor` reports the backlog.
+16. **Blocking wait on a contended admission lock (§12.2 step 2 versus the post-v1 design note, same review).** §12.2 takes admission non-blocking and reports `in_progress`; `plan::execute` waits up to 5 s for the same plan's concurrent execute to publish its journal, then returns that journal (never a second one). A different submit still gets `in_progress` at once. Decide whether §12.2 should describe the wait or whether the two cases must be told apart without blocking.
+17. **Outcome for "this plan already has a journal" (the post-v1 design note exit table, same review).** §3.5 says a replayed acceptance returns the existing journal, but no outcome, reason, or exit is defined. Coordinator reading applied for M6-b until this is settled: `submission.execute` on an executed plan returns the linked journal's `submit@1` envelope with that journal's own `outcome` and exit, plus `replayed: true`; the human `submit` cannot reach it.
+18. **`chrono` arrives transitively through `rmcp` (Appendix A, raised in review).** §7 timestamps use `jiff`; the workspace otherwise has no `chrono`. Accept two time libraries in the lock file as an appendix exception, or ask upstream for a feature that drops it.
+19. **MCP catalog size (the post-v1 design note, same review).** `tools/list` costs about 41 900 tokens because every tool's output schema inlines the whole §7 envelope in both shapes (a host validator reads a definition on its own). `docs/bench.md` records it as the number to beat. Options: `$ref`s a host may not resolve, a smaller catalog, or a compact envelope schema per tool. The M9 narrowing took one of the three options and it worked only as far as it goes: the catalog fell from 43 tools and 344 878 bytes (about 86 235 tokens) to 22 tools and 167 955 bytes, about 41 997 tokens — the number this item was raised about, so the surface was back to the M6-b cost and not below it. **Resolved by `bccce10` (M9-b, item 50).** There is one tool and it declares no output schema, so there is no per-tool envelope left to inline: `tools/list` is 656 bytes, about 164 tokens. The reference that tool answers with is 33 144 bytes (about 8 286 tokens) and is paid once per session, on a call the model chose to make, not before it has read anything.
+20. **`schema@1` has no registry row (the post-v1 design note, same review).** The `canvas schema` document is raw output with no §7 envelope, so `all_schemas()` cannot carry a `schema@1` row and `canvas schema schema` exits 6; the post-v1 design note's table implies a row. Decide whether the table entry is documentation only (reviewer's reading) or the document must be self-describing through the registry.
+21. **Agent-surface annotations and bounds (the post-v1 design note, same review).** `download.plan` and `open.url` carry `readOnlyHint: true` because their effect is a dry run and a resolution (the design note said annotations describe effects), though the same sentence lists downloads and navigation among non-reads; and `download.run` keeps the unbounded v1 `jobs` argument. Confirm the effect reading and say whether agent-facing `jobs` should be clamped. **Moot since 2026-09-10 (item 48):** the effect reading was answered by removing all three tools, so there is no agent-facing annotation to confirm and no agent-facing `jobs` to clamp. `canvas download --jobs` is a person's own flag and is unchanged.
+22. **The coordinator opens a second `state.sqlite` connection outside the single SQLite thread (§10, raised in review).** The shared governor row is written on the request path through its own connection so it never queues behind a command's database work; WAL and `busy_timeout` keep it correct, but a contended `BEGIN IMMEDIATE` can block the `current_thread` runtime for up to 5 s. Options: an async `GovernorState` seam, a second dedicated database thread, or amend §10's one-thread rule for the coordinator.
+23. **Foreground priority is bounded per refresh, not per request (the post-v1 design note, same review).** A refresh already admitted finishes its own pagination while a submission waits; gating inside permit acquisition would park a `watch` tick while it holds the scope's single-flight lock. At `api_concurrency = 1` the residual wait is one dataset's pages. Decide whether the permit layer should learn about priority.
+24. **`canvas watch` without `--since` replays the whole retained log (the post-v1 design note, same review).** Up to 30 days of events stream before live ones. The alternative is to start at the head and let a consumer ask for history with `--since 0`. Cheap either way.
+25. **Cold cache plus a running `watch` can turn a foreground `--fresh` read into exit 13 (the post-v1 design note, same review).** If `watch` holds a scope's single-flight lock longer than the 30 s waiter and the cache has no complete row, the foreground reports the lock timeout instead of fetching; only `submit`/`plan execute` register interest. `todo --fresh` on a first run is the exposed case. Confirm the trade-off or let every `--fresh` read register interest.
+26. **Raw HTML bodies in the cache (§15, raised in review).** `pages.body`, `discussion_topics.message`, `discussion_entries.message`, and the v1 `announcements.message` store the Canvas HTML and convert to Markdown at read time; the syllabus converts before storing. §15 says "no raw response bodies on disk; allowlisted records only". Decide whether an allowlisted body field may be stored as sent (write it down) or every body converts at ingest (changes the v1 announcements dataset and moves the 64 KiB bound).
 27. **`discussions --announcements` (M8-a contract, same review).** The pinned request `?only_announcements=false` returns non-announcement topics, so `--announcements yes` can never show one. Coordinator reading applied for the M8-a follow-on: drop the flag; `discussions` lists discussion topics only and the human output points at `canvas announcements`.
-28. **`discussion --replies --page N` past the end (`discussion@1`, same review).** An out-of-range page returns `replies: []` beside `replies_coverage.complete = true`, and the schema has no window fields. Coordinator reading applied for the follow-on: add `replies_page` and `replies_total` to `discussion@1` (additive) and keep the empty page at exit 0; the owner may prefer exit 2 like `--page 0`.
-29. **`submit` registers foreground interest after its resolution reads (REPORT §3.6, raised by the M6-c2 code review 2026-09-10).** §3.6 says interest is registered before the first pre-flight request, but an interest is keyed by assignment id, which is the output of the resolution read; token validation and `resolve_target` therefore run unprotected and only the eligibility read, the freeze, and the post are covered. `plan::execute` has no such window. Options: an interest not yet bound to an assignment (second lock name plus an upgrade rule), or an explicit reading that the resolution read is not a pre-flight request. Priority only, not correctness; current placement kept.
-30. **The companion declares `scripting` as a third permission (REPORT §3.3, raised by the M7-a code review 2026-09-10).** Chrome requires `scripting` for `chrome.scripting.executeScript` even under `activeTab`; the alternative, a declarative `content_scripts` entry, needs `host_permissions` and injects into every Canvas page unasked. Coordinator reading applied: `activeTab`, `nativeMessaging`, `scripting`, still no `host_permissions`; recorded in `docs/companion.md`. Confirm.
-31. **A broker socket client may name any consumer handle (REPORT §3.2, same review).** `attach` and `here` take the consumer as a field, so any process that can open the `0600` socket in the `0700` directory can opt in under any name. REPORT §3.2 says consumer handles express routing within the owner's OS trust domain, not isolation from another unrestricted process; the review closed the case where this leaked across the MCP adapter. State this boundary explicitly when the companion is written into the SPEC.
-32. **Equal navigation generation with a different document id (REPORT §3.3 step 6, same review).** `Broker::update` refuses a lower generation; a message with an equal generation but another document id is accepted as a new document. The shipped extension increments the generation on every committed navigation, so the case is unreachable from it. Decide whether such a message is stale (refuse) or a legitimate same-document replacement (accept).
-33. **`schema@1` is per-form (§7 versus `canvas schema`, raised by the M8-a3 code review 2026-09-10).** `canvas schema event` now describes the `--jsonl` line (`line`) and drops `envelope`, `result`, `error`, while every other page keeps them; the contract id stays `schema@1`. §7's bump rule governs envelopes and `canvas schema` is raw output (item 20). Reviewer's reading applied: per-form by design, because the old page described a wrapper that never exists. Decide whether that stands or the page becomes `schema@2`.
-34. **`canvas notify` has no desktop backend (REPORT §3.6, raised by this consolidation pass).** §3.6 says desktop alerts consume events, and REPORT §4's M6-c row calls them optional. The command builds the alerts and deduplicates them by cursor, but `--stdout` is the only backend: `notify-rust` was rejected because its macOS path is Objective-C FFI and the workspace forbids `unsafe`. Without `--stdout` the command writes the same lines to stdout and warns on stderr, so it never claims a notification it did not post. Decide whether a real desktop backend is wanted (a separate helper, or an `unsafe` exception for one crate), or whether `notify` is a stdout producer that another tool routes.
-35. **The M8-a schema pages describe nullable fields as non-nullable (§7 versus `canvas schema`, raised by the M8-a2 code review 2026-09-10).** `pages@1`, `page@1`, `syllabus@1`, `discussions@1`, `discussion@1`, `inbox@1`, `conversation@1`, and `inbox_unread@1` have no typed arm in the schema generator, so their documents are inferred from the registry fixture: `canvas schema discussion` reports `message_markdown` as `"type": "string"` although §7 lets it be `null`. The page declares `result_source: "registry fixture"`, so it is honest about being an approximation, but a strict host validating a tool result against `outputSchema` would reject a legitimate answer. Options: derive `JsonSchema` on the eight result types, or widen every inferred property. Both change the generator for other schemas too. **Resolved by 5c171ff (M8-b round): the eight result types derive `JsonSchema`, their pages declare `result_source: "result type"`, and every registered fixture is checked against its schema.**
+28. **`discussion --replies --page N` past the end (`discussion@1`, same review).** An out-of-range page returns `replies: []` beside `replies_coverage.complete = true`, and the schema has no window fields. Coordinator reading applied for the follow-on: add `replies_page` and `replies_total` to `discussion@1` (additive) and keep the empty page at exit 0; a later revision may prefer exit 2 like `--page 0`.
+29. **`submit` registers foreground interest after its resolution reads (the post-v1 design note, raised in review).** §3.6 says interest is registered before the first pre-flight request, but an interest is keyed by assignment id, which is the output of the resolution read; token validation and `resolve_target` therefore run unprotected and only the eligibility read, the freeze, and the post are covered. `plan::execute` has no such window. Options: an interest not yet bound to an assignment (second lock name plus an upgrade rule), or an explicit reading that the resolution read is not a pre-flight request. Priority only, not correctness; current placement kept.
+30. **The companion declares `scripting` as a third permission (the post-v1 design note, raised in review).** Chrome requires `scripting` for `chrome.scripting.executeScript` even under `activeTab`; the alternative, a declarative `content_scripts` entry, needs `host_permissions` and injects into every Canvas page unasked. Coordinator reading applied: `activeTab`, `nativeMessaging`, `scripting`, still no `host_permissions`; recorded in `docs/companion.md`. Confirm.
+31. **A broker socket client may name any consumer handle (the post-v1 design note, same review).** `attach` and `here` take the consumer as a field, so any process that can open the `0600` socket in the `0700` directory can opt in under any name. the post-v1 design note says consumer handles express routing within the owner's OS trust domain, not isolation from another unrestricted process; the review closed the case where this leaked across the MCP adapter. State this boundary explicitly when the companion is written into the SPEC.
+32. **Equal navigation generation with a different document id (the post-v1 design note, same review).** `Broker::update` refuses a lower generation; a message with an equal generation but another document id is accepted as a new document. The shipped extension increments the generation on every committed navigation, so the case is unreachable from it. Decide whether such a message is stale (refuse) or a legitimate same-document replacement (accept).
+33. **`schema@1` is per-form (§7 versus `canvas schema`, raised in review).** `canvas schema event` now describes the `--jsonl` line (`line`) and drops `envelope`, `result`, `error`, while every other page keeps them; the contract id stays `schema@1`. §7's bump rule governs envelopes and `canvas schema` is raw output (item 20). Reviewer's reading applied: per-form by design, because the old page described a wrapper that never exists. Decide whether that stands or the page becomes `schema@2`.
+34. **`canvas notify` has no desktop backend (the post-v1 design note, raised while consolidating this document).** §3.6 says desktop alerts consume events, and the post-v1 design note's M6-c row calls them optional. The command builds the alerts and deduplicates them by cursor, but `--stdout` is the only backend: `notify-rust` was rejected because its macOS path is Objective-C FFI and the workspace forbids `unsafe`. Without `--stdout` the command writes the same lines to stdout and warns on stderr, so it never claims a notification it did not post. Decide whether a real desktop backend is wanted (a separate helper, or an `unsafe` exception for one crate), or whether `notify` is a stdout producer that another tool routes.
+35. **The M8-a schema pages describe nullable fields as non-nullable (§7 versus `canvas schema`, raised in review).** `pages@1`, `page@1`, `syllabus@1`, `discussions@1`, `discussion@1`, `inbox@1`, `conversation@1`, and `inbox_unread@1` have no typed arm in the schema generator, so their documents are inferred from the registry fixture: `canvas schema discussion` reports `message_markdown` as `"type": "string"` although §7 lets it be `null`. The page declares `result_source: "registry fixture"`, so it is honest about being an approximation, but a strict host validating a tool result against `outputSchema` would reject a legitimate answer. Options: derive `JsonSchema` on the eight result types, or widen every inferred property. Both change the generator for other schemas too. **Resolved by 5c171ff (M8-b round): the eight result types derive `JsonSchema`, their pages declare `result_source: "result type"`, and every registered fixture is checked against its schema.**
 36. **`canvas schema --list` names commands that do not exist (§5 versus `canvas schema`, same review).** The listing derives a command name from the schema id, so `conversation@1` is listed as `conversation`, `inbox_unread@1` as `inbox unread`, and `plan@1`, `receipt@1`, `reconcile@1`, `verify@1`, `event@1`, and `error@1` as commands of their own — while `canvas schema "inbox show"` and `canvas schema "inbox unread-count"` exit 6, as `submission reconcile` and `receipts verify` already did. Fixing it means giving a registry entry a command name of its own, which changes M6-b's registry contract. Current code is unchanged. **Resolved by d18bcfa (M8-b round): a registry entry carries the command that prints it, `canvas schema --list` prints command, schema, and kind, and `canvas schema "inbox show"` and `canvas schema "inbox unread-count"` now resolve; the five entries no command prints are listed as `document`.**
-37. **`operation status --offline` (§5 class table, raised by the M8-b code review 2026-09-10).** The write commands are class D, and a class-D command with `--offline` exits 2 before any I/O, as `operation reconcile` does; `operation status` instead returns the stored journal (an honest local answer). Same tension as item 8. Either add an explicit exception to §5 or make `status` exit 2 and point at `receipts show` (class B). Current code kept.
-38. **`operation.status` keeps `readOnlyHint: true` while it records a readback (REPORT §3.2, same review).** It moves no journal state but writes `readback_json` and can move `attribution` from `accepted` to `observed`, like every cache-backed read that writes `cache.sqlite`. Another instance of item 21. Annotation kept, description corrected.
+37. **`operation status --offline` (§5 class table, raised in review).** The write commands are class D, and a class-D command with `--offline` exits 2 before any I/O, as `operation reconcile` does; `operation status` instead returns the stored journal (an honest local answer). Same tension as item 8. Either add an explicit exception to §5 or make `status` exit 2 and point at `receipts show` (class B). Current code kept.
+38. **`operation.status` keeps `readOnlyHint: true` while it records a readback (the post-v1 design note, same review).** It moves no journal state but writes `readback_json` and can move `attribution` from `accepted` to `observed`, like every cache-backed read that writes `cache.sqlite`. Another instance of item 21. Annotation kept, description corrected. **Moot since 2026-09-10 (item 48):** the tool was removed on exactly this reading — a call that records a readback is not a get. `canvas operation status` is unchanged.
 39. **No `in_progress` refusal for a live operation target (§12.2 step 2 as the model, same review).** The operation admission lock is released once the row is published, so a second separately approved write to the same topic or conversation is admitted while the first is still `posting`; one plan still admits one journal (plan-state guard plus the unique `plan_id` index, race-tested). Reviewer's reading: a second reply is a second post, not a replacement. Record the rule in §25 or require the §12.2 refusal.
 40. **`superseded` is always `false` for an operation journal (Appendix D `Journal`, same review).** A reply or message is never superseded; the column stays because `receipts list` prints one table for both journal kinds. A real superseding rule for writes would need its own definition.
-41. **`background.js` does not check `sender` on `chrome.runtime.onMessage` (REPORT §3.4, raised by the M7-b code review 2026-09-10).** The `decision` and `panel_hello` branches relay whatever they are given to the host. Nothing but the side panel can reach them today (no `externally_connectable`, no page-message bridge in `content.js`), and a forged relay would still need the handle the host re-checks, so this is defence in depth, not a live hole. The reviewer did not gate them on `sender.url === chrome.runtime.getURL("src/panel.html")` because `background.js` is the one file no test loads and the package has never run in a real Chrome. Owner decision: ship the sender check after the first manual Chrome run (docs/companion.md's check table), or accept the current state.
+41. **`background.js` does not check `sender` on `chrome.runtime.onMessage` (the post-v1 design note, raised in review).** The `decision` and `panel_hello` branches relay whatever they are given to the host. Nothing but the side panel can reach them today (no `externally_connectable`, no page-message bridge in `content.js`), and a forged relay would still need the handle the host re-checks, so this is defence in depth, not a live hole. The reviewer did not gate them on `sender.url === chrome.runtime.getURL("src/panel.html")` because `background.js` is the one file no test loads and the package has never run in a real Chrome. Owner decision: ship the sender check after the first manual Chrome run (docs/companion.md's check table), or accept the current state.
 42. **`plan::approve` treats an unparseable handle expiry as not expired (§20 handle binding, same review).** `handle_expires.parse::<Timestamp>().is_ok_and(|d| now >= d)` fails open: a row whose `expires_at` will not parse is admitted. No path writes such a row (`issue_handle` copies the `prepare`-formatted plan expiry), so it is unreachable today and it is M6-a code. Coordinator reading: a bound that cannot be read must refuse; fold into the next plan-layer change. Owner may confirm or defer.
 43. **`awaiting_decision` filters handle expiry as text, not as a timestamp (§20, same review).** `h.expires_at > ?1` compares RFC 3339 strings, and jiff prints fractional seconds only when present, so `…:00.5Z` sorts below `…:00Z`. The window is under one second, it only decides whether the panel draws a row, and `approve` parses the expiry before anything moves. Tidy when the plan layer next changes; no schema or format decision now.
-44. **The companion declares `sidePanel` as a fourth permission (REPORT §3.3, raised by this consolidation pass).** REPORT §3.3 names `activeTab` and `nativeMessaging`; item 30 recorded `scripting` as the third and was closed on that reading. M7-b added `sidePanel`, so the shipped manifest asks for four. It grants no host access, no tab access, and no way to read anything: the panel is a page served from the extension package and everything it shows arrives from the native host, and REPORT §3.4 forbids the alternative of a Canvas DOM overlay. `tests/companion.rs` pins the four names exactly, and §24.1 records both deviations. Item 30's confirmation therefore covers three of the four; confirm the fourth on the same reading, or say which surface a panel should use instead.
-45. **The panel draws an operation plan without its body (§24.13 versus §25, raised by this consolidation pass).** `plan::awaiting_decision` filters by plan state and handle only, so every waiting plan reaches the panel, whichever kind it is. `PanelPlan` carries the submission half — files, `text_preview` from `payload.text`, the baseline attempt — and an operation plan stores its body, its thread, and its recipients in `operation_json` instead. Such a row therefore draws as `assignment 0` with `discussion_reply · course 101` (or `course 0` for an inbox write), its digests, and its expiry, and with no message text, no topic, and no recipients. Approving it there still works, and the host's handle, digest, and generation checks are unchanged, so this is not a forgery path. But REPORT §3.5 requires the exact bytes to be shown before an approval, and this surface cannot show them. Options: extend `PanelPlan` and the panel view with the operation block, or filter operation plans out of the panel until it can draw them. Current code is unchanged; nothing here was run in a real Chrome (§24.16).
-46. **The panel has no words for an operation journal's own states (§24.10 versus §25.4, raised by this consolidation pass).** `panel::journals` reads `receipts::list_journals`, which lists operation journals beside submission journals, and the course filter of a Canvas page keeps a discussion reply's journal. `JOURNAL_STATES` in `extension/src/panel_view.js` names the ten §12.2 submission states; an operation's `posted` and `failed` are not among them, so the successful case draws as `posted` with "this state is not one this panel knows; read it in the CLI". Nothing is claimed falsely — `done` stays false and the state name is printed verbatim — but the panel tells a person to go elsewhere for the one row that finished. Same seam as item 45, the other way round: M7-b's panel and M8-b's states each landed correct alone. Options: add the two states to the panel's list, or filter operation journals out until it has words for them. Current code is unchanged; nothing here was run in a real Chrome (§24.16).
+44. **The companion declares `sidePanel` as a fourth permission (the post-v1 design note, raised while consolidating this document).** the post-v1 design note names `activeTab` and `nativeMessaging`; item 30 recorded `scripting` as the third and was closed on that reading. M7-b added `sidePanel`, so the shipped manifest asks for four. It grants no host access, no tab access, and no way to read anything: the panel is a page served from the extension package and everything it shows arrives from the native host, and the post-v1 design note forbids the alternative of a Canvas DOM overlay. `tests/companion.rs` pins the four names exactly, and §24.1 records both deviations. Item 30's confirmation therefore covers three of the four; confirm the fourth on the same reading, or say which surface a panel should use instead.
+45. **The panel draws an operation plan without its body (§24.13 versus §25, raised while consolidating this document).** `plan::awaiting_decision` filters by plan state and handle only, so every waiting plan reaches the panel, whichever kind it is. `PanelPlan` carries the submission half — files, `text_preview` from `payload.text`, the baseline attempt — and an operation plan stores its body, its thread, and its recipients in `operation_json` instead. Such a row therefore draws as `assignment 0` with `discussion_reply · course 101` (or `course 0` for an inbox write), its digests, and its expiry, and with no message text, no topic, and no recipients. Approving it there still works, and the host's handle, digest, and generation checks are unchanged, so this is not a forgery path. But the post-v1 design note requires the exact bytes to be shown before an approval, and this surface cannot show them. Options: extend `PanelPlan` and the panel view with the operation block, or filter operation plans out of the panel until it can draw them. Current code is unchanged; nothing here was run in a real Chrome (§24.16).
+46. **The panel has no words for an operation journal's own states (§24.10 versus §25.4, raised while consolidating this document).** `panel::journals` reads `receipts::list_journals`, which lists operation journals beside submission journals, and the course filter of a Canvas page keeps a discussion reply's journal. `JOURNAL_STATES` in `extension/src/panel_view.js` names the ten §12.2 submission states; an operation's `posted` and `failed` are not among them, so the successful case draws as `posted` with "this state is not one this panel knows; read it in the CLI". Nothing is claimed falsely — `done` stays false and the state name is printed verbatim — but the panel tells a person to go elsewhere for the one row that finished. Same seam as item 45, the other way round: M7-b's panel and M8-b's states each landed correct alone. Options: add the two states to the panel's list, or filter operation journals out until it has words for them. Current code is unchanged; nothing here was run in a real Chrome (§24.16).
+47. **The broker did not survive the extension's background service worker unloading, observed in a real Chrome (on a development machine, 2026-09-10).** After a working attach and one successful `canvas bridge status`/`canvas here` round trip, navigating the attached tab left `bridge status` reporting `owner.live: false` and an empty attachment list, and `canvas here` refused with `bridge_unavailable` (exit 8); the socket and its ownership lock stayed on disk with no process behind them. The likely cause is Chrome unloading the MV3 service worker after its idle timeout, which drops the native-messaging port and sends the host process EOF on stdin, and `background.js` does not appear to reconnect automatically when the worker wakes. §24.16 previously listed only untested items; this is the first observed failure. Needs investigation: either the service worker must re-establish `connectNative` and re-attach on wake, or the host must tolerate a dropped port without leaving a stale socket.
+48. **The MCP catalog is reads only (decided 2026-09-10).** `canvas mcp` now serves 22 tools, every one of which fetches Canvas data or local read data with no side effect. Twenty-one left the catalog: `sync.run`, `download.plan`, `download.run`, `submission.prepare`, `submission.execute`, `submission.reconcile`, `discussion.reply.prepare`, `discussion.reply.execute`, `inbox.send.prepare`, `inbox.send.execute`, `inbox.reply.prepare`, `inbox.reply.execute`, `operation.status`, `operation.reconcile`, `receipts.acknowledge`, `open.url`, `context.attach`, `context.here`, `context.detach`, `context.note`, and `context.follow`. Four of them were annotated `Read` — `download.plan`, `operation.status`, `open.url`, and `context.here` — and went anyway: the reading taken is that a tool which plans a transfer, records a readback, resolves a URL, or observes a browser is not a get, whatever its effect label says. This is a decision, not a question; it is recorded here because it reverses what §21.2 said from M6-b to M8-b, and because the surfaces below moved with it. **No CLI command changed.** `canvas submit`, `canvas discussion reply`, `canvas inbox send|reply`, `canvas operation status|reconcile`, `canvas download`, `canvas sync`, `canvas receipts acknowledge`, `canvas here`, `canvas note`, `canvas open --follow`, and every `canvas bridge` subcommand behave exactly as before, and the §20 plan layer and its approval are untouched. What the narrowing cost is in item 49.
+
+    *Superseded by `bccce10` (M9-b, 2026-09-10) — see item 50: the catalog is not 22 tools, it is one, and the 22 reads left with the 21 writes. The text above stands as the record of the first cut; what it says about the CLI being untouched is still true.*
+
+49. **What the M9 narrowing left unreachable (raised by the M9 package itself, 2026-09-10).** Three things follow from item 48 and are still to be settled:
+    - **The `context/{consumer_handle}` resource can no longer become attached.** `context.attach` was the only caller of `here::attach`, so nothing in the shipped binary sends the broker an `Attach` op for an MCP consumer. The resource template is still listed and still answers, but it answers `not_attached` for every handle, for the life of the build. Options: drop the template from the resource surface, or give the CLI a way to attach a named consumer so an agent that shells out can opt in. Nothing was changed here: the resource surface was not in this package's scope.
+    - **The stale-generation refusal on a follow is unreachable.** `open::follow` still takes a navigation generation and still refuses a stale one, but its one remaining caller — `canvas open --follow` — passes `None`. The guard is correct and dead. Options: add `--generation` to `canvas open --follow`, or accept that a follow from a terminal is the person's own act and needs no generation check.
+    - **SPEC §19 item 17's replay rule has no surface.** The rule — an execute on a plan that already admitted a journal returns that journal with `replayed: true` — was reachable only through `submission.execute` and the three operation executes. `canvas submit` and the §25 write commands refuse such a plan with exit 8 instead, which is what they always did. The replay code was removed with the tools; item 17 itself is left open, because the rule is still the right one if an approved-plan surface ever returns.
+
+    *Superseded by `bccce10` (M9-b, 2026-09-10) — see item 50. The first point is settled the way it was raised: the `context/{consumer_handle}` resource is deleted, along with the whole resource namespace and `here::foreign_consumer`, which served nothing else. The second and third points are unchanged and still to be settled: `open::follow`'s stale-generation guard is still correct and still dead, and item 17's replay rule still has no surface.*
+
+50. **`canvas mcp` is one tool (decided 2026-09-10).** The 22-tool catalog of item 48 was cut again, to a single `getclitools` tool that shows an agent how to use the CLI, and the browser-context resource and the event subscriptions were dropped with it.
+
+    `canvas mcp` now serves exactly one tool, named `getclitools` verbatim. It performs nothing: it returns the complete `canvas` command reference — every command, its operands and flags, and the envelope each one returns — and the agent runs the commands itself. The 22 reads of item 48 are gone with it: `courses.list`, `course.get`, `todo.list`, `assignments.list`, `assignment.get`, `grades.get`, `files.list`, `modules.list`, `pages.list`, `page.get`, `syllabus.get`, `announcements.list`, `announcement.get`, `discussions.list`, `discussion.get`, `inbox.list`, `inbox.get`, `inbox.unread_count`, `calendar.list`, `submission.get`, `receipts.list`, and `receipts.show`. So is the resource namespace — `todo`, `receipts`, `course/{id}/assignments`, and `context/{consumer_handle}` — and so is `subscriptions/listen`.
+
+    This reframes §21: MCP is no longer a curated catalog of agent-facing actions beside the CLI, it is a discovery tool for a CLI the agent runs itself. The premise is that an agent which can call an MCP tool can also run a binary, which a terminal coding agent can. **A host with no execution capability can now do nothing but show the user a command line**, where before it could at least read. That is the cost, and it is recorded here as an accepted trade rather than as a question.
+
+    **No CLI command changed.** Every command of item 48's list behaves exactly as before, `canvas watch` and `canvas notify` and the whole §22 event log are untouched, and the §20 plan layer and its approval are untouched. One thing in the CLI's own description was *extended* rather than changed: `canvas schema` now resolves nine command names that previously exited 6 — `discussion reply`, `inbox send`, `inbox reply`, `alias set`, `alias remove`, `open assignment`, `open file`, `open announcement`, and `auth token` — each through the registry entry that already owns the shape it prints. No fixture, no result shape, and no command output changed; `canvas schema --list` has nine more rows. This is the "extend what it covers rather than inventing a second, parallel description format" the package was asked for, and §19 item 36's resolution is what made it possible.
+
+    This also answers **item 19**: the schema cost of the agent surface. `tools/list` is 656 bytes for one tool definition, against 167 955 for the 22-tool catalog and 344 878 for the 43-tool one. The reference the tool returns is 33 144 bytes, and an agent pays it once per session rather than once per tool definition. Item 19 asked whether the per-tool envelope inlining was worth its cost; there are no per-tool envelopes left.
+
+51. **The skill stops policing academic integrity (decided 2026-09-11).** The reply workflow's course-policy boundary — "an approval to post is not permission for AI-generated academic work", carried from the post-v1 design note since M8-b — is replaced by a user-authorization stance, in `skill/canvas-cli/reply-and-message-with-approval.md` and in `SKILL.md`: the user decides what help is allowed; when the user asks for AI-written work, the agent writes it; the agent never lectures about academic integrity and never adds a warning the user did not ask for. The rest of the write discipline is unchanged: never a placeholder, never an invented recipient, never `--yes`, the exact bytes shown before the command runs, one attempt per request. This is a decision, not a question; it is recorded here because it reverses what §25 said from M8-b about the boundary the skill carries. `tests/skill.rs` pins the new wording the way it pinned the old one.
+
+52. **Quiz taking is a goal (decided 2026-09-11).** The target instance serves Classic Quizzes. §1's "No quiz taking" non-goal is replaced by the Classic-only rule, and §12.7 specifies the four commands. Three readings are recorded with it:
+    - Starting a session is a confirmed write that is **not** an operation journal: it is idempotent (a live session is joined, a `409` is joined too), and the `quiz_session` row in `state.sqlite` is its record. The answers and the completion are the journaled operation.
+    - An unknown outcome that the readback resolves to the frozen session, completed at its attempt with the sent answers, commits to **`posted`** with attribution **`observed`**, never to `matched`: the readback shows the submitted object itself, linked by id, and the answers digest to the frozen bytes.
+    - Re-running `quiz submit` after `outcome_unknown` is a **new** approved operation whose answers overwrite: the Quiz Submission Questions API upserts per question, so a second send completes rather than duplicates. Nothing resends automatically; reconcile never sends.
+
+53. **New Quizzes cannot be taken by any token (2026-09-11, M10-b).** The documented New Quizzes API (`/api/quiz/v1/...`) builds and describes quizzes — show, list, create, update, delete — and has no session, answer, or completion endpoint. Taking one happens inside the LTI tool session, which a personal access token never reaches; neither cookie import nor driving the undocumented player API is in this project (§1). `canvas new-quizzes` and `canvas new-quiz` are therefore **class-D metadata reads**: title, instructions, due and lock times, points, time limit, attempts, and the one-at-a-time, shuffle, and access-code rules, fetched on demand with no cache — the LTI engine owns the state, and the CLI never stores what it cannot reconcile. A New Quiz is addressed by its assignment id. The assisted flow is the skill's: the agent briefs from the metadata, the person opens the browser, and pasted questions may come back for drafted answers — the agent never submits.
+
+
 
 ## 20. Operation plans and approval
 
-Built by M6-a (`docs/reviews/code-M6-a.md`) from `docs/agent-ux/REPORT.md` §3.5. A **plan** is the frozen description of one remote write, held between the moment the content is fixed and the moment a person approves it. Approval names exact bytes, not an intention.
+Built by M6-a. A **plan** is the frozen description of one remote write, held between the moment the content is fixed and the moment a person approves it. Approval names exact bytes, not an intention.
 
 ```text
 prepare  →  issue_handle  →  approve  →  execute  →  journal (§12.2)
 ```
 
 `plan::execute` is the only route from a plan to a submission journal. From the journal insert onward §12.2 is unchanged. M8-b added three more plan kinds on this same layer — `discussion_reply`, `inbox_send`, and `inbox_reply` — which admit an **operation** journal instead (§25); everything in this section holds for all four kinds unless it says otherwise.
+
+**This layer is reached from the command line only.** `canvas mcp` exposes no tool that prepares, approves, or executes a plan (§19 item 48), so every approval recorded here is a person's answer at a terminal. Nothing else in this section changes: the mechanism, the handle binding, and the states are exactly as M6-a and M8-b built them.
 
 ### Tables
 
@@ -995,7 +1049,7 @@ A concurrent execute, a restarted host, and a replayed acceptance all return the
 
 `canvas submit` keeps its v1 contract: confirmations on stderr, one `submit@1` envelope on stdout, and the §14 exit codes. It now runs on top of the plan layer — freeze, prompt, approve, execute — and pays one extra pre-flight `GET` for the revalidation read. An answered prompt records `tty`; `--yes` records `yes-flag`; a declined or unanswerable prompt cancels the plan, so it can never be executed later. The plan phase is a preview and an internal contract; it is not a second envelope.
 
-`canvas submit` refuses a plan that already admitted a journal with exit 8. `submission.execute` replays it instead (below).
+`canvas submit` refuses a plan that already admitted a journal with exit 8, and since M9 it is the only surface there is: `submission.execute`, which replayed such a plan instead, left the catalog with the read-only directive (§19 items 48 and 49).
 
 ### `plan@1`
 
@@ -1017,13 +1071,23 @@ Every one of these is decided before any upload and before the submission `POST`
 
 ### `replayed` (§19 item 17)
 
-`submit@1` carries `replayed: bool`. `submission.execute` on a plan that is already `executed` returns that journal's own `submit@1` envelope — its own `outcome`, `state`, and `exit` — with `replayed: true`. A replayed acceptance, a second execute in flight, and a lost response all arrive there. The human `submit` never reaches that path and always reports `false`. The field is additive, so `submit@1` keeps `@1`.
+`submit@1` carries `replayed: bool`. It is always `false` today. The rule it was added for — an execute on an already-`executed` plan returns that journal's own `submit@1` envelope, with its own `outcome`, `state`, and `exit`, and `replayed: true` — was reachable only from `submission.execute`, and that tool left the catalog with the read-only directive (§19 item 48). The human `submit` never reached that path and refuses such a plan with exit 8. The field stays because the rule is still the right one if an approved-plan surface returns; §19 items 17 and 49 own it. The field is additive, so `submit@1` keeps `@1`.
 
 ## 21. Agent surface
 
-Built by M6-b (`docs/reviews/code-M6-b.md`) and extended by M8-a2 (`docs/reviews/code-M8-a2.md`), from `docs/agent-ux/REPORT.md` §3.2. Three surfaces share one implementation: `canvas schema` publishes the contracts, `canvas mcp` serves them over the Model Context Protocol, and the shipped skill tells a model how to use them.
+Built by M6-b, extended by M8-a2, and cut to its present shape by M9 and M9-b.
 
-Every command has one core that returns the §7 envelope and a thin wrapper that prints it. `canvas mcp` calls the same core the CLI calls, so there is one implementation per command and nothing shells out to `canvas`.
+**The agent surface is the command line.** This section used to describe a curated catalog of agent-facing actions, served over MCP beside the CLI. It is not that any more. `canvas mcp` is **a discovery tool for a CLI the agent runs itself** (project decision, 2026-09-10; §19 item 50): it serves one tool, that tool performs nothing, and everything an agent does afterwards is a `canvas` command run through whatever shell or execution capability it has.
+
+Three things describe that one command line, and they describe it the same way because they read the same registry and the same clap tree:
+
+| Surface | What it is |
+|---|---|
+| `canvas schema` (§21.1) | the `--json` contract of one command, or the whole registry, for a person or a script |
+| `canvas mcp` (§21.2) | one MCP tool, `getclitools`, which hands an agent the whole command reference in one answer |
+| the shipped skill (§21.3) | how to use the commands: the envelope reading order, the exit table, six workflows |
+
+There is no second implementation of anything. `getclitools` is built from `dist::command()` — the clap tree the binary parses, which also backs the man pages and the completion scripts — joined with the schema registry `canvas schema` prints, so a command cannot be described to an agent differently from the way it behaves.
 
 ### 21.1 `canvas schema`
 
@@ -1034,7 +1098,7 @@ The document is generated from the registry, never hand-written. A result type t
 Every page carries `$schema`, `contract` (`canvas-cli/schema@1`), `command`, `schema`, `result_source`, and `output`. `output` says how the bytes are framed:
 
 | Form | `output.form` | `output.flag` | Body of the page |
-|---|---|---|---|
+|---|---|---|
 | Envelope | `envelope` | `--json` | `envelope` (the `oneOf` of the result and `error@1`), `result`, `error` |
 | Stream summary (`watch@1`) | `envelope` | `--jsonl` | as above, plus `output.refuses: ["--json"]` |
 | Stream line (`event@1`) | `jsonl` | `--jsonl` | `line` only, with its `schema` field pinned by `const`; no `envelope`, no `result`, no `error` |
@@ -1054,56 +1118,49 @@ A `--jsonl` line is self-describing and is never wrapped, so its page describes 
 
 Any other revision fails explicitly with a JSON-RPC error rather than being downgraded silently.
 
-**The tool catalog.** Exactly 43 tools, in a stable order a test pins against the report catalog. Annotations describe **effects**, not command classes: `readOnlyHint` is true only for a tool whose effect is a read, `destructiveHint` is false for every tool in the catalog, and `idempotentHint` and `openWorldHint` are set per tool.
+**One tool.** Exactly one, named `getclitools` — the word the tool was asked for, used verbatim rather than bent into a dotted convention:
 
-| Effect | Tools | `readOnlyHint` |
+| Tool | Arguments | Returns | Hints |
 |---|---|---|
-| Read (26) | `courses.list`, `course.get`, `todo.list`, `assignments.list`, `assignment.get`, `grades.get`, `files.list`, `modules.list`, `pages.list`, `page.get`, `syllabus.get`, `announcements.list`, `announcement.get`, `discussions.list`, `discussion.get`, `inbox.list`, `inbox.get`, `inbox.unread_count`, `calendar.list`, `submission.get`, `receipts.list`, `receipts.show`, `download.plan`, `open.url`, `operation.status`, `context.here` | true |
-| Local organization (10) | `sync.run`, `download.run`, `submission.prepare`, `discussion.reply.prepare`, `inbox.send.prepare`, `inbox.reply.prepare`, `context.attach`, `context.detach`, `context.note`, `context.follow` | false |
-| Remote write (4) | `submission.execute`, `discussion.reply.execute`, `inbox.send.execute`, `inbox.reply.execute` | false |
-| Evidence retirement (3) | `submission.reconcile`, `operation.reconcile`, `receipts.acknowledge` | false |
+| `getclitools` | none; unknown fields are refused | one text block: the whole `canvas` command reference, as Markdown | `readOnlyHint` true, `destructiveHint` false, `idempotentHint` true, `openWorldHint` false |
 
-`download.plan` is a dry run and `open.url` resolves without launching, which is why both are annotated as reads; §19 item 21 records that reading, and §19 item 38 records the same question for `operation.status`, which records a readback while it reads. The four `RemoteWrite` tools are the four `*.execute` tools and no others, and a test pins that. `idempotentHint` is false for seven of the ten `Organize` tools — `download.run`, the four `*.prepare` tools, `context.note`, and `context.follow` — because each one transfers, freezes, holds, or dispatches something new. `sync.run`, `context.attach`, and `context.detach` are the three that repeat safely.
+It has no `outputSchema`, because the answer is prose and not a §7 envelope. `openWorldHint` is false and `idempotentHint` is true because the answer is built from the binary's own command tree: no session, no network, no cache, and the same bytes every time.
 
-**What the catalog does not contain.** Credentials, token reveal, identity administration, arbitrary HTTP or shell, `--yes`, cache clearing, `download --force`, and every browser action. They are unreachable by name and by argument: every argument struct rejects unknown fields, `download.*` hard-codes `dest: None` and `force: false`, `calendar.list` hard-codes `ics: None`, `open.url` never launches a browser, and `submission.prepare` hard-codes `yes: false` and refuses `text: "-"` because stdin is the transport. `download.run` keeps the v1 `jobs` argument unclamped (§19 item 21).
+**What the answer contains.** A preamble that tells the caller to run `canvas <command> ...` itself, the §7 envelope and its reading order, the §14 exit table, the rule that a write asks a person at the terminal and `--yes` is never an agent's to pass, and the global flags. Then one entry per command of the clap tree — the command path, what it is for, its operands, its flags with their accepted values and defaults, and what it returns: the schema id, the flag that prints it, the `result` field names, and the `canvas schema <command>` that prints the whole document. A command with no §7 envelope says so rather than promising one. The answer closes with the `canvas schema --list` listing, unchanged.
 
-**Results.** A tool result carries the whole §7 envelope: `structuredContent` is the document `--json` prints, and the text block is the same document serialized. A domain failure keeps the envelope with its `outcome` and `exit`, and is marked `isError` for `error`, `refused`, `mismatch`, and `recovery`; `partial` stays a success with gaps. Only a protocol or argument failure becomes a JSON-RPC error. Every tool's `outputSchema` is the union of its result envelope and the `error@1` envelope, declared `"type": "object"` beside the `oneOf` so a strict host validator loads it.
+`crates/canvas-cli/tests/mcp.rs` compares that closing listing against the `canvas schema --list` the same build prints, so the reference and the CLI cannot drift apart.
 
-**`ttlMs` and `cacheScope`.** The revision puts these on discovery, list, and `resources/read` results and nowhere else, so a tool result reports the same two values under this server's own `_meta` keys, `dev.canvas-cli/ttlMs` and `dev.canvas-cli/cacheScope`, rather than inventing wire fields. Every result of this server is one identity's private data, so `cacheScope` is `private` on all of them. The `ttlMs` budget is the smallest remaining TTL over every `freshness` row of the envelope, and it is **zero** for an empty list, a stale or incomplete row, an unparseable or future `fetched_at`, or a dataset with no TTL group. §7 coverage stays authoritative.
+**What the surface does not contain.** Everything else. There is no tool that reads Canvas and no tool that writes to it: the 22 reads and the 21 writes the server carried at one time or another are all `METHOD_NOT_FOUND`, and each is named in §19 items 48 and 50. There are no resources, no resource templates, and no subscriptions — `initialize` and `server/discover` advertise `tools` and nothing more, `resources/read` and `subscriptions/listen` are unroutable, and the two list methods the SDK answers by default have nothing to list. Credentials, token reveal, identity administration, arbitrary HTTP or shell, cache clearing, `download --force`, and every browser action are absent because nothing has a tool.
 
-**Resources.** Namespaced by identity and generation: `canvas://<identity-key>/<generation>/<path>`. A foreign key, another generation, and an unknown path all address nothing here.
+Three tests keep it that way, and each fails on a second tool added rather than only on a changed list: `mcp::catalog::tests::the_only_tool_is_getclitools`, `mcp::server::tests::the_server_declares_tools_and_nothing_else`, and `mcp::the_tool_list_is_one_tool_named_getclitools_and_it_is_small` on the wire.
 
-| Path | Kind | Reads |
-|---|---|---|
-| `todo` | listed | the default `todo.list` window |
-| `receipts` | listed | local receipts and unresolved journals |
-| `course/{course_id}/assignments` | template | one course's assignments, as `assignments.list` returns them |
-| `context/{consumer_handle}` | template | the §24 bridge. The handle must be the reading session's own; naming another consumer's handle reads exactly what an unattached consumer reads, and an unattached consumer reads `refused` with `details.reason: "not_attached"` |
+**Results.** One text block. A domain failure cannot arise: nothing routes to a command. Only a protocol or argument failure is possible, and it is a JSON-RPC error, because then the tool never ran. The `dev.canvas-cli/ttlMs` and `dev.canvas-cli/cacheScope` hints M6-b put on a tool result are gone with the envelopes they described; `ttlMs` and `cacheScope` are still sent on discovery and on `tools/list`, where the revision puts them, and `cacheScope` is `private` because one instance serves one identity.
 
-A read goes through the same command core the matching tool uses, so a resource and a tool cannot answer differently.
+**No approval round trip.** Nothing here asks a person for a decision, because nothing here acts. This server never answers `input_required`, never sends an `elicitation/create`, and never issues an approval handle; a request that carries a `requestState` is refused as an argument error, so a replayed state cannot record a decision against anything. M6-b through M8-b served that round trip for the `*.execute` tools, and it went with them.
 
-**The approval round trip.** The four `*.execute` tools are the only tools that can return `input_required`, and therefore the only tools whose retry may carry a `requestState`. The guard asks the catalog which tools ask, rather than naming one: a retry that names any other tool is an argument error and leaves the plan untouched. M6-b bound the state to the single name `submission.execute`; with six more approval-gated tools that would have told a host its state belonged to another tool and lost the person's decision.
+The approval mechanism itself is unchanged and still required: it lives in the plan layer (§20) and is recorded at the terminal by `canvas submit` and the §25 write commands. MCP does not expose those commands and cannot start, approve, decline, or cancel a plan.
 
-1. An `*.execute(plan_id)` on a `prepared` plan issues a server-side approval handle and returns `input_required` with one keyed input request and the handle in `requestState`. Nothing is dispatched, and no client is built.
-2. The host asks a person and retries the tool with a new JSON-RPC request id, the echoed `requestState`, and keyed `inputResponses`.
-3. Accept spends the handle and approves the plan (§20); decline and cancel invalidate it.
-4. A host that declares no elicitation gets `outcome: refused`, exit 8, `details.reason: "approval_required"`, carrying the plan id and the handle, so the approval can still be recorded through another channel.
+**Subscriptions.** None. §22.5.
 
-**Subscriptions.** §22.
-
-**Catalog size.** `cargo xtask bench --mcp` measures the catalog at **43 tools, 344 878 bytes, about 86 235 estimated tokens** per `tools/list`, against the 22 tools and about 41 900 tokens M6-b first recorded. The byte column is exact; the token column is one token per four bytes of UTF-8, a rule of thumb and not a tokenizer run. Most of each row is the output schema, which inlines the whole §7 envelope in both shapes because a host validator reads a tool definition on its own. §19 item 19 owns the question.
+**Size.** `cargo xtask bench --mcp` measures `tools/list` at **one tool, 656 bytes, about 164 estimated tokens**; the whole `tools/list` result, with its cache hints, is 729 bytes. The answer `getclitools` returns is 33 144 bytes, about 8 286 tokens, describing 75 commands, and an agent pays it once per session rather than once per tool definition. The byte columns are exact; the token columns are one token per four bytes of UTF-8, a rule of thumb and not a tokenizer run. For comparison: the 43-tool catalog cost 344 878 bytes (~86 235 tokens) and the 22-tool catalog 167 955 (~41 997), because every tool inlined the whole §7 envelope twice for a host validator to read on its own. §19 item 19 owns the question and is answered by this round.
 
 ### 21.3 The shipped skill
 
-`skill/canvas-cli/` ships `SKILL.md` and six workflows: `read-an-assignment.md`, `organize-the-week.md`, `download-course-files.md`, `prepare-and-submit.md`, `reconcile-an-unknown-outcome.md`, and `reply-and-message-with-approval.md`. The skill names exactly the tool catalog — a test diffs the two in both directions — and confines the two submission tools to the approval workflow and the six write tools to the sixth (§25.10). It states the envelope reading order, the §14 exit table including 11, and the coverage fields a model must not paper over (`replies_coverage`, `replies_total`, `messages_complete`, `embedded`). A forbidden flag appears only as an explicit statement that it does not exist.
+`skill/canvas-cli/` ships `SKILL.md` and six workflows: `read-an-assignment.md`, `organize-the-week.md`, `download-course-files.md`, `prepare-and-submit.md`, `reconcile-an-unknown-outcome.md`, and `reply-and-message-with-approval.md`.
+
+Every step of every workflow is a `canvas` command, reads as well as writes. M9 gave the four write workflows their commands when the catalog became read-only; M9-b gave the reads theirs, because there is no tool left to read with. A test pins the commands each workflow must name, and a second test refuses any mention, anywhere in the package, of the 43 tool names the server has served at one time or another.
+
+SKILL.md leads with the one MCP-specific step there is: an agent connected over MCP calls `getclitools` once at the start of the session and runs commands from then on. It states the envelope reading order, the §14 exit table including 11, the rule that a write asks a person and `--yes` is never the agent's to pass, and the coverage fields a model must not paper over (`replies_coverage`, `replies_total`, `messages_complete`, `embedded`). A forbidden flag appears only as an explicit statement that it does not exist.
 
 ### 21.4 Host matrix
 
-`docs/agent-hosts.md` records which hosts were actually run against a build on the owner's machine, what each negotiated, and what stayed untested. It is evidence, not a claim: a host that is not in its table was not exercised. The two third-party hosts that connected both negotiated `2025-11-25`; the primary revision is exercised only by the project's own clients, and the approval round trip is verified only against the project's own client.
+`docs/agent-hosts.md` records which hosts were actually run against a build on a development machine, what each negotiated, and what stayed untested. It is evidence, not a claim: a host that is not in its table was not exercised. The two third-party hosts that connected both negotiated `2025-11-25`, and the primary revision is exercised only by the project's own clients. **Both third-party rows predate this round**: they loaded a 22-tool catalog that no longer exists, and neither was re-run. No row claims an approval round trip, and none claims that a host renders the command reference correctly or that a model reading it goes on to run the commands.
 
 ## 22. Coordinator, events, `watch`, `notify`
 
-Built by M6-c (`docs/reviews/code-M6-c.md`), M6-c2 (`docs/reviews/code-M6-c2.md`), and M8-a3 (`docs/reviews/code-M8-a3.md`), from `docs/agent-ux/REPORT.md` §3.6 and §3.4. Every CLI, `watch`, and `mcp` process that binds one identity shares its network work through the identity directory and `state.sqlite`. There is no daemon.
+Built by M6-c, M6-c2, and M8-a3. Every CLI, `watch`, and `mcp` process that binds one identity shares its network work through the identity directory and `state.sqlite`. There is no daemon.
+
+**Nothing in this section was removed by M9-b.** The event log, the coordinator, the leases, `canvas watch`, and `canvas notify` are all unchanged and fully supported, exactly as described below. What went away is the MCP path *into* this log: `subscriptions/listen` (§22.5). Events themselves did not go anywhere, and a person or an agent reads them the way everything else is read now — by running `canvas watch --jsonl`.
 
 ### 22.1 The coordinator
 
@@ -1213,30 +1270,15 @@ It reads the events after its cursor, groups them by event-kind group (`assignme
 
 ### 22.5 MCP subscriptions
 
-`canvas mcp` implements `subscriptions/listen` over the same log (M6-c2). A host may name a cursor in `_meta` under `dev.canvas-cli/cursor`; without one, the durable consumer position is used, which is what a reconnecting host wants.
+**There are none.** `canvas mcp` served `subscriptions/listen` over this log from M6-c2 until 2026-09-10, with a cursor in `_meta` under `dev.canvas-cli/cursor`, a per-dataset invalidation map, and a `resync_required` rule that matched `watch --since`. The owner removed it with the rest of the MCP surface: "drop both, mcp is just the one tool for the cli thats it" (§19 item 50). `crates/canvas-cli/src/mcp/subscribe.rs` is deleted, the server declares no resource or subscription capability, and `subscriptions/listen` is `METHOD_NOT_FOUND`.
 
-Every notification comes from the log in `state.sqlite`. There is no in-memory event source. The position advances only after a batch's notifications are sent, so a stream that dies mid-batch replays that batch rather than dropping it.
+The reason is that the subscription existed to invalidate *resources*, and there are no resources. Without a tool or a resource that holds a cached answer, there is nothing for a notification to invalidate.
 
-A row invalidates a resource of this binding only when it names that resource's scope — either because the scope changed, or because a `resync_required` row says an observation of it was lost:
-
-| Dataset | Invalidates |
-|---|---|
-| `assignments`, scope `course:<id>` | `course/<id>/assignments` and `todo` |
-| `missing` | `todo` |
-| `submission_journal` | `receipts` |
-| everything else | nothing |
-
-A batch invalidates each URI once. A row from another identity key or generation invalidates nothing.
-
-`context/<consumer-handle>` is readable but **not subscribable**: REPORT §3.2 forbids implicit sharing from resource subscriptions, and a host holding one would be told on a resync that a consumer context it does not own changed. A filter entry naming a foreign key, another generation, an unknown path, or a name no event can reach is dropped rather than refused, so the host keeps the part of its subscription that can be served.
-
-A resync invalidates every subscribed resource once and then follows the log from its high water mark. A cursor the **host** named is the host's own position and never replaces the stored one; only an unreplayable stored position is reset.
-
-The subscription holds a shared identity lease for the life of the stream, which makes a subscribed host a resident consumer under §3.4. It writes nothing but cursor rows and needs no token and no network. The SDK answers the first request of a connection inline, so a connection whose *first* request is `subscriptions/listen` gets no other answer while the stream is open.
+**Nothing else in §22 changed.** The log, the cursors, the consumer positions, the replay and resync rules, `canvas watch --jsonl --since`, and `canvas notify` all behave exactly as §22.1 to §22.4 describe. An agent that wants to follow the log runs `canvas watch --jsonl`, which is a command like every other one, and `getclitools` describes it with its flags and the `event@1` line it streams.
 
 ## 23. Richer reads
 
-Built by M8-a (`docs/reviews/code-M8-a.md`) and M8-a2 (`docs/reviews/code-M8-a2.md`), from `docs/agent-ux/REPORT.md` §4's M8-a row. Every command in this section is **class C**. Every request is a `GET`. Nothing here marks anything read.
+Built by M8-a and M8-a2. Every command in this section is **class C**. Every request is a `GET`. Nothing here marks anything read.
 
 ### 23.1 Contract
 
@@ -1320,13 +1362,14 @@ These eight schemas now have typed arms in the schema generator, so their `canva
 
 ## 24. Companion, broker, presence
 
-Built by M7-a (`docs/reviews/code-M7-a.md`) and M7-b (`docs/reviews/code-M7-b.md`), from `docs/agent-ux/REPORT.md` §3.3 and §3.4. `canvas-cli` reads the Canvas page a person already has open. It does that with a Chrome extension attached to one tab and a broker process Chrome starts on the same machine. **There is no cookie import, no token in the browser, and no fetch proxy.** The browser never becomes a way to reach Canvas: the one request the companion makes is a fixed account probe, and everything else it reports is the page it was given.
+Built by M7-a and M7-b. `canvas-cli` reads the Canvas page a person already has open. It does that with a Chrome extension attached to one tab and a broker process Chrome starts on the same machine. **There is no cookie import, no token in the browser, and no fetch proxy.** The browser never becomes a way to reach Canvas: the one request the companion makes is a fixed account probe, and everything else it reports is the page it was given.
 
 ```text
 the tab a person attached          this machine
  content script  ── bridge-native@1 ──  canvas bridge host  ── bridge-ipc@1 ──  canvas here
-                                                                                canvas mcp (context.*)
 ```
+
+`canvas mcp` is not on that diagram any more. Nothing on the MCP surface has reached the companion since 2026-09-10 (§19 items 48 and 50); an agent reaches it the way it reaches everything else, by running `canvas here`.
 
 Nothing is shared until the person acts. `activeTab` grants one tab for as long as it stays on the origin the gesture happened on; a cross-origin navigation revokes the grant, and with it the attachment.
 
@@ -1379,7 +1422,7 @@ The broker joins browser and API facts only when that probe's `user_id` equals t
 
 Metadata is served from the broker's own memory. It triggers no probe and no page read.
 
-Text — the selected passage and the visible editor excerpt — is released only when a consumer asks for it (`canvas here --text`, or `context.here` with `include_text: true`), and only after the extension probes the account again and the broker verifies it against the identity. An opaque zone releases none.
+Text — the selected passage and the visible editor excerpt — is released only when a consumer asks for it (`canvas here --text`; there is no MCP tool that could ask, §19 item 50), and only after the extension probes the account again and the broker verifies it against the identity. An opaque zone releases none.
 
 Hidden inputs, credential-looking field names, and capability-bearing query parameters are stripped before anything leaves the page. The stripped parameters are `verifier`, `signature`, `token`, `access_token`, `sig`, `policy`, `expires`, and `session_token`, matched case-insensitively, plus every parameter whose name begins `x-amz-`. A sanitized URL keeps http and https only and loses its fragment, its username, and its password. The whole payload is bounded at **64 KiB of UTF-8**, cut on a character boundary, with `truncated: true` when it was cut.
 
@@ -1459,14 +1502,13 @@ Newline-delimited JSON on the endpoint above. A request line over **64 KiB** is 
 
 ### 24.8 Consumers and the trust boundary
 
-A consumer is a name: `mcp` for an anonymous MCP client, `mcp:<client name>` when the client identifies itself, and the CLI when no name is given. `attach`, `here`, `note`, `follow`, and `detach` take the consumer as a field, so **any process that can open the `0600` socket in the `0700` directory can call under any name.** REPORT §3.2 says consumer handles express routing within the owner's OS trust domain, not isolation from another unrestricted local process, and that is the boundary this release implements. §19 item 31 states it.
+A consumer is a name: `mcp` for an anonymous MCP client, `mcp:<client name>` when the client identifies itself, and the CLI when no name is given. `attach`, `here`, `note`, `follow`, and `detach` take the consumer as a field, so **any process that can open the `0600` socket in the `0700` directory can call under any name.** the post-v1 design note says consumer handles express routing within the owner's OS trust domain, not isolation from another unrestricted local process, and that is the boundary this release implements. §19 item 31 states it.
 
 What the boundary does hold is everything above the socket:
 
-- **A consumer handle is set by the adapter, never by a model.** `context.here` from `canvas mcp` always carries the calling host's own handle, so one MCP consumer cannot read another's attachment even with a stolen attachment id.
+- **A consumer handle was set by the adapter, never by a model.** A `context/<handle>` resource read from `canvas mcp` always carried the calling host's own handle, so one MCP consumer could not read another's attachment even with a stolen attachment id. That resource is deleted (§19 item 50); the rule is kept here because the broker's per-consumer routing still works this way for every caller of the socket.
 - **`attachments.list` carries no attachment id and no page content.** The attachment id is the capability, so a listing must not hand it out. `bridge status` therefore names the state, the origin, the account id, the zone, the consumers, and the generation, and never the page.
-- **`context.detach` gives up only the caller's share.** Ending the attachment for everyone is `canvas bridge detach`, a human act.
-- **`context.attach` returns the handle and the state, never the page.** Opting in and reading are two decisions.
+- **Opting in and reading are two decisions.** An attach returns the handle and the state, never the page, and giving up one consumer's share never ends the attachment for everyone — that is `canvas bridge detach`, a human act. Since M9 no MCP consumer can take either decision — the five `context.*` tools left the catalog (§19 item 48) — and since M9-b the `context/{consumer_handle}` resource that reported the outcome is deleted too (§19 item 50). The broker's own per-consumer rules are unchanged beneath.
 
 ### 24.9 Commands
 
@@ -1510,7 +1552,7 @@ The API side travels as whole §7 envelopes, the same documents `canvas course -
 
 ### 24.11 Notes
 
-`canvas note --text …`, or `context.note` from an agent, holds one note for the attachment. A note is inert:
+`canvas note --text …` holds one note for the attachment. (`context.note` did the same until 2026-09-10; there is no tool now, and an agent runs the command.) A note is inert:
 
 - **it is not a Canvas write.** Nothing about it reaches Canvas;
 - **it is not an approval.** No note, whatever its text or its refs say, can approve, decline, or cancel a plan;
@@ -1532,7 +1574,7 @@ Notes are held for the attachment's lifetime, survive a navigation and a pause, 
 
 ### 24.12 Follow
 
-`canvas open <target> --follow`, or `context.follow`, asks the attached tab to go somewhere inside the granted origin. The target goes through the ordinary `canvas open` resolver first, so a target outside this identity's Canvas fails at exit 6 and never reaches the browser. `may_follow` is checked before anything is dispatched.
+`canvas open <target> --follow` asks the attached tab to go somewhere inside the granted origin. (`context.follow` did the same until 2026-09-10; there is no tool now.) The target goes through the ordinary `canvas open` resolver first, so a target outside this identity's Canvas fails at exit 6 and never reaches the browser. `may_follow` is checked before anything is dispatched.
 
 The answer is a **dispatch acknowledgement**: the companion took the request. It is not a page load. What became of the page arrives later and lands on `here@1` as `browser.follow.load` — `loaded` or `unknown`. **This build never reports `failed`**: seeing a load failure needs `webNavigation`, which would grant standing visibility of every navigation in the browser. Ten seconds after a navigation with nothing observed, the answer is `unknown`, which is what is actually known. A late outcome that names a request the bundle no longer reports changes nothing.
 
@@ -1563,19 +1605,9 @@ A page script cannot reach any of this. It runs in the extension's own surface, 
 
 ### 24.14 The agent surface
 
-Five tools join the §21.2 catalog, and one resource template becomes readable.
+**Nothing on the MCP surface reaches the companion.** M7-a and M7-b added five tools — `context.attach`, `context.here`, `context.detach`, `context.note`, `context.follow` — and the decision of 2026-09-10 removed all five (§19 item 48); the `context/{consumer_handle}` resource that survived them was deleted with the whole resource namespace (§19 item 50). An agent reads the working context, writes a panel note, and moves the tab through the commands of §24.9: `canvas here`, `canvas here --text`, `canvas note --generation N`, `canvas open --follow`, and `canvas bridge status|detach`. Each is the same core the tools called, and each is the person's own machine answering.
 
-| Tool | Effect | `idempotentHint` |
-|---|---|---|
-| `context.attach` | Organize | true |
-| `context.here` | Read | true |
-| `context.detach` | Organize | true |
-| `context.note` | Organize | false |
-| `context.follow` | Organize | false |
-
-`context.note` and `context.follow` require `generation`; `attachment_id` is optional on all five, and every argument struct rejects unknown fields.
-
-`canvas://<identity-key>/<generation>/context/{consumer_handle}` reads the bundle the calling session's own handle names. Reading it attaches nobody: until that consumer calls `context.attach` the resource answers `not_attached`. **The handle in the URI must be the reading session's own.** Naming another consumer's handle reads exactly what an unattached consumer reads — the same `here@1` refusal, the same reason, the same exit — so the resource never reports whether that other handle attached, or even whether a broker is running. It stays readable but not subscribable (§22.5).
+**No resource either.** `canvas://<identity-key>/<generation>/context/{consumer_handle}` stayed readable through M9 and answered `not_attached` for every handle, because the tool that opted a consumer in had gone. §19 item 49 raised it and offered two ways out; the first was taken — so the template, the whole resource namespace, and `here::foreign_consumer` behind it are deleted (§19 item 50). `resources/read` on any `canvas://` URI is `METHOD_NOT_FOUND`.
 
 **Browser context is never cacheable.** `ttl_ms` is `0` and the bundle carries no `freshness` row of its own, so nothing downstream can serve a stale observation as a fact. The API and browser sides stay separate documents: `api` holds whole §7 envelopes, each with its own freshness, and a browser extract never updates one of them.
 
@@ -1589,9 +1621,9 @@ This is the record, and nothing here claims a flow that was not executed.
 
 **Run, against the shipped host.** `tests/bridge.rs` and `tests/m7b.rs` start the real `canvas bridge host` the way Chrome starts it and drive it with hand-written native-messaging frames. Between them they cover the `ready` handshake; `hello` and `attach`; `bridge status` and `here --json` over the real socket; a wrong extension id, a non-extension origin, and no origin at all, each exit 8; a stale socket cleared under ownership and a live endpoint never unlinked; a second host reporting the first; `identity remove` completing after the cooperative release, with the ownership lock gone and the root identity lock untouched; notes and follows bound to the generation in both directions; a stale and a cross-origin follow that never reach the browser; a dispatch acknowledgement separated from its load outcome, and a late outcome for a replaced navigation changing nothing; approve, decline, and cancel through the panel path, each with its recorded event; and every forgery path — a note shaped like an approval, the socket asked to approve, a guessed handle, the digest used as a handle, a rewritten digest, another plan's id, and a fourth decision word — each refused with the plan still `prepared`, followed by the real decision working. One assertion reads every byte that crossed either pipe and fails on a token or cookie name, with a capability parameter and a planted secret put on a URL the companion reports so the assertion has something to catch.
 
-Two consumers are exercised over a real `canvas mcp`: only the consumer that attached reads the bundle, a stolen attachment id does not serve the other one, reading the other consumer's resource by name does not either, and one consumer letting go leaves the tab attached for the person. `canvas-core::bridge` unit-tests the framing bounds, account mismatch, a failed or redirected probe, stale document and navigation generations, opaque zones, and the 64 KiB ceiling. `cd extension && npm test` runs the route classifier, the zone classifier, the sanitizer, the byte bounds, the note renderer, and the panel view model against fixture HTML and hostile fixture notes, importing the shipped files rather than a copy.
+Two consumers were exercised over a real `canvas mcp` until M9-b removed the surface that let an MCP client attach or read at all. What `tests/bridge.rs` drives now is the state that replaced it: `tools/list` is one tool, every `context.*` name is `METHOD_NOT_FOUND`, `resources/read` on a `context/<handle>` URI is unroutable for any handle, `resources/list` is empty, the reference the one tool hands out names `canvas here` and carries no page content, and the person's own `canvas here` still reads the attached tab. The broker's per-consumer rules below the socket — a stolen attachment id serving nobody else, one consumer letting go leaving the tab attached — are unchanged and covered by `an_attached_tab_is_served_to_the_cli_and_only_to_an_opted_in_consumer`. `canvas-core::bridge` unit-tests the framing bounds, account mismatch, a failed or redirected probe, stale document and navigation generations, opaque zones, and the 64 KiB ceiling. `cd extension && npm test` runs the route classifier, the zone classifier, the sanitizer, the byte bounds, the note renderer, and the panel view model against fixture HTML and hostile fixture notes, importing the shipped files rather than a copy.
 
-**Not run: a real Chrome.** The companion has never been loaded into a browser on the owner's machine. Installing the manifest writes into the user's own Chrome profile directory, and both the probe and the API side need a real Canvas account. So the following are untested and unverified: load unpacked, the toolbar gesture, a same-origin navigation keeping the grant, a cross-origin navigation revoking it, an account switch producing `account_mismatch`, two tabs, a broker restart driven by Chrome, the side panel opening on the gesture, a note rendered on screen, hostile markup proving inert in a real document rather than in the node tree the tests read, `chrome.tabs.update` moving a tab, a `loaded` outcome from a real navigation, a stale follow refused with a real tab behind it, the approve, decline, and cancel buttons, and a forged approval refused with a real page in the tab. Every Chrome-facing rule above rests on Chrome's documentation plus the tests, not on observation. `docs/companion.md` carries the check table for running them.
+**Not run: a real Chrome.** The companion has never been loaded into a browser on a development machine. Installing the manifest writes into the user's own Chrome profile directory, and both the probe and the API side need a real Canvas account. So the following are untested and unverified: load unpacked, the toolbar gesture, a same-origin navigation keeping the grant, a cross-origin navigation revoking it, an account switch producing `account_mismatch`, two tabs, a broker restart driven by Chrome, the side panel opening on the gesture, a note rendered on screen, hostile markup proving inert in a real document rather than in the node tree the tests read, `chrome.tabs.update` moving a tab, a `loaded` outcome from a real navigation, a stale follow refused with a real tab behind it, the approve, decline, and cancel buttons, and a forged approval refused with a real page in the tab. Every Chrome-facing rule above rests on Chrome's documentation plus the tests, not on observation. `docs/companion.md` carries the check table for running them.
 
 **Not run: Windows.** The named pipe and its SDDL descriptor compile and unit-test on every platform, but no pipe was created and no registry key was written.
 
@@ -1599,9 +1631,11 @@ Two consumers are exercised over a real `canvas mcp`: only the consumer that att
 
 ## 25. Discussion and inbox writes
 
-Built by M8-b (`docs/reviews/code-M8-b.md`) from `docs/agent-ux/REPORT.md` §3.5 and §4's M8-b row. Three remote writes join `submit`: a discussion reply, a new conversation, and a message added to a conversation. Every one is **class D**, runs `prepare → approve → execute` on the §20 plan layer, and lands in an **operation journal** that keeps the §12.2 discipline with the submission target replaced by an operation target.
+Built by M8-b.5 and §4's M8-b row, and extended by M10-a with the fourth write. Four remote writes join `submit`: a discussion reply, a new conversation, a message added to a conversation, and a quiz submission (§12.7). Every one is **class D**, runs `prepare → approve → execute` on the §20 plan layer, and lands in an **operation journal** that keeps the §12.2 discipline with the submission target replaced by an operation target.
 
 **Nothing is dispatched without a recorded human approval, nothing is ever resent, and nothing claims more than it observed.**
+
+**These are CLI commands only.** `canvas mcp` exposes no tool for any of them (§19 item 48); the contract, the locks, the journal, the recovery rules, and the exit codes below are unchanged and describe what `canvas discussion reply`, `canvas inbox send`, `canvas inbox reply`, `canvas quiz submit`, and `canvas operation status|reconcile` do.
 
 ### 25.1 Contract
 
@@ -1610,6 +1644,7 @@ Built by M8-b (`docs/reviews/code-M8-b.md`) from `docs/agent-ux/REPORT.md` §3.5
 | `discussion reply <course> <topic\|URL> [--to ENTRY_ID] (--text T \| --text-file P \| --text -) [--attach P]… [--yes]` | `POST /courses/:cid/discussion_topics/:tid/entries` with `message`, or `POST …/entries/:eid/replies` with `--to` | `journals/topic-<tid>.lock` |
 | `inbox send --to USER_ID[,…] [--subject S] (--text …) [--attach P]… [--yes]` | `POST /conversations` with `recipients[]`, `subject`, `body`, `group_conversation=false`, `attachment_ids[]` | `journals/conversation-new-<plan-id>.lock` |
 | `inbox reply <conversation_id> (--text …) [--attach P]… [--yes]` | `POST /conversations/:id/add_message` with `body`, `attachment_ids[]` | `journals/conversation-<id>.lock` |
+| `quiz submit <course> <qid> --answers FILE\|- [--access-code CODE] [--yes]` | `POST /quiz_submissions/:qsid/questions` with `{ attempt, validation_token, quiz_questions }`, then `POST /courses/:cid/quizzes/:qid/submissions/:qsid/complete` with `{ attempt, validation_token }`, both inside one `posting` journal | `journals/quiz-<qid>.lock` |
 | `operation status <journal_id>` | the readback below; no write | owner lock only |
 | `operation reconcile <journal_id> [--assume-not-posted]` | the readback below; no write | owner lock only |
 
@@ -1636,7 +1671,7 @@ A threaded reply is read on the replies route because that is where Canvas puts 
 
 ### 25.2 The plan
 
-Three plan kinds join `submission`: `discussion_reply`, `inbox_send`, and `inbox_reply`. They share the §20 plan layer unchanged — the 15-minute admission expiry, the channels `tty`, `yes-flag`, `elicitation`, and `panel`, the handle binding, the digest the approval is bound to, and the rule that one plan admits at most one journal.
+Three plan kinds join `submission`: `discussion_reply`, `inbox_send`, and `inbox_reply`, plus `quiz_submit` (M10-a, §12.7). They share the §20 plan layer unchanged — the 15-minute admission expiry, the channels `tty`, `yes-flag`, `elicitation`, and `panel`, the handle binding, the digest the approval is bound to, and the rule that one plan admits at most one journal.
 
 A plan freezes:
 
@@ -1660,12 +1695,15 @@ Every one is exit 8 with `result.details.reason`, and every one happens **before
 | `reason` | When |
 |---|---|
 | `group_write` | the topic has a `group_category_id`, or a non-empty `group_topic_children` |
-| `locked` | the topic is `locked` or `locked_for_user` |
+| `locked` | the topic is `locked` or `locked_for_user`; the quiz is locked for the user |
 | `initial_post_required` | `require_initial_post` is set and this identity has not posted |
-| `unresolved` | a `--to` entry outside the topic, a recipient id Canvas does not return, or an attachment path that cannot be read as a regular file |
-| `empty_body` | the body is empty or only whitespace |
-| `denied` | a `401`/`403` on the course, topic, or conversation |
-| `unsupported` | an attachment on a discussion reply, a body over 1 MiB, or more than 10 attachments |
+| `unresolved` | a `--to` entry outside the topic, a recipient id Canvas does not return, an attachment path that cannot be read as a regular file; an answer for a question the session does not hold, or one answered twice |
+| `empty_body` | the body is empty or only whitespace; the answer set is empty |
+| `denied` | a `401`/`403` on the course, topic, or conversation; a `401`/`403`/`404` on the quiz |
+| `unsupported` | an attachment on a discussion reply, a body over 1 MiB, or more than 10 attachments; a quiz that needs the browser, or answers over 1 MiB |
+| `no_session` | the quiz has no session in progress |
+| `access_code` | the access code was not accepted |
+| `session_expired` | the session is live but Canvas gave no validation token |
 
 A cross-origin URL is exit 6 (`resolution`), not exit 8: it is not a Canvas object this identity was refused, it is not this identity's Canvas at all.
 
@@ -1675,7 +1713,7 @@ A discussion reply cannot carry an attachment in this version. Canvas takes one 
 
 ### 25.4 The operation journal
 
-Migration `0004_operations` on `state.sqlite` (§10) adds `operation_journal`, its unique index on `plan_id`, indexes on state and course, and the nullable column `plans.operation_json`. `STATE_USER_VERSION` moves to 4.
+Migration `0004_operations` on `state.sqlite` (§10) adds `operation_journal`, its unique index on `plan_id`, indexes on state and course, and the nullable column `plans.operation_json`. `STATE_USER_VERSION` moves to 4. Migration `0005_quizzes` (M10-a) widens the `kind` check with `quiz_submit`, adds the `quiz_id` column, and adds `quiz_session` for the live taking session; `STATE_USER_VERSION` moves to 5.
 
 States: `planned → posting → posted | matched | outcome_unknown | refused | failed`. `posted` and `matched` are the two ways an operation ends as done, `refused` is the terminal for one that was never sent, `failed` for one Canvas answered with a non-2xx, and `outcome_unknown` for one whose outcome was never observed.
 
@@ -1701,6 +1739,7 @@ The discipline is §12.2's:
 | `discussion_reply` | `discussion:topic:<tid>`, `discussion:topic:<tid>:replies`, `discussions:course:<cid>` |
 | `inbox_send` | `inbox:*`, `inbox_unread:*` |
 | `inbox_reply` | `conversation:conversation:<id>`, `inbox:*`, `inbox_unread:*` |
+| `quiz_submit` | `quizzes:course:<cid>` |
 
 ### 25.5 Recovery and ambiguous outcomes
 
@@ -1765,23 +1804,21 @@ The §10 **pending hook** covers operation journals. A journal is pending while 
 
 ### 25.10 The agent surface and the skill
 
-Eight tools join the §21.2 catalog, each calling the same core the CLI calls:
+**No tool performs any of these writes, and no tool reads them back either.** M8-b added eight tools to the §21.2 catalog — `discussion.reply.prepare`/`.execute`, `inbox.send.prepare`/`.execute`, `inbox.reply.prepare`/`.execute`, `operation.status`, and `operation.reconcile` — and the decision of 2026-09-10 removed all eight (§19 item 48), then removed the reads as well (§19 item 50). There is no prepare tool, no execute tool, no `input_required` round trip on this server, and no argument anywhere that asserts an approval.
 
-| Tool | Effect | Command behind it |
-|---|---|---|
-| `discussion.reply.prepare` / `.execute` | Organize / RemoteWrite | `discussion reply` |
-| `inbox.send.prepare` / `.execute` | Organize / RemoteWrite | `inbox send` |
-| `inbox.reply.prepare` / `.execute` | Organize / RemoteWrite | `inbox reply` |
-| `operation.status` | Read | `operation status` |
-| `operation.reconcile` | Retire | `operation reconcile` |
+Reading the thread an answer belongs to is a command too: `canvas discussions`, `canvas discussion --replies`, `canvas inbox`, `canvas inbox show`, and `canvas inbox unread-count`, each of which reports `pending` while a write of this identity's own is unresolved (§25.7). So is everything else:
 
-A `*.prepare` freezes a plan and posts nothing. `operation.reconcile` is a retirement because `--assume-not-posted` records a durable local decision about what did not happen. `operation.status` keeps `readOnlyHint: true` while it records a readback and can move `attribution` from `accepted` to `observed`; §19 item 38 owns that reading.
+| What | Command |
+|---|---|
+| Reply to a discussion | `canvas discussion reply <course> <topic> --text …` |
+| Start a conversation | `canvas inbox send --to <id> --subject … --text …` |
+| Add to a conversation | `canvas inbox reply <conversation> --text …` |
+| Read one journal back | `canvas operation status <journal-id>` |
+| Resolve an unknown outcome | `canvas operation reconcile <journal-id> [--assume-not-posted]` |
 
-An execute on a prepared plan returns `input_required` with a `requestState` and one `elicitation/create` request — the same round trip `submission.execute` uses (§21.2). A host that declares no elicitation support gets a domain refusal instead: exit 8, `details.reason: "approval_required"`, with the handle, and **nothing is dispatched**. An execute on an already-executed plan returns that journal's `operation@1` with `replayed: true` and creates no second message. **There is no argument anywhere that asserts an approval.**
+Each prints the frozen plan — the exact thread or recipients, the exact bytes, every attachment with its digest — and asks for a confirmation at the terminal. That confirmation is the recorded approval (§20); nothing about the mechanism changed when the tools went.
 
-The retry guard asks the catalog which tools ask for approval: any `*.execute` in the catalog may carry a `requestState`, and a replayed state aimed at a read is still rejected as an argument error.
-
-`skill/canvas-cli/reply-and-message-with-approval.md` is the sixth workflow. It carries the REPORT §3.5 course-policy boundary in plain words: **an approval to post is not permission for AI-generated academic work**, and the rule is the course's, not the tool's. It also says never write a placeholder, never invent a recipient, show the exact text and every attachment before the approval, and never turn an acceptance into delivered mail.
+`skill/canvas-cli/reply-and-message-with-approval.md` is the sixth workflow, and it now routes through those commands rather than through tools. It carries the user-authorization stance of §19 item 51 in plain words: **the user decides what help is allowed — when the user asks for AI-written work, the agent writes it**, and never a lecture about academic integrity. It also says never write a placeholder, never invent a recipient, never pass `--yes`, show the exact text and every attachment before the command runs, and never turn an acceptance into delivered mail.
 
 ## Appendix A. Dependencies (verified on crates.io, 2026-09-09)
 
@@ -1810,7 +1847,7 @@ The retry guard asks the catalog which tools ask for approval: any `*.execute` i
 | uuid (serde, v4) | 1.18.1 | journal ids, plan ids, approval handles, identity generations |
 | thiserror / anyhow | 2.0.20 / 1.0.104 | errors |
 | rmcp (`=3.2.0`, no default features; `server`, `client`, `macros`, `elicitation`, `transport-io`, `transport-async-rw`, `schemars`, `local`) | 3.2.0 | `canvas mcp` (M6-b). `local` is load-bearing: the command cores are `!Send`, so the service runs in a `LocalSet`. Brings `chrono` transitively, see §19 item 18 |
-| schemars (`=1.2.2`) | 1.2.2 | JSON Schema for `canvas schema` and the MCP tool schemas (M6-b) |
+| schemars (`=1.2.2`) | 1.2.2 | JSON Schema for `canvas schema` and the one MCP tool's argument schema (M6-b) |
 | dev: wiremock, assert_cmd, predicates, insta | 0.6.5, 2.2.2, 3.1.4, 1.48.0 | tests |
 | tools: cargo-nextest, cargo-deny, cargo-dist, release-plz | 0.9.143, 0.20.2, 0.32.0, 0.3.164 | CI, release |
 
@@ -1851,13 +1888,22 @@ Added after v1. Every one is a `GET`. `per_page=100` is appended by the client t
 | inbox | `GET /api/v1/conversations?scope=inbox\|unread\|sent\|archived&auto_mark_as_read=false&per_page=100` |
 | inbox show | `GET /api/v1/conversations/:id?auto_mark_as_read=false` |
 | inbox unread-count | `GET /api/v1/conversations/unread_count` |
+| quizzes | `GET /api/v1/courses/:id/quizzes?per_page=100` |
+| quiz | `GET /api/v1/courses/:id/quizzes/:qid` |
+| quiz questions — join | `GET /api/v1/courses/:cid/quizzes/:qid/submission` |
+| quiz questions — start | `POST /api/v1/courses/:cid/quizzes/:qid/submissions` with `{ access_code? }` |
+| quiz questions | `GET /api/v1/quiz_submissions/:qsid/questions?include[]=quiz_question` |
+| quiz submit — prepare | the quiz, the submission, and the questions rows above |
+| quiz submit — execute | `POST /api/v1/quiz_submissions/:qsid/questions` with `{ attempt, validation_token, quiz_questions }`, then `POST /api/v1/courses/:cid/quizzes/:qid/submissions/:qsid/complete` with `{ attempt, validation_token }` |
+| new-quizzes | `GET /api/quiz/v1/courses/:cid/quizzes` |
+| new-quiz | `GET /api/quiz/v1/courses/:cid/quizzes/:aid` |
 | submit, plan execute | no new endpoint; the pre-flight read `GET …/assignments/:aid?include[]=submission&include[]=can_submit` runs twice, once to freeze the plan and once to revalidate it (§20) |
 | watch, mcp | no new endpoint; both refresh the §10 datasets above |
 | here | no new endpoint; the API half calls the `course`, `assignment`, and `announcement` cores above (§24) |
 
 The materialized discussion endpoint `GET …/discussion_topics/:tid/view` is deliberately not used: it marks entries read as a side effect of reading them (§23).
 
-The three writes (§25). Every `GET` here runs at prepare or in a readback; the `POST` runs only after a recorded approval.
+The four writes (§25). Every `GET` here runs at prepare or in a readback; the `POST` runs only after a recorded approval.
 
 | Command | Endpoint |
 |---|---|
@@ -1868,7 +1914,7 @@ The three writes (§25). Every `GET` here runs at prepare or in a readback; the 
 | inbox reply — prepare, and execute's revalidation | `GET /api/v1/conversations/:id?auto_mark_as_read=false` |
 | inbox reply — execute | `POST /api/v1/conversations/:id/add_message` with `{ body, attachment_ids }` |
 | an inbox attachment | `POST /api/v1/users/self/files` with `parent_folder_path=conversation attachments` and `on_duplicate=rename`, then the returned upload URL (§11) |
-| operation status, operation reconcile | `GET /api/v1/courses/:cid/discussion_topics/:tid/entries?per_page=100`, or `GET …/entries/:eid/replies?per_page=100` for a threaded reply, or `GET /api/v1/conversations/:id?auto_mark_as_read=false` |
+| operation status, operation reconcile | `GET /api/v1/courses/:cid/discussion_topics/:tid/entries?per_page=100`, or `GET …/entries/:eid/replies?per_page=100` for a threaded reply, or `GET /api/v1/conversations/:id?auto_mark_as_read=false`, or for a quiz the submission and its questions below |
 
 `group_conversation` is sent as `false`, always: group writes are out of this package.
 
@@ -1880,7 +1926,7 @@ The companion (§24) makes exactly one Canvas request, and it does not make it f
 
 No token of this CLI is ever sent through the browser, and no Canvas request is ever proxied through it.
 
-## Appendix C. What the research and the reviews changed
+## Appendix C. What the design work settled
 
 - Local grade math, target solver, GraphQL, ETags, hard links, group submissions: out of v1.
 - Identity = (canonical origin, user id) with a lossless key; profiles are labels; aliases are identity-owned.
@@ -1889,28 +1935,28 @@ No token of this CLI is ever sent through the browser, and no Canvas request is 
 - Mutation epochs in state.sqlite; scoped entity values with composite observation keys and per-field freshness in the cache.
 - keyring 4.2.0 `v1` feature route; MSRV 1.88.
 - Complete JSON schemas (Appendix D); single-envelope and exit-precedence rules.
-- Dependency-ordered packages with per-round shared-file owners.
+- Dependency-ordered packages, each declaring the shared interfaces the others build on.
 
-### What the post-v1 rounds changed
+### What the packages after v1 added
 
-`docs/agent-ux/REPORT.md` proposed an agent-first surface on top of the v1 contract. These packages are on `main`; each has its own code review, and §§20–23 record what they built rather than what was proposed.
+An agent-first surface was designed on top of the v1 contract. These packages are on `main`, and §§20–25 record what they built rather than what was proposed.
 
-| Package | What it added | Section | Review |
-|---|---|---|---|
-| M6-a | operation plans, approval handles, the approval audit, the human `submit` refactor | §20 | `docs/reviews/code-M6-a.md` |
-| M6-b | `canvas schema`, `canvas mcp`, the shipped skill, the host matrix | §21 | `docs/reviews/code-M6-b.md` |
-| M6-c | cross-process permits, the shared governor, refresh single-flight, foreground interest, the event log, `canvas watch`, `canvas notify` | §22 | `docs/reviews/code-M6-c.md` |
-| M6-c2 | `subscriptions/listen` over the event log | §22.5 | `docs/reviews/code-M6-c2.md` |
-| M8-a | `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox *`, the rubric extension | §23 | `docs/reviews/code-M8-a.md` |
-| M8-a2 | the eight M8-a read tools on the agent surface; §19 items 27 and 28 applied | §21, §23 | `docs/reviews/code-M8-a2.md` |
-| M8-a3 | the `inbox.unread_count` event; the per-form `canvas schema` pages | §22, §21 | `docs/reviews/code-M8-a3.md` |
-| M7-a | the Chrome companion, the native host, the broker ownership lock, `bridge-native@1`, `bridge-ipc@1`, zones, the account probe, `canvas bridge`, `canvas here`, the `context.*` tools and the `/context` resource | §24 | `docs/reviews/code-M7-a.md` |
-| M7-b | the side panel, notes, follow, panel approvals, and the plan-decision events | §24 | `docs/reviews/code-M7-b.md` |
-| M8-b | the three plan kinds, the operation journal, `operation status\|reconcile`, the attribution ladder, and the sixth skill workflow | §25 | `docs/reviews/code-M8-b.md` |
+| Package | What it added | Section |
+|---|---|---|
+| M6-a | operation plans, approval handles, the approval audit, the human `submit` refactor | §20 |
+| M6-b | `canvas schema`, `canvas mcp`, the shipped skill, the host matrix | §21 |
+| M6-c | cross-process permits, the shared governor, refresh single-flight, foreground interest, the event log, `canvas watch`, `canvas notify` | §22 |
+| M6-c2 | `subscriptions/listen` over the event log (removed by M9-b; §22.5) | §22.5 |
+| M8-a | `pages`, `page`, `syllabus`, `discussions`, `discussion`, `inbox *`, the rubric extension | §23 |
+| M8-a2 | the eight M8-a read tools on the agent surface; §19 items 27 and 28 applied | §21, §23 |
+| M8-a3 | the `inbox.unread_count` event; the per-form `canvas schema` pages | §22, §21 |
+| M7-a | the Chrome companion, the native host, the broker ownership lock, `bridge-native@1`, `bridge-ipc@1`, zones, the account probe, `canvas bridge`, `canvas here`, the `context.*` tools and the `/context` resource (the tools removed by M9, the resource by M9-b) | §24 |
+| M7-b | the side panel, notes, follow, panel approvals, and the plan-decision events | §24 |
+| M8-b | the three plan kinds, the operation journal, `operation status\|reconcile`, the attribution ladder, and the sixth skill workflow | §25 |
 
-Every post-v1 package REPORT §4 scheduled is now on `main`. M8-c (GraphQL) and M8-d (OAuth) stay conditional, as REPORT §4 leaves them.
+Every package that plan scheduled is now on `main`. GraphQL and OAuth stay out of scope.
 
-`docs/reads-v2.md` was the M8-a contract document, `docs/companion.md` the M7-a and M7-b one, and `docs/writes-v2.md` the M8-b one. Their content is now §23, §24, and §25, and each file is a pointer. `docs/companion.md` keeps one thing of its own that no section replaces: the table of Chrome checks a person runs by hand, because nothing in that package has been run in a real browser (§24.16).
+`docs/companion.md` keeps one thing no section replaces: the table of Chrome checks a person runs by hand, because nothing in that package has been run in a real browser (§24.16).
 
 ## Appendix D. JSON `result` payloads
 
@@ -1923,13 +1969,13 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 - `Readback` = `{ submitted_at?: ts+local, late?: bool, attachments: [Attachment], body_sha256?: string }`
 - `Candidate` = `{ attempt: number, submitted_at?: ts+local, attachment_ids: [id] }` (`attachment_ids = []` for text and URL entries)
 - `Journal` = `{ journal_id, state, owner: "live"|"absent"|"n/a", superseded: bool, acknowledged_at?: ts, plan_id?: string, approval?: Approval, course_id?, course_code?, assignment_id?, assignment_name?, kind, baseline_attempt?: number, created_at: ts, updated_at: ts, uploaded_file_ids: [id], post_status?: number, response_kind?: "canvas-error"|"other"|"none", not_submitted_evidence?: "never_sent"|"assumed", posted?: Posted, readback?: Readback, server_match?: Candidate, receipt_id?, error?: string, operation?: Operation }` — one shape for both journal kinds, and `kind` says which. On an operation journal `assignment_id`, `assignment_name`, `baseline_attempt`, `posted`, `readback`, and `server_match` are `null`, `operation` carries the write, `course_id` is `null` for an inbox write, and `superseded` is always `false` (§25.8, §19 item 40)
-- `Operation` = `{ kind: "discussion_reply"|"inbox_send"|"inbox_reply", course_id?, topic_id?, parent_entry_id?, conversation_id?, recipients: [id], subject?: string, state, input_sha256, transform, sent_sha256, server_body_sha256?: string, attachments: [OperationAttachment], posted?: OperationResponse, readback?: OperationReadback, server_match?: OperationMatch, attribution: "accepted"|"observed"|"unproven"|"none", delivery: "observable"|"not_observable" }` — the operation block on `Journal` and `receipt@1` (§25)
-- `OperationTarget` = `{ kind, course_id?, course_code?, topic_id?, topic_title?: string, parent_entry_id?, conversation_id?, conversation_subject?: string, recipients: [id], recipient_names: [string] }`
+- `Operation` = `{ kind: "discussion_reply"|"inbox_send"|"inbox_reply"|"quiz_submit", course_id?, topic_id?, parent_entry_id?, conversation_id?, quiz_id?, recipients: [id], subject?: string, state, input_sha256, transform, sent_sha256, server_body_sha256?: string, attachments: [OperationAttachment], posted?: OperationResponse, readback?: OperationReadback, server_match?: OperationMatch, attribution: "accepted"|"observed"|"unproven"|"none", delivery: "observable"|"not_observable" }` — the operation block on `Journal` and `receipt@1` (§25)
+- `OperationTarget` = `{ kind, course_id?, course_code?, topic_id?, topic_title?: string, parent_entry_id?, conversation_id?, conversation_subject?: string, quiz_id?, quiz_title?: string, recipients: [id], recipient_names: [string] }`
 - `OperationAttachment` = `{ name, size: number, sha256, canvas_file_id? }`
 - `OperationResponse` = `{ id?, conversation_id?, created_at?: ts+local, user_id?, body_sha256?: string, attachment_ids: [id], response_sha256?: string }` — the allowlisted record of Canvas' answer; the body is never stored (§25.6)
 - `OperationReadback` = `OperationResponse` without `conversation_id` and `response_sha256`, plus `read_at: ts`, `scanned: number`, and `complete: bool`
 - `OperationMatch` = `{ id, created_at?: ts+local, user_id?, body_sha256 }` — a candidate matched by digest alone, with no id link
-- `Approval` = `{ channel: "tty"|"elicitation"|"panel"|"yes-flag", at: ts, consumer?: string, plan_sha256 }` — the recorded human approval of the plan that produced the journal (REPORT §3.5); `plan_id` and `approval` are `null` for journals created before plans existed (M6-a).
+- `Approval` = `{ channel: "tty"|"elicitation"|"panel"|"yes-flag", at: ts, consumer?: string, plan_sha256 }` — the recorded human approval of the plan that produced the journal (the post-v1 design note); `plan_id` and `approval` are `null` for journals created before plans existed (M6-a).
 - `Grade` = `{ current_score?: number, current_grade?: string, final_score?: number, final_grade?: string, period { mode: "all"|"current"|"id", id?: id, title?: string } }`
 - `SubmissionStatus` = `{ submitted?: bool, graded?: bool, score?: number, grade?: string, late?: bool, missing: bool, excused?: bool, workflow_state?: string, submitted_at?: ts+local, attempt?: number, posted_at?: ts, pending: bool }`
 - `Availability` = `{ locked?: bool, lock_explanation?: string, submittable?: bool, external?: bool, unlock_at?: ts+local, lock_at?: ts+local }`
@@ -1982,6 +2028,11 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 | `inbox@1` | `{ scope, listing: Listing, conversations: [ { id, subject?: string, workflow_state?: string, last_message_at?: ts, message_count?: number, context_name?: string, starred?: bool, participants: [Participant] } ], pending: bool, pending_journals: [id] }` | as Canvas returns them |
 | `conversation@1` | `{ conversation: { id, subject?: string, workflow_state?: string, last_message_at?: ts, context_name?: string, participants: [Participant], messages: [ { id?, author_id?, created_at?: ts, body?: string, truncated: bool, attachments: [ { file_id?, name?: string, size?: number } ] } ], messages_complete: bool }, pending: bool, pending_journals: [id] }` | messages as Canvas returns them |
 | `inbox_unread@1` | `{ unread_count?: number, pending: bool, pending_journals: [id] }` | — |
+| `quizzes@1` | `{ course_id, quizzes: [ { id, title?: string, quiz_type?: string, due_at?: ts, question_count?: number, points_possible?: number, time_limit?: number, allowed_attempts?: number, published?: bool, locked_for_user?: bool } ] }` (§12.7) | as Canvas returns them |
+| `quiz@1` | `{ quiz: { id, course_id, title?: string, quiz_type?: string, time_limit?: number, allowed_attempts?: number, question_count?: number, points_possible?: number, cant_go_back?: bool, one_question_at_a_time?: bool, require_lockdown_browser?: bool, ip_filtered?: bool, published?: bool, unlocked_for_user?: bool, locked_for_user?: bool, lock_explanation?: string, assignment_id?: id, html_url?: string, due_at?: ts, unlock_at?: ts, lock_at?: ts, description_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink] } }` (§12.7) | — |
+| `quiz_questions@1` | `{ course_id, quiz_id, attempt?: number, started_at?: ts, end_at?: ts, started: bool, questions: [ { id, position?: number, name?: string, question_type?: string, points_possible?: number, text_markdown?: string, answer?: <answer value>, answers: [ { id?, text?: string } ] } ] }` (§12.7). Correctness never appears; `answer` is the recorded answer in the Question Answer Formats appendix shape, or `null` | as Canvas returns them |
+| `new-quizzes@1` | `{ course_id, quizzes: [ { id, assignment_id?, title?: string, due_at?: ts, points_possible?: number, time_limit_seconds?: number, max_attempts?: string, published?: bool } ] }` (§12.7) | as Canvas returns them |
+| `new-quiz@1` | `{ quiz: { id, course_id, assignment_id?, title?: string, points_possible?: number, time_limit_seconds?: number, max_attempts?: string, score_to_keep?: string, one_at_a_time?: string, shuffle_answers?: bool, access_code_required?: bool, published?: bool, due_at?: ts, unlock_at?: ts, lock_at?: ts, html_url?: string, instructions_markdown?: string, truncated: bool, embedded: [Embedded], files: [FileRef], external_links: [ExternalLink] } }` (§12.7) | — |
 | `here@1` | `{ attachment?: id, state: "attached"\|"validating"\|"paused"\|"not_attached", consumer?: string, identity { key, generation }, api { course?: <course@1 envelope>, assignment?: <assignment@1 envelope>, announcement?: <announcement@1 envelope> }, browser?: { origin, account { user_id, observed_at: ts }, zone: "open"\|"graded"\|"assessment"\|"external"\|"unknown", page_kind?: string, course_id?, assignment_id?, topic_id?, quiz_id?, page_url?: string, url?: string, title?: string, document_id, frame_id: number, navigation_generation: number, observed_at: ts, ttl_ms: number, selection?: string, text?: string, selection_bytes: number, text_bytes: number, truncated: bool, content_reason?: string, follow?: Follow, notes: [Note] }, reason?: string }` (§24). `api` holds whole §7 envelopes, each with its own freshness; `ttl_ms` is always `0`; `browser` is `null` on a refusal and `reason` names it | notes oldest first |
 | `note@1` | `{ attachment?: id, consumer?: string, note?: Note, held: number, reason?: string }` (§24) | — |
 | `follow@1` | `{ attachment?: id, consumer?: string, target_kind, id, url, follow?: Follow, side_effects: [string], reason?: string }` (§24). Printed by `open --follow`, so it has no command name of its own | — |
@@ -2015,149 +2066,3 @@ Types: `id` = string; `ts` = RFC 3339 UTC; `ts+local` = also `<name>_local`; `da
 | `plan@1` | `operation?`; `course_id` and `assignment_id` become nullable | M8-b, §25 |
 | `Journal`, `receipt@1` | `operation?`; on `Journal`, `course_id`, `assignment_id`, `assignment_name`, and `baseline_attempt` become nullable | M8-b, §25.8 |
 | `discussion@1`, `inbox@1`, `conversation@1`, `inbox_unread@1` | `pending: bool`, `pending_journals: [id]` | M8-b, §10 pending hook |
-
-## Appendix E. Review response ledger
-
-### Round 1 (v0.1 → v0.2 → v0.3)
-
-| ID | Status after v0.3 |
-|---|---|
-| B01–B03, M11–M14, N04 | Deferred to v2 with the contract in §12.4. |
-| B04 | Lossless identity key, selection matrix, env-pair rules, identity-owned aliases, `--replace` (§8). |
-| B05 | Origin rule, manual redirects, authenticated same-origin first download hop, no raw bodies on disk (§11, §12.2). |
-| B06 | Transactional journal, single terminal state, attempt binding, reconcile rules (§12.2); recovery reworked to owner locks in v0.4 (R3-B02). |
-| B07 | No-follow traversal with retained handles, destination lock, clobber table (§12.3). |
-| B08 | keyring 4.2.0 `v1` route, MSRV 1.88 (§8, Appendix A). |
-| M01–M03 | Missing always visible, `--missing` precedence, kinds incl. checkpoints/peer reviews/unknown, `scheduled_at`, tri-state `submittable`, nullable `external`, thin/full freshness (§12.1, §10). |
-| M04–M06, M09, M16, M25, M27, M30, M34 | Resolved in v0.2; unchanged. |
-| M07 | Items route fixed; completeness by absence, `null`, or `items_count` (§10). |
-| M08 | Denial classification; `hidden` and `locked` separate fields (§12.3, Appendix D). |
-| M10 | Context hash in scope keys; civil all-day dates (§10, §12.5). |
-| M13 | Period modes with matching enrollment and group fetches; wrapped periods (§12.4, §10). |
-| M15 | Error mapping, no-follow `fstat` read, locked read-modify-replace, logout scope (§8). |
-| M17, M18, M19 | Entities vs membership, context-hashed coverage, field groups, epoch abort at commit, pending-journal read hook, `DELETE`+`VACUUM` clear, identity lock (§10; epochs and scoped values reworked in v0.4, R3-M04/M05). |
-| M20 | Offline matrix, coverage-based success (§8). |
-| M21, M22, M23 | Eligibility rules with unlimited attempts and group refusal; frozen text bytes and transforms; receipt bound to posted attempt; verify outcomes (§12.2). |
-| M24, M26 | Destination binding, ownership rule, Windows names, byte-boundary truncation; `expected_size` check, `Accept-Encoding: identity`, upload idle timeout (§12.3, §11). |
-| M28, M29, M31 | Appendix D complete; single envelope, `outcome`, precedence, `requests` counters (§7, §14). |
-| M32 | Blocking bridge, credential deferral, full-command and cold benchmarks (§13). |
-| M33 | Observation ordering, header ageing, admission limit, recovery threshold, initial + 4 retries (§11). |
-| M35, M36 | `Secret` in the API crate; dependency edges; per-round owners; network doctor, fixture tooling, `sync --full` assembly assigned (§18). |
-| M37 | `201` empty-body branch (§11). |
-| N01 | Conditional requests removed from v1. |
-| N02 | `all_day_date` carried through (§12.5, Appendix D). |
-| N03 | ICS rules plus `--alarm` (§12.5). |
-| N05 | Grammar reconciled: `--alarm`, `identity remove`, no bare announcement IDs, default bucket `open`, resolution fallback to all cached courses, UID with identity key (§5, §6, §12.5). |
-| N06 | Ledger corrected; the v2 caution is now a note in §12.6. |
-
-### Round 2 (v0.2 → v0.3)
-
-| ID | Resolution |
-|---|---|
-| R2-B01 | Baseline attempt and frozen intent journaled; receipt fields only from the POST response and the history entry with the same attempt; reconcile candidate rules with uniqueness; no match ≠ failure (§12.2). |
-| R2-B02 | `state.sqlite` is the sole authority; JSON files are exports; `BEGIN IMMEDIATE` per transition with expected-state guards; single terminal `submitted`; file-ID reuse promise removed (`--resume` v2) (§12.2); startup recovery replaced by owner locks in v0.4 (R3-B02). |
-| R2-B03 | Clobber table: unmanaged and modified files are never replaced without `--force`; ownership proven against the manifest row; exclusive lock during install (§12.3). |
-| R2-B04 | Raw bodies hashed in memory only; allowlisted response record; `0600` exports; sanitizer applies the allowlist (§12.2, §15). |
-| R2-M01 | Canonical origin with port rules; lossless identity key; `identity.json` verified on open; identity-owned aliases (§8). |
-| R2-M02 | Selection matrix incl. explicit profile + env, env pair offline, identity-free commands, `--replace` (§8, §5). |
-| R2-M03 | keyring `v1` feature route; error mapping via `store_status`; no Debug of keyring errors; locked read-modify-replace with `O_NOFOLLOW` + `fstat`; logout partial failure (§8). |
-| R2-M04, R2-M05 | Period modes with matching sources and cache keys; wrapped paginated grading periods (§12.4, §10). |
-| R2-M06 | Course-scoped items route; completeness by absence, `null`, or `items_count`; `items_complete` per module (§10, Appendix D). |
-| R2-M07 | Entity/membership split; context hash in window scopes; thin vs full coverage with field precedence (§10). |
-| R2-M08 | Pending-journal read hook; invalidation on reconcile; epoch re-check inside the commit transaction, epochs durable in `state.sqlite` since v0.4 (§10). |
-| R2-M09 | `DELETE`+`VACUUM` clear; shared/exclusive identity lock (§10). |
-| R2-M10 | Offline matrix; coverage-based success incl. `count = 0`; doctor `skipped` (§8, §5). |
-| R2-M11, R2-M12 | Kinds table incl. checkpoints, peer reviews, unknown; `scheduled_at`; missing always visible; tri-state `submittable`; nullable `external`; freshness precedence (§12.1). |
-| R2-M13 | `open_dir_nofollow` per component with retained handles; no-follow final metadata; reparse points refused (§12.3). |
-| R2-M14 | Destination bound to identity; module ownership rule; filter-independent planning; Windows character and device rules; UTF-8 boundary truncation; move on rename (§12.3). |
-| R2-M15 | Authenticated same-origin first hop; classification order; `hidden` vs `locked` separate (§11, §12.3). |
-| R2-M16 | `expected_size` from file metadata; `Accept-Encoding: identity`; upload connect/idle policy (§11). |
-| R2-M17 | Empty-body `201` uses `Location`; missing/off-origin `Location` is `UploadIncomplete` (§11). |
-| R2-M18 | Inputs frozen at pre-flight; outbound bytes journaled; transform rules incl. CRLF and empty; `html-verbatim` (§12.2). |
-| R2-M19 | Unlimited/missing attempt semantics; `can_submit` governs; group assignments refused (§12.2, §1). |
-| R2-M20 | Outcome enum, single envelope, precedence; URL verify refused (exit 8); text verify distinct; receipt validation before fetch (§7, §14, §12.2). |
-| R2-M21 | `all_day_date` and exclusive end date through cache, JSON, and ICS (§12.5, Appendix D). |
-| R2-M22 | Appendix D rewritten with every command, types, nullability, sorts; receipt shape shared (Appendix D). |
-| R2-M23 | `Secret` in `canvas-api`; M0-c depends on M0-b; M1-a acceptance moved; resolver/normalization edges; per-round owners; doctor network, fixtures, `sync --full` assigned (§18). |
-| R2-M24 | Blocking I/O bridge with bounded chunks; `fsync` and keyring on blocking workers; full-command, cold, and contention benchmarks (§13). |
-| R2-M25 | Initial + 4 retries; observation ordering; header ageing; admission limit without cancellation; recovery threshold; cost as telemetry (§11). |
-| R2-N01 | Conditional requests removed from v1 (§1). |
-| R2-N02 | Grammar reconciled (§5, §6, §12.5). |
-| R2-N03 | Ledger corrected; v2 note in §12.6. |
-
-### Round 3 (v0.3 → v0.4)
-
-| ID | Resolution |
-|---|---|
-| R3-B01 | Text/URL journals are never attributed: `server_match` is recorded, state stays `outcome_unknown`, no receipt. `posted.evidence` distinguishes `post-response` from history evidence; `response_sha256` is `null` for history. (v0.5: file journals with an exact attachment-set match become `matched` with `attribution = "unproven"`, R4-M01.) (§12.2, Appendix D). |
-| R3-B02 | Per-journal exclusive owner lock held across network waits; startup recovery removed; owner-absent recovery only by `submit`, `reconcile`, `doctor` after a non-blocking lock probe, with expected-state guards; reads never transition; `reconcile` eligibility table with idempotent `submitted` (§12.2, §9). |
-| R3-M01 | Move is an install branch: requires local match, remote unchanged, target `absent`, all under the install mutex; `pending_move_to` marker with startup resolution; otherwise a new download (§12.3). |
-| R3-M02 | `install.lock` is an exclusive install mutex held only for classification → rename → manifest commit; transfers outside it; in-process `tokio::sync::Mutex`; `dest.json` created under the mutex; 30 s timeout → `failed`; final files opened no-follow through the parent handle and the descriptor retained (§12.3). |
-| R3-M03 | Identity lock moved to `<data root>/locks/`, never deleted; `identity.json` carries a generation; waiters re-verify after acquiring; removal order credentials → directory → profiles (§9, §10). |
-| R3-M04 | Scoped entity keys (`enrollment_grades(enrollment_id, period)`, `course_totals(course_id, mode)`); assignment-group lists per period as memberships; field groups with per-group `observed_at`; absent fields never written (§10). |
-| R3-M05 | Hit predicate requires `stale = 0` and `epoch_seen ≥ state epoch`; epochs live in `state.sqlite` and are written in the journal transaction; `cache clear` cannot reset them; failed refresh serves `stale: true` (§10). |
-| R3-M06 | Field-group freshness: newest supplier of a field wins; fresh `can_submit=false` → `submittable=false` (§10, §12.1). |
-| R3-M07 | Active credential source recorded in `credential` table; login writes one store and deletes the other; stray entries reported; validation outcome table (mismatch, rejected, network, backend); fallback mutation refuses an unsafe existing file, `ENOENT` only creates (§8). |
-| R3-M08 | Command classes A–D; selection matrix per class; `auth login` may name a new profile; offline matrix per class; env binding file for offline env-pair lookup (§5, §8, §9). |
-| R3-M09 | Identity key = host slug (`[a-z0-9.-]` else `_`) + port + user id + 8-hex digest of origin and user id; full origin kept in `identity.json`; IPv6 canonical form (§8). |
-| R3-M10 | API requests: same-origin only, method rules for 301/302/303/307/308, identity only from a same-origin final response; transfer requests: https, ≤5 hops, token only same-origin; upload redirects are `UploadIncomplete` (§11). |
-| R3-M11 | Observations ordered by issue sequence; refill estimate `min(10/s, observed)`; cooldown waits toward 300; header-silence reset only with nothing in flight; retries pass through the admission gate; tests for delayed high sample and continuous cost-1 workload (§11, §16). |
-| R3-M12 | Verify: pre-check that intent, uploaded IDs, posted attachments, and receipt sets are identical; selected attempt's attachment set must equal the receipt set (`missing`/`extra`); text compares the selected entry's `body` with `readback.body_sha256`; `unavailable` when absent (§12.2). |
-| R3-M13 | Download outcome mapping incl. `unsafe_path` → 12 and `unmanaged`/`modified` → warning; `POST` timeout/undecodable 2xx → `outcome_unknown` (9), other timeouts → 4; abort envelopes carry `journal_id`, state, `posted`, and per-file results in `details` (§12.2, §12.3, §14, §7). |
-| R3-M14 | `receipts show` returns `{ journal, receipt? }` with a shared `Journal` object; `receipt@1` document relationship to the envelope stated; `rubric_assessed: bool` + never-null array; `profile`/`identity` null for class A and early errors; `Posted.evidence` (§7, Appendix D). |
-| R3-M15 | All-day events are one civil day from `all_day_date`; ICS emits `DTSTART;VALUE=DATE` without `DTEND`; multi-day all-day spans warned, not derived; `all_day_end_date` removed; DST and equal start/end tests (§12.5, Appendix D, §16). |
-| R3-M16 | M1-a (store, identity, full schema, journal table) precedes M0-c; M0-c depends on M0-b and M1-a; three-lane round table names enum, registry, and migration owners for every round (§18). |
-| R3-N01 | Uniqueness pass over the full planned set with generated names reserved; empty components → `file-<id>`; `COM0`/`LPT0` and superscript digits added (§12.3). |
-| R3-N02 | Single `open` bucket definition in §12.1; name fallback over memberships only; repeated `include[]` keys in §10; `requests.cost` added; allowlist test scoped to capability-bearing URLs (§5, §6, §10, §7, §16). |
-| R3-N03 | Absent and `null` collapsed in v1 models; explicit `deserialize_with` required where a distinction is needed, with a three-case fixture (§11). |
-
-### Round 4 (v0.4 → v0.5)
-
-| ID | Resolution |
-|---|---|
-| R4-B01 | Only `400`/`401`/`403`/`404`/`422` with a decodable Canvas error body are pre-commit refusals; every `5xx`, gateway error, undecodable `2xx`, timeout, or dropped connection is `outcome_unknown`; tests for commit-then-`500` and commit-then-gateway-error (§12.2, §14, §16). |
-| R4-M01 | File-ID equality no longer claims authorship: state `matched`, `evidence = "history-files"`, receipt `attribution = "unproven"`; copies with other IDs are not matches; multi-match listed; test for another client using the IDs first (§12.2, Appendix D, §16). |
-| R4-M02 | Admission lock per assignment plus partial unique index; owner lock acquired before the row is inserted; `planned` recovery row; recoverers hold the owner lock and re-read; tests for simultaneous confirmations, kills at every boundary, two recoverers (§12.2, §9, §16). |
-| R4-M03 | Receipt built in the success transaction with `readback = null`; readback is idempotent enrichment retried by `reconcile`; export rebuilds from the row; text reference = `server_body_sha256` from POST or readback, else `unavailable` (§12.2, Appendix D). |
-| R4-M04 | Pending hook exempts `outcome_unknown` journals that are superseded by a later confirmed journal or acknowledged via `receipts acknowledge`; the journal itself never changes state (§10, §5, §12.2). |
-| R4-M05 | Move = three durable phases under the mutex with a recorded `move_sha256`; hashes always recorded at install; marker recovery by hash with new/old/both/neither branches and `unresolved_move`; replacement crash window classified `modified` (§12.3, Appendix D). |
-| R4-M06 | Manifest DB moved into identity storage (`<identity dir>/downloads/<dest_id>.sqlite`) under the common database contract; only `dest.json` and `install.lock` live in the destination, opened via the retained root handle; M3-b-core owns migration list `dl_0001` (§9, §10, §12.3, §18). |
-| R4-M07 | Per-field `field_obs` observations with three-state `Supplied<T>` deserialization; absent fields never refresh; `can_submit` freshness only from endpoints that supply it; out-of-order tests (§10, §11, §16). |
-| R4-M08 | Credential activation protocol with `cleanup_pending`, crash-window behaviour, `doctor` reporting, per-identity credential lock; env binding file with lock and atomic replace; stale bindings removed (§8, §9, §16). |
-| R4-M09 | Class B never uses the network (unbound env pair → actionable exit 3); `open` never fetches; `identity remove <key>` selects by operand and takes the exclusive lock directly; local credential-store exceptions enumerated; `doctor` is class B with identity-free fallback (§5, §8, §13). |
-| R4-M10 | Upload `POST` is never auto-followed; its `3xx` is the completion handoff to a separate API `GET`; other redirects are `UploadIncomplete`; acceptance covers the handoff (§11, §16). |
-| R4-M11 | Lower samples always applied; higher samples only when newer by issue order; cost pre-charging; refill bootstrap at 0 with a 5 s probe timer; 350 headroom target, exit at ≥ 300; header-silence rule kept (§11, §16). |
-| R4-N01 | `verify@1` nullable digests; `reconcile@1` structured `candidates`; `receipt@1` fully typed incl. `attribution`, `Readback`, text `server_body_sha256`; envelope example with digest key, `requests.cost`, `stale` (Appendix D, §7). |
-| R4-N02 | Warning predicate `end_at ≠ start_at` (§12.5). |
-| R4-N03 | M2-b merges last and passes acceptance on merged M1-c; R5 depends on every package through R4 (§18). |
-
-### Round 5 (v0.5 → v0.6)
-
-| ID | Resolution |
-|---|---|
-| R5-B01 | No status or body is treated as proof of rollback: every non-success `POST` outcome is `outcome_unknown` with `post_status`/`post_definite`; a definite server answer triggers immediate resolution through history, and only "server answered and history shows no new attempt" yields `uploaded_not_submitted`; `--comment` capped at 65,535 characters; tests for post-commit JSON `400` (§12.2, §16). |
-| R5-M01 | `field_obs` keyed by the complete normalized `entity_key` (composite for scoped rows); clock and value in one transaction; out-of-order P/Q fixture (§10, §16, §18). |
-| R5-M02 | `destinations` table with root fingerprint and canonical path; moved roots rebind, copied metadata is refused; install mutex = destination lock + identity-side per-`dest_id` lock so aliases serialize (§12.3, §9, §16). |
-| R5-M03 | Credential row with `active_source ∈ {keyring, file, none}` and two cleanup flags; pending cleanup is best-effort and never blocks login; logout commits `none` plus flags first, then deletes; resolution rejects `none` (§8, §16). |
-| R5-M04 | Nondecreasing issue-number watermark; low samples never lower it; high samples apply only above it; 3-low → 1-lower → 2-high test (§11, §16). |
-| R5-N01 | Interrupted replacement follows the ordinary clobber table; `modified` only when the selected comparison detects a difference (§12.3, §16). |
-| R5-N02 | `server_match` is the matching candidate or `null`; `Candidate` without `content_matches`, `attachment_ids = []` for text/URL; `receipts export` payload; `matched` = outcome `ok`, exit 0; stored readback vs public projection; example `_local` siblings (§12.2, Appendix D). |
-| R5-N03 | Class-B resolver rule (never fetch, exit 6 with the ID/URL hint); `can_submit` refresh only via the single-assignment endpoint; per-field and three-database wording aligned (§6, §10, §12.1, §13, Appendix C). |
-
-### Round 6 (v0.6 → v0.7)
-
-| ID | Resolution |
-|---|---|
-| R6-B01 | `post_definite` removed; explicit `--assume-not-submitted` after 30 min with `not_submitted_evidence = "assumed"`; absence evaluated before content/time filters; 504 → empty read → later commit fixture (§12.2, §5, §16). The v0.7 `app` heuristic was removed again in v0.8 (R7-B01). |
-| R6-M01 | Equal fingerprint = same root (transparent rename, `canonical_path` updated); different fingerprint = unverified root, refused regardless of the old path; no adoption in v1; files kept unmanaged (§12.3, §16). |
-| R6-M02 | Activation clears the chosen store's cleanup flag in the same transaction; cleanup never targets the active store; test for login after a failed logout (§8, §16). |
-| R6-N01 | Initialization order root lock → `dest.json` → identity lock → registry; damaged metadata, crash before row insert (repaired), orphan manifest (refused) (§12.3, §16). |
-| R6-N02 | `submit@1` carries `attribution`, `post_status`, `response_origin`, `server_match`, `candidates`; `response_origin` and `not_submitted_evidence` persisted; `uploaded_not_submitted` covers never-sent, app-error-empty-history, and assumed; §14 exit follows the final state (§12.2, §14, Appendix D). |
-
-### Round 7 (v0.7 → v0.8)
-
-| ID | Resolution |
-|---|---|
-| R7-B01 | No automatic negative outcome for a dispatched `POST`: `response_kind` is descriptive only; the only ways to `uploaded_not_submitted` are `never_sent` (owner-absent recovery from `uploaded`) and the explicit, labeled `--assume-not-submitted` after 30 minutes; branded JSON gateway fixture added (§12.2, §14, §16, Appendix C, D). |
-| R7-M01 | Identity key in `dest.json` is validated immediately after reading it, before any lock, registry write, manifest creation, or download; fixture for identity A metadata under identity B (§12.3, §16). |
-

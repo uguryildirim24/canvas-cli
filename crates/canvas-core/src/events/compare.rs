@@ -1,4 +1,4 @@
-//! Baseline comparison (agent-UX REPORT §3.6).
+//! Baseline comparison (agent-UX design).
 //!
 //! Only a complete membership of the same scope is compared, and only the
 //! allowlisted §12.2 fields are carried. A payload never holds a full message,
@@ -33,7 +33,7 @@ pub struct Shape {
     /// that compares fields at all.
     ///
     /// `None` turns field comparison off for the whole shape: `missing` and
-    /// `announcements` report that something joined a list, and REPORT §3.6
+    /// `announcements` report that something joined a list, and the design note
     /// names no kind for any change inside one of their rows, not even the
     /// `due_at` `missing` allowlists for its payload. A dataset that does
     /// compare fields names the kind its remaining field changes carry, and
@@ -48,7 +48,7 @@ const GRADE_FIELDS: &[&str] = &["score", "grade", "posted_at"];
 /// The datasets this package observes.
 ///
 /// `files`, `folders`, `modules`, `courses`, the grade datasets, and the M8-a
-/// read datasets other than `inbox_unread` are not listed: REPORT §3.6 names
+/// read datasets other than `inbox_unread` are not listed: the design note names
 /// no kind for them, and the rule for an undefined case is to emit fewer
 /// events, never to invent one.
 pub const SHAPES: &[Shape] = &[

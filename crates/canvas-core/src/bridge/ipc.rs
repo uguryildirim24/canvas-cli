@@ -4,10 +4,10 @@
 //! The transport is a Unix socket at mode `0600` inside a `0700` directory,
 //! or a user-restricted named pipe on Windows: it carries no authentication
 //! of its own, because the operating system's file permissions are the
-//! boundary (REPORT §3.2, "within Rolf's OS trust domain").
+//! boundary (the design note, "within the user's own OS trust domain").
 //!
-//! Four operations are the surface REPORT §3.4 names, plus `release`, which
-//! is how `identity remove` asks a live owner to let go (REPORT §3.4,
+//! Four operations are the surface the design names, plus `release`, which
+//! is how `identity remove` asks a live owner to let go (the design note,
 //! "cooperative release").
 
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ pub const IPC_PROTOCOL: &str = "bridge-ipc@1";
 /// a person cannot act on `protocol`.
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 
-/// Why content is unavailable (REPORT §3.2 and §3.3).
+/// Why content is unavailable (the design note and §3.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
@@ -83,7 +83,7 @@ impl Reason {
         }
     }
 
-    /// Whether this reason is one of the REPORT §3.2 refusals that exit 8.
+    /// Whether this reason is one of the refusals that exit 8.
     ///
     /// `zone_opaque` is not: the attachment is healthy and the answer is a
     /// bundle with no page content in it.
@@ -190,7 +190,7 @@ pub enum Op {
     /// Drop the attachment, or one consumer's share of it.
     ///
     /// `attachment_id` follows the same rule as `here`: it is the capability,
-    /// and its absence selects the sole attachment, which REPORT §3.2 permits
+    /// and its absence selects the sole attachment, which the design note permits
     /// the CLI and nothing else.
     ///
     /// `consumer` scopes the operation to the caller. A named consumer only
@@ -212,7 +212,7 @@ pub enum Op {
     ///
     /// A note approves nothing. There is deliberately no approval operation
     /// on this protocol at all: the only path to `plan::approve` with channel
-    /// `panel` runs from the extension over native messaging (REPORT §3.5).
+    /// `panel` runs from the extension over native messaging.
     #[serde(rename = "note")]
     Note {
         #[serde(default)]
@@ -299,7 +299,7 @@ pub enum Body {
     ///
     /// This is the **dispatch acknowledgement** and nothing more. Whether the
     /// page loaded is a later state, which arrives on the bundle's
-    /// `follow` section (REPORT §3.2, "report loaded/failed separately").
+    /// `follow` section (the design note, "report loaded/failed separately").
     Followed {
         follow: Box<FollowStatus>,
         attachment_id: String,

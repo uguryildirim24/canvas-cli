@@ -153,6 +153,7 @@ pub fn resolve_error(session: &Session, err: &canvas_core::resolve::ResolveError
                 .collect()
         }
         ResolveError::AssignmentNotFound { candidates } | ResolveError::AssignmentAmbiguous { candidates } => candidates.iter().map(|c| serde_json::json!({"id": c.id.to_string(), "course_id": c.course_id.to_string(), "name":c.name})).collect(),
+        ResolveError::QuizNotFound { candidates } | ResolveError::QuizAmbiguous { candidates } => candidates.iter().map(|c| serde_json::json!({"id": c.id.to_string(), "course_id": c.course_id.to_string(), "title": c.title})).collect(),
         _ => Vec::new(),
     };
     let mut env = error_envelope(

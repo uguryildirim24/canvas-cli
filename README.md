@@ -10,39 +10,62 @@ scriptable because every data command has a defined `--json` schema. It has no
 teacher, TA, or admin features, and it calls only endpoints a student role can
 call.
 
-`docs/SPEC.md` is the contract. This README is the short version.
+## Why
+
+Canvas is a web app, and the things a student needs from it most often — what
+is due, what is missing, what an assignment actually asks for, what a grade is
+— are each three clicks and a page load away. A terminal client makes them one
+command, makes them scriptable, and makes them available to a coding agent
+without handing that agent a browser session or a password.
+
+## Status
+
+**Working, in daily use, not released.** Version `0.1.0`, no tag, no published
+package. The whole command surface below runs: 924 tests pass, and CI gates
+every commit on `fmt`, `clippy -D warnings`, the test suite, `cargo deny`, and
+an MSRV check.
+
+What "not released" means in practice:
+
+- There is no Homebrew tap and no crates.io release yet, so **building from
+  source is the only install route.** `docs/release.md` is the runbook for
+  making the other routes live.
+- The browser companion in `extension/` has been exercised end to end against
+  a real native-messaging host process, but its Chrome-side flows have not
+  been run in a real browser. `docs/companion.md` says exactly what was and
+  was not tried.
+- `docs/SPEC.md` §19 lists the design questions that are still open.
+
+`docs/SPEC.md` is the contract this code implements. This README is the short
+version.
 
 ## Install
 
-Nothing is published yet: there is no git remote, no Homebrew tap, and no
-crates.io release. The commands below are the routes the project supports, and
-`docs/release.md` records what the owner runs to make them live.
-
 ```sh
-# Homebrew, the supported route on macOS and Linux
-brew install uguryildirim24/homebrew-tap/canvas-lms-cli
-
-# From crates.io, once published
-cargo install canvas-lms-cli
-
-# Prebuilt archive without a compiler, once released
-cargo binstall canvas-lms-cli
-```
-
-Direct archive downloads on macOS are not a supported route until the binaries
-are signed and notarized, so there is no `curl | sh` installer.
-
-To build from this repository:
-
-```sh
+git clone https://github.com/uguryildirim24/canvas-cli
+cd canvas-cli
 cargo build --release        # binary at target/release/canvas
-just check                   # fmt, clippy, tests, cargo-deny
 ```
+
+Rust 1.88 or newer. Put `target/release/canvas` on your `PATH`, or run
+`cargo install --path crates/canvas-cli`.
+
+To run the same gates CI runs:
+
+```sh
+just check                   # fmt, clippy, tests, cargo-deny
+just msrv                    # the 1.88 check CI runs alongside them
+```
+
+Once a release exists, `brew install uguryildirim24/homebrew-tap/canvas-lms-cli`
+and `cargo binstall canvas-lms-cli` become the supported routes. Direct archive
+downloads on macOS will not be, until the binaries are signed and notarized —
+so there will be no `curl | sh` installer.
 
 ## First run
 
 ```sh
-canvas auth login --host lasell.instructure.com
+canvas auth login --host canvas.example.edu
 ```
 
 `auth login` asks for a **personal access token**. Create one in Canvas at
@@ -60,6 +83,35 @@ Where no credential store is available, the token goes to
 
 Check the result with `canvas auth status`, and check the whole local setup
 with `canvas doctor`.
+
+## A short example
+
+A week, an assignment, and a hand-in:
+
+```console
+$ canvas todo --days 7
+BIO-310  Lab report 4                 due Thu 23:59  (in 2d 4h)
+CHEM-201 Problem set 7                due Fri 17:00  (in 3d 21h)
+CHEM-201 Reading response 3           MISSING        (overdue 3d)
+
+$ canvas assignment chem "problem set 7"
+CHEM-201 · Problem set 7 · 20 points · due 2026-09-26 17:00
+Submit one PDF. Show your work for every equilibrium calculation.
+Your submission: none yet.
+
+$ canvas submit chem "problem set 7" --file ps7.pdf
+about to submit 1 file to CHEM-201 · Problem set 7
+  ps7.pdf  412 KB  sha256 9f2a…c41d
+proceed? [y/N] y
+submitted · attempt 1 · receipt r-01K6QX3
+```
+
+Every one of those takes `--json` and prints a single documented envelope, so
+the same three steps script cleanly:
+
+```sh
+canvas todo --days 7 --json | jq -r '.result.items[] | select(.missing) | .title'
+```
 
 ## Global flags
 
@@ -115,6 +167,12 @@ Every command below runs in this build.
 | `canvas inbox unread-count` | Show the unread conversation count. |
 | `canvas inbox send` | Send a new conversation. Needs an approval. `--to`, `--subject`, `--text`, `--text-file`, `--attach`, `--yes`. |
 | `canvas inbox reply` | Add a message to a conversation. Needs an approval. `--text`, `--text-file`, `--attach`, `--yes`. |
+| `canvas quizzes` | List a course's Classic Quizzes. |
+| `canvas quiz` | Show one quiz: limits, attempts, and rules. |
+| `canvas quiz questions` | Read the live session's questions. Starts a session first, with a confirmation. `--access-code`, `--yes`. |
+| `canvas quiz submit` | Answer every question and turn the quiz in. Needs an approval. `--answers`, `--access-code`, `--yes`. |
+| `canvas new-quizzes` | List a course's New Quizzes: due, attempts, time limit. Taking one stays in the browser. |
+| `canvas new-quiz` | Show one New Quiz: its instructions and taking rules. |
 | `canvas operation status` | Show one write operation and read its thread back. |
 | `canvas operation reconcile` | Resolve a write operation left unfinished. `--assume-not-posted`. |
 | `canvas calendar` | Calendar events. `--days`, `--course`, `--ics`, `--alarm`. |
@@ -182,10 +240,14 @@ stdout carries data only. Progress, logs, and confirmations go to stderr.
 ## Agents
 
 `canvas mcp` serves the Model Context Protocol on stdin and stdout. One
-instance serves one identity: pick it with `--profile`. The catalog is
-read-first, and it holds no tool that reveals a credential, changes an
-identity, runs arbitrary HTTP or shell, clears the cache, overwrites a file,
-or opens a browser. A submission still needs a recorded human approval.
+instance serves one identity: pick it with `--profile`. It serves **one tool,
+`getclitools`**, and that tool performs nothing: it returns the complete
+`canvas` command reference — every command, its operands and flags, and the
+envelope each one returns — and the agent runs the commands itself. There is
+no second tool, no resource, and no subscription, so nothing on this surface
+reads Canvas, writes to it, reveals a credential, changes an identity, or
+touches the browser. Every read and every write is a `canvas` command, and
+every write prints what it is about to do and asks at the terminal.
 
 ```json
 {
@@ -196,7 +258,7 @@ or opens a browser. A submission still needs a recorded human approval.
 ```
 
 [`skill/canvas-cli/`](skill/canvas-cli/SKILL.md) is the shipped skill: the
-identity model, five workflows, the exit-code and recovery table, and the MCP
+identity model, six workflows, the exit-code and recovery table, and the MCP
 setup for Claude Code, Codex, and Cursor. The release archives carry it.
 `docs/agent-hosts.md` records which hosts were actually exercised.
 
@@ -225,8 +287,9 @@ exercised in a real Chrome on this machine.
 `result`, and `canvas schema --list` prints the registry: three tab-separated
 columns, the name, the schema id, and whether that name is a command you can
 run or a document no command prints (`error@1`, `plan@1`, `receipt@1`). Every
-name in the first column resolves. The MCP tools use the same documents as
-their output schemas.
+name in the first column resolves. `getclitools` is built on the same
+registry, and carries that listing verbatim, so the reference an agent reads
+and the schema a person prints cannot disagree.
 
 ## Where things live
 

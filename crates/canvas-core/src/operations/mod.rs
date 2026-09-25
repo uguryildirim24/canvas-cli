@@ -1,7 +1,7 @@
 //! Discussion and inbox writes under a plan (M8-b).
 //!
 //! A discussion reply, a new conversation, and a reply to one are remote
-//! writes, so each of them runs the plan layer of REPORT §3.5 —
+//! writes, so each of them runs the plan layer of the design note —
 //! `prepare → issue_handle → approve → execute` — and lands in a journal that
 //! keeps SPEC §12.2's discipline. Nothing is sent without a recorded human
 //! approval, one plan admits at most one journal, and an ambiguous outcome is
@@ -37,13 +37,15 @@ mod tests;
 pub use execute::{Admitted, Posted, execute, post};
 pub use ops::{
     ASSUME_AFTER, Patch, acknowledge, assume_not_posted, attach_identity, commit_matched,
-    commit_posted, create_linked, enrich_readback, for_plan, get, identity_user_id, is_superseded,
-    list, mark_posting, owner_status_for, pending, record_attachment_id, recover_active,
-    recover_if_owner_absent, recover_owned, require, transition,
+    commit_observed, commit_posted, create_linked, enrich_readback, for_plan, get,
+    identity_user_id, is_superseded, list, mark_posting, owner_status_for, pending,
+    record_answers_response, record_attachment_id, recover_active, recover_if_owner_absent,
+    recover_owned, require, transition,
 };
 pub use prepare::{
-    DiscussionReplyRequest, InboxReplyRequest, InboxSendRequest, PreparedOperation, Refusal,
-    prepare_discussion_reply, prepare_inbox_reply, prepare_inbox_send,
+    DiscussionReplyRequest, InboxReplyRequest, InboxSendRequest, PreparedOperation,
+    QuizSubmitRequest, Refusal, prepare_discussion_reply, prepare_inbox_reply, prepare_inbox_send,
+    prepare_quiz_submit,
 };
 pub use reconcile::{Reconciled, Verdict, readback, reconcile, status};
 pub use record::{
@@ -70,7 +72,7 @@ pub enum OperationError {
     /// An expected-state guard matched zero rows.
     #[error("state conflict")]
     StateConflict,
-    /// The operation cannot be prepared as asked (exit 8, REPORT §3.2).
+    /// The operation cannot be prepared as asked (exit 8).
     #[error("{message}")]
     Refused {
         /// `group_write`, `locked`, `initial_post_required`, `unresolved`,
