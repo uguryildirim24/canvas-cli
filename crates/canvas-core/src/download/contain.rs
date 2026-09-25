@@ -140,9 +140,21 @@ pub fn install_rename(parent: &Dir, part_name: &str, final_name: &str) -> Result
 }
 
 /// Persist directory entry changes where directory fsync is supported.
+///
+/// A `Dir` cannot be flushed directly. Where the platform has `O_PATH` —
+/// Linux, Android, FreeBSD — `cap-std` opens every directory with it, because
+/// a sandbox root only ever needs to be a `*at` anchor. `fsync` on an `O_PATH`
+/// descriptor fails with `EBADF`, so syncing the handle — or a clone of it —
+/// errors on exactly those platforms. macOS has no `O_PATH`, which is why the
+/// fault only ever showed on Linux.
+///
+/// Reopening `.` through the directory itself yields an ordinary read-only
+/// descriptor for the same inode, which the kernel will flush. The reopen
+/// stays inside the sandbox and resolves no name, so it cannot cross a
+/// symlink that the caller's contained walk already refused.
 pub(crate) fn sync_dir(dir: &Dir) -> Result<(), io::Error> {
     #[cfg(unix)]
-    dir.try_clone()?.into_std_file().sync_all()?;
+    dir.open(".")?.sync_all()?;
     #[cfg(not(unix))]
     let _ = dir;
     Ok(())
@@ -281,5 +293,23 @@ mod tests {
             open_contained_file(&contained, false),
             Err(ContainError::UnsafePath)
         ));
+    }
+
+    /// Every durable write ends in `sync_dir`, so it has to work on the
+    /// `O_PATH` directory handles `cap-std` hands out on Linux as well as on
+    /// the plain ones macOS gives. Syncing the handle itself returns `EBADF`
+    /// on the former and nothing at all on the latter, so the difference is
+    /// invisible without this.
+    #[test]
+    fn syncs_a_directory_handle_and_the_ones_below_it() {
+        let (path, root) = scratch();
+        sync_dir(&root).unwrap();
+
+        let contained = walk_parent(&root, "a/b/c.txt").unwrap();
+        std::fs::write(path.join("a/b/c.txt"), b"data").unwrap();
+        sync_dir(&contained.parent).unwrap();
+        for dir in &contained.intermediates {
+            sync_dir(dir).unwrap();
+        }
     }
 }
