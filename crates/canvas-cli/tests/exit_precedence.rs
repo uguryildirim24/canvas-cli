@@ -27,6 +27,7 @@ fn courses_offline_json_without_identity_is_auth_exit_3() {
     let assert = Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path())
         .env_remove("CANVAS_IDENTITY_KEY")
         .env_remove("CANVAS_TOKEN")
         .args(["courses", "--offline", "--json", "--color", "never"])
@@ -43,6 +44,7 @@ fn courses_offline_with_identity_but_no_coverage_is_exit_7() {
     let assert = Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env_remove("CANVAS_TOKEN")
         .args(["courses", "--offline", "--json", "--color", "never"])
@@ -73,6 +75,7 @@ fn courses_json_snapshot_from_fixture_cache() {
     let (dir, key) = prepare_seeded_courses();
     let output = StdCommand::new(env!("CARGO_BIN_EXE_canvas"))
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")

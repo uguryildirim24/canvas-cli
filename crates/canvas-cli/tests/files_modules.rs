@@ -193,6 +193,7 @@ fn files_auth_without_identity_is_exit_3() {
     let assert = Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path())
         .env_remove("CANVAS_IDENTITY_KEY")
         .env_remove("CANVAS_TOKEN")
         .args(["files", "101", "--offline", "--json", "--color", "never"])
@@ -209,6 +210,7 @@ fn modules_auth_without_identity_is_exit_3() {
     let assert = Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path())
         .env_remove("CANVAS_IDENTITY_KEY")
         .env_remove("CANVAS_TOKEN")
         .args(["modules", "101", "--offline", "--json", "--color", "never"])
@@ -223,6 +225,7 @@ fn files_offline_denial_json_exit_12_with_partial() {
     let (dir, key) = prepare_seeded_denial();
     let output = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
@@ -261,6 +264,7 @@ fn files_json_snapshot_from_fixture_cache() {
     let (dir, key) = prepare_seeded_files();
     let output = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
@@ -287,6 +291,7 @@ fn files_human_snapshot_from_fixture_cache() {
     let (dir, key) = prepare_seeded_files();
     let output = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
@@ -310,6 +315,7 @@ fn files_tree_and_search_smoke() {
     let (dir, key) = prepare_seeded_files();
     let tree = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
@@ -325,6 +331,7 @@ fn files_tree_and_search_smoke() {
 
     let search = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env_remove("CANVAS_TOKEN")
@@ -346,6 +353,7 @@ fn files_tree_and_search_smoke() {
 
     let miss = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env_remove("CANVAS_TOKEN")
         .args([
@@ -370,6 +378,7 @@ fn modules_json_snapshot_from_fixture_cache() {
     let (dir, key) = prepare_seeded_files();
     let output = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
@@ -404,6 +413,7 @@ fn modules_human_snapshot_without_items() {
     let (dir, key) = prepare_seeded_files();
     let output = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
@@ -420,6 +430,7 @@ fn modules_human_snapshot_without_items() {
     );
     let value_check = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", &key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env_remove("CANVAS_TOKEN")

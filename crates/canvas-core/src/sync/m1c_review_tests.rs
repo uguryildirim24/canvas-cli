@@ -258,3 +258,45 @@ fn optional_nested_metadata_keeps_three_state_presence() {
     let absent = super::submission::observed_submission(&json!({"id":3}), 2).unwrap();
     assert!(!absent.fields.iter().any(|f| f.name == "user_id"));
 }
+
+#[tokio::test]
+async fn planner_relative_html_url_resolves_against_the_client_origin() {
+    let server = MockServer::start().await;
+    let (_dir, open) = setup();
+    let c = client(&server);
+    Mock::given(path("/api/v1/planner/items"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
+            "plannable_type": "assignment",
+            "plannable_id": 500,
+            "course_id": 1,
+            "plannable": {"id": 500, "title": "Relative", "due_at": "2026-09-05T00:00:00Z"},
+            "html_url": "/courses/1/assignments/500",
+            "submissions": {"submitted": false},
+            "planner_override": null
+        }])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let window = PlannerWindow::from_days("2026-09-01".parse().unwrap(), 10);
+    refresh_planner(
+        &c,
+        &open.store,
+        window.clone(),
+        default_ttl_planner(),
+        at(100),
+        false,
+        false,
+    )
+    .await
+    .unwrap();
+    let expected = format!("{}/courses/1/assignments/500", server.uri());
+    open.store
+        .call(move |conns| {
+            let rows = crate::todo::load_planner_rows(conns, &window.scope_key())?;
+            let data: Value = serde_json::from_str(&rows[0].data_json).unwrap();
+            assert_eq!(data["html_url"], expected);
+            Ok(())
+        })
+        .await
+        .unwrap();
+}

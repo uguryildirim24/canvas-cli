@@ -242,6 +242,7 @@ fn prepare() -> (tempfile::TempDir, String) {
 fn run(dir: &tempfile::TempDir, key: &str, args: &[&str]) -> (i32, String) {
     let output = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
+        .env("CANVAS_CONFIG_DIR", dir.path())
         .env("CANVAS_IDENTITY_KEY", key)
         .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
         .env("COLUMNS", "100")
@@ -737,6 +738,7 @@ fn grades_without_an_identity_is_exit_3() {
     let empty = tempfile::TempDir::new().unwrap();
     let output = bin()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path())
         .env_remove("CANVAS_IDENTITY_KEY")
         .env_remove("CANVAS_TOKEN")
         .args(["grades", "--offline", "--json", "--color", "never"])

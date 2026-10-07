@@ -21,6 +21,7 @@ fn todo_is_stub() {
     Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path())
         .env_remove("CANVAS_IDENTITY_KEY")
         .arg("todo")
         .assert()
@@ -88,8 +89,13 @@ fn fresh_conflicts_with_offline() {
 
 /// M2-b commands are wired: they must not print the Round-3 peer stub.
 fn assert_m2b_callable(args: &[&str]) {
+    // An empty config and data root: the developer's own profile must not
+    // supply the identity this helper asserts is absent.
+    let empty = tempfile::TempDir::new().unwrap();
     let output = Command::cargo_bin("canvas")
         .unwrap()
+        .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path())
         .env_remove("CANVAS_IDENTITY_KEY")
         .env_remove("CANVAS_TOKEN")
         .args(args)
@@ -153,6 +159,7 @@ fn mixed_commands_accept_typed_and_positional_forms() {
         Command::cargo_bin("canvas")
             .unwrap()
             .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path())
             .env_remove("CANVAS_IDENTITY_KEY")
             .args(&args)
             .assert()
@@ -293,6 +300,7 @@ fn command_choices_accept_documented_forms() {
         Command::cargo_bin("canvas")
             .unwrap()
             .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path())
             .env_remove("CANVAS_IDENTITY_KEY")
             .args(["assignments", "chem", "--bucket", bucket])
             .assert()
@@ -315,6 +323,9 @@ fn command_choices_accept_documented_forms() {
         // M3-b is implemented: without an identity these exit 3 (auth).
         Command::cargo_bin("canvas")
             .unwrap()
+            .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path())
+            .env_remove("CANVAS_IDENTITY_KEY")
             .args(&args)
             .assert()
             .code(3);
@@ -377,6 +388,7 @@ fn m4b_commands_need_an_identity() {
         Command::cargo_bin("canvas")
             .unwrap()
             .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path())
             .env_remove("CANVAS_IDENTITY_KEY")
             .args(&args)
             .assert()
@@ -390,6 +402,7 @@ fn nonraw_variants_continue_to_accept_json() {
     Command::cargo_bin("canvas")
         .unwrap()
         .env("CANVAS_DATA_ROOT", empty.path())
+        .env("CANVAS_CONFIG_DIR", empty.path())
         .env_remove("CANVAS_IDENTITY_KEY")
         .args(["calendar", "--ics", "calendar.ics", "--json"])
         .assert()
@@ -483,6 +496,7 @@ fn m1b_commands_exit_auth_without_identity() {
         let assert = Command::cargo_bin("canvas")
             .unwrap()
             .env("CANVAS_DATA_ROOT", empty.path())
+            .env("CANVAS_CONFIG_DIR", empty.path())
             .env_remove("CANVAS_IDENTITY_KEY")
             .env_remove("CANVAS_TOKEN")
             .env_remove("HOME")

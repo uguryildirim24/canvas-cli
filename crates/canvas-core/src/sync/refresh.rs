@@ -279,16 +279,19 @@ pub async fn refresh_planner(
                 let page = page?;
                 items.extend(page.items);
             }
+            // Canvas sends a planner item's `html_url` as a path relative to
+            // the origin. The pages above were decoded as `Value`, so the
+            // typed decode has to run inside the client's origin scope.
+            let entities = canvas_api::serde_util::with_origin(client.origin(), || {
+                items
+                    .into_iter()
+                    .map(|raw| super::planner::observed_planner(&raw))
+                    .collect::<Result<Vec<_>, _>>()
+            })?;
             Ok(FetchBundle {
                 pages: vec![IngestPage {
                     fetched_at: now,
-                    entities: items
-                        .into_iter()
-                        .map(|raw| super::planner::observed_planner(&raw))
-                        .collect::<Result<Vec<_>, _>>()?
-                        .into_iter()
-                        .flatten()
-                        .collect(),
+                    entities: entities.into_iter().flatten().collect(),
                 }],
             })
         },
@@ -319,7 +322,12 @@ pub async fn refresh_submission(
         None,
         || async {
             let path = submission_path(course_id, assignment_id);
-            let submission = observed_submission(&client.get(&path).await?, assignment_id)?;
+            let raw = client.get(&path).await?;
+            // Same rule as the planner: a `Value` decoded later still needs
+            // the origin for any relative URL Canvas sends.
+            let submission = canvas_api::serde_util::with_origin(client.origin(), || {
+                observed_submission(&raw, assignment_id)
+            })?;
             Ok(FetchBundle {
                 pages: vec![IngestPage {
                     fetched_at: now,
