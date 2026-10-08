@@ -10,7 +10,7 @@ This verdict covers M1-b, including its temporary session bridge. M0-c still own
 
 ## Gates
 
-All Cargo gates used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m1b`.
+All Cargo gates used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Baseline | Final |
 |---|---|---|

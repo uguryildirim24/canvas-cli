@@ -1,4 +1,4 @@
-# Code review — M6-a (operation plans and approval core), branch `lane/w1`
+# Code review :  M6-a (operation plans and approval core), branch `lane/w1`
 
 Reviewer: Claude Opus 5 (high). Base: `f2137a6` (merge of `main` into
 `lane/w1`). Package brief: `tasks/m6a-plans-approval.md`. Reviewer brief:
@@ -12,9 +12,9 @@ onward, plus §10, §14, §15, §16 row 2 and Appendix D.
 reaches a journal except through `plan::execute`, execute refuses an
 expired, invalidated or unapproved plan before it opens the network, and
 the one state transaction that consumes the approval, inserts the journal
-and marks the plan `executed` is guarded twice — by the unique index on
+and marks the plan `executed` is guarded twice :  by the unique index on
 `submission_journal.plan_id` and by `UPDATE plans … WHERE state =
-'approved'` — so one plan admits exactly one journal under two racing
+'approved'` :  so one plan admits exactly one journal under two racing
 processes, a kill at either side of the commit, and a replay. Four
 `review(M6-a):` commits fix one real behaviour defect and three test and
 contract gaps I found; all five gates are green. Four items are listed
@@ -24,15 +24,15 @@ code now emits, which the worker was forbidden to add.
 
 ## Gate results
 
-Run with `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m6a`
+Run with `CARGO_TARGET_DIR=<checkout>`
 at `81994a2`.
 
 | Gate | Result |
 |---|---|
 | `cargo fmt --all --check` | pass |
 | `cargo clippy --all-targets --all-features -- -D warnings` | pass |
-| `cargo nextest run --all-features` | pass — 588 tests run, 588 passed, 0 skipped |
-| `cargo deny check` | pass — advisories ok, bans ok, licenses ok, sources ok |
+| `cargo nextest run --all-features` | pass :  588 tests run, 588 passed, 0 skipped |
+| `cargo deny check` | pass :  advisories ok, bans ok, licenses ok, sources ok |
 | `cargo +1.88 check --workspace --all-targets` | pass |
 
 At the base (`f2137a6`) the same five gates were already green with 583
@@ -52,9 +52,9 @@ not chase it further and it is not caused by this package.
 
 | Sev | File:line | What was wrong | What I changed | Commit |
 |---|---|---|---|---|
-| Medium | `crates/canvas-core/src/plan/execute.rs:110` (before the fix) | Execute reads the plan twice: once before the revalidation `GET`, once under the admission lock. The second read asked only whether the plan was already `executed`. A `decline`, a `cancel` or an expiry that landed while the `GET` was in flight therefore travelled all the way to `create_linked`, where the `state = 'approved'` guard matched zero rows. **No journal was ever published** — the guard is the real defence and it held — but the refusal came back as `approval_required` with "the approval was consumed by another execute", naming a race that did not happen instead of REPORT §3.2's real reason, and a journal id and its owner-lock file were minted for a row that then rolled back. | The read under admission now re-runs `guard_admission` and the approval check, so a plan declined during the read is refused as `invalidated` carrying the decline's own text, before anything is minted. Added `a_decline_during_the_revalidation_read_is_named_as_the_decline`, which declines during a delayed revalidation `GET` and asserts the reason, that no journal exists, and that the mock saw no write; it reports `approval_required` without the fix. | `72f4a98` |
-| Medium | `crates/canvas-cli/tests/e2e/schema.rs:92` (before the fix) | `NULLABLE_WITH_EXAMPLE` declares which Appendix D `T?` fields may be null under a fixture that shows an example. `receipt@1`'s new `plan_id` and `approval`, the same two on the `receipts@1` journal rows, and `plan@1`'s `approval` all show examples in their fixtures and none was listed, so the conformance checker read every one of them as always-present. A journal created before plans — whose shape the brief and REPORT §3.5 define as exactly `null` for each — would have been reported as a shape violation rather than as the correct legacy record. `plan@1`'s `approval` is null for every plan that has not been approved yet, which is most of them. | Added the nine paths, plus the four `plan@1` assignment fields its fixture fills in, and a test that nulls the plan fields in every registry fixture and re-checks it, so a shape that carries them cannot quietly declare them mandatory. Nothing in the suite would have caught this today: every submission in the e2e suite runs through the plan path, so no snapshot carries the legacy shape yet. | `81994a2` |
-| Low | `crates/canvas-core/src/store/migrate.rs:24` (before the fix) | The migration list became a real list — `migrate_state` and `migrate_cache` now take the version the database has reached and branch on it, and `open_db` passes it — but no test ever opened a database that had already run `0001`. Every test opens a fresh file, so the entire upgrade path, on both databases, was unexercised, as was the claim that a journal written before plans exposes `plan_id` and `approval` as null. | Three tests over the batch list: a v1 state database gains `plans`, `approval_handles` and the unique journal link while its existing journal row reads null for both new columns; the unique index admits one journal per plan and keeps null plan ids distinct, so legacy rows never collide; and a database already at the current version runs no batch, which re-running `0001` would fail. | `1242c4b` |
+| Medium | `crates/canvas-core/src/plan/execute.rs:110` (before the fix) | Execute reads the plan twice: once before the revalidation `GET`, once under the admission lock. The second read asked only whether the plan was already `executed`. A `decline`, a `cancel` or an expiry that landed while the `GET` was in flight therefore travelled all the way to `create_linked`, where the `state = 'approved'` guard matched zero rows. **No journal was ever published** :  the guard is the real defence and it held :  but the refusal came back as `approval_required` with "the approval was consumed by another execute", naming a race that did not happen instead of REPORT §3.2's real reason, and a journal id and its owner-lock file were minted for a row that then rolled back. | The read under admission now re-runs `guard_admission` and the approval check, so a plan declined during the read is refused as `invalidated` carrying the decline's own text, before anything is minted. Added `a_decline_during_the_revalidation_read_is_named_as_the_decline`, which declines during a delayed revalidation `GET` and asserts the reason, that no journal exists, and that the mock saw no write; it reports `approval_required` without the fix. | `72f4a98` |
+| Medium | `crates/canvas-cli/tests/e2e/schema.rs:92` (before the fix) | `NULLABLE_WITH_EXAMPLE` declares which Appendix D `T?` fields may be null under a fixture that shows an example. `receipt@1`'s new `plan_id` and `approval`, the same two on the `receipts@1` journal rows, and `plan@1`'s `approval` all show examples in their fixtures and none was listed, so the conformance checker read every one of them as always-present. A journal created before plans :  whose shape the brief and REPORT §3.5 define as exactly `null` for each :  would have been reported as a shape violation rather than as the correct legacy record. `plan@1`'s `approval` is null for every plan that has not been approved yet, which is most of them. | Added the nine paths, plus the four `plan@1` assignment fields its fixture fills in, and a test that nulls the plan fields in every registry fixture and re-checks it, so a shape that carries them cannot quietly declare them mandatory. Nothing in the suite would have caught this today: every submission in the e2e suite runs through the plan path, so no snapshot carries the legacy shape yet. | `81994a2` |
+| Low | `crates/canvas-core/src/store/migrate.rs:24` (before the fix) | The migration list became a real list :  `migrate_state` and `migrate_cache` now take the version the database has reached and branch on it, and `open_db` passes it :  but no test ever opened a database that had already run `0001`. Every test opens a fresh file, so the entire upgrade path, on both databases, was unexercised, as was the claim that a journal written before plans exposes `plan_id` and `approval` as null. | Three tests over the batch list: a v1 state database gains `plans`, `approval_handles` and the unique journal link while its existing journal row reads null for both new columns; the unique index admits one journal per plan and keeps null plan ids distinct, so legacy rows never collide; and a database already at the current version runs no batch, which re-running `0001` would fail. | `1242c4b` |
 | Low | `crates/canvas-cli/tests/e2e/harness.rs:883` (before the fix) | The raw-stdout scrubber writes one hard-coded placeholder, so adding `plan_id` and `plan_sha256` to its key list stamped both with `<clock>`: the `receipts export --out -` snapshot recorded a plan id as a clock reading and a 64-character digest as another one, contradicting the `VOLATILE_KEYS` table two hundred lines below that gives them `<id>` and `<digest>`. | The placeholder is a parameter now and each key keeps the name `VOLATILE_KEYS` already gives it; snapshot updated. | `06ed247` |
 
 ## What I checked and found correct
@@ -73,13 +73,13 @@ not chase it further and it is not caused by this package.
   a declined or unanswerable prompt so it can never be executed later.
   `submit::create_from_plan` and `preflight_with_input` are still public
   on `canvas-core` and still create an unlinked journal, but no binary
-  calls them any more — only the §12.2 tests do. **M6-b must route
+  calls them any more :  only the §12.2 tests do. **M6-b must route
   `submission.execute` through `plan::execute`, not through those.**
 - **One plan never admits two journals.** Two guards, both inside the
   journal insert transaction: the partial unique index
   `submission_journal_plan ON submission_journal(plan_id) WHERE plan_id IS
   NOT NULL`, and the plan's own expected-state guard. Nulls stay distinct
-  in SQLite, so legacy rows do not collide — asserted by the new
+  in SQLite, so legacy rows do not collide :  asserted by the new
   migration test. `concurrent_executes_and_a_replay_create_exactly_one_journal`
   proves it with two real operating-system processes released together
   plus a third replay, and counts the journal table at the end.
@@ -111,7 +111,7 @@ not chase it further and it is not caused by this package.
   revalidation `GET`; the acceptance test asserts the mock server saw no
   non-`GET` request and that the journal table is empty. REPORT §3.2's
   three reasons map to exit 8 through `PlanError::refusal_reason`, and a
-  missing plan reads as `invalidated`, never as approved — the reading the
+  missing plan reads as `invalidated`, never as approved :  the reading the
   brief asked for.
 - **`plan_sha256` pins exact content.** The canonical document covers
   identity key and generation, consumer, course, assignment, kind, each
@@ -123,7 +123,7 @@ not chase it further and it is not caused by this package.
   `BTreeMap` (no `preserve_order` in the lock file), so key order does not
   depend on struct declaration order. §12.2 step 8's streamed-hash check
   is intact in `submit::execute`, and execute additionally re-hashes every
-  frozen upload from disk before any journal exists — changed bytes are
+  frozen upload from disk before any journal exists :  changed bytes are
   `invalidated`, exit 8, with no upload. The digest tests cover a changed
   assignment, course, generation, baseline, window, consumer, comment,
   due date, `sent_sha256`, file hash and file name, and assert that moving
@@ -131,8 +131,8 @@ not chase it further and it is not caused by this package.
 - **Revalidation covers what §3.5 names.** `Observations` carries
   `can_submit`, `allowed_attempts`, `extra_attempts`, `group_category_id`,
   `submission_types`, `allowed_extensions`, `locked_for_user`, `due_at`,
-  `lock_at` and `unlock_at` — the brief's list plus the extensions and
-  lock flag §3.5 also names — read through exactly the accessors
+  `lock_at` and `unlock_at` :  the brief's list plus the extensions and
+  lock flag §3.5 also names :  read through exactly the accessors
   `check_eligibility` and `check_group_and_types` use, with the two list
   fields sorted so a reordered Canvas response is not a change.
   `every_changed_observation_invalidates_the_plan` walks all ten. The
@@ -142,7 +142,7 @@ not chase it further and it is not caused by this package.
   commits the second's frozen baseline no longer matches.
 - **No lock is held across human consideration.** `prepare` takes
   admission for its own pre-flight and drops it before returning, and a
-  second process probes the lock and finds it free while a plan waits —
+  second process probes the lock and finds it free while a plan waits :
   with the probe proved real by a second run against a held lock.
 - **The human `submit` keeps its v1 contract.** Exit codes, stderr
   confirmations and the single `submit@1` envelope are unchanged; the
@@ -159,7 +159,7 @@ not chase it further and it is not caused by this package.
 - **§15.** No new token handling, no new redaction surface, no raw
   response body on disk. `plan@1` is the one new document and its test
   asserts that the digests and file hashes travel while the outbound
-  bytes, the comment text and the local file path do not — the comment is
+  bytes, the comment text and the local file path do not :  the comment is
   reduced to `comment_chars`. The plan row itself lives in `state.sqlite`,
   which `open_db` creates `0600` inside the identity directory, the same
   containment the journal's intended payload already has.
@@ -180,9 +180,9 @@ not chase it further and it is not caused by this package.
    `receipt@1` rows, and the §12.2 receipt example, do not carry
    `plan_id` and `approval`; REPORT §3.5 still calls them "the proposed
    Appendix D additions". The code, the registry fixtures and the e2e
-   shape table now emit them. The worker could not fix this — the brief
-   forbids touching `docs/` — and neither should a reviewer decide the
-   spec. The owner should add both fields to the two Appendix D rows and
+   shape table now emit them. The worker could not fix this :  the brief
+   forbids touching `docs/` :  and neither should a reviewer decide the
+   spec. Rolf should add both fields to the two Appendix D rows and
    to the §12.2 receipt example.
 2. **Plan retention.** `plans` rows hold the full outbound bytes of every
    prepared submission, including ones the person declined at the prompt,
@@ -196,8 +196,8 @@ not chase it further and it is not caused by this package.
    waits up to five seconds for the plan's own concurrent execute to
    publish its journal before reporting a conflict, because §3.5 requires
    a concurrent execute to return the existing journal rather than a
-   refusal. The reading is safe — it never creates a second journal, and a
-   genuinely different submit still gets `in_progress` — and §3.5 wins for
+   refusal. The reading is safe :  it never creates a second journal, and a
+   genuinely different submit still gets `in_progress` :  and §3.5 wins for
    the plan layer, but the wait is a behaviour the spec does not describe.
    Decide whether it belongs in §12.2 or whether the two cases should be
    told apart without blocking.

@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document provides an authoritative, comprehensive reference of the Canvas LMS (Instructure) API surface required for a student-facing command-line interface (CLI) client. The findings are based on primary sources:
+These are historical research notes, not an implementation or deployment guarantee. OAuth and GraphQL described here are not implemented by this client. Source links are retained for background; their current contents were not rechecked during the publication cleanup. Credential examples are placeholders. The notes cite:
 * [Canvas LMS REST API Documentation](https://canvas.instructure.com/doc/api/)
 * [Instructure Developer Portal](https://developerdocs.instructure.com/)
 * [Canvas LMS Open-Source Repository (GitHub)](https://github.com/instructure/canvas-lms)
@@ -18,13 +18,13 @@ Students can generate personal API access tokens directly through the Canvas web
 2. Scroll to the **Approved Integrations** section.
 3. Click the **+ New Access Token** button.
 4. Provide a **Purpose** string (e.g. `canvas-cli`) and an optional **Expires** timestamp.
-5. Canvas displays the generated plaintext access token **once**. The user must copy and securely store it; it cannot be viewed again.
+5. Canvas displays the generated plaintext access token **once**. The student must copy and securely store it; it cannot be viewed again.
 
 ### 1.2 Institutional Token Restrictions
 Institutions have administrative controls to disable or prevent students from creating manual access tokens:
 * **Account-Level Setting:** Canvas root account administrators can enable the setting **"Restrict students from creating personal access tokens"** (`settings[restrict_student_access_tokens] = true`) under Account Settings.
 * **Role Permissions:** Administrators can revoke the **"Users - Manage Access Tokens"** permission (`manage_developer_keys` / `manage_user_tokens`) for the Student role under Account > Permissions.
-* **Impact on Students:** When restricted, the `+ New Access Token` button is completely hidden from the user's settings page for accounts where the user holds only a Student enrollment. Existing tokens created prior to enabling the restriction may remain functional until an administrator deletes them or they expire.
+* **Impact on Students:** When restricted, the `+ New Access Token` button is completely hidden from the student's settings page for accounts where the student holds only a Student enrollment. Existing tokens created prior to enabling the restriction may remain functional until an administrator deletes them or they expire.
 * **CLI Implication:** A student CLI relying solely on manual tokens will fail if the institution enables this restriction. In such environments, OAuth2 developer key authorization is required.
 
 ### 1.3 OAuth2 Flow for Third-Party Applications
@@ -41,7 +41,7 @@ To use OAuth2, an application requires a Developer Key:
 | Step | HTTP Method & Path | Description & Parameters |
 |---|---|---|
 | **Step 1: User Authorization** | `GET /login/oauth2/auth` | Redirect user's browser to Canvas authorization page.<br>• `client_id` (string, required): Application client ID.<br>• `response_type=code` (required).<br>• `redirect_uri` (string, required): Registered callback URL, or `urn:ietf:wg:oauth:2.0:oob` for out-of-band / CLI copy-paste.<br>• `state` (string, recommended): Anti-CSRF token.<br>• `scope` (string, optional): Requested scopes (e.g. `/auth/userinfo`). |
-| **Step 2: Authorization Code** | Redirect callback | Canvas redirects to `redirect_uri` with `?code=<code>&state=<state>`. If out-of-band (`oob`), Canvas presents a web page displaying the code to the user. |
+| **Step 2: Authorization Code** | Redirect callback | Canvas redirects to `redirect_uri` with `?code=<code>&state=<state>`. If out-of-band (`oob`), Canvas presents a web page displaying the code to the account holder. |
 | **Step 3: Token Exchange** | `POST /login/oauth2/token` | Exchange authorization code for bearer and refresh tokens.<br>• `grant_type=authorization_code`<br>• `client_id` (string, required)<br>• `client_secret` (string, required)<br>• `redirect_uri` (string, required)<br>• `code` (string, required) |
 | **Step 4: Token Refresh** | `POST /login/oauth2/token` | Refresh an expired access token using the stored refresh token.<br>• `grant_type=refresh_token`<br>• `client_id` (string, required)<br>• `client_secret` (string, required)<br>• `refresh_token` (string, required) |
 | **Step 5: Logout / Revocation** | `DELETE /login/oauth2/token` | Invalidate current session/token.<br>• `expire_sessions=1` (optional): Also invalidate web session. |
@@ -49,13 +49,13 @@ To use OAuth2, an application requires a Developer Key:
 #### OAuth2 Token Exchange Response
 ```json
 {
-  "access_token": "1/fFAGRNJru1FTz70BzhT3Zg",
+  "access_token": "<ACCESS_TOKEN_PLACEHOLDER>",
   "token_type": "Bearer",
   "user": {
     "id": 42,
     "name": "Student Name"
   },
-  "refresh_token": "tIh2YBWGiC0GgGRglT9Ylwv2MnTvy8csfGyfK2PqZmkFYYqYZ0wui4tzI7uBwnN2",
+  "refresh_token": "<REFRESH_TOKEN_PLACEHOLDER>",
   "expires_in": 3600,
   "canvas_region": "us-east-1"
 }
@@ -70,9 +70,9 @@ Authorization: Bearer <ACCESS_TOKEN>
 * Pagination `Link` headers strip `access_token` query parameters for security, requiring clients using query params to manually rewrite all paginated links.
 
 ### 1.5 Token Expiry
-* **Manual Access Tokens:** By default, do **not** expire unless an expiration date was explicitly chosen by the user at creation time.
+* **Manual Access Tokens:** By default, do **not** expire unless an expiration date was explicitly chosen by the student at creation time.
 * **OAuth2 Access Tokens:** Expire after **1 hour** (`expires_in: 3600` seconds).
-* **OAuth2 Refresh Tokens:** Long-lived. They do not expire unless explicitly revoked by the user in User Settings, deleted by an administrator, or deleted via `DELETE /login/oauth2/token`.
+* **OAuth2 Refresh Tokens:** Long-lived. They do not expire unless explicitly revoked by the student in User Settings, deleted by an administrator, or deleted via `DELETE /login/oauth2/token`.
 
 **Citations:**
 * [Canvas API OAuth2 Overview](https://canvas.instructure.com/doc/api/file.oauth.html)
@@ -81,7 +81,7 @@ Authorization: Bearer <ACCESS_TOKEN>
 
 ---
 
-## 2. Base URL Pattern & Lasell University Deployment
+## 2. Base URL Pattern and origin selection
 
 ### 2.1 Base URL Pattern
 Canvas REST API endpoints adhere to the pattern:
@@ -93,19 +93,12 @@ https://<school-hostname>/api/v1
 * Beta testing environment: `https://<institution>.beta.instructure.com/api/v1`
 * Test sandbox environment: `https://<institution>.test.instructure.com/api/v1`
 
-### 2.2 Lasell University Canvas Setup
-* **Primary Hostname:** `courses.example.test`
-* **Custom Vanity Portal:** `courses.lasell.edu` (HTTP 302 redirects to `https://courses.example.test/login/saml`)
-* **Medical Science Host:** `medcourses.lasell.edu` (Master of Science in Medical Science programs)
-* **Direct Local Login (Bypass SSO):** `https://courses.lasell.edu/login/canvas` (or `https://courses.example.test/login/canvas`)
-* **Identity Provider / SSO:** Single Sign-On powered by SAML 2.0 via Microsoft Entra ID (Azure Active Directory), Tenant ID: `3be0a8f7-a09c-4385-9478-93eeaf55f7f0`.
-* **Hosting Cluster & Region:** AWS `us-east-1`, Instructure Cloud Cluster `cluster90` (Server: Apache + CloudFront CDN).
-* **CSP Frame-Ancestors:** `frame-ancestors 'self' courses.lasell.edu courses.example.test lasell.beta.instructure.com lasell.test.instructure.com;`
-* **Help Desk / Support:** Lasell University Technology Help Desk: phone `617-243-2200`, email `helpdesk@lasell.edu`.
+### 2.2 Selecting an origin
 
-**Citations:**
-* [Lasell University Canvas Login Directory](https://www.lasell.edu/academics/canvas-login.html)
-* [Lasell University Canvas Production Instance](https://courses.example.test)
+Use the HTTPS hostname of the authenticated Canvas account. A vanity login
+portal is not proof of an equivalent API origin. Never forward a token between
+hosts to work around a login redirect. `canvas.example.test` below is a reserved
+example host, not a probed deployment.
 
 ---
 
@@ -116,10 +109,10 @@ Canvas complies with [RFC 5988 / W3C Link Header](http://www.w3.org/Protocols/97
 
 Response header example:
 ```http
-Link: <https://courses.example.test/api/v1/courses/101/assignments?page=1&per_page=50>; rel="current",
-      <https://courses.example.test/api/v1/courses/101/assignments?page=2&per_page=50>; rel="next",
-      <https://courses.example.test/api/v1/courses/101/assignments?page=1&per_page=50>; rel="first",
-      <https://courses.example.test/api/v1/courses/101/assignments?page=5&per_page=50>; rel="last"
+Link: <https://canvas.example.test/api/v1/courses/101/assignments?page=1&per_page=50>; rel="current",
+      <https://canvas.example.test/api/v1/courses/101/assignments?page=2&per_page=50>; rel="next",
+      <https://canvas.example.test/api/v1/courses/101/assignments?page=1&per_page=50>; rel="first",
+      <https://canvas.example.test/api/v1/courses/101/assignments?page=5&per_page=50>; rel="last"
 ```
 
 #### Key Rules for Clients
@@ -211,7 +204,7 @@ When throttled, Canvas returns:
 
 | HTTP Method & Path | Key Request Parameters | Key Response Fields | Student CLI Usage | Source Citation |
 |---|---|---|---|---|
-| `GET /api/v1/users/self` | None | `id`, `name`, `short_name`, `sortable_name`, `login_id`, `email`, `avatar_url`, `time_zone`, `locale`, `bio` | Get authenticated student account identity and user ID. | [Users API](https://canvas.instructure.com/doc/api/users.html#method.users.show) |
+| `GET /api/v1/users/self` | None | `id`, `name`, `short_name`, `sortable_name`, `login_id`, `email`, `avatar_url`, `time_zone`, `locale`, `bio` | Get authenticated student account identity and user ID. | [Users API](https://canvas.instructure.com/doc/api/users.html#method.users.api_show) |
 | `GET /api/v1/users/self/profile` | None | `id`, `name`, `short_name`, `primary_email`, `login_id`, `avatar_url`, `time_zone`, `bio`, `title`, `pronouns` | Retrieve full profile with contact details and pronouns. | [Users API (Profile)](https://canvas.instructure.com/doc/api/users.html#method.profile.settings) |
 | `GET /api/v1/users/self/todo` | `include[]` (`ungraded_quizzes`) | Array of To-Do items: `type` (`submitting`), `assignment` (Assignment object), `quiz`, `course_id`, `html_url`, `ignore`, `ignore_permanently` | Actionable list of assignments and quizzes needing submission. | [Users API (Todo)](https://canvas.instructure.com/doc/api/users.html#method.users.todo_items) |
 | `GET /api/v1/users/self/upcoming_events` | None | Array of CalendarEvent/Assignment objects: `id`, `title`, `start_at`, `end_at`, `context_code`, `assignment`, `url`, `html_url` | Upcoming deadlines and calendar events for student dashboard. | [Users API (Upcoming)](https://canvas.instructure.com/doc/api/users.html#method.users.upcoming_events) |
@@ -236,7 +229,7 @@ When throttled, Canvas returns:
 |---|---|---|---|---|
 | `GET /api/v1/courses/:course_id/assignments` | • `bucket`: `past`, `overdue`, `undated`, `ungraded`, `unsubmitted`, `upcoming`, `future`<br>• `include[]`: `submission`, `score_statistics`, `all_dates`, `overrides`<br>• `order_by`: `position`, `name`, `due_at`<br>• `search_term`: text filter | Array of Assignment objects:<br>`id`, `name`, `description` (HTML), `due_at`, `lock_at`, `unlock_at`, `points_possible`, `grading_type`, `submission_types`, `allowed_extensions`, `has_submitted_submissions`, `submission` (current student submission), `score_statistics` (`{min, max, mean}`) | List assignments filtered by deadline bucket, with attached submission status. | [Assignments API](https://canvas.instructure.com/doc/api/assignments.html#method.assignments_api.index) |
 | `GET /api/v1/courses/:course_id/assignments/:id` | `include[]`: `submission`, `score_statistics`, `overrides` | Single Assignment object with complete description and requirements. | View assignment instructions, allowed upload formats, and due date. | [Assignments API](https://canvas.instructure.com/doc/api/assignments.html#method.assignments_api.show) |
-| `GET /api/v1/courses/:course_id/assignment_groups` | • `include[]`: `assignments`, `submission`<br>• `override_assignment_dates` (boolean) | Array of AssignmentGroup objects:<br>`id`, `name`, `position`, `group_weight` (percentage weight in gradebook), `rules` (`drop_lowest`, `drop_highest`), `assignments` | Inspect syllabus grading breakdown (e.g. Homework 40%, Exams 60%). | [Assignment Groups API](https://canvas.instructure.com/doc/api/assignment_groups.html#method.assignment_groups_api.index) |
+| `GET /api/v1/courses/:course_id/assignment_groups` | • `include[]`: `assignments`, `submission`<br>• `override_assignment_dates` (boolean) | Array of AssignmentGroup objects:<br>`id`, `name`, `position`, `group_weight` (percentage weight in gradebook), `rules` (`drop_lowest`, `drop_highest`), `assignments` | Inspect syllabus grading breakdown (e.g. Homework 40%, Exams 60%). | [Assignment Groups API](https://canvas.instructure.com/doc/api/assignment_groups.html#method.assignment_groups.index) |
 
 ---
 
@@ -281,7 +274,7 @@ Uploading files to Canvas (for course files, personal files, or assignment submi
          "AWSAccessKeyId": "AKIA...",
          "Policy": "ey...",
          "Signature": "...",
-         "success_action_redirect": "https://courses.example.test/api/v1/files/1001/create_success?uuid=..."
+         "success_action_redirect": "https://canvas.example.test/api/v1/files/1001/create_success?uuid=..."
        }
      }
      ```
@@ -356,8 +349,8 @@ Uploading files to Canvas (for course files, personal files, or assignment submi
 | `GET /api/v1/announcements` | • `context_codes[]` (required, e.g. `course_101`)<br>• `start_date` & `end_date`<br>• `active_only` (boolean)<br>• `latest_only` (boolean) | Array of DiscussionTopic objects where `is_announcement: true`:<br>`id`, `title`, `message` (HTML), `posted_at`, `author` (`{id, display_name, avatar_image_url}`), `url`, `read_state` | Fetch broadcast announcements from professors across enrolled courses. | [Announcements API](https://canvas.instructure.com/doc/api/announcements.html#method.announcements_api.index) |
 | `GET /api/v1/courses/:course_id/discussion_topics` | • `order_by`: `position`, `recent_activity`, `title`<br>• `scope`: `locked`, `unlocked`, `pinned`, `unpinned`<br>• `only_announcements` (boolean) | Array of DiscussionTopic objects:<br>`id`, `title`, `message`, `discussion_type` (`side_comment`, `threaded`), `assignment_id`, `require_initial_post`, `user_can_see_posts`, `unread_count` | List course forums and graded discussion assignments. | [Discussion Topics API](https://canvas.instructure.com/doc/api/discussion_topics.html#method.discussion_topics.index) |
 | `GET /api/v1/courses/:course_id/discussion_topics/:topic_id/view` | None | Full cached discussion hierarchy: `unread_entries`, `entry_ratings`, `participants`, `view` (nested threaded replies tree) | Render complete conversation thread for reading in terminal. | [Discussion Topics API (View)](https://canvas.instructure.com/doc/api/discussion_topics.html#method.discussion_topics_api.view) |
-| `POST /api/v1/courses/:course_id/discussion_topics/:topic_id/entries` | `message` (HTML/text, required), `attachment` (file) | Created DiscussionEntry object: `id`, `user_id`, `message`, `created_at` | Post a top-level reply to a discussion topic. | [Discussion Topics API (Entries)](https://canvas.instructure.com/doc/api/discussion_topics.html#method.discussion_entries_api.create) |
-| `POST /api/v1/courses/:course_id/discussion_topics/:topic_id/entries/:entry_id/replies` | `message` (HTML/text, required) | Created Reply DiscussionEntry object. | Reply to another student's post. | [Discussion Topics API (Replies)](https://canvas.instructure.com/doc/api/discussion_topics.html#method.discussion_entries_api.reply_create) |
+| `POST /api/v1/courses/:course_id/discussion_topics/:topic_id/entries` | `message` (HTML/text, required), `attachment` (file) | Created DiscussionEntry object: `id`, `user_id`, `message`, `created_at` | Post a top-level reply to a discussion topic. | [Discussion Topics API (Entries)](https://canvas.instructure.com/doc/api/discussion_topics.html#method.discussion_topics_api.add_entry) |
+| `POST /api/v1/courses/:course_id/discussion_topics/:topic_id/entries/:entry_id/replies` | `message` (HTML/text, required) | Created Reply DiscussionEntry object. | Reply to another student's post. | [Discussion Topics API (Replies)](https://canvas.instructure.com/doc/api/discussion_topics.html#method.discussion_topics_api.add_reply) |
 
 ---
 
@@ -614,7 +607,7 @@ Canvas includes an administrative masquerading feature allowing administrators t
 A student-facing CLI client operates in a highly constrained permission environment compared to administrative tools. The following constraints and feature flags must be anticipated:
 
 1. **Disabled Personal Access Tokens:**
-   * Institutions can disable personal token generation for students. If enabled, the CLI cannot use a simple manual copy-paste token and must implement an OAuth2 flow or instruct the user to request assistance.
+   * Institutions can disable personal token generation for students. If enabled, the CLI cannot use a simple manual copy-paste token and must implement an OAuth2 flow or instruct the student to request assistance.
 2. **Hidden Navigation Tabs & Locked Endpoints:**
    * Instructors frequently hide navigation items in Course Settings (e.g. hiding the "Files", "Pages", or "Modules" tabs).
    * In Canvas, if the instructor disables the "Files" tab, querying `GET /api/v1/courses/:id/files` returns **`HTTP 403 Forbidden`** for students, even if files exist in the course. Files can only be downloaded if linked inside an accessible module item or assignment description.
@@ -632,17 +625,10 @@ A student-facing CLI client operates in a highly constrained permission environm
 
 ---
 
-## 10. Summary Verification Matrix
+## 10. Verification limits
 
-| Area | Verified / Unverified | Verification Notes |
-|---|---|---|
-| Manual Token Generation & Admin Restrictions | **VERIFIED** | Verified via Canvas User Settings UI, Admin Guide, and API Policy docs. |
-| OAuth2 3-Step Flow & Expiry | **VERIFIED** | Verified via `file.oauth.html` and `file.oauth_endpoints.html`. Access tokens expire in 1 hr; refresh tokens persist. |
-| Base URL & Lasell University Deployment | **VERIFIED** | Live probed `courses.example.test` and `courses.lasell.edu`; verified Microsoft Entra ID SAML SSO and AWS `cluster90`. |
-| Pagination & Link Headers | **VERIFIED** | Verified via `file.pagination.html` and Canvas source code (`lib/api.rb`); `MAX_PER_PAGE = 100`. |
-| Leaky Bucket Throttling Defaults | **VERIFIED** | Verified directly in Canvas LMS source code (`app/middleware/request_throttle.rb`); HWM 600/700, Outflow 10/s, Upfront 50. |
-| REST Endpoints & Parameters | **VERIFIED** | Verified against official API documentation for Users, Courses, Assignments, Submissions, Modules, Files, Announcements, Calendar, Planner, Quizzes, Conversations. |
-| 3-Step File Upload Protocol | **VERIFIED** | Verified via `file.file_uploads.html` (metadata request -> multipart POST to S3 -> confirm redirect). |
-| GraphQL Capabilities & Batching | **VERIFIED** | Verified via `file.graphql.html` and GraphiQL explorer documentation. |
-| UTC Timestamps & Timezone Semantics | **VERIFIED** | Verified via ISO 8601 UTC rules and course/user timezone fields in API specs. |
-| Error Formats & Masquerading | **VERIFIED** | Verified via API error response schemas; student masquerading confirmed impossible (admin-only). |
+API documentation and inspected upstream source informed these notes. They do
+not establish an institution's enabled features or deployed version. The current
+implementation is described by `docs/SPEC.md`; actual publication checks are
+recorded in `docs/testing.md`. No authenticated institution or OAuth flow was
+rechecked for this cleanup.

@@ -1,12 +1,12 @@
-MERGE  
-M2-b reviewed against SPEC v0.8; the defects below are fixed and committed on `lane/w3`.  
+MERGE
+M2-b reviewed against SPEC v0.8; the defects below are fixed and committed on `lane/w3`.
 All five gates pass; the explicitly permitted M1-c integration remains deferred.
 
 ## Scope and gate results
 
 Reviewed `tasks/m2b-submit-receipts.md`, its cited SPEC sections and appendices, the worker commits, and their implementation diff. The requested initial merge is `791d754` (main parent `e012d30`). Final code/test revision: `5179fe3`. No push or subsequent merge was performed. Main advanced independently to `1669e8e` with M3-a during this review; these results describe this worktree, not a hypothetical merge with that newer main.
 
-Every cargo gate used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m2b`.
+Every cargo gate used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Final result |
 |---|---|
@@ -24,7 +24,7 @@ Locations refer to the corrected source. All paths are relative to the repositor
 
 | Severity | File:line | What was wrong | What changed | Commit |
 |---|---|---|---|---|
-| High | `crates/canvas-core/src/submit/reconcile.rs:87` | Recovery acquired the owner lock and then called a helper that tried to acquire it again. Dead-owner journals could remain active, and lock contention could become a persistence error. | Recover and re-read under one owner lock; return structured live-owner recovery, correct ineligible-state refusal, and idempotent confirmed outcomes without blocking behind the exporter. | `8b2fdc4`, `e43d509` |
+| High | `crates/canvas-core/src/submit/reconcile.rs:87` | Recovery acquired the journal-holder lock and then called a helper that tried to acquire it again. Dead-owner journals could remain active, and lock contention could become a persistence error. | Recover and re-read under one owner lock; return structured live-owner recovery, correct ineligible-state refusal, and idempotent confirmed outcomes without blocking behind the exporter. | `8b2fdc4`, `e43d509` |
 | High | `crates/canvas-core/src/submit/reconcile.rs:216` | Missing current-attempt data was treated as the baseline, allowing an unsupported negative assumption. Previously recorded text matches survived later reads that no longer matched. | Require an explicitly observed baseline before permitting an assumption; evaluate visibility before time/content filters; replace or clear server-match evidence on each read. | `8b2fdc4`, `e43d509` |
 | Medium | `crates/canvas-core/src/submit/reconcile.rs:332` | File candidates included unrelated attachment sets; text/URL candidates could contain attachment IDs. Returned timestamps and diagnostics lost evidence available in the journal. | File candidates require exact ID-set equality; text/URL candidates have empty attachment arrays; preserve local timestamps, response metadata, attribution, and actionable unresolved-outcome messages. | `8b2fdc4`, `e43d509` |
 | High | `crates/canvas-core/src/submit/verify.rs:142` | Verification preferred potentially stale or corrupted export files, accepted a receipt without its journal, and checked only the identity key. Missing file IDs could disappear through filtering. | Load from authoritative state; validate identity, receipt/journal binding, course, assignment, kind, attempt, intended files and uploaded/posted ID sets before network access. Export filenames are no longer treated as arbitrary readable paths. | `a957973`, `73c21bf` |

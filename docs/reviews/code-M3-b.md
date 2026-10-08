@@ -4,13 +4,13 @@ Verified with local HTTP fixtures, real destination directories, and subprocesse
 
 ## Scope
 
-Reviewed `tasks/m3b-download-command.md`, its cited SPEC sections (§§5, 7, 9–11, 12.3, 14–16 and Appendices A/D), `docs/reviews/code-M3-b-core.md`, the worker log, and the complete worker diff (`7fa48f8`). The required initial `git merge main` completed as `e7d9f4f`; no subsequent merge or push was performed. Final reviewed implementation and tests: `23f40ce` on `lane/w2`.
+Reviewed `tasks/m3b-download-command.md`, its cited SPEC sections (§§5, 7, 9-11, 12.3, 14-16 and Appendices A/D), `docs/reviews/code-M3-b-core.md`, the worker log, and the complete worker diff (`7fa48f8`). The required initial `git merge main` completed as `e7d9f4f`; no subsequent merge or push was performed. Final reviewed implementation and tests: `23f40ce` on `lane/w2`.
 
 This report is the explicit review-task exception to the original worker brief's prohibition on writing docs. No SPEC, task, migration, dependency pin, or shared R4 registry/enum implementation was changed during the review.
 
 ## Gates
 
-Recorded final gate commands used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m3b-cmd`.
+Recorded final gate commands used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Final result |
 |---|---|

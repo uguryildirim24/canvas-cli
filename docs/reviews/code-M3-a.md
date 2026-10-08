@@ -6,7 +6,7 @@ All five required gates pass on code commit `72693656398892275b6fb2c9abe84c007b9
 
 Reviewed `tasks/m3a-files-modules.md`, its cited SPEC sections, the store/API/planner/output interfaces, `git log main..HEAD --stat`, and the full package diff. The requested initial `git merge main` returned `Already up to date`; the worker baseline was `da7c486f8782b0a4fc1d4795689f1b27db7da402`. No subsequent merge or push was performed.
 
-Every gate used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m3a`.
+Every gate used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Initial result | Final result |
 |---|---|---|

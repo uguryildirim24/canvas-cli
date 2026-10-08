@@ -4,21 +4,21 @@ All five gates pass; 169 tests pass; no spec decisions remain.
 
 ## Scope and baseline
 
-Reviewed `tasks/m2a-transport-journal.md` against SPEC §§9–12.2, 15–16 and Appendices A/D, including the existing request/governor, store, and I/O APIs. The review task was present in the main checkout and explicitly named this worktree. Worker tip: `9de2d6f`. The required initial merge brought in main at `c2caeff` as `759012c`; conflicts in the API client/request executor were resolved by retaining main's reviewed transfer safeguards. Subsequent main commits through `5ce0f6e` contain task briefs only.
+Reviewed `tasks/m2a-transport-journal.md` against SPEC §§9-12.2, 15-16 and Appendices A/D, including the existing request/governor, store, and I/O APIs. The review task was present in the main checkout and explicitly named this worktree. Worker tip: `9de2d6f`. The required initial merge brought in main at `c2caeff` as `759012c`; conflicts in the API client/request executor were resolved by retaining main's reviewed transfer safeguards. Subsequent main commits through `5ce0f6e` contain task briefs only.
 
 Reviewed code and final gates cover `d72b27d`. No push or merge into main was performed. No schema migration was needed.
 
 ## Gates
 
-All commands used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m2a`.
+All commands used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Result |
 |---|---|
 | `cargo fmt --all --check` | PASS |
 | `cargo clippy --all-targets --all-features -- -D warnings` | PASS |
-| `cargo nextest run --all-features` | PASS — 169 tests, 0 failures, 0 skipped; run `d1d1c448-9833-4132-b4f2-a740a56df98a` |
-| `cargo deny check` | PASS — advisories, bans, licenses, sources; existing duplicate-dependency warnings remain non-fatal |
-| `cargo +1.88 check --workspace --all-targets` | PASS — Cargo/Rust 1.88 toolchain |
+| `cargo nextest run --all-features` | PASS :  169 tests, 0 failures, 0 skipped; run `d1d1c448-9833-4132-b4f2-a740a56df98a` |
+| `cargo deny check` | PASS :  advisories, bans, licenses, sources; existing duplicate-dependency warnings remain non-fatal |
+| `cargo +1.88 check --workspace --all-targets` | PASS :  Cargo/Rust 1.88 toolchain |
 
 Normal toolchain: Rust 1.97.1. Appendix A version pins were preserved. TLS fixtures add only a dev dependency on the already locked `tokio-rustls =0.26.5`; production HTTP remains on the pinned reqwest/rustls stack.
 
@@ -51,7 +51,7 @@ Transport verification uses wiremock behind a local TLS front-end with an explic
 
 Journal verification includes real helper subprocesses, durable SQLite state after forced termination, simultaneous creation, two recoverers, and live-owner probes during every active phase. The success transaction is tested both by process termination and an injected epoch-write failure. Receipt assertions verify identity, intent, per-file IDs, attribution, status, readback consistency, local timestamps, and absence of raw body/signed attachment URL content.
 
-For M2-b: retain the owner guard through network work and the receipt-export attempt; release the admission guard after publication. Pass the frozen file index when journaling an upload ID. `IntendedPayload` defines the accepted intent shape and optional identity `time_zone`. Use the typed success/matched/readback helpers rather than generic state patches for confirmed outcomes. Synchronous journal operations belong on the blocking executor. Network history selection, actual submission orchestration, CLI rendering, and writing receipt export files remain M2-b work as the brief specifies; no live Canvas submissions were made by this review.
+For M2-b: retain the journal-holder guard through network work and the receipt-export attempt; release the admission guard after publication. Pass the frozen file index when journaling an upload ID. `IntendedPayload` defines the accepted intent shape and optional identity `time_zone`. Use the typed success/matched/readback helpers rather than generic state patches for confirmed outcomes. Synchronous journal operations belong on the blocking executor. Network history selection, actual submission orchestration, CLI rendering, and writing receipt export files remain M2-b work as the brief specifies; no live Canvas submissions were made by this review.
 
 No store/I/O accessor or migration was added. The narrowly scoped shared-store WAL fix was required by the failing workspace gate.
 

@@ -1,12 +1,18 @@
 # Agent-first Canvas: agreed design
 
-Date: 2026-09-09. Authors: fable and gpt. Consensus: [turn 05](turns/05-fable.md) and [turn 06](turns/06-gpt.md), with [turn 07 corrections](turns/07-fable-review.md) applied. Report author: gpt. Final peer review: turn 07 applied.
+This is the historical design report from September 9, 2026. It records
+proposals and source review, not the current command surface. Some proposals
+were later changed or dropped. Use [README.md](../../README.md) and
+[SPEC.md](../SPEC.md) for the frozen code. Account-specific setup details have
+been removed. Historical sources and acceptance targets are preserved.
 
-This is a post-M5 design, based on [SPEC v0.8](../SPEC.md), especially §§0–5, 7, 12.2, 13, and 18. It does not amend v1 or claim implementation, performance measurements, client interoperability, or authenticated Lasell testing. Bracketed source identifiers refer to §6.
+Date: 2026-09-09. Authors: fable and gpt. Consensus was reached in turns 05 and 06, with turn 07 corrections applied. Report author: gpt. The dialogue files were removed as agent notes.
+
+This is a post-M5 design, based on [SPEC v0.8](../SPEC.md), especially §§0-5, 7, 12.2, 13, and 18. It does not amend v1 or claim implementation, performance measurements, client interoperability, or authenticated Lasell testing. Bracketed source identifiers refer to §6.
 
 ## 1. Answer for Rolf
 
-Make `canvas-cli` the shared coursework engine for whichever agent you use: quick structured reads, accessible course material, downloads, and submissions with a durable record. Give shell agents the CLI and a small skill; give local MCP hosts `canvas mcp`. For “come with me,” attach your existing Canvas tab to the conversation you choose. A thin companion supplies your location and selected passage, displays the agent's notes and submission status, and asks you to approve the exact work before sending it. Keep factual coursework reads and writes on the API path; use the browser for presentation and supported handoffs. Existing Claude and OpenAI browser integrations document useful in-place assistance, so use them with the CLI before building another browser controller. The new companion earns its place through portable context, account checks, and operation receipts. “Single interaction” means one conversation coordinating these surfaces; quizzes and unsupported external tools still require your direct participation. [S1–S3]
+Make `canvas-cli` the shared coursework engine for whichever agent you use: quick structured reads, accessible course material, downloads, and submissions with a durable record. Give shell agents the CLI and a small skill; give local MCP hosts `canvas mcp`. For “come with me,” attach your existing Canvas tab to the conversation you choose. A thin companion supplies your location and selected passage, displays the agent's notes and submission status, and asks you to approve the exact work before sending it. Keep factual coursework reads and writes on the API path; use the browser for presentation and supported handoffs. Existing Claude and OpenAI browser integrations document useful in-place assistance, so use them with the CLI before building another browser controller. The new companion earns its place through portable context, account checks, and operation receipts. “Single interaction” means one conversation coordinating these surfaces; quizzes and unsupported external tools still require your direct participation. [S1-S3]
 
 ## 2. Options considered
 
@@ -16,7 +22,7 @@ Effort is relative engineering scope. Latencies below are targets or qualitative
 |---|---|---|---|---|---|
 | CLI JSON + skill + `canvas schema` | Existing §13 process/cache targets; network on misses | Existing identity, containment, journal; unrestricted shell can bypass adapter policy | Low | Any shell agent can organize coursework now that the commands exist | Shell execution needed; no automatic tab attachment |
 | `canvas mcp` over stdio | Target warm bounded reads p95 <100 ms | Curated tools and bound human approval; one identity generation per instance | Medium | Structured tools/resources in local hosts without giving the model a shell | Version/elicitation differences; cloud-only clients cannot directly reach local stdio |
-| Thin MV3 companion + native host | Target metadata read p95 <100 ms; account check and page loading separate | User gesture, exact origin, verified account, selected consumers, bounded text | Medium–high | Follow the actual tab, share selected context, show notes/plans/receipts | Extension installation and lifecycle; opaque external frames; no generic clicks |
+| Thin MV3 companion + native host | Target metadata read p95 <100 ms; account check and page loading separate | User gesture, exact origin, verified account, selected consumers, bounded text | Medium-high | Follow the actual tab, share selected context, show notes/plans/receipts | Extension installation and lifecycle; opaque external frames; no generic clicks |
 | Existing Claude/OpenAI browser integration + CLI | Host/tool/model dependent; unmeasured | Vendor site permissions; browser actions are outside our submission adapter guarantee | Low integration effort | Logged-in interaction and an existing conversational surface | Availability varies; portable attachment/receipt contracts need explicit integration |
 | CDP attached to existing Chrome | Connection consent plus browser/tool latency | Broad debugging access to a real session; separate authorization | Medium | Inspect live DOM and debug unsupported workflows | Consent/banner, profile and target selection; no built-in Canvas journal |
 | Separate Playwright/CDP profile | Browser startup/login plus page loading | Isolation from personal profile, but another powerful session | Medium | Reproducible fixtures and browser testing | Does not automatically share Rolf's current login, selection, or unsaved work |
@@ -114,7 +120,7 @@ Credentials, token reveal, identity administration, arbitrary HTTP/shell, generi
 
 Resources are namespaced by identity **and generation**, with canonical encoding: `canvas://<identity-key>/<generation>/todo`, `/course/<id>/assignments`, `/receipts`, and `/context/<consumer-handle>`. Consumer handles express routing within Rolf's OS trust domain, not isolation from another unrestricted process. Context resources return `not_attached` until attachment is explicit. No tool/resource discovery leaks another consumer's text. Results that carry private data use `cacheScope: private`; `ttlMs` is no greater than remaining relevant freshness and is zero for browser context or unresolved/invalidated values. §7 coverage remains authoritative. [S9]
 
-**Protocol target:** `2026-07-28`, including `server/discover`, per-request version/capabilities, and `subscriptions/listen`. Elicitation is an `input_required` result with a keyed input request; the host retries the tool with a new JSON-RPC request ID, echoed `requestState`, and keyed `inputResponses`. `2025-11-25` requires an explicit lifecycle/elicitation/subscription adapter. An unsupported version fails explicitly. [S8–S11]
+**Protocol target:** `2026-07-28`, including `server/discover`, per-request version/capabilities, and `subscriptions/listen`. Elicitation is an `input_required` result with a keyed input request; the host retries the tool with a new JSON-RPC request ID, echoed `requestState`, and keyed `inputResponses`. `2025-11-25` requires an explicit lifecycle/elicitation/subscription adapter. An unsupported version fails explicitly. [S8-S11]
 
 The candidate Rust SDK is `rmcp` 3.2.0. Its published crate documentation confirms that version; the official repository documents `2026-07-28` support and compatibility with `2025-11-25`. This is documentation, not tested interoperability. M6-b must wire the version-specific approval and subscription behavior and verify it in the host matrix; an SDK compatibility claim does not establish a working Canvas adapter. [S27]
 
@@ -242,12 +248,12 @@ These are proposed packages for the coordinator to integrate after the current v
 
 | Round | w1 | w2 | w3 | Enum owner | Registry owner | Migration owner | Merge order |
 |---|---|---|---|---|---|---|---|
-| R6 | M6-a | — | — | w1 | w1 | w1 | w1 |
-| R7 | M6-b | — | — | w1 | w1 | w1 | w1 |
-| R8 | M6-c | — | — | w1 | w1 | w1 | w1 |
-| R9 | M7-a | M8-a | — | w1 | w2 | w2 | w2, w1 |
+| R6 | M6-a | ,  | ,  | w1 | w1 | w1 | w1 |
+| R7 | M6-b | ,  | ,  | w1 | w1 | w1 | w1 |
+| R8 | M6-c | ,  | ,  | w1 | w1 | w1 | w1 |
+| R9 | M7-a | M8-a | ,  | w1 | w2 | w2 | w2, w1 |
 | R10 | M7-b | M8-b | M8-c (optional) | w1 | w2 | w2 | w1, w2, w3 |
-| R11 | M8-d (conditional) | — | — | w1 | w1 | w1 | w1 |
+| R11 | M8-d (conditional) | ,  | ,  | w1 | w1 | w1 | w1 |
 
 Shared-file owners supply the needed enum/schema/migration interfaces at the start of the round; other lanes rebase on those interfaces and request changes through the coordinator. No other lane edits a shared file in that round. A migration owner is responsible for any required change, not a requirement to add an otherwise unnecessary migration. M6-c explicitly depends on M4-b because announcements and calendar-window datasets originate there.
 
@@ -272,7 +278,7 @@ Pages/inbox/discussion reads can proceed after M6 without waiting for the compan
 
 ## 5. Risks and open questions for Rolf
 
-**Lasell origin.** SPEC records the owner's working PAT at `courses.example.test`. Lasell's public login page links students to `courses.lasell.edu` and medical-science users to a separate host. That does not prove an equivalent final authenticated origin. Verify the actual final tab URL and account at setup; never silently alias origins or forward tokens to a vanity domain. No authenticated account check was performed in this review. [SPEC §0; S26]
+**Canvas origin.** Account-specific setup details were removed for publication. Use the actual configured HTTPS Canvas origin. The example hostnames are synthetic, not login destinations or authenticated services. Verify the final tab URL and account at setup. Never silently alias origins or forward tokens to a vanity domain. No authenticated account check was performed in this review. [SPEC §0]
 
 **Host reachability and consumer handoff.** The chosen agent must be able to run local CLI/MCP tools. Some browser conversations may need additional host integration to select/identify the same consumer. Publish only tested workflows; do not claim universal conversation injection. A cloud-only agent needs an independently authorized remote transport.
 
@@ -284,8 +290,8 @@ Pages/inbox/discussion reads can proceed after M6 without waiting for the compan
 
 Questions for Rolf, to resolve during setup and release planning:
 
-1. What is the final authenticated origin in your Canvas tab: `courses.example.test` or `courses.lasell.edu`?
-2. Which agent do you use most—Claude Code, Codex, or Cursor—so M6-b can prioritize that host's compatibility tests?
+1. Does the final authenticated origin in your Canvas tab match the actual configured Canvas origin?
+2. Which agent do you use most, Claude Code, Codex, or Cursor, so M6-b can prioritize that host's compatibility tests?
 3. Which courses permit AI drafting, and which embedded tools appear in them?
 4. What defaults do you prefer for consumer selection, hidden-tab pause, event retention, and desktop notifications?
 5. Do you intend to distribute this to other students? That triggers the M8-d OAuth gate before their release.
@@ -294,7 +300,7 @@ Questions for Rolf, to resolve during setup and release planning:
 
 Official pages below were read during the dialogue/report work; access date 2026-09-09. Canvas source inspection used commit `1c9f0bb8013ed69c4f2efe11fd483025469b7e6c` returned by the public repository API (commit date 2026-04-30). It is an inspected upstream snapshot, not a claim about Lasell deployment. Design choices and acceptance targets are our proposals.
 
-- **SPEC:** [Specification v0.8](../SPEC.md), §§0–5, 7–13, 15–18; [prior-art research](../research/r2-prior-art.md) used as a discovery index, not fresh verification of every claim.
+- **SPEC:** [Specification v0.8](../SPEC.md), §§0-5, 7-13, 15-18; [prior-art research](../research/r2-prior-art.md) used as a discovery index, not fresh verification of every claim.
 - **S1:** [Existing Go Canvas CLI](https://github.com/jjuanrivvera/canvas-cli), feature/prior-art comparison.
 - **S2:** [OpenAI browser extension documentation](https://learn.chatgpt.com/docs/chrome-extension), signed-in interaction, tab/selection context, side chat, desktop/Codex entry points and availability limits.
 - **S3:** [Claude Code with Chrome](https://code.claude.com/docs/en/chrome), browser integration, native-host setup, troubleshooting and permissions.

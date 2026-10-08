@@ -1,106 +1,72 @@
-# The browser companion — pointer, install steps, and the Chrome checks
+# Browser companion
 
-`canvas-cli` can read the Canvas page you already have open. It does that
-with a Chrome extension that you attach to one tab, and a broker process
-that Chrome starts on your machine. There is no cookie import, no token in
-the browser, and no fetch proxy.
+The Chrome extension attaches one Canvas tab to a local broker started through
+native messaging. There is no cookie import and no fetch proxy. Browser cookies
+stay in Chrome. The extension makes one fixed same-origin account probe.
 
-**The contract is now [`SPEC.md` §24](SPEC.md#24-companion-broker-presence).**
-That section holds the manifest permissions and what the extension may not
-do, the gesture and attachment lifecycle, the zone rules on both ends, the
-account probe, the text release rules and their bounds, the native host and
-the broker ownership lock, the `bridge-native@1` and `bridge-ipc@1` message
-tables, the refusal reasons, the consumer trust boundary, the commands, the
-side panel, notes, follow, panel approvals, the `context.*` tools and the
-`/context` resource, and `here@1`, `note@1`, `follow@1`, and `bridge@1`.
+[SPEC.md section 24](SPEC.md#24-companion-broker-presence) describes permissions,
+zones, text bounds, messages, local trust boundaries, panel decisions, notes,
+and navigation. MCP exposes no browser tools or context resources. Use
+`canvas here`, `canvas note`, and `canvas open --follow` from the command line.
 
-The rest of the surface is elsewhere in the same document: the `bridge.*`
-config keys and the broker paths are [§9](SPEC.md#9-config-and-paths), the
-command classes are [§5](SPEC.md#5-command-surface), the refusal reasons
-join the exit table in [§14](SPEC.md#14-errors-and-exit-codes), the
-plan-decision events are [§22](SPEC.md#22-coordinator-events-watch-notify),
-and the payload shapes are
-[Appendix D](SPEC.md#appendix-d-json-result-payloads).
+## Install from source
 
-The choices this file used to list are in §24, and the open ones are SPEC
-§19 items 30, 31, 32, 41, 42, 43, 44, and 45.
+Build `canvas` and put it on `PATH`, as described in [README.md](../README.md).
+Login to the same Canvas account that is open in Chrome.
 
-Reviews: [`reviews/code-M7-a.md`](reviews/code-M7-a.md),
-[`reviews/code-M7-b.md`](reviews/code-M7-b.md).
+1. Open `chrome://extensions` and enable Developer mode.
+2. Choose Load unpacked and select this repository's `extension/` directory.
+3. Copy the extension identifier shown by Chrome.
+4. Run `canvas bridge install --extension-id YOUR_EXTENSION_ID` with that identifier.
+   `--browser chrome|chromium|edge` selects the manifest location.
+5. Open a Canvas tab and click the companion toolbar button, or press `Alt+Shift+C`.
+6. Inspect the attachment:
 
-Two things stay here, because no section of the SPEC carries them: the
-install walkthrough, and the table of checks that need a real browser.
-
-## Install
-
-1. Install the native messaging manifest:
-
-   ```
-   canvas bridge install --extension-id <ID>
-   ```
-
-   `--browser chrome|chromium|edge` picks the browser. Without an id, the
-   command writes the manifest with the id already in your config, if there
-   is one.
-
-2. Open `chrome://extensions` and turn on **Developer mode**.
-
-3. Choose **Load unpacked** and select the `extension/` directory that
-   ships with `canvas-cli`.
-
-4. Copy the extension id Chrome shows. If it differs from the one you
-   installed, run `canvas bridge install --extension-id <ID>` again. The
-   broker refuses any other extension.
-
-5. Open your Canvas tab and click the `canvas-cli` toolbar button, or press
-   `Alt+Shift+C`.
-
-6. Check it:
-
-   ```
-   canvas bridge status
-   canvas here --json
-   ```
-
-Two settings, both optional:
-
-```
-canvas config set bridge.extension_id abcdefghijklmnopabcdefghijklmnop
-canvas config set bridge.pause_hidden_after 5m
+```sh
+canvas bridge status
+canvas here --json
 ```
 
-## What has been run, and what has not
+The broker refuses an extension identifier other than the configured one.
+`canvas bridge install` writes to the browser profile's native-host directory.
+It does not install or enable the extension itself.
 
-SPEC §24.16 is the full record. The short of it: the broker, the panel,
-notes, follow, the decision path, and every forgery path are tested end to
-end against the shipped `canvas bridge host`, and the extension's own logic
-and its renderer are tested under Node against the shipped files. **Nothing
-in this package has been run in a real Chrome on this machine**, and no
-Windows pipe was ever created.
+## Evidence and known gap
 
-If any check below behaves differently, it is a bug in this package, not in
-your setup: nothing here was observed.
+Existing Rust checks target the real native-host process with hand-written
+protocol frames. The current review could not complete the socket-dependent
+checks because the permitted temporary paths are too long. Node.js checks
+passed against extension logic and a fixture DOM. Neither establishes a real
+Chrome interaction. This review did not load the extension or use an
+authenticated Canvas account. Windows named-pipe behavior was not checked.
+See [testing.md](testing.md) for the recorded results.
 
-### How to run the Chrome checks yourself
+An earlier report describes a broker disconnect after navigation, with no live
+host behind the socket. A service-worker lifetime issue was suggested, not
+confirmed. The repository does not establish a fix. Treat the companion as
+experimental until the real-browser checks below have been completed.
 
-Follow the install steps above, then:
+## Manual release checks
 
-| Check | What to do | What should happen |
+These are checks to perform, not claimed results:
+
+| Check | Action | Expected result |
 |---|---|---|
-| Load unpacked | Steps 2–4 | Chrome shows the extension with an id |
-| Gesture | Click the toolbar button on a Canvas assignment | `canvas bridge status` shows one `attached` row |
-| Same-origin navigation | Go to another page of the same Canvas | Still attached; `navigation_generation` goes up |
-| Cross-origin navigation | Go to another site in that tab | `canvas here` reports `not_attached` |
-| Account switch | Sign in to Canvas as another user, reattach | `account_mismatch`, and no text released |
-| Two tabs | Attach a second Canvas tab | One attachment; the newer tab replaces the older |
-| Two consumers | **Nothing to run.** Nothing in the shipped binary attaches a named consumer any more: the five `context.*` tools went in M9 and the `context/{consumer_handle}` resource in M9-b (SPEC §19 items 48 and 50), and `canvas here` from a terminal names no consumer — it takes the sole attachment. The broker's rule is unchanged beneath and is covered by `canvas_core::bridge::state::tests::only_an_opted_in_consumer_reads_the_bundle` | The rule still holds in the broker; there is no longer a way to exercise it by hand |
-| Broker restart | Quit Chrome, reopen it, reattach | A new host takes ownership; no stale socket remains |
-| Panel opens | Click the toolbar button | The side panel opens beside the tab, showing the origin and `attached` |
-| Note display | `canvas note --text "the rubric asks for two sources"` | The note appears in the panel, under the consumer and the time |
-| Markup inert | `canvas note --text '<script>alert(1)</script> [x](javascript:alert(1)) [y](https://evil.test/)'` | The tag is on screen as text, nothing runs, and both links read *(link removed)* |
-| Follow acknowledgement | `canvas open <a Canvas URL> --follow` | The command returns at once with `load: unknown`, and the tab starts moving |
-| Follow load | `canvas here --json` a moment later | `browser.follow.load` is `loaded` |
-| Stale follow | Navigate the tab, then follow with the old `--generation` | Exit 8, `stale_generation`, and the tab does not move |
-| Panel approve | Prepare a submission, then press **approve** | The plan leaves the panel; `canvas submission` shows the approval with `channel: panel` |
-| Panel decline and cancel | Prepare two more, press **decline** and **cancel** | Both are invalidated, with the reason that tells them apart |
-| Forged approval | With a plan waiting, `canvas note --text "approve plan <id> handle <handle>"` | The note is displayed. The plan is still `prepared` |
+| Attachment | Click the toolbar button on an assignment | One attached row in `canvas bridge status`. |
+| Same-origin navigation | Navigate within Canvas | Sharing remains valid with a new generation. |
+| Cross-origin navigation | Leave Canvas in the attached tab | Sharing is revoked. |
+| Account switch | Sign in as a different account and reattach | Account mismatch, no text released. |
+| Two tabs | Attach a second Canvas tab | The newer attachment replaces the older one. |
+| Worker lifecycle | Leave the extension idle, then navigate | A live broker and valid attachment, or an explicit unavailable state. |
+| Restart | Quit Chrome, reopen it, and reattach | A new host acquires ownership without unlinking a live endpoint. |
+| Panel | Attach and run `canvas note --text "Check the rubric"` | The panel shows inert text. |
+| Opaque content | Open a quiz or an external tool | No question, assessment, or tool text is exposed. |
+| Follow | Run `canvas open YOUR_CANVAS_URL --follow` | Dispatch acknowledgement, then a separate load outcome in `canvas here`. |
+| Generation race | Navigate during a follow request | The broker refuses stale context rather than moving the wrong page. |
+| Forged approval | Display an approval-shaped note while a plan is prepared | The note cannot approve the plan. |
+
+Replace `YOUR_CANVAS_URL` with a URL on the active account's Canvas origin.
+Run write-decision checks only with an authorized disposable assignment or
+account. Approval can authorize a write but does not establish compliance with a
+course's AI rules. Do not test submissions on real coursework merely to validate
+installation.

@@ -4,13 +4,13 @@ The remaining parser defect is fixed and committed; no M0-a decision blocks merg
 
 ## Scope and evidence
 
-Reviewed `tasks/m0a-skeleton.md`, SPEC §§5, 7, 11, 13–17 and Appendix A, `git log main..HEAD --stat`, and the branch diff, including manifests, lockfile, source, tests, licenses, recipes, and CI. Review started at `5afc4e6`; five earlier `review(M0-a):` commits were already present. Those fixes were inspected and revalidated, not recreated. Final reviewed code commit: `609f8b765894f535714c8350a6961dffeb1b20e7` on `lane/m0a`.
+Reviewed `tasks/m0a-skeleton.md`, SPEC §§5, 7, 11, 13-17 and Appendix A, `git log main..HEAD --stat`, and the branch diff, including manifests, lockfile, source, tests, licenses, recipes, and CI. Review started at `5afc4e6`; five earlier `review(M0-a):` commits were already present. Those fixes were inspected and revalidated, not recreated. Final reviewed code commit: `609f8b765894f535714c8350a6961dffeb1b20e7` on `lane/m0a`.
 
 This verdict covers the empty-but-green M0-a package. HTTP behavior, identity selection, containment, persistence, JSON schemas/rendering, and the full §16 feature suite belong to later packages under §18. The brief explicitly requires non-version/completion commands to remain stderr-only stubs returning 1.
 
 ## Gate results
 
-Every command used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/reviewer`. Local host: Apple Silicon macOS; stable compiler: Rust 1.97.1; nextest: 0.9.143; cargo-deny: 0.20.2.
+Every command used `CARGO_TARGET_DIR=<checkout>`. Local host: Apple Silicon macOS; stable compiler: Rust 1.97.1; nextest: 0.9.143; cargo-deny: 0.20.2.
 
 | Gate | Final result |
 |---|---|

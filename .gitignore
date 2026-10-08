@@ -1,7 +1,64 @@
+# Rust build output and local tooling caches
 target/
 .target/
 .worktrees/
 **/*.rs.bk
-.DS_Store
-/*.profraw
+*.profraw
 /coverage/
+.DS_Store
+node_modules/
+.npm/
+
+# Environment files and local agent configuration
+.env
+.env.*
+.envrc
+!.env.example
+.venv/
+venv/
+.mcp.json
+.cursor/mcp.json
+
+# Private academic data, live recordings, and local exports
+/data/
+/recordings/
+/downloads/
+/receipts/
+/exports/
+/private/
+/secrets/
+/canvas-data/
+/coursework/
+/uploads/
+/logs/
+*.log
+/answers.json
+/canvas-output*.json
+.canvas-cli/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+credentials.toml
+credentials.lock
+env-bindings.toml
+env-bindings.lock
+identity.json
+*.sock
+*.token
+*.cookie
+*.cookies
+.ssh/
+
+# Secrets, including TLS keys. The tracked loopback test fixture is deliberate.
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+!crates/canvas-api/src/transfer_tests/cert.pem
+!crates/canvas-api/src/transfer_tests/key.pem
+
+# Unaccepted snapshot output
+*.snap.new

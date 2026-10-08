@@ -1,6 +1,6 @@
 # Read an assignment
 
-The user asks what an assignment asks for, when it is due, how it is graded,
+The student asks what an assignment asks for, when it is due, how it is graded,
 or what they have already handed in.
 
 Everything here is a `canvas` command with `--json`.
@@ -11,16 +11,16 @@ Everything here is a `canvas` command with `--json`.
    - A Canvas URL is enough: pass it as the target of
      `canvas assignment <url> --json` and give no assignment operand.
    - Otherwise `canvas assignments <course> --json`, with `--search
-     <substring>` if the user gave a name.
+     <substring>` if the student gave a name.
    - `--bucket` filters by state: `open` (the default), `upcoming`, `overdue`,
      `past`, `undated`, `unsubmitted`, `ungraded`, `future`, `all`.
 2. `canvas assignment <course> <assignment> --json`. The prompt comes back as
-   Markdown, with the dates, the rubric, and the user's submission state.
-3. `canvas submission <course> <assignment> --json` only if the user asks
+   Markdown, with the dates, the rubric, and the student's submission state.
+3. `canvas submission <course> <assignment> --json` only if the student asks
    about earlier attempts. Add `--history` for every attempt.
-4. `canvas grades <course> --json` if the user asks what the assignment is
+4. `canvas grades <course> --json` if the student asks what the assignment is
    worth in the whole course. It reports the group weights Canvas reports.
-5. Give the user the assignment's Canvas URL when they want to look at the
+5. Give the student the assignment's Canvas URL when they want to look at the
    page themselves. `canvas assignment` already carries it, and
    `canvas open assignment <course> <assignment>` opens it.
 
@@ -42,15 +42,15 @@ syllabus, or a discussion the class is holding.
   nothing read.
 
 Read `embedded`, `files`, and `external_links` on a page, a syllabus, or a
-topic. `embedded` names content the Markdown could not show — a video, an
-audio clip, an LTI tool — and each row is `reported: "unavailable"`. Say what
+topic. `embedded` names content the Markdown could not show , a video, an
+audio clip, an LTI tool , and each row is `reported: "unavailable"`. Say what
 is there and that you cannot see it. Never claim a body is complete when
 `truncated` is `true`.
 
 `replies_coverage` says how much of a thread was actually read. `complete:
 false` means the thread is not whole; `blocked: "not_requested"` means you
 did not ask for replies, and `blocked: "initial_post_required"` (exit 8)
-means Canvas will not show the thread until the user posts first. Never
+means Canvas will not show the thread until the student posts first. Never
 summarize a thread you only partly read as if it were all of it.
 `replies_page` and `replies_total` say which window you are looking at: an
 empty `replies` beside a non-zero `replies_total` is a page past the end, not
@@ -63,12 +63,12 @@ none.
 Exit 6 means zero matches or many. Do not guess. Show the candidates from
 `result` and ask which one. A course string may be a numeric id, one of the
 user's aliases, a Canvas URL, or a case-insensitive substring of the course
-code or name — say which form you used when it was ambiguous.
-`canvas alias set <name> <course>` stores a short name the user picks.
+code or name , say which form you used when it was ambiguous.
+`canvas alias set <name> <course>` stores a short name the student picks.
 
 ## Reporting
 
-Quote the prompt rather than summarizing it away; a rubric line the user did
+Quote the prompt rather than summarizing it away; a rubric line the student did
 not see is a lost point. Give the due time in their local zone, and say
 whether the assignment is still open.
 
@@ -82,7 +82,7 @@ canvas assignments CHEM --json
 canvas assignments CHEM --bucket overdue --json
 canvas assignments CHEM --search "problem set" --json
 canvas assignment CHEM "Problem Set 2" --json
-canvas assignment https://school.instructure.com/courses/1/assignments/500 --json
+canvas assignment https://canvas.example.test/courses/1/assignments/500 --json
 canvas submission CHEM 500 --history --json
 canvas grades CHEM --json
 canvas syllabus CHEM --json

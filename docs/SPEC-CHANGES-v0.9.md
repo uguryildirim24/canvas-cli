@@ -1,6 +1,10 @@
-# SPEC v0.9 — what changed, section by section
+# SPEC v0.9: what changed, section by section
 
-Two consolidation passes, both in lane `w3`. Pass 1 wrote §20–§23 and left
+This is a historical record from September 10, 2026, not current setup guidance.
+Use README.md and docs/SPEC.md for the frozen command surface. The task briefs
+were removed. The recorded findings and checks remain.
+
+Two consolidation passes, both in lane `w3`. Pass 1 wrote sections 20 to 23 and left
 §24 and §25 as placeholders; pass 2 wrote those two from the code that
 merged afterwards and re-verified the rest.
 
@@ -20,7 +24,7 @@ One line per section, so this can be checked fast.
 | Section | What it now says | Source read |
 |---|---|---|
 | §20 Operation plans and approval | the `plans` and `approval_handles` tables, the five plan states and their guards, the 15-minute admission expiry, the approval record, the handle binding and its six refusals, what `plan_sha256` covers, the ten execute rules, the human `submit` on top, the exit mappings, and `replayed` | `canvas-core::plan`, `store/migrate.rs`, `commands/submit.rs`, review M6-a |
-| §21 Agent surface | `canvas schema` and its three output forms; `canvas mcp` — two protocol revisions, the 30-tool catalog by effect, what is absent and why it is unreachable, results and `isError`, `ttlMs`/`cacheScope`, the four resources, the approval round trip, the catalog size; the skill and its five workflows; the host-matrix pointer | `mcp/*`, `output/json_schema.rs`, `commands/schema.rs`, `skill/`, reviews M6-b and M8-a2 |
+| §21 Agent surface | `canvas schema` and its three output forms; `canvas mcp`: two protocol revisions, the 30-tool catalog by effect, what is absent and why it is unreachable, results and `isError`, `ttlMs`/`cacheScope`, the four resources, the approval round trip, the catalog size; the skill and its five workflows; the host-matrix pointer | `mcp/*`, `output/json_schema.rs`, `commands/schema.rs`, `skill/`, reviews M6-b and M8-a2 |
 | §22 Coordinator, events, `watch`, `notify` | the four shared things and their lock paths, the shared governor's two merge rules, single-flight and the 30-second waiter, foreground interest and the priority rule; the observation protocol, the baseline rules, the four shapes, the eleven kinds, the log and its retention, the cursor rules; `canvas watch` and its tick; `canvas notify`; MCP subscriptions and the invalidation map | `canvas-core::coord`, `canvas-core::events`, `canvas-api::governor`, `commands/watch.rs`, `commands/notify.rs`, `mcp/subscribe.rs`, reviews M6-c, M6-c2, M8-a3 |
 | §23 Richer reads | the eight commands with their requests and datasets, the reading rules, bodies and references and the 64 KiB bound, the exit table, the rubric extension, the cache migration and config keys, the schemas | `canvas-core::sync::{pages,discussions,inbox}`, `commands/{pages,discussions,inbox}.rs`, `markdown/extract.rs`, reviews M8-a and M8-a2 |
 | §24 Companion, broker, presence | one-line placeholder: M7-a and M7-b are in flight and no part of them is on `main` | `git log main`, no `extension/` directory |
@@ -60,7 +64,7 @@ No existing item was resolved, reworded, or renumbered.
 
 - `docs/reads-v2.md` is now a pointer at §23, §22, and §21. Its content is folded in; nothing was dropped. Only `tasks/` still links to it, and `tasks/` was not touched.
 
-## Verified, and worth the owner's eye
+## Findings for Rolf
 
 These are facts found while checking the code. None of them is a SPEC change.
 
@@ -136,39 +140,39 @@ Neither item was deleted or reworded. Each keeps its original text and gains one
 
 | # | Was | Resolved by |
 |---|---|---|
-| 35 | the eight M8-a schema pages describe nullable fields as non-nullable | `5c171ff` — the eight result types derive `JsonSchema` and their pages declare `result_source: "result type"` |
-| 36 | `canvas schema --list` names commands that do not exist | `d18bcfa` — a registry entry carries the command that prints it; `canvas schema "inbox show"` resolves, and the five entries no command prints are listed as `document` |
+| 35 | the eight M8-a schema pages describe nullable fields as non-nullable | `5c171ff`: the eight result types derive `JsonSchema` and their pages declare `result_source: "result type"` |
+| 36 | `canvas schema --list` names commands that do not exist | `d18bcfa`: a registry entry carries the command that prints it; `canvas schema "inbox show"` resolves, and the five entries no command prints are listed as `document` |
 
 Both were verified by running `canvas schema --list` and `canvas schema "inbox show"` against this build, not by reading the commits.
 
-Items 27 and 28 stay open. Their fixes predate pass 1, which read them and deliberately left them for the owner; nothing since has changed that.
+Items 27 and 28 stay open. Their fixes predate pass 1, which read them and deliberately left them for Rolf; nothing since has changed that.
 
 ## §19 items added
 
 | # | Difference |
 |---|---|
-| 44 | The companion declares `sidePanel` as a **fourth** permission. REPORT §3.3 names two; item 30 recorded `scripting` as the third and was closed on that reading, before M7-b added `sidePanel`. It grants no host or tab access, and REPORT §3.4 forbids the alternative of a Canvas DOM overlay, so the same reasoning applies — but the confirmation on item 30 cannot cover a permission added afterwards. |
-| 45 | The panel draws an operation plan without its body. `awaiting_decision` filters by plan state and handle only, so every waiting plan reaches the panel, and `PanelPlan` carries the submission half only. A discussion or inbox plan therefore draws as `assignment 0` with its kind, digests and expiry, and with no message text, no thread and no recipients — while REPORT §3.5 requires the exact bytes before an approval. Approving it there still works and every host-side check is unchanged, so it is not a forgery path. |
+| 44 | The companion declares `sidePanel` as a **fourth** permission. REPORT §3.3 names two; item 30 recorded `scripting` as the third and was closed on that reading, before M7-b added `sidePanel`. It grants no host or tab access, and REPORT §3.4 forbids the alternative of a Canvas DOM overlay, so the same reasoning applies, but the confirmation on item 30 cannot cover a permission added afterwards. |
+| 45 | The panel draws an operation plan without its body. `awaiting_decision` filters by plan state and handle only, so every waiting plan reaches the panel, and `PanelPlan` carries the submission half only. A discussion or inbox plan therefore draws as `assignment 0` with its kind, digests and expiry, and with no message text, no thread and no recipients, while REPORT §3.5 requires the exact bytes before an approval. Approving it there still works and every host-side check is unchanged, so it is not a forgery path. |
 | 46 | The panel has no words for an operation journal's own states. `panel::journals` lists operation journals beside submission journals, and `JOURNAL_STATES` names only the ten §12.2 submission states, so `posted` and `failed` draw as states the panel does not know. Added by the review pass, not by the worker; see `docs/reviews/spec-v0.9-pass2.md`. |
 
 No existing item was resolved by me, reworded, or renumbered. §19 now runs
-1–46: 44 and 45 from this pass, 46 from the review of it.
+1 to 46: 44 and 45 from this pass, 46 from the review of it.
 
 ## The header
 
 "draft" is dropped. The brief's test was: drop it only if every placeholder is gone and every section describes built code.
 
 - **Every placeholder is gone.** §24 and §25 were the only two, and both are written. A search of the document for "placeholder", "reserved for", and "in flight" now returns only ordinary prose: the reserved *command names* in §5 (`grades estimate`, `dashboard`, `submit --resume`, which are names and not sections), the Markdown placeholder line §23.3 puts in place of embedded content, the initial-post rule in §25.3, and "in flight" as a description of a request on the wire.
-- **Every section describes built code.** §§1–19 are the v1 contract, which shipped. §§20–25 record six merged packages, each with its own review file, and Appendix C lists all of them.
+- **Every section describes built code.** sections 1 to 19 are the v1 contract, which shipped. Sections 20 to 25 record six merged packages, each with its own review file, and Appendix C lists all of them.
 
-What stays open is §19, which is a list of questions for the owner and has been part of this document since v0.1. It is not a placeholder, and it does not describe unbuilt code.
+What stays open is §19, which is a list of questions for Rolf and has been part of this document since v0.1. It is not a placeholder, and it does not describe unbuilt code.
 
 ## Other files
 
 - `docs/companion.md` is now a pointer at §24, plus two things the SPEC does not carry: the install walkthrough, and the table of Chrome checks a person runs by hand. The README links to this file for the install steps, and nothing in that package has been run in a real browser, so the table is still the only way anyone finds out whether it works.
 - `docs/writes-v2.md` is now a pointer at §25, §20, §10, §9, §14, §22, §21, and Appendix D. Nothing was dropped. Only `tasks/` still links to it, and `tasks/` was not touched.
 
-## Verified, and worth the owner's eye
+## Findings for Rolf
 
 Facts found while checking the code. None of them is a SPEC change, and this
 pass touched no code.
@@ -176,7 +180,7 @@ pass touched no code.
 - **The `--help` epilogue is still headed "Commands (v1)".** It has since
   gained `discussion reply`, `inbox send|reply`, `operation status|reconcile`,
   `bridge install|host|status|detach`, `here`, and `note`, so the heading is
-  now wrong about most of what it lists — and it still omits `pages`, `page`,
+  now wrong about most of what it lists, and it still omits `pages`, `page`,
   `syllabus`, `discussions`, `discussion`, `inbox`, `schema`, and `mcp`. Pass
   1 raised the omission; the heading is new.
 - **The panel and the writes were built by different lanes and have not met.**
@@ -195,5 +199,5 @@ cargo fmt --all --check      # clean
 cargo nextest run --all-features
 ```
 
-923 tests, unchanged from the M7-b merge — which is the point: this pass
+923 tests, unchanged from the M7-b merge. This pass
 touched no code.

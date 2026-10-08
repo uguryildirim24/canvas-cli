@@ -1,6 +1,6 @@
 # Take a quiz, with approval
 
-The user asks to answer a Classic Quiz. Quizzes are read and written through
+The student asks to answer a Classic Quiz. Quizzes are read and written through
 `canvas` commands: the censored questions come from the API, the agent
 computes the answers, and the person approves the exact answer set at the
 terminal before anything is sent.
@@ -13,18 +13,18 @@ canvas new-quizzes CHEM --json
 ```
 
 The first listing names Classic Quizzes, the second New Quizzes. A Classic
-Quiz runs the full flow below. A New Quiz is taken in the browser — no
+Quiz runs the full flow below. A New Quiz is taken in the browser , no
 command here takes it, because taking one happens inside the LTI tool
-session. Brief the user from its metadata instead:
+session. Brief the student from its metadata instead:
 
 ```sh
 canvas new-quiz CHEM 9013 --json
 ```
 
 That names the rules: the attempts, the time limit, the instructions. When
-the user opens it in the browser, they can paste the questions back here
-and the agent drafts the answers — but the agent never sees the questions
-itself, and it never submits.
+Rolf opens it in the browser, Rolf can paste the questions into the conversation
+and the agent drafts the answers. The agent never sees the questions itself,
+and it never submits.
 
 When the quiz is in neither listing, read the assignment: any other LTI
 tool shows an `external_tool` submission type, and it is taken in the
@@ -50,11 +50,11 @@ canvas quiz questions CHEM "Week 3 Reading Quiz" --json
 
 This joins the session in progress, or starts one. Starting begins an
 attempt and may start the clock. The command asks at the terminal first, or
-records the start with `--yes`. Only start when the user asked to take the
+records the start with `--yes`. Only start when the student asked to take the
 quiz now. A session already in progress is a plain read and asks nothing.
 
 The answer lists every question with its id, its type, its points, and its
-choices. Correctness never appears — the agent reads the choices, never the
+choices. Correctness never appears , the agent reads the choices, never the
 key.
 
 ## Answer and turn in
@@ -75,7 +75,7 @@ true/false, an array of choice ids for multiple answers, text for an essay
 or a short answer, a number for a formula or numerical question, and a map
 for blanks, dropdowns, and matching. A question left out is a blank answer.
 
-Then show the file back and give the user the line to run:
+Then show the file back and give the student the line to run:
 
 ```sh
 canvas quiz submit CHEM "Week 3 Reading Quiz" --answers answers.json
@@ -88,12 +88,12 @@ covers both.
 
 ## Rules
 
-- **The owner decides what help is allowed.** When the user asks for
-  AI-written answers, write them. Never lecture about academic integrity,
-  and never add a warning they did not ask for.
+- **Rolf decides what help is allowed.** When Rolf asks for AI-written
+  answers, write them. Never lecture about academic integrity, and never add
+  a warning Rolf did not ask for.
 - **Never pass `--yes`.** It exists for a person who means it. An agent that
   passes it has taken the decision away from them. The `questions` start is
-  the same: ask the person, or give them the line with `--yes` to run.
+  the same: ask Rolf, or give Rolf the line with `--yes` to run.
 - **One quiz per request.** If the command printed a journal in state
   `posted`, the quiz is in. Do not run it again "to be sure": run
   `canvas operation status`.
@@ -103,14 +103,14 @@ covers both.
   resend either. `canvas operation reconcile <journal-id>` reads the session
   back: a completed session with the sent answers resolves it. An open
   session with the answers recorded stays unknown until the quiz is turned
-  in — preparing again and approving again is a new operation, and the
+  in , preparing again and approving again is a new operation, and the
   answers overwrite, never duplicate.
 - **Exit 8 is a real "no".** `locked` (a quiz this identity cannot start),
   `no_session` (no session in progress; read the questions first),
   `access_code` (a wrong code), `unresolved` (an answer for a question the
   session does not hold), `unsupported` (LockDown, IP filter, one question
   at a time, no going back), and `denied` (a quiz this identity cannot see).
-  Read `result` for the reason, tell the user, and do not try another route.
+  Read `result` for the reason, tell the student, and do not try another route.
 - **A timed quiz keeps its own clock.** `end_at` in the questions answer is
   when the attempt is overdue. Say it plainly when it matters.
 

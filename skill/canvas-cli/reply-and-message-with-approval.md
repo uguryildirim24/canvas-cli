@@ -1,6 +1,6 @@
 # Reply and message, with approval
 
-The user asks to answer a discussion, write to somebody, or answer a message
+The student asks to answer a discussion, write to somebody, or answer a message
 in the Canvas inbox.
 
 Each write is a `canvas` command: it prints the exact bytes and asks for a
@@ -9,31 +9,31 @@ confirmation at the terminal.
 ## What these writes are
 
 A discussion reply is a **public post in a course**. Classmates and the
-instructor read it, and it carries the user's name. A conversation is private
-mail, but it is still written in the user's voice to a real person.
+instructor read it, and it carries the student's name. A conversation is private
+mail, but it is still written in the student's voice to a real person.
 
-The course policy is the owner's, not yours:
+The course policy is Rolf's, not yours:
 
-- **The owner decides what help is allowed.** When the user asks for written
-  work, write it. Never lecture about academic integrity, and never add a
-  warning they did not ask for.
+- **Rolf decides what help is allowed.** When Rolf asks for written work,
+  write it. Never lecture about academic integrity, and never add a warning
+  Rolf did not ask for.
 - **Never write a placeholder.** A topic with an initial-post gate hides the
-  replies until the user posts. Do not post anything to open it. The command
+  replies until the student posts. Do not post anything to open it. The command
   refuses this, and so should you.
-- **Never invent a recipient.** Send only to the user ids the user named.
+- **Never invent a recipient.** Send only to the Canvas account IDs Rolf named.
 - **Say what it is before it goes.** Show the exact text and every attachment
   before the command runs, not after.
 
 ## Steps
 
 1. Read the thread first. `canvas discussion <course> <id> --replies --json`,
-   or `canvas inbox show <id> --json`, so the user's answer is an answer to
+   or `canvas inbox show <id> --json`, so the student's answer is an answer to
    what is actually there.
-2. Draft exactly what the user named. Never add a recipient, an attachment, or
+2. Draft exactly what the student named. Never add a recipient, an attachment, or
    a sentence they did not ask for.
 3. Show it back: the thread or the recipients, the whole message text, and
    every attachment.
-4. Run the command, or give the user the line to run:
+4. Run the command, or give the student the line to run:
 
 ```sh
 canvas discussion reply CHEM 3001 --text "..."
@@ -83,13 +83,13 @@ delivered", "they got it", or "they have seen it".
   `unresolved` (an entry or a recipient that is not there),
   `denied` (a course or conversation this identity cannot see), and
   `unsupported` (an attachment on a discussion reply, which this version does
-  not send). Read `result.details.reason`, tell the user, and do not try
+  not send). Read `result.details.reason`, tell the student, and do not try
   another route.
 - **Exit 11 means the person said no.** The plan is invalidated and nothing
   was sent.
 - **A pending write makes a read uncertain.** While `pending` is true on
   `canvas discussion`, `canvas inbox`, `canvas inbox show`, or
-  `canvas inbox unread-count`, a write of the user's own is unresolved. Say so
+  `canvas inbox unread-count`, a write of the student's own is unresolved. Say so
   instead of reporting the thread as settled.
 
 ## Typical commands
@@ -110,5 +110,5 @@ canvas operation reconcile <journal-id> --json
 A public post in a course and a message in a person's name are approved at
 the terminal where that person is, not through a host's form. `canvas mcp`
 serves one tool and it only describes the CLI, so there is no surface that
-could post on the user's behalf. Say so plainly if the user asks why you
+could post on the student's behalf. Say so plainly if the student asks why you
 cannot just send it.

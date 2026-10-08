@@ -6,13 +6,13 @@ Nothing was pushed, nothing was merged past the required `git merge main`, and n
 
 ## Scope
 
-Reviewed `tasks/m5b-dist-packaging.md`, its cited SPEC sections (§0, §4, §5, §9, §12.2, §14–§17, Appendices A and D), and the complete worker diff `2b46043..8a3f072`. The required initial `git merge main` completed as `8dd8468` (a trivial merge bringing `tasks/review-code-m5b.md`). Final reviewed tree: `ba4bb13` on `lane/w2`.
+Reviewed `tasks/m5b-dist-packaging.md`, its cited SPEC sections (§0, §4, §5, §9, §12.2, §14-§17, Appendices A and D), and the complete worker diff `2b46043..8a3f072`. The required initial `git merge main` completed as `8dd8468` (a trivial merge bringing `tasks/review-code-m5b.md`). Final reviewed tree: `ba4bb13` on `lane/w2`.
 
-This report is the explicit review-task exception to the worker brief's prohibition on writing under `docs/`. No SPEC, task file, dependency pin, migration, or shared R4 enum/registry was changed during the review. `crates/canvas-cli/src/cli.rs` — the command enum lane w3 owns this round — is untouched by the whole package.
+This report is the explicit review-task exception to the worker brief's prohibition on writing under `docs/`. No SPEC, task file, dependency pin, migration, or shared R4 enum/registry was changed during the review. `crates/canvas-cli/src/cli.rs` :  the command enum lane w3 owns this round :  is untouched by the whole package.
 
 ## Gates
 
-`CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m5b`. Toolchain: rustc 1.97.1, cargo-nextest 0.9.143, cargo-dist 0.32.0.
+`CARGO_TARGET_DIR=<checkout>`. Toolchain: rustc 1.97.1, cargo-nextest 0.9.143, cargo-dist 0.32.0.
 
 | Gate | Final result |
 |---|---|
@@ -28,8 +28,8 @@ The five standard gates also passed on the unmodified worker tree; they did not 
 
 Additional verification beyond the gate list:
 
-- `dist generate --check` — PASS: the committed `.github/workflows/release.yml` is exactly what dist 0.32.0 generates from `dist-workspace.toml`, so the release job is genuinely reproducible.
-- `dist build --artifacts=local --target aarch64-apple-darwin` — the archive holds `canvas-lms-cli-aarch64-apple-darwin/canvas`, `man/` (51 pages), `completions/` (5 scripts), both licences, `README.md`, `CHANGELOG.md`. The single top-level directory confirms the `cargo binstall` `bin-dir = "{ name }-{ target }/{ bin }{ binary-ext }"` is correct.
+- `dist generate --check` :  PASS: the committed `.github/workflows/release.yml` is exactly what dist 0.32.0 generates from `dist-workspace.toml`, so the release job is genuinely reproducible.
+- `dist build --artifacts=local --target aarch64-apple-darwin` :  the archive holds `canvas-lms-cli-aarch64-apple-darwin/canvas`, `man/` (51 pages), `completions/` (5 scripts), both licences, `README.md`, `CHANGELOG.md`. The single top-level directory confirms the `cargo binstall` `bin-dir = "{ name }-{ target }/{ bin }{ binary-ext }"` is correct.
 - `dist build --artifacts=global` then `cargo xtask dist-formula` on the real generated formula: the anchors matched, the patch applied, and `ruby -c` reports `Syntax OK`. The unit tests' frozen template is a faithful copy of dist 0.32.0's real output.
 - `brew audit --strict` and `brew style` could not be run. Homebrew 6.0.22 on this machine aborts before reading any formula (`json-2.21.2 … undefined method 'default_sort_keys_proc='`). `docs/release.md` already records this accurately and defers both to the tap.
 - No generated asset contains an absolute path, a user name, or a host name.
@@ -45,8 +45,8 @@ Line numbers identify the original worker tree at `8dd8468`.
 |---|---|---|---|---|
 | Medium | `crates/canvas-cli/build.rs:36,43` | `version@1.commit` reported a commit the binary was not built from. The build script watched `<git-common-dir>/HEAD`, but committing on the current branch rewrites the branch ref and leaves `HEAD` untouched, so cargo never reran it. In this worktree the watched file belonged to the `lane/w1` checkout, so no commit on `lane/w2` could ever move it. Reproduced: build → `git commit` → rebuild still reported the previous commit. | Watch `HEAD` and the ref `HEAD` points at, each located with `git rev-parse --path-format=absolute --git-path` so a linked worktree and a plain checkout both get the right file; add `packed-refs` for a branch with no loose ref. A detached `HEAD` needs only `HEAD`. Without git, or on git older than 2.31, cargo's default file heuristic still applies. Re-reproduced after the fix: the new commit is stamped. | `d1f4dca` |
 | Low | `xtask/src/dist_assets.rs:77` | The man page `.TH` source line read `xtask`'s own `CARGO_PKG_VERSION`, not the version of the crate the pages document. Correct only because both inherit `workspace.package.version`. | Added `canvas_cli::dist::VERSION` and read the version from there, so all 51 pages name the `canvas` they describe. | `2e26e78` |
-| Low | `xtask/src/dist_assets.rs:89` | `reset_dir` ran `fs::remove_dir_all` on `<out>/man` and `<out>/completions`. `--out` is an arbitrary path from the command line, so `cargo xtask dist-assets --out ~/.local/share` would have deleted the user's whole `man/` tree. | Create the directory, then delete only the assets this task writes: section-1 pages, and completion scripts matched by name against every shell `clap_complete` knows (so dropping a shell from `dist::SHELLS` still clears its script). A stale page from a removed command is still removed. New test `a_rerun_leaves_files_it_did_not_write_alone` points a rerun at a directory holding foreign files. | `d216770` |
-| Low | `docs/release.md:196` | The runbook told the owner that the `dist-formula` tests fail when dist's Homebrew template changes. They patch a frozen copy of the 0.32 template, so they pass whatever dist writes next; only the live `cargo xtask dist-formula` run refuses an unrecognized template. A dist upgrade could have slipped through the step meant to catch it. | Replaced with the step that actually catches it: `dist build --artifacts=global` then `cargo xtask dist-formula`, and an explicit statement that the unit tests cannot detect a template change. | `ba4bb13` |
+| Low | `xtask/src/dist_assets.rs:89` | `reset_dir` ran `fs::remove_dir_all` on `<out>/man` and `<out>/completions`. `--out` is an arbitrary path from the command line, so `cargo xtask dist-assets --out ~/.local/share` would have deleted the student's whole `man/` tree. | Create the directory, then delete only the assets this task writes: section-1 pages, and completion scripts matched by name against every shell `clap_complete` knows (so dropping a shell from `dist::SHELLS` still clears its script). A stale page from a removed command is still removed. New test `a_rerun_leaves_files_it_did_not_write_alone` points a rerun at a directory holding foreign files. | `d216770` |
+| Low | `docs/release.md:196` | The runbook told Rolf that the `dist-formula` tests fail when dist's Homebrew template changes. They patch a frozen copy of the 0.32 template, so they pass whatever dist writes next; only the live `cargo xtask dist-formula` run refuses an unrecognized template. A dist upgrade could have slipped through the step meant to catch it. | Replaced with the step that actually catches it: `dist build --artifacts=global` then `cargo xtask dist-formula`, and an explicit statement that the unit tests cannot detect a template change. | `ba4bb13` |
 | Low | `CHANGELOG.md:12` | "The first tag will replace this section with the generated notes" is wrong. `release-plz` inserts each generated release above the `## [Unreleased]` heading and never removes it, so the "0.1.0 is not released yet" paragraph would sit under the released notes indefinitely. | Stated the real behaviour and that the section must be emptied by hand at the first tag. | `ba4bb13` |
 
 ## Spec conformance checked and found correct
@@ -69,7 +69,7 @@ Recorded because these are the claims a release depends on and each was verified
 - **README `grades`, `announcements`, `announcement`, `calendar` marked `planned`.** Deferred to the R4 merge (M4-a and M4-b are still landing on the other lanes), per the review task. Every other row matches `main`: `submit`, `submission*`, and `receipts*` are `planned` because M2-b's routes are still stubs on `main`, and all 32 `available` rows were executed and reach real handlers.
 - **`dist plan` warns "A Homebrew tap was specified but the Homebrew publish job is disabled".** Deliberate and documented in `docs/release.md`: dist 0.32 has no hook for extra formula install lines, so the tap commit is the manual `xtask dist-formula` step. The warning is the price of a formula that actually installs the man pages.
 - **A local `dist build --artifacts=global` produces a formula with no `sha256` lines.** Expected off CI, and `docs/release.md` says so.
-- **The generated formula has no `test do` block.** dist does not emit one and §17 does not ask for one. Worth adding if the owner ever runs `brew test-bot` (mentioned as optional in the runbook), but it is not required for the tap or for `brew audit --strict`.
+- **The generated formula has no `test do` block.** dist does not emit one and §17 does not ask for one. Worth adding if Rolf ever runs `brew test-bot` (mentioned as optional in the runbook), but it is not required for the tap or for `brew audit --strict`.
 
 ## Pre-existing flake, outside this package
 

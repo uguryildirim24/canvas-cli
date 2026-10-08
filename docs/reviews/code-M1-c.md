@@ -10,7 +10,7 @@ Verification uses local unit tests, wiremock HTTP fixtures, separate CLI process
 
 ## Gates
 
-All Cargo commands used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m1c`.
+All Cargo commands used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Result |
 |---|---|

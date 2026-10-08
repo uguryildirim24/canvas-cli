@@ -4,11 +4,11 @@ All five final gates pass, including 49/49 tests and the Rust 1.88 workspace che
 
 ## Scope and evidence
 
-Reviewed worker commit `9013d4cb5675d81b200d2715d87d58dcfa8e8cd6`, the full `main..HEAD` package changes, `tasks/m1a-store-core.md`, and SPEC §§8–10, 12.2 (record, ownership, journal fields), 13–16, and Appendix A. Final code reviewed and tested through `a2509f6`. Changes remain in the owned identity/store modules; this document is the requested review output. Nothing was pushed or merged.
+Reviewed worker commit `9013d4cb5675d81b200d2715d87d58dcfa8e8cd6`, the full `main..HEAD` package changes, `tasks/m1a-store-core.md`, and SPEC §§8-10, 12.2 (record, ownership, journal fields), 13-16, and Appendix A. Final code reviewed and tested through `a2509f6`. Changes remain in the owned identity/store modules; this document is the requested review output. Nothing was pushed or merged.
 
 ## Gates
 
-Every gate used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m1a`.
+Every gate used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Worker baseline | Final result |
 |---|---|---|

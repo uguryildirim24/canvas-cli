@@ -1,12 +1,12 @@
-MERGE  
-The M1-c integration this follow-up covers is correct against SPEC v0.8; the two defects below are fixed and committed on `lane/w3`.  
+MERGE
+The M1-c integration this follow-up covers is correct against SPEC v0.8; the two defects below are fixed and committed on `lane/w3`.
 All five gates pass on the reviewed tree; no push and no merge were performed.
 
 ## Scope and gate results
 
-Reviewed `tasks/m2b-submit-receipts.md` parts 5–7, the SPEC sections it cites, `docs/reviews/code-M2-b.md`, and the diff since that review's last commit `c6f3258`. The integration commits are `d0fb793` (submit operand resolution), `efa9ad2` (`submission` show over the M1-c dataset, plus the crash-test handshake and the upload-concurrency assertion), `209c8fc` (integration acceptance tests) and `aa0128e` (the `download@1` nullability step). The requested `git merge main` is `bd3a4d7` (main parent `61284b3`); it was a trivial docs-only merge. Final revision `f2f0acc`. Main advanced independently to `558134e` with M4-a during this review; these results describe this worktree, not a merge with that newer main.
+Reviewed `tasks/m2b-submit-receipts.md` parts 5-7, the SPEC sections it cites, `docs/reviews/code-M2-b.md`, and the diff since that review's last commit `c6f3258`. The integration commits are `d0fb793` (submit operand resolution), `efa9ad2` (`submission` show over the M1-c dataset, plus the crash-test handshake and the upload-concurrency assertion), `209c8fc` (integration acceptance tests) and `aa0128e` (the `download@1` nullability step). The requested `git merge main` is `bd3a4d7` (main parent `61284b3`); it was a trivial docs-only merge. Final revision `f2f0acc`. Main advanced independently to `558134e` with M4-a during this review; these results describe this worktree, not a merge with that newer main.
 
-Every gate used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m2b-int`.
+Every gate used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Result |
 |---|---|
@@ -40,7 +40,7 @@ Locations refer to the corrected source. Paths are relative to the repository ro
 The worker reported that `download::install::tests::pending_move_recovery_branches` failed once in about 20 full runs and could not be reproduced in isolation. The claim is real and measurable:
 
 - `SystemTime::now().as_nanos()` on this machine advances in steps of exactly 1000 ns; 96% of consecutive calls return the identical value.
-- Of the 1763 directory names those two helpers had left in the temp directory, every one is a multiple of 1000 ns and the smallest gap between two distinct names is exactly 1000 ns — one clock tick. A pair that lands in the same tick leaves a single shared directory and no second name, so the listing cannot show a collision directly; it can only show that the margin is one tick.
+- Of the 1763 directory names those two helpers had left in the temp directory, every one is a multiple of 1000 ns and the smallest gap between two distinct names is exactly 1000 ns :  one clock tick. A pair that lands in the same tick leaves a single shared directory and no second name, so the listing cannot show a collision directly; it can only show that the margin is one tick.
 - `pending_move_recovery_branches` asserts an exact recovery list (`assert_eq!(recovered, vec![(1, Action::Moved)])`), so a second process writing into the same directory adds rows and fails it, while the test alone is deterministic. That matches the reported symptom exactly.
 
 After the fix a full `--all-features` run leaves zero directories behind from these helpers. The 5805 directories from earlier runs were left in place rather than deleted.
@@ -51,5 +51,5 @@ After the fix a full `--all-features` run leaves zero directories behind from th
 
 ## Needs a decision
 
-- §7 gives one human date form, `Tue Sep 15, 11:59 PM` "plus `(in 2d 4h)` or `(overdue 3h)`". The suffix reads a date as a deadline, so on a time something happened at — a submission time, a comment time, a history row — it would print "overdue 3h" for work submitted three hours ago. The fix above renders the absolute half only and adds `format_local_instant` for it. If the owner wants the suffix everywhere, §7 should say so and the helper can be dropped; if not, §7 should say the suffix applies to due dates.
+- §7 gives one human date form, `Tue Sep 15, 11:59 PM` "plus `(in 2d 4h)` or `(overdue 3h)`". The suffix reads a date as a deadline, so on a time something happened at :  a submission time, a comment time, a history row :  it would print "overdue 3h" for work submitted three hours ago. The fix above renders the absolute half only and adds `format_local_instant` for it. If Rolf wants the suffix everywhere, §7 should say so and the helper can be dropped; if not, §7 should say the suffix applies to due dates.
 - The M2-b `receipts`, `verify` and `reconcile` renderers print raw `_local` strings for the same kind of value. They were reviewed as MERGE in `docs/reviews/code-M2-b.md` and are outside this follow-up's diff, so they were left alone. Whether they should follow the §7 form as well is the same decision.

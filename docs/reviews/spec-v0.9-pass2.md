@@ -1,8 +1,8 @@
-# Review — SPEC v0.9 consolidation pass 2 (lane `w3`)
+# Review :  SPEC v0.9 consolidation pass 2 (lane `w3`)
 
 Verdict: **MERGE**, after the eleven `review(SPEC-v0.9):` commits below.
 
-Reviewed 2026-09-10 in `/home/user/projects/canvas-cli/.worktrees/w3` on
+Reviewed 2026-09-10 in `<checkout>` on
 branch `lane/w3`, after `git merge main` brought in
 `tasks/review-spec-v09-pass2.md` (a clean docs-only merge, `c63641f`).
 `git diff main HEAD -- crates xtask skill extension Cargo.toml Cargo.lock` is
@@ -16,19 +16,19 @@ The rule under review was: every normative sentence added to `docs/SPEC.md` is
 true of the code on `main`, no new decision is made, and no §19 item is
 resolved except by a one-line "resolved by …" note naming a real commit.
 Sentences were checked against modules, manifests, migrations, registry
-entries, fixtures and tests — not against the REPORT, the briefs, or the
+entries, fixtures and tests :  not against the REPORT, the briefs, or the
 worker's report. Ten sentences failed and one gap in the code was silently
 passed over; all eleven are handled below. Nothing else in §24, §25, the
 extended tables, or the appendices contradicted the code.
 
-Build and gate target: `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-spec2`.
+Build and gate target: `CARGO_TARGET_DIR=<checkout>`.
 
 ## What was corrected
 
 | Section | What was wrong | What it says now | Evidence |
 |---|---|---|---|
 | §21.2 tool catalog | "`context.note` and `context.follow` are the two `Organize` tools that are not idempotent." Seven of the ten are: `download.run`, all four `*.prepare` tools, `context.note` and `context.follow` carry `idempotent: false`. | Names the seven, and names `sync.run`, `context.attach` and `context.detach` as the three that repeat safely. | `crates/canvas-cli/src/mcp/catalog.rs` (`ToolSpec` rows; `sync.run` :866, `download.run`, `submission.prepare` :902) |
-| §24.1 lifecycle | "Sharing pauses on a hidden tab …, on entering an assessment, on a tab close, and on host loss." A tab close and a cross-origin navigation **end** the attachment (`end()` sends `detach`), and host loss sends nothing at all — the port is gone. | Splits pause from end, and says host loss is a disconnected port reported to nobody. | `extension/src/background.js:72-94`, `:96-124`, `:218-222`, `:386-401` |
+| §24.1 lifecycle | "Sharing pauses on a hidden tab …, on entering an assessment, on a tab close, and on host loss." A tab close and a cross-origin navigation **end** the attachment (`end()` sends `detach`), and host loss sends nothing at all :  the port is gone. | Splits pause from end, and says host loss is a disconnected port reported to nobody. | `extension/src/background.js:72-94`, `:96-124`, `:218-222`, `:386-401` |
 | §24.6 `bridge-native@1` | "A pause carries its cause: `hidden`, `assessment`, `tab_closed`, `user_detached`, or `cross_origin`." The five are the shared `PauseCause` enum; only `hidden` and `assessment` ever arrive on a `pause`. | One cause list, and the message says which half it is: `pause` for the first two, `detach` for the other three. | `crates/canvas-core/src/bridge/wire.rs:212-223`; `extension/src/content.js:142`; `extension/src/background.js:178-181`, `:386-401` |
 | §24.16 what has not been run | The not-run list dropped "a stale follow refused with a real tab behind it", which `docs/companion.md` carried and which this pass reduced to a pointer. The check table still has the row. | The item is back on the list. The refusal itself is tested; only the real tab is not. | `docs/companion.md` on `main`, "Not run"; `crates/canvas-cli/tests/m7b.rs:307` |
 | §25.3 and §14, `unresolved` | "a `--to` entry outside the topic, or a recipient id Canvas does not return", presented as the exact conditions. A third path raises it: an attachment that cannot be canonicalized, is not a regular file, or whose name or path is not valid UTF-8. | Both tables name the attachment case. | `crates/canvas-core/src/operations/prepare.rs:419-455` |
@@ -37,7 +37,7 @@ Build and gate target: `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/
 | Appendix A, `rustix` | The note was extended to "for the socket and pipe permission work of §24". `rustix` entered at M0-c (`3ded806`) and its three uses are the credential file's `O_NOFOLLOW` open and `geteuid`. The broker's modes use `std::os::unix::fs::PermissionsExt`. | Names the credential file's no-follow open and owner check. | `crates/canvas-cli/src/credentials.rs:743`, `:771`, `:816`; `crates/canvas-cli/src/bridge/owner.rs:147-151` |
 | §19 item 44 | "`docs/companion.md` recorded both deviations." The same pass reduced that file to a pointer; it records neither. | "§24.1 records both deviations." | `docs/companion.md`; SPEC §24.1 permission table |
 | `docs/writes-v2.md` | "the schemas, the six tools, and the sixth skill workflow". §25.10 announces eight. Six is the count of *write* tools the skill test confines to one workflow, a different set. | "the eight tools". | SPEC §25.10; `crates/canvas-cli/tests/skill.rs:67-78` |
-| §24.10 and §19 item 46 | §24.10 said journal states are drawn with their exact §12.2 names and only `submitted` is finished — true, but silent about operation journals, which the panel also lists and for which it has no words. | §24.10 says what the panel's sentences cover; **new §19 item 46** names the gap. No code was touched. | `crates/canvas-cli/src/bridge/panel.rs:245-267`; `crates/canvas-core/src/receipts/ops.rs:310-320`; `extension/src/panel_view.js:20-42` |
+| §24.10 and §19 item 46 | §24.10 said journal states are drawn with their exact §12.2 names and only `submitted` is finished :  true, but silent about operation journals, which the panel also lists and for which it has no words. | §24.10 says what the panel's sentences cover; **new §19 item 46** names the gap. No code was touched. | `crates/canvas-cli/src/bridge/panel.rs:245-267`; `crates/canvas-core/src/receipts/ops.rs:310-320`; `extension/src/panel_view.js:20-42` |
 
 Commits, oldest first:
 
@@ -69,7 +69,7 @@ and its `permissions` array is exactly `["activeTab", "nativeMessaging",
 `content_scripts`, no `externally_connectable`. `tests/companion.rs`
 `the_manifest_asks_for_nothing_it_does_not_need` asserts the four names as an
 ordered equality and refuses each of the eleven the SPEC lists (plus
-`webRequestBlocking` and `<all_urls>`, which the SPEC does not name — the SPEC
+`webRequestBlocking` and `<all_urls>`, which the SPEC does not name :  the SPEC
 list is a subset of the test's, which is the safe direction).
 `the_panel_builds_no_markup_from_a_string` scans every `.js` the panel page
 loads for all seven strings §24.1 names, and asserts it scanned at least five
@@ -95,7 +95,7 @@ Five zones, declared most-exposed-first so `max` is the stricter reading
 `tool_content`, `lti`, `external_tool`, `basic_lti`; `KNOWN_FRAME_IDS` is
 `preview_frame`, `wiki_page_show`, `speed_grader_iframe`; anything else
 returns `"unknown"`. A frame is read as `id`, `name`, `src`, `title`,
-`className` joined and lower-cased — never by reading its contents. The twelve
+`className` joined and lower-cased :  never by reading its contents. The twelve
 page kinds match `PageKind`, and `classify_route` accepts numeric ids only
 (`a_route_id_is_always_numeric`).
 
@@ -142,7 +142,7 @@ refuses over it with a message naming `CANVAS_DATA_ROOT`.
 `release::request` sends `Op::Release` and waits `RELEASE_TIMEOUT` = 5 s,
 reporting busy otherwise; `commands/identity.rs:149` adds "stop it with
 `canvas bridge detach`". `forget_endpoint` unlinks the socket **and** the
-ownership lock and nothing else — its test asserts the directory, a
+ownership lock and nothing else :  its test asserts the directory, a
 neighbour's lock and the root identity lock survive.
 
 ### §24.6 `bridge-native@1`
@@ -184,7 +184,7 @@ documented and served as `0`. `panel::cursor` reports `CursorCheck::Resync`
 rather than restarting. `panel::api` reads the local cache only.
 
 `MAX_NOTE_BYTES` 8 KiB, `MAX_SOURCE_REFS` 16, `MAX_NOTES` 32,
-`MAX_INLINE_DEPTH` 4, `MAX_QUOTE_DEPTH` 6 — and `check()` maps each breach to
+`MAX_INLINE_DEPTH` 4, `MAX_QUOTE_DEPTH` 6 :  and `check()` maps each breach to
 the reason §24.11 gives, with the 33rd note refused and no older note evicted.
 `is_allowed_ref` implements the `canvas://` and `https`-on-the-granted-origin
 rule including the empty-username and empty-password test, with the
@@ -200,7 +200,7 @@ types covering §24.11's list; a blocked link renders `line-through` with
 row by a `constant_time_eq` handle rather than by plan id, and names all seven
 refusals. `record_plan_decision` writes the plan id and the decision and
 nothing else. `awaiting_decision` has no kind filter, and `PanelPlan` has no
-operation field — which is item 45, verbatim true, including "assignment 0"
+operation field :  which is item 45, verbatim true, including "assignment 0"
 and "`discussion_reply` · course 101" from `panel.js:94-95` and
 `insert_operation`'s `assignment_id: 0`.
 
@@ -242,7 +242,7 @@ matches `execute()` step for step, `CONTENTION_WAIT` is 5 s, and expiry is
 
 `recover_owned`'s table is §25.5's table. `ASSUME_AFTER` is 30 minutes, and
 `assume_not_posted` is refused for a visible candidate, an under-age journal,
-and — in `reconcile::run` — an incomplete readback, each with its own warning
+and :  in `reconcile::run` :  an incomplete readback, each with its own warning
 on an exit-9 envelope. A live owner gives `Verdict::NotRead` with a warning
 and no state change.
 
@@ -308,7 +308,7 @@ carries the `plan@1` / `operation@1` exception §25.9 describes.
 
 ### §19
 
-Items 1–43 are verbatim against `main` apart from the two appended
+Items 1-43 are verbatim against `main` apart from the two appended
 "resolved by" notes. Both notes name real commits and both were verified by
 running the binary built in this worktree, not by reading the commits:
 
@@ -327,7 +327,7 @@ running the binary built in this worktree, not by reading the commits:
 
 Items 27 and 28 are still open and untouched, as pass 1 left them. Items 44
 and 45 are true of the code, with the one clause corrected above. §19 now runs
-1–46.
+1-46.
 
 ## What I could not verify
 
@@ -348,14 +348,14 @@ and 45 are true of the code, with the one clause corrected above. §19 now runs
   the package's, not re-derived. What was checked is that the code says what
   the SPEC says it says.
 - **`docs/writes-v2.md`'s "Left for the next round".** Its one-line scope note
-  — group discussions, marking read, editing or deleting a post, and quizzes
-  are out of this package — is not carried by §25 beyond the `group_write`
+  :  group discussions, marking read, editing or deleting a post, and quizzes
+  are out of this package :  is not carried by §25 beyond the `group_write`
   refusal. Left as it is: that is roadmap, which §5 and §18 hold, not a
-  contract sentence. Worth the owner's eye rather than a correction.
+  contract sentence. Worth Rolf's eye rather than a correction.
 
 ## Gates
 
-Run with `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-spec2`.
+Run with `CARGO_TARGET_DIR=<checkout>`.
 
 ```
 $ cargo fmt --all --check

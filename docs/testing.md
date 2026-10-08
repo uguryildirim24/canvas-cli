@@ -1,123 +1,96 @@
 # Testing
 
-The workspace runs on `cargo nextest`. Five gates guard every package
-(SPEC §16):
+Run the existing checks from the repository root:
 
 ```sh
-cargo fmt --all --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo nextest run --all-features
-cargo deny check
-cargo +1.88 check --workspace --all-targets
+just check
+npm --prefix extension test
 ```
 
-## The end-to-end suite
+`just check` runs formatting, Clippy, tests, and cargo-deny in that order.
+It stops at the first failure. Tests use cargo-nextest when installed and
+otherwise use `cargo test --all-features`.
 
-`crates/canvas-cli/tests/e2e/` runs the shipped `canvas` binary against a
-`wiremock` Canvas built from `crates/canvas-api/tests/fixtures/`, and snapshots
-stdout, stderr and the exit code with `insta`.
+Rustfmt and Clippy are Rust toolchain components. Just, cargo-nextest, and
+cargo-deny are separate tools. Node.js 24 or newer runs the companion checks.
+The companion needs no npm dependencies.
 
-```sh
-# the whole suite
-cargo nextest run --all-features -E 'binary(e2e)'
+## Scope review, October 8, 2026
 
-# one module, or one test
-cargo nextest run --all-features -E 'binary(e2e) and test(commands)'
-cargo nextest run --all-features -E 'binary(e2e) and test(exit_9)'
-```
+Runtime Rust code, dependency manifests, Cargo.lock, and the justfile match
+HEAD. Privacy replacements remain in fixtures, existing test inputs and
+expectations, result examples, and dependent snapshots. No tests were added.
+Historical research, measurements, and review evidence remain. Private paths
+were removed from review reports. Deleted task briefs and dialogue turns are
+agent handoff notes, not runtime features.
 
-No test in the suite is `#[ignore]`d.
+The historical consolidation report, specification review ledger, and packaging
+results were restored rather than treated as junk. They remain historical
+evidence, not current setup instructions.
 
-Every test builds its own [`E2e`](../crates/canvas-cli/tests/e2e/harness.rs):
-a private config root, a private data root, the file credential store, and the
-presentation environment SPEC §16 row 3 fixes — `COLUMNS=100`, `--color never`,
-`TZ=America/New_York`, and `CANVAS_NOW` frozen at `2026-09-09T17:05:12Z`. The
-roots come from `canvas_core::test_scratch::Scratch`, so they are removed when
-the test ends and the suite runs in parallel.
+The section 16 coverage table below was restored. The reply guide and its
+existing assertion now name Rolf and retain the authorization phrases. Six
+formatting-only JSON changes were reverted. The original error code, cache
+table name, top-frame ID, and hostile approval punctuation were also restored.
 
-`CANVAS_NOW`, `CANVAS_TEST_FORCE_FILE`, `CANVAS_TEST_KEYRING_ERROR`,
-`CANVAS_TEST_CRASH_AFTER`, `CANVAS_TEST_ALLOW_HTTP` and `CANVAS_TEST_NO_LAUNCH`
-are all gated on `cfg!(debug_assertions)`: a release build ignores them.
+Checks ran on macOS. Rustc reported 1.97.1 and Node.js reported 24.19.0.
+Cargo reused the worktree-local dependency cache with offline access. This was
+not a clean machine or a fresh dependency download.
 
-### Updating snapshots
-
-Snapshots live in `crates/canvas-cli/tests/e2e/snapshots/`. To review a change:
-
-```sh
-cargo insta test --test e2e --review     # or: cargo insta review
-```
-
-To write every snapshot without reviewing — only when you have already read the
-diff:
-
-```sh
-INSTA_UPDATE=always INSTA_FORCE_UPDATE=1 cargo nextest run --all-features -E 'binary(e2e)'
-```
-
-Run the suite a second time afterwards with no `INSTA_*` variables. A snapshot
-that changes between two runs is carrying a value the harness has not pinned;
-add it to `VOLATILE_KEYS`, `VOLATILE_NUMBER_KEYS`, or `E2e::mask` rather than
-accepting it. The values already pinned are the journal and receipt UUIDs, the
-journal `created_at`/`updated_at` (which `canvas-core` stamps from the wall
-clock), the identity database size, the fixture server's port, the crate
-version, the build target and commit, and `doctor`'s clock skew.
-
-### Adding a fixture
-
-1. Put the Canvas document in `crates/canvas-api/tests/fixtures/`. It must be
-   sanitized: `cargo xtask sanitize` applies the §15 allowlist and strips URLs.
-2. Add an accessor to `Fixtures` in `harness.rs` — the `fixture!` macro reads
-   the file at compile time, so a typo is a build error.
-3. Mount it on a route in `CanvasServer::start`, or, when only one test needs
-   it, from that test with `override_get` / `override_post_or_get`. The shipped
-   routes all carry the default `wiremock` priority and an override carries a
-   higher one, because `wiremock` otherwise answers with the first match in
-   mount order.
-4. Run the suite with `INSTA_UPDATE=always`, read the new snapshots, then run
-   it again unset to confirm they are stable.
-
-Adding a **`result` payload** rather than a Canvas document means a registry
-fixture in `crates/canvas-cli/src/output/schemas/` and an entry in
-`all_schemas()` in `src/output/registry.rs`. A schema whose Appendix D row
-lists more than one shape has one entry per shape, named by `variant`. Add the
-file to `SHAPES` in `tests/e2e/schema.rs` too;
-`the_shape_table_covers_every_registry_fixture` fails otherwise.
-
-## What the suite covers
-
-| Module | Deliverable |
+| Check | Observed result |
 |---|---|
-| `harness.rs` | the fixture server, the isolated environment, the snapshot helper |
-| `commands.rs` | every v1 command, table and `--json` |
-| `raw_output.rs` | `completions`, `receipts export --out -`, `calendar --ics -`, `auth token --reveal`, `config edit`, and the `--json` usage error on each |
-| `exits.rs` | one test per SPEC §14 exit code, 0 through 13 |
-| `precedence.rs` | the §14 abort order and the completed-command order |
-| `selection.rs` | the §16 row 3 items with no earlier end-to-end test |
-| `schema.rs` | every `--json` snapshot against its registry fixture |
+| `cargo build --locked --release` | Passed with offline dependency access. |
+| Release `--help`, `version`, `schema --list`, and `doctor` | Passed with isolated local configuration. Doctor selected no identity and skipped account checks. |
+| Credential-free `auth status` and offline `todo` | Exit 3, as expected. |
+| Bash, Fish, and Zsh completion generation | Passed into an isolated HOME. Zsh `compinit` also passed. Fish was not loaded in an interactive shell. |
+| Earlier `just check` | Formatting passed. Clippy stopped at `assert_is_empty` warnings. No lint suppression or assertion rewrite was added. |
+| Final worktree `just check` | Formatting and Clippy passed. Nextest stopped after 471 of 923 tests: 466 passed and 5 socket-path failures. Exit 100. Another 452 tests were not run because of fail-fast. Cargo-deny was not reached. |
+| First full nextest run without updates | 923 tests ran: 903 passed, 20 failed. Nineteen failures were socket-dependent. The cache table snapshot also failed. |
+| Focused rerun after the snapshot repair | The three existing coverage, reply-guide, and cache checks passed without update variables. The filter omitted 920 checks. |
+| Final worktree `cargo nextest run --all-features --no-fail-fast` | 923 tests ran: 904 passed, 19 socket-dependent failures, none skipped. Nextest marked the existing crash-helper check leaky. The repaired checks and registry snapshots passed. |
+| Existing skill and identity-selection checks after the final documentation edits | All 15 selected checks passed. Other binaries were not selected. |
+| `npm --prefix extension test` | All 52 checks passed. |
+| `cargo +1.88 check --offline --locked --workspace --all-targets` | Passed using the already installed toolchain. |
+| `cargo deny --offline --locked check` | Incomplete. The local advisory database was absent. No network Git was used. |
+| `cargo deny --offline --locked check licenses bans sources` | Passed with duplicate-version warnings. This is not an advisory check. |
 
-### Schema conformance
+The cache table snapshot was first regenerated from the synthetic fixtures.
+Its isolated rerun passed, but the full run produced a different SQLite file
+size: 155648 rather than 163840 bytes. The existing text scrubber now also
+masks `size_bytes: ` with its existing numeric mask. JSON snapshots already
+mask this filesystem measurement. This one-line test-only fix is needed for
+the README's test step. Runtime output is unchanged. The existing snapshot was
+regenerated again and verified without updates. Row counts and dataset fields
+remain checked.
 
-`schema::every_json_snapshot_matches_its_registry_fixture` reads every JSON
-snapshot the suite wrote and checks the `result` against the registry fixture
-for its `schema`:
+The original short-deadline submission check passed in the final full run.
+Its HEAD timeout is unchanged. The suite is not fully passing. Earlier results
+for a refactored session or changed timeouts do not describe this tree.
 
-- **field presence** — Appendix D says every listed field is always present, so
-  the key sets must match in both directions;
-- **nullability** — a fixture value of `null` declares the field nullable;
-  `NULLABLE_WITH_EXAMPLE` lists the Appendix D `T?` fields whose fixture shows
-  an example instead, and a live `null` anywhere else fails;
-- **arrays are never null** — a fixture array is an array in the live payload;
-- **sort order** — the Appendix D `Sort` column, per schema.
+## Isolation and socket paths
 
-The §7 envelope rules are checked on the same snapshots: the fixed key set,
-ids as strings, and a `<name>_local` sibling for every `ts+local` field.
+Keep test HOME, config, data, and temporary roots separate from an authenticated
+account. Do not supply a global `CANVAS_CONFIG_DIR` that masks a test's own XDG
+override. Cargo output and review-generated files live under ignored `target/`.
 
-### SPEC §16 row 3, item by item
+The approved worktree path is 108 bytes before any temporary identity path is
+appended. The approved review root is also too long for the broker's 103-byte
+Unix socket bound. No short checkout or temporary root outside those locations
+was authorized. The requested short-root rerun could not be performed without
+breaking the path restriction. This environmental verification blocker remains.
+Rolf must approve a short checkout and short private temporary root before a
+complete rerun. Runtime behavior and endpoint checks were not changed. Do not
+skip socket checks and call that a full pass. Windows uses named pipes and was
+not checked here.
 
-The first two items of the row are the whole of `commands.rs` and `exits.rs` /
-`precedence.rs`. The eleven named items after them are covered as follows.
-`selection::every_row_3_item_names_a_test_that_exists` checks that every test
-named here exists.
+Coursework sessions use `CANVAS_DATA_ROOT` and only `CANVAS_TOKEN` for online
+requests. Auth and identity management use `CANVAS_DATA_DIR` and can read saved
+credentials. Set both data roots to the same private directory when isolating
+all command classes. See [README.md](../README.md).
+
+## SPEC section 16, row 3 coverage
+
+The existing selection check reads this table and verifies the named tests.
 
 <!-- spec-16-row-3 -->
 
@@ -137,33 +110,55 @@ named here exists.
 
 <!-- /spec-16-row-3 -->
 
-### Exit codes and precedence
+## Fixtures and snapshots
 
-`exits.rs` holds one test per §14 code and asserts the schema and the outcome
-as well as the code, so an abort (the `error` schema) stays distinguishable
-from a completed command with a non-success outcome.
+The [fixture README](../crates/canvas-api/tests/fixtures/README.md) describes the
+invented model data and result examples. The separate benchmark manifest
+already identifies its dataset as synthetic. The
+[loopback TLS fixture](../crates/canvas-api/src/transfer_tests/README.md) is a
+local test key, not an account credential.
 
-The **abort order** — 2 → 3 → 13 → 4 → 5 → 6 → 7 — is an order of detection,
-so a pair is only assertable when one invocation can be in both states at once.
-`precedence.rs` constructs every such pair. `4` before `5` is the one adjacent
-pair no invocation can hold: a request that never connects cannot also come
-back rate limited, and the first dataset failure ends the command before a
-second route is asked.
+The existing end-to-end suite runs the binary against a mock Canvas server.
+Snapshots record mock stdout, stderr, and exits. They are not authenticated
+coursework results. All retained snapshots were exercised in the final full
+run without update variables.
 
-The **completed-command order** — 9 > 10 > 8 > 12 > 11 > 0 — has the same
-limit and a tighter one: 8 and 11 are terminal for the command that can
-produce them, so no invocation carries one of them beside a lower-ranked
-outcome. `9 > 12` (a `submit` left `upload_incomplete` by a partial upload)
-and `12 > 0` are asserted in `precedence.rs`; `10 > 12` is asserted by
-`download.rs::modified_force_mismatch_precedence_and_move_previous_path`;
-`canvas-core`'s `download::install::outcome_exit_code` ranks the whole list and
-is unit tested against every action.
+To inspect the existing end-to-end checks:
 
-## The other layers
+```sh
+cargo nextest run --all-features -E 'binary(e2e)'
+```
 
-| Layer | Where |
-|---|---|
-| `canvas-api` against `wiremock` | `crates/canvas-api/tests/` |
-| `canvas-core` unit tests and fixtures | `crates/canvas-core/src/**/tests.rs` |
-| `canvas-cli` per-package integration tests | `crates/canvas-cli/tests/*.rs` |
-| benchmarks | `cargo xtask bench` |
+For an intentional fixture change, regenerate with the existing tests:
+
+```sh
+INSTA_UPDATE=always INSTA_FORCE_UPDATE=1 cargo nextest run --all-features -E 'binary(e2e)'
+```
+
+Review every changed field, then rerun without the update variables. Do not
+accept live account data into a snapshot. `submit@1` and `operation@1` retain
+their original `replayed` field. No output-contract version bump remains.
+
+`CANVAS_NOW`, `CANVAS_TEST_FORCE_FILE`, `CANVAS_TEST_KEYRING_ERROR`,
+`CANVAS_TEST_CRASH_AFTER`, `CANVAS_TEST_ALLOW_HTTP`, and `CANVAS_TEST_NO_LAUNCH`
+are existing debug-build controls. Release builds ignore them.
+
+## Not checked here
+
+Prerequisite installers were not rerun because the tools were already present
+and installations would write outside the permitted worktree. Real Canvas
+login, token entry, authenticated coursework, Chrome installation, paid
+services, cross-platform builds, and release publication were not run. No crawl
+or live fixture recording was started. No new standalone benchmark was run;
+the existing full suite did include its local benchmark check.
+
+An earlier publication-file scan covered 728 files. Its matches were public
+project metadata, historical institution discussion, and synthetic machine
+paths. The final scan covered 729 publication text files. No listed personal
+terms, private machine paths, historical account identifier, or former quiz
+validation token matched. This was a targeted scan, not a complete
+secret-scanner audit.
+
+History cleanup is separate. A tree scan does not remove historical private
+identifiers. Rolf must revoke any former example credential that was real and
+review the history intended for publication.

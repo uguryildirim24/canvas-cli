@@ -1,4 +1,4 @@
-# Code review — M5-a (`xtask record|sanitize|bench`, `docs/bench.md`)
+# Code review :  M5-a (`xtask record|sanitize|bench`, `docs/bench.md`)
 
 Branch `lane/w1`, worker commits `fb17d88..464bf36`, reviewed against
 `docs/SPEC.md` §11, §13, §15, §16, §19 item 5, Appendix A and Appendix B, and
@@ -6,7 +6,7 @@ the package brief `tasks/m5a-xtask-bench.md`.
 
 ## Verdict
 
-**MERGE** — after the seven `review(M5-a):` commits below.
+**MERGE** :  after the seven `review(M5-a):` commits below.
 
 The package does what the brief asks and the six gates are green, but `record`
 wrote live capabilities to disk and `sanitize` let three classes of
@@ -16,17 +16,17 @@ Nothing needs a spec change; the "Needs a decision" list is empty.
 
 ## Gates
 
-Run with `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m5a`
+Run with `CARGO_TARGET_DIR=<checkout>`
 on the reviewed tree (`20f39a2`).
 
 | Gate | Result |
 |---|---|
 | `cargo fmt --all --check` | pass |
 | `cargo clippy --all-targets --all-features -- -D warnings` | pass |
-| `cargo nextest run --all-features` | pass — 482 tests, 0 failed |
-| `cargo deny check` | pass — advisories, bans, licenses, sources ok |
+| `cargo nextest run --all-features` | pass :  482 tests, 0 failed |
+| `cargo deny check` | pass :  advisories, bans, licenses, sources ok |
 | `cargo +1.88 check --workspace --all-targets` | pass |
-| `cargo xtask bench --runs 3` | pass — exit 0, every §13 target met |
+| `cargo xtask bench --runs 3` | pass :  exit 0, every §13 target met |
 
 The bench gate reproduces the numbers M5-a recorded. Independent run on this
 machine (Apple M5 Pro, Darwin 25.6.0 arm64), 5-course set `bench-5`:
@@ -41,8 +41,8 @@ machine (Apple M5 Pro, Darwin 25.6.0 arm64), 5-course set `bench-5`:
 | cold start | download | 8.4 | 8.5 | p95 < 400 | 8.4 |
 
 Every target is met by roughly a factor of twenty, idle and under load. Both
-inherent limitations — the cold-start emulation and the debug build used for
-the download load — are stated in `docs/bench.md` and in the module comment,
+inherent limitations :  the cold-start emulation and the debug build used for
+the download load :  are stated in `docs/bench.md` and in the module comment,
 and the report claims nothing beyond them.
 
 **SPEC §19 item 5 is respected.** `record` has never been run against a real
@@ -60,9 +60,9 @@ Line numbers are in the tree as delivered (`464bf36`).
 | # | Severity | File:line | What was wrong | What I changed | Commit |
 |---|---|---|---|---|---|
 | 1 | **High** (security) | `xtask/src/record.rs:181` | `record` stored every response body verbatim. A files listing carries `url: https://…/files/501/download?verifier=…` and `users/self` carries an `avatar_url` with a `token=` parameter, so a recording held live capabilities. The module comment claimed they were "never stored" and pointed at `sanitize`, which runs later and only on the way into the tracked directory. SPEC §15 does not distinguish scratch from tracked. Reproduced against `wiremock` before fixing. | Added `sanitize::redact_capabilities` / `strip_capability_params`: drops the §11 keys and the §11 query parameters (and any userinfo) with no pseudonymization, which is the part that cannot wait for a whole set. `record` runs it over every body, the `Link` header, and the recorded query pairs; a URL carrying nothing on the list is returned byte for byte. The next page is read from the response as it arrived, so stripping cannot break the walk. Test asserts no capability in any byte written. | `ba565e0` |
-| 2 | **Medium** (security) | `xtask/src/sanitize.rs:240` | The free-text placeholder copied everything between `<` and `>` verbatim to keep markup structure. That kept element names — which a test needs — but also every attribute: `<a href="mailto:ada@lasell.edu">` and `<img src="https://canvas.real.edu/users/77/avatar.png">` passed through a `syllabus_body` or an announcement `message` unchanged. | The element name still survives, up to the first character that cannot be part of one; attributes go through the same substitution as the surrounding text. Length, structure and idempotence unchanged. | `e9ac2b3` |
+| 2 | **Medium** (security) | `xtask/src/sanitize.rs:240` | The free-text placeholder copied everything between `<` and `>` verbatim to keep markup structure. That kept element names :  which a test needs :  but also every attribute: `<a href="mailto:ada@campus.example.test">` and `<img src="https://canvas.real.edu/users/77/avatar.png">` passed through a `syllabus_body` or an announcement `message` unchanged. | The element name still survives, up to the first character that cannot be part of one; attributes go through the same substitution as the surrounding text. Length, structure and idempotence unchanged. | `e9ac2b3` |
 | 3 | **Medium** (security) | `xtask/src/sanitize.rs:323` | `sanitize_id` mapped numbers and all-digit strings and cloned everything else, so `lti_user_id` (a stable per-user hash), `anonymous_id` and UUID-shaped values survived byte for byte. An object under a key ending in `_id` was cloned whole, so nothing inside it was ever visited. | Non-numeric ID strings take an `opaque-N` pseudonym, its own fixed point like every other shape. An object under an ID key goes back through the ordinary walk. | `ebe8c80` |
-| 4 | **Medium** (security) | `xtask/src/sanitize.rs:226` | Pseudonyms are recognized by shape, which is what makes a second pass a no-op without a manifest — but the same rule copies a real value through when it matches. `user{n}` is a login universities really issue, so a `login_id` of `user1` came out of `sanitize` untouched. | The form is now `login-{n}`. `example.invalid` is reserved (RFC 2606) and `opaque-N` is not a value Canvas sends; `Name N` and `file-N.ext` stay, neither being a realistic real value. | `7edcdcd` |
+| 4 | **Medium** (security) | `xtask/src/sanitize.rs:226` | Pseudonyms are recognized by shape, which is what makes a second pass a no-op without a manifest :  but the same rule copies a real value through when it matches. `user{n}` is a login universities really issue, so a `login_id` of `user1` came out of `sanitize` untouched. | The form is now `login-{n}`. `example.invalid` is reserved (RFC 2606) and `opaque-N` is not a value Canvas sends; `Name N` and `file-N.ext` stay, neither being a realistic real value. | `7edcdcd` |
 | 5 | **Medium** (destructive) | `xtask/src/sanitize.rs:483` | Before writing, `sanitize` removed every `*.json` under `--out` without checking what they were. `--out .`, or a typo naming a source directory, deleted every JSON file there with no prompt. | A file is removed only if this tool could have written it: `MANIFEST.json`, or a `*.json` that parses as a recorded response. Anything else stops the run before a single file is deleted. | `3e6cb76` |
 | 6 | **Medium** (conformance) | `xtask/src/record.rs:41` | The walk covered the account and per-course endpoints but not `announcements` or `calendar_events`, so a recorded set could not back either of those two v1 commands. Both are addressed by a list of context codes rather than by one course, which is why they fell between the two existing groups. | `context_endpoints` derives them from the `--course` IDs, batched ten to a call per Appendix B. | `4ed0a99` |
 | 7 | **Low** (correctness / honesty) | `xtask/src/bench.rs:773` | The Method section said the server serves "five courses" as fixed prose. Run with `--fixture` against any other set, the report claimed a 5-course workload for whatever it was handed, and SPEC §13 ties its targets to a 5-course fixture. The same section implied the whole set was served, but pages after the first are not: `mount_set` drops the recorded `Link` header, correctly, because it points off-origin. | `SetShape` reads the course count from the set's own `courses` response; the report carries it as a row and in the Method sentence, warns on stderr when it is not five, and lists the dropped pages under Limitations when a set has any. `bench-5` is five courses on one page, so its report gains only the new row. | `465ed7c` |
@@ -87,7 +87,7 @@ Line numbers are in the tree as delivered (`464bf36`).
   and keeps the JSON type Canvas used.
 - **Tracked-directory refusal.** `record` refuses unconditionally rather than
   accepting a `--sanitized` flag. That is stricter than the brief's wording and
-  matches its intent — `sanitize` is the only writer there — so I left it.
+  matches its intent :  `sanitize` is the only writer there :  so I left it.
   The check canonicalizes where it can and falls back to a textual suffix match
   for a directory that does not exist yet, which is the normal case.
 - **Headers.** Only the four the client reads are kept. `Set-Cookie` and

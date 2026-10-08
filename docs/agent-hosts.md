@@ -1,5 +1,9 @@
 # Agent hosts
 
+Publication review on October 8, 2026 did not rerun a third-party host.
+The historical matrix and its limits below are preserved as evidence.
+See [testing.md](testing.md) for the current local checks.
+
 `canvas mcp` serves the Model Context Protocol on stdin and stdout. This file
 records which hosts were **actually run against this build on this machine**,
 what each one negotiated, and what stayed untested. A host that is not in the
@@ -14,8 +18,8 @@ One tool, `getclitools`, and nothing else. It performs nothing: it returns the
 subscriptions, so `initialize` and `server/discover` advertise `tools` and
 nothing more.
 
-That makes the host matrix short. A host has three things to get right — the
-handshake, one `tools/list`, and one `tools/call` — and there is no per-tool
+That makes the host matrix short. A host has three things to get right ,  the
+handshake, one `tools/list`, and one `tools/call` ,  and there is no per-tool
 schema for a validator to reject.
 
 ## What ran
@@ -30,7 +34,7 @@ they loaded is not what this build serves.
 |---|---|---|---|---|---|---|
 | Claude Code (CLI) | 2.1.267 | yes | `2025-11-25` | 22 tools (then) | not requested | yes, `elicitation: {}` |
 | Cursor (`cursor-agent`) | 2026.09.08-6caf4ff (client id `Cursor 1.0.0`) | yes | `2025-11-25` | 22 tools (then) | 2 resources (then) | yes, `elicitation: { form: {} }` |
-| Codex CLI | 0.153.4 | not exercised | — | — | — | — |
+| Codex CLI | 0.153.4 | not exercised | ,  | ,  | ,  | ,  |
 | Project harness (`crates/canvas-cli/tests/mcp.rs`) | this build | yes | `2026-07-28` and `2025-11-25` | 1 tool | empty | yes and no, both cases |
 | Project harness (`cargo xtask bench --mcp`) | this build | yes | `2026-07-28` | 1 tool | not requested | no |
 
@@ -64,8 +68,8 @@ than inferred from a screen.
 - **The project harnesses.** `crates/canvas-cli/tests/mcp.rs` speaks
   hand-written JSON-RPC over a real pipe. It is the only client here that
   exercises both protocol revisions. It pins that exactly one tool is served,
-  that its answer is the `canvas` command reference — compared against the
-  `canvas schema --list` the same build prints — that each of the 43 names the
+  that its answer is the `canvas` command reference ,  compared against the
+  `canvas schema --list` the same build prints ,  that each of the 43 names the
   server has served at one time or another is `METHOD_NOT_FOUND`, and that
   `resources/read`, `subscriptions/listen`, an unknown argument, and a
   `requestState` are all refused. `cargo xtask bench --mcp` is a second
@@ -75,8 +79,8 @@ than inferred from a screen.
 
 **No third-party host asked for `2026-07-28`.** Both hosts that connected used
 the `initialize` handshake and named `2025-11-25`, which is why that revision
-is implemented as an adapter rather than dropped. The primary revision — no
-handshake, a per-request `_meta`, `server/discover` — is exercised only by the
+is implemented as an adapter rather than dropped. The primary revision ,  no
+handshake, a per-request `_meta`, `server/discover` ,  is exercised only by the
 two project harnesses in the table.
 
 ## What the hosts changed in this build
@@ -92,7 +96,7 @@ Running the hosts found one real defect:
 
   **This build has no `outputSchema` at all.** `getclitools` answers with one
   Markdown document, not a §7 envelope, so there is nothing for a validator to
-  read. The rule the defect taught — a union must declare its type — still
+  read. The rule the defect taught ,  a union must declare its type ,  still
   holds wherever the CLI generates one, and
   `crates/canvas-cli/tests/mcp.rs` pins that the one tool declares no output
   schema, which is the stronger version of the same protection.
@@ -134,10 +138,10 @@ for the default profile.
 - **Cursor:** the JSON above in `.cursor/mcp.json` or `~/.cursor/mcp.json`,
   then `cursor-agent mcp enable canvas`.
 
-The host also needs a way to run `canvas` itself — a shell, or whatever
-execution capability it has — because that is where every read and every write
+The host also needs a way to run `canvas` itself ,  a shell, or whatever
+execution capability it has ,  because that is where every read and every write
 happens. A host with no shell can still call `getclitools`, but it can only
-show the user the command line to run.
+show Rolf the command line to run.
 
 The shipped skill in [`../skill/canvas-cli/SKILL.md`](../skill/canvas-cli/SKILL.md)
 carries the same setup plus the workflows, the envelope reading order, and the

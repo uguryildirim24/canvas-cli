@@ -1,4 +1,4 @@
-# Code review — M9-b, `canvas mcp` is one tool (lane `lane/w1`)
+# Code review :  M9-b, `canvas mcp` is one tool (lane `lane/w1`)
 
 ## Verdict
 
@@ -6,7 +6,7 @@
 `canvas mcp` session serves exactly one tool named `getclitools`, every one of
 the 43 names the server ever served is `METHOD_NOT_FOUND`, `resources/read`
 and `subscriptions/listen` are unroutable, `resources/list` is empty, and the
-answer is the real command reference — 75 commands, built from the same clap
+answer is the real command reference :  75 commands, built from the same clap
 tree the binary parses with and the same registry `canvas schema` prints, with
 no network request made to build it. Nothing was quietly deleted: as delivered, the
 CLI's whole `--help` tree and every pre-existing `canvas schema` page are
@@ -17,17 +17,17 @@ surface" below.
 Seven defects were found and fixed in six `review(M9-b):` commits. One is
 serious and is the package's own premise: the reference told an agent how to
 spell the commands, and the spelling it gave was wrong for every command with
-a required argument group, a required option, or an optional subcommand — so a
+a required argument group, a required option, or an optional subcommand :  so a
 model that did what the tool exists for earned exit 2 on `canvas submit`,
 `canvas inbox send`, `canvas inbox reply`, `canvas discussion reply`,
 `canvas download` and `canvas note`.
 
 Nothing is pushed and nothing is merged into `main`. Three items are left for
-the owner, all of them already named honestly by the package.
+Rolf, all of them already named honestly by the package.
 
 ## Gates
 
-`CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m9b`.
+`CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | As delivered (`5327363`) | After the fixes (`5eaad76`) |
 |---|---|---|
@@ -43,10 +43,10 @@ the owner, all of them already named honestly by the package.
 counts above are the full run.
 
 **The 11 failures are pre-existing and environmental, verified rather than
-taken on trust.** `main` was exported to a clean tree and five of the eleven —
+taken on trust.** `main` was exported to a clean tree and five of the eleven :
 `todo_is_stub`, `m1b_commands_exit_auth_without_identity`,
 `command_choices_accept_documented_forms`, `grades_without_an_identity_is_exit_3`,
-`files_auth_without_identity_is_exit_3` — were run there under the same target
+`files_auth_without_identity_is_exit_3` :  were run there under the same target
 dir. All five fail identically on `main`. This machine holds a real stored
 identity, so every test asserting "no identity ⇒ exit 3" gets exit 13. None of
 the eleven touches MCP, the skill, or the registry.
@@ -114,10 +114,10 @@ runner reports. The report's §8.4 table is exact.
 
 | # | Sev | Where | What was wrong | What I changed | Commit |
 |---|---|---|---|---|---|
-| 1 | **High** | `mcp/reference.rs:202` (`usage_tail`) | The usage line was hand-rolled. It dropped **every required argument group** and **every required option**, and appended `<SUBCOMMAND>` whenever a command had subcommands at all, whether or not clap requires one. So the reference said `canvas submit [OPTIONS] <TARGET> [ASSIGNMENT]` (real: `<--file <FILES>\|--text <TEXT>\|--html <HTML>\|--url <URL>>` is required), `canvas inbox send [OPTIONS]` (real: `--to <TO>` and one of `--text`/`--text-file`), `canvas note [OPTIONS]` (real: `--text <TEXT>`), `canvas download [OPTIONS] [COURSE]` (real: `<COURSE\|--all-courses>`), and `canvas inbox [OPTIONS] <SUBCOMMAND>` where `canvas inbox --json` is the read the shipped workflow runs. A model following the reference earns exit 2 on the five writes the package exists to hand over. | `usage_lines` clones the node, names it after its full path, drops `--help`, and asks clap to `render_usage()` — the same tree the binary parses with. All 75 usage lines now match their own `--help` byte for byte, alternative forms included. | `37d3f99` |
-| 2 | Med | `mcp/reference.rs:218` (`operand`) | A positional standing for several values spelled only the first, so `canvas submission` read `<COURSE...>` — a repeated course — instead of `<COURSE> [ASSIGNMENT]...`, and contradicted the usage line above it. | All value names are spelled; the first `min_values` are required, the rest optional. | `37d3f99` |
+| 1 | **High** | `mcp/reference.rs:202` (`usage_tail`) | The usage line was hand-rolled. It dropped **every required argument group** and **every required option**, and appended `<SUBCOMMAND>` whenever a command had subcommands at all, whether or not clap requires one. So the reference said `canvas submit [OPTIONS] <TARGET> [ASSIGNMENT]` (real: `<--file <FILES>\|--text <TEXT>\|--html <HTML>\|--url <URL>>` is required), `canvas inbox send [OPTIONS]` (real: `--to <TO>` and one of `--text`/`--text-file`), `canvas note [OPTIONS]` (real: `--text <TEXT>`), `canvas download [OPTIONS] [COURSE]` (real: `<COURSE\|--all-courses>`), and `canvas inbox [OPTIONS] <SUBCOMMAND>` where `canvas inbox --json` is the read the shipped workflow runs. A model following the reference earns exit 2 on the five writes the package exists to hand over. | `usage_lines` clones the node, names it after its full path, drops `--help`, and asks clap to `render_usage()` :  the same tree the binary parses with. All 75 usage lines now match their own `--help` byte for byte, alternative forms included. | `37d3f99` |
+| 2 | Med | `mcp/reference.rs:218` (`operand`) | A positional standing for several values spelled only the first, so `canvas submission` read `<COURSE...>` :  a repeated course :  instead of `<COURSE> [ASSIGNMENT]...`, and contradicted the usage line above it. | All value names are spelled; the first `min_values` are required, the rest optional. | `37d3f99` |
 | 3 | **High** | `mcp/reference.rs:37,95` (`PREAMBLE`) | "Add `--json` to any command below and it prints one envelope", and a global-flag block listing `--json` as working everywhere. Seven of the 75 refuse it with exit 2: `notify`, `completions`, `schema`, `config edit`, `bridge host`, `mcp` print raw output, and `canvas watch` takes `--jsonl`. Each already said the right thing in its own `Returns` line, so the preamble contradicted the body of the same document. | The preamble sends the reader to the `Returns` line for the flag; the global block names the one exception. | `5eaad76` |
-| 4 | Med | `docs/companion.md:96` | The replacement two-consumer check — "run `canvas here` from two terminals under different profiles", expecting "each reads only after its own attach" — does not test the rule. A profile is an identity and an endpoint is `Endpoint::for_identity`, so two profiles are two brokers and two attachments; and `canvas here` from the CLI passes `consumer: None`, which takes the sole attachment rather than naming a consumer. It would pass whether the rule held or not. | The row says there is nothing to run and why, and points at `canvas_core::bridge::state::tests::only_an_opted_in_consumer_reads_the_bundle`, which still holds the rule. | `5d7add9` |
+| 4 | Med | `docs/companion.md:96` | The replacement two-consumer check :  "run `canvas here` from two terminals under different profiles", expecting "each reads only after its own attach" :  does not test the rule. A profile is an identity and an endpoint is `Endpoint::for_identity`, so two profiles are two brokers and two attachments; and `canvas here` from the CLI passes `consumer: None`, which takes the sole attachment rather than naming a consumer. It would pass whether the rule held or not. | The row says there is nothing to run and why, and points at `canvas_core::bridge::state::tests::only_an_opted_in_consumer_reads_the_bundle`, which still holds the rule. | `5d7add9` |
 | 5 | Med | `xtask/src/bench.rs:1153` → `docs/bench.md:44` | The generated doc headed the 656-byte figure "the bytes the whole tool list puts on the wire". The wire result is 729; 656 is the definitions alone. SPEC §21.2 already distinguishes the two. | The sentence names which figure it is, why it is the comparable one, and where the wire number is measured. The table is unchanged, because the 167 955 and 344 878 it is compared with were measured the same way. | `898ac82` |
 | 6 | Low | `mcp/reference.rs:280` (`help_of`) | An appended "One of: …" ran into a clap help string that carries no stop: "Which Chromium-family browser to install for One of: chrome, chromium, edge." Three arguments. | `end_sentence` closes the help text first. | `37d3f99` |
 | 7 | Low | `commands/open.rs:217`, `output/registry.rs:769,2294,2306` | Doc comments naming `context.follow` and `submission.execute` in the present tense as live callers. Both tools left in M9. | Past-tensed, and the live caller named (`canvas open --follow`; nothing reaches the replay path, which is why `replayed` is always `false`). The equivalent comments in `canvas-core` describe the broker's own IPC vocabulary, which the extension still speaks, and are left alone as out of scope. | `ea8109d` |
@@ -141,7 +141,7 @@ command?" test cannot see, and the package had only that.
    The brief asked for `canvas schema`'s coverage to be extended rather than a
    second description format invented, and the alias table is the least
    invasive form: no `SchemaEntry`, no fixture, no snapshot. Verified byte for
-   byte — every page `main` can print is unchanged, and `--list` gains exactly
+   byte :  every page `main` can print is unchanged, and `--list` gains exactly
    nine rows. `alias_command` returns `None` for any name a real entry owns, so
    an alias can never rewrite an existing page's `command` field. The nine
    aliases were checked against the commands: `auth token` without `--reveal`
@@ -170,7 +170,7 @@ also gone.
 Fixing the comments therefore moved two pages. The change was measured: `here`
 and `submit` differ in **four lines each, all of them `description` strings**,
 and no other page moves. No type, no `required` list, no `enum`, no
-`additionalProperties`, no property name, and no fixture changed — a validator
+`additionalProperties`, no property name, and no fixture changed :  a validator
 sees the same documents. Every other page `main` knows is still byte-identical.
 
 I kept it. A published `description` that names a removed tool as a live caller
@@ -181,7 +181,7 @@ schema id unchanged at `@1` in both cases.
 
 ## Needs a decision
 
-All three are the owner's, and all three are already recorded honestly by the
+All three are Rolf's, and all three are already recorded honestly by the
 package rather than used to cover a defect. I confirmed each against the code.
 
 1. **`open::follow`'s stale-generation guard is correct and dead** (§19 item 49
@@ -196,14 +196,14 @@ package rather than used to cover a defect. I confirmed each against the code.
    approved-plan surface returns.
 3. **No third-party host has been run against the one-tool build.** Nobody has
    watched Claude Code, Cursor or Codex load this build, call `getclitools`,
-   and go on to run a `canvas` command — and that is the whole premise of the
+   and go on to run a `canvas` command :  and that is the whole premise of the
    design. `docs/agent-hosts.md` says so in three places and marks both
    third-party rows "(then)". This review did not change that: the only clients
    exercised here are the project's own. It is the one thing left that evidence
    could still overturn, and it needs a person at a host, not another test.
 
-The cost recorded in item 50 — a host with no execution capability can now only
-show the user a command line — is the owner's accepted trade, and is not
+The cost recorded in item 50 :  a host with no execution capability can now only
+show the student a command line :  is Rolf's accepted trade, and is not
 re-argued here.
 
 ## Notes, not defects
@@ -216,7 +216,7 @@ re-argued here.
   does. Left as is rather than special-cased.
 - The reference documents `canvas auth token --reveal` to an agent that has a
   shell. It grants nothing: `canvas --help` already lists it, and the MCP
-  server itself still cannot reveal a credential — it has no tool that runs
+  server itself still cannot reveal a credential :  it has no tool that runs
   anything. §15 containment is unchanged.
 - `usage_lines` clones one `clap::Command` per node. The warm round trip is
   4.3 ms against a 100 ms target, so the cost is not visible.

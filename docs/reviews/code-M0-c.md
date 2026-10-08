@@ -1,12 +1,12 @@
 MERGE-AFTER-DECISION
-The implementation defects found below are fixed and committed on `lane/w1`; two conflicting spec requirements remain for the owner.
+The implementation defects found below are fixed and committed on `lane/w1`; two conflicting spec requirements remain for Rolf.
 All five requested native gates pass, including 176 tests; macOS keyring set/get/delete passed separately, while other release targets remain unverified.
 
 ## Scope and gates
 
 Reviewed `tasks/m0c-config-auth.md`, its cited SPEC sections, §15, the worker history and diff against `main`, and the existing API/core interfaces. The required initial `git merge main` completed as `28e5d4f`. Reviewed code after fixes: `2b1acb0`. No push or subsequent merge was performed.
 
-Every Cargo invocation used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m0c`.
+Every Cargo invocation used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Final result |
 |---|---|

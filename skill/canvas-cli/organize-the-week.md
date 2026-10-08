@@ -1,13 +1,13 @@
 # Organize the week
 
-The user asks what is due, what is missing, or what this week looks like.
+The student asks what is due, what is missing, or what this week looks like.
 
 Everything here is a `canvas` command. Add `--json` to read the envelope; drop
-it when you only want to show the user a table.
+it when you only want to show the student a table.
 
 ## Steps
 
-0. `canvas courses --json` if you do not know which courses the user is in, or
+0. `canvas courses --json` if you do not know which courses the student is in, or
    if a course name they used does not resolve. `--all` adds completed and
    invited courses; `--favorites` keeps only their favorites.
    `canvas course <course> --json` gives one course's term, teachers, and
@@ -21,19 +21,19 @@ it when you only want to show the user a table.
 2. Check `freshness`. If the `planner` or `missing` dataset is `stale` and the
    user wants current data, run `canvas sync`, then repeat step 1. `sync`
    writes the local cache and never writes to Canvas.
-3. `canvas calendar --json` only if the user asks about meetings, lectures, or
+3. `canvas calendar --json` only if the student asks about meetings, lectures, or
    events. `canvas todo` already carries deadlines.
-4. `canvas announcements --json` if the user asks whether anything changed.
+4. `canvas announcements --json` if the student asks whether anything changed.
    Reading an announcement never marks it read in Canvas.
    `canvas announcement <course> <id> --json` returns one announcement's
    message in full, as Markdown.
-5. `canvas grades --json` if the user asks where they stand. It reports what
+5. `canvas grades --json` if the student asks where they stand. It reports what
    Canvas reports and nothing more: `--period` takes `current`, `all`, or a
    grading-period id, and a course operand shows that course's assignment
    groups. Never compute a grade of your own.
-6. `canvas inbox unread-count --json` if the user asks whether anyone is
+6. `canvas inbox unread-count --json` if the student asks whether anyone is
    waiting on them. It is one number for the whole identity, and `null` means
-   Canvas did not say — never read `null` as zero.
+   Canvas did not say , never read `null` as zero.
    `canvas inbox --json` then shows the conversations, with `--scope` of
    `inbox` (the default), `unread`, `sent`, or `archived`, and
    `canvas inbox show <id> --json` opens one with its messages and
@@ -46,12 +46,12 @@ it when you only want to show the user a table.
 
 Nothing here marks anything read. Every inbox request says
 `auto_mark_as_read=false`, and no discussion, announcement, or conversation
-changes state because you looked at it. Say so if the user worries about it:
+changes state because you looked at it. Say so if the student worries about it:
 their unread badges are exactly as they left them.
 
 `canvas inbox show` reports `messages_complete`. When it is `false` only the
 listing row was cached, so an empty `messages` array does not mean the
-conversation is empty — say the messages were not read rather than that there
+conversation is empty , say the messages were not read rather than that there
 are none.
 
 ## Reporting
@@ -65,7 +65,7 @@ not be read; report those courses by name rather than dropping them silently.
 Do not compute a grade, a workload estimate, or a priority order unless the
 user asks for one. If you do rank items, say the ranking is yours.
 
-When the user wants to see something in Canvas itself, give them the link
+When the student wants to see something in Canvas itself, give them the link
 from the answer you already have: every read carries the Canvas URL of what
 it describes. `canvas open CHEM` resolves and opens one.
 

@@ -1,8 +1,8 @@
-# Code review — M6-c (shared coordinator, `watch --jsonl`, events, `notify`)
+# Code review :  M6-c (shared coordinator, `watch --jsonl`, events, `notify`)
 
-Branch `lane/w3`, worktree `/home/user/projects/canvas-cli/.worktrees/w3`.
+Branch `lane/w3`, worktree `<checkout>`.
 Reviewed against `docs/agent-ux/REPORT.md` §3.6 and §3.4, `docs/SPEC.md`
-§7, §9–§12.2, §13–§16 and Appendix A/D, and the package brief
+§7, §9-§12.2, §13-§16 and Appendix A/D, and the package brief
 `tasks/m6c-coordinator-watch.md`. Item 7 (the MCP `subscriptions/listen`
 hookup) is out of scope by instruction and is not counted as missing.
 
@@ -17,7 +17,7 @@ the §13 targets still hold with a `watch` process running.
 
 ## Gates
 
-Run with `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m6c`,
+Run with `CARGO_TARGET_DIR=<checkout>`,
 on the review head `2260c9f`.
 
 | Gate | Result |
@@ -25,7 +25,7 @@ on the review head `2260c9f`.
 | `cargo fmt --all --check` | pass |
 | `cargo clippy --all-targets --all-features -- -D warnings` | pass, no warnings |
 | `cargo nextest run --all-features` | pass, 627 tests, 0 skipped (622 before the review's 5 new tests) |
-| `cargo deny check` | pass — advisories, bans, licenses, sources all ok |
+| `cargo deny check` | pass :  advisories, bans, licenses, sources all ok |
 | `cargo +1.88 check --workspace --all-targets` | pass |
 | `cargo xtask bench --runs 3` | pass, every §13 target ok |
 | `cargo xtask bench --watch --runs 3` | pass, every §13 target ok under the `watch` load; watch tick p50 21.7 ms / p95 21.9 ms |
@@ -48,9 +48,9 @@ Line numbers are in the pre-review tree (`a427071`). All five fixes are on
 |---|---|---|---|---|---|
 | 1 | High | `crates/canvas-api/src/governor.rs:515` (`publish`), `:566` (`merge_shared_locked`) | With a shared `governor` row the §11 estimate could only fall. `publish` re-merged the stored row after `observe` applied a sample, and the conservative rule "a lower estimate always applies" then adopted the process's **own pre-charge**, which is older evidence than the header just applied. Ten responses each reporting a full 700 left the shared estimate at 690; a long-running process walked it down one cost per request into a permanent cooldown. In process §11 already lets a header replace the estimate outright. | Split the merge into `Merge::Admission` (unchanged conservative rule) and `Merge::AppliedSample`, where only a strictly newer watermark may displace the sample just applied. New test `a_sample_survives_the_shared_row_instead_of_ratcheting_down`. | `2044198` |
 | 2 | High | `crates/canvas-api/src/governor.rs:515` (`publish`) | The same re-merge read back the `cooldown_until` the process had published on its own cooldown admission and re-armed the flag, so §11's "cooldown ends when an applied sample is ≥ 300" never took effect with a shared row: every later request waited out the five-second probe forever. | A live cooldown is still shared at admission, but is not restored over the sample that ended it unless the row is strictly newer. New test `a_shared_cooldown_ends_on_an_applied_sample`. | `2044198` |
-| 3 | Medium | `crates/canvas-api/src/governor.rs:362` (issue counter) | §11 orders samples by issue number, and the counter is per process. A watermark another process wrote sat above every issue this one could hand out, so none of its own higher samples could apply and its estimate could only fall — a fresh CLI next to a long-running `watch` stayed in the other process's cooldown until that process happened to publish a recovery. | `align_issue_locked` continues this process's sequence above any adopted watermark, after every shared-row merge. New test `a_process_that_adopts_a_watermark_can_still_apply_its_own_sample`. | `2044198` |
+| 3 | Medium | `crates/canvas-api/src/governor.rs:362` (issue counter) | §11 orders samples by issue number, and the counter is per process. A watermark another process wrote sat above every issue this one could hand out, so none of its own higher samples could apply and its estimate could only fall :  a fresh CLI next to a long-running `watch` stayed in the other process's cooldown until that process happened to publish a recovery. | `align_issue_locked` continues this process's sequence above any adopted watermark, after every shared-row merge. New test `a_process_that_adopts_a_watermark_can_still_apply_its_own_sample`. | `2044198` |
 | 4 | Medium | `crates/canvas-cli/src/commands/watch.rs:288` (`tick`) | Foreground priority was read **once per tick**. A `submit` that registered interest after the tick began waited behind every remaining refresh of that tick. The new test measures it at `api_concurrency = 1`: five further admissions (enrollment_grades, assignments, missing, planner, announcements) went out while the submission waited, instead of the one request already in flight that REPORT §3.6 allows. | `attempt` re-reads the priority state (foreground interest and the §10 pending hook) before it polls each refresh future; the futures are lazy, so nothing is admitted before the check. New e2e test `interest_that_arrives_during_a_tick_stops_the_rest_of_it`, which registers interest from a second process while the tick's first request is in flight. | `d57c953` |
-| 5 | Medium | `crates/canvas-api/src/governor.rs:592` (`reset_silence_locked`) | With a shared row the §11 header-silence window belongs to the row, not to one process, but the reset still measured local clocks. A `watch` that had polled nothing for a minute reset its estimate to full and cleared `in_cooldown` on its next admission — immediately after `adopt_shared` had read a cooldown a live process published a moment earlier. `charge` re-merged the row afterwards, so the estimate recovered, but the admission decision had already been made against the invented full bucket and the request went out with no probe wait at all. | The silence reset defers to `merge_locked`, which already implements the §11 reset for the shared row, whenever a row has been read inside the window. Without a shared row nothing changes. New test `a_quiet_process_cannot_reset_a_shared_row_another_one_keeps_fresh`. | `db301af` |
+| 5 | Medium | `crates/canvas-api/src/governor.rs:592` (`reset_silence_locked`) | With a shared row the §11 header-silence window belongs to the row, not to one process, but the reset still measured local clocks. A `watch` that had polled nothing for a minute reset its estimate to full and cleared `in_cooldown` on its next admission :  immediately after `adopt_shared` had read a cooldown a live process published a moment earlier. `charge` re-merged the row afterwards, so the estimate recovered, but the admission decision had already been made against the invented full bucket and the request went out with no probe wait at all. | The silence reset defers to `merge_locked`, which already implements the §11 reset for the shared row, whenever a row has been read inside the window. Without a shared row nothing changes. New test `a_quiet_process_cannot_reset_a_shared_row_another_one_keeps_fresh`. | `db301af` |
 | 6 | Low | `crates/canvas-core/src/coord/interest.rs:70`, `:130`; `crates/canvas-core/src/events/log.rs:244` | Three new durable writes used a bare `execute`, which SQLite runs as a deferred transaction that upgrades late and can return `SQLITE_BUSY` instead of waiting out `busy_timeout`. SPEC §10 requires `BEGIN IMMEDIATE` for every write transaction. Two of the three swallow their error, so a `notify` run that lost the race would have repeated its alerts. | All three now open `BEGIN IMMEDIATE`; `set_consumer_cursor` takes `&mut Connection`. | `e47ce4d` |
 
 `2260c9f` re-records `docs/bench.md` on the review head.
@@ -58,7 +58,7 @@ Line numbers are in the pre-review tree (`a427071`). All five fixes are on
 Every pre-existing governor test passes unchanged: the 22 tests in
 `crates/canvas-api/tests/governor_tests.rs` were not edited, only added to
 (25 now, plus the two seam tests the package already had are untouched).
-The in-process path is bit-for-bit the old behaviour — every change above
+The in-process path is bit-for-bit the old behaviour :  every change above
 is inside a `self.shared.is_some()` branch or gated on a shared row being
 read.
 
@@ -128,8 +128,8 @@ read.
    one dedicated thread per process fed by a bounded channel"; the
    coordinator uses its own `Arc<Mutex<Connection>>` from the async
    runtime thread instead (`coord/mod.rs`, `Coordinator::open`). The
-   package documents why — the governor row is written on the request path
-   and must not queue behind the command's own database work — and WAL
+   package documents why :  the governor row is written on the request path
+   and must not queue behind the command's own database work :  and WAL
    plus `busy_timeout` make it safe for correctness. The cost is that the
    CLI's `current_thread` runtime can be blocked for up to the five-second
    `busy_timeout` on a contended `BEGIN IMMEDIATE`, stalling the timers of
@@ -142,7 +142,7 @@ read.
    pages of its own dataset while a submission waits. Bounding it to the
    single request §3.6 names would mean gating inside permit acquisition,
    which would park a `watch` tick *while it holds that scope's
-   single-flight lock* — and the foreground's own refresh of the same
+   single-flight lock* :  and the foreground's own refresh of the same
    scope would then wait out its 30 s waiter, which is worse than what it
    fixes. At `api_concurrency = 1` the residual wait is one dataset's
    pagination (one request for every dataset in the bench fixture).
@@ -162,4 +162,4 @@ read.
    when nothing usable exists") and only `submit`/`plan execute` register
    the interest that would stop `watch` polling, so `todo --fresh` on a
    first run is the exposed case. Confirming that this is the intended
-   trade-off is the owner's call.
+   trade-off is Rolf's call.

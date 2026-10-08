@@ -1,9 +1,9 @@
-# Code review — M4-b (`announcements`, `announcement`, `calendar`, ICS, `sync --full`), branch `lane/w2`
+# Code review :  M4-b (`announcements`, `announcement`, `calendar`, ICS, `sync --full`), branch `lane/w2`
 
 Reviewer: Claude Opus 5 (high). Base: `e604fcf` (merge of `main` into
 `lane/w2`). Package brief: `tasks/m4b-announcements-calendar.md`.
 Reviewer brief: `tasks/review-code-m4b.md`. Spec: `docs/SPEC.md` §5, §6,
-§7, §9, §10, §12.1, §12.5, §12.6, §13, §14, §15, §16 rows 2–3,
+§7, §9, §10, §12.1, §12.5, §12.6, §13, §14, §15, §16 rows 2-3,
 Appendix A, B, D.
 
 ## Verdict
@@ -11,24 +11,24 @@ Appendix A, B, D.
 **MERGE-AFTER-DECISION.** The two window datasets, the three commands,
 the ICS writer glue and the `sync --full` assembly match §10, §12.5 and
 §12.6, and all five gates are green after three `review(M4-b):` commits
-that fix three defects — one of them a panic on a user-supplied operand.
+that fix three defects :  one of them a panic on a user-supplied operand.
 One open question remains: §5 names `submissions` among the datasets
 `sync` refreshes, and the package refreshes the `assignments` dataset
 (which carries `include[]=submission`) instead of the per-assignment
 `submission` dataset. That is a scoping decision with a large
-request-count consequence, so it is left for the owner.
+request-count consequence, so it is left for Rolf.
 
 ## Gate results
 
-Run with `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m4b`
+Run with `CARGO_TARGET_DIR=<checkout>`
 at `beea53d`.
 
 | Gate | Result |
 |---|---|
 | `cargo fmt --all --check` | pass |
 | `cargo clippy --all-targets --all-features -- -D warnings` | pass |
-| `cargo nextest run --all-features` | pass — 465 tests run, 465 passed (464 at the base) |
-| `cargo deny check` | pass — advisories ok, bans ok, licenses ok, sources ok |
+| `cargo nextest run --all-features` | pass :  465 tests run, 465 passed (464 at the base) |
+| `cargo deny check` | pass :  advisories ok, bans ok, licenses ok, sources ok |
 | `cargo +1.88 check --workspace --all-targets` | pass |
 
 The package adds no dependency and no migration, so Appendix A and the
@@ -38,9 +38,9 @@ migration list are unchanged.
 
 | Sev | File:line | What was wrong | What I changed | Commit |
 |---|---|---|---|---|
-| Medium | `crates/canvas-cli/src/commands/duration.rs:12`, `:44` | `parse_duration` and `rfc_duration` split `<N><unit>` with `raw.split_at(raw.len() - 1)`, which indexes bytes. An operand whose last character is multi-byte — `canvas announcements --since 7é`, `canvas calendar --alarm 30€` — split inside that character and panicked instead of exiting 2 (§14). Reproduced against `str::split_at` directly and confirmed reachable: both call sites run after the session opens, on the raw operand. | Took the unit as a whole `char` through a shared `split_unit`, so a non-ASCII unit falls out through the existing `None` path. Extended the rejection table with `7é`, `7😀` and a bare `é`, and made it assert both parsers. | `9885632` |
-| Low | `crates/canvas-cli/src/commands/calendar.rs:280` (before the fix) | `calendar` built its `partial[]` rows by calling the announcements helper and then string-replacing `announcements:` → `calendar_events:` and `Announcements for` → `Calendar for`. For a context that is not a course — the `user_<id>` context §12.5 always asks for — the helper had already folded the raw context code into a course scope, so the row came out as `calendar_events:course:user_12345`. That claims a course scope for a user context and disagrees with the `calendar_events:user_12345` that `sync` records for the same denial (`commands/sync.rs`, `denial_partials`). | Gave `denial_scopes` the dataset name and the word its message uses, and built a `<dataset>:course:<id>` scope only for a course context; any other context keeps its own code. §7's `announcements:course:<id>` shape is unchanged. Added a unit test covering both datasets and both context kinds. | `64b199f` |
-| Low | `crates/canvas-cli/src/commands/calendar.rs:226` (before the fix) | `calendar` rendered and validated the whole ICS document on every run, even with no `--ics`, only to harvest the one-day warnings — which the command already computes itself from `EventRow::longer_span_warning`. A `CalendarItem` the writer refuses (a Canvas `html_url` carrying a control character, `IcsError::InvalidValue`) therefore failed a plain table that never asked for a file, and did it as exit 2, the §14 usage code, for operands the user got right. | Moved the `--alarm` grammar check to where the operand is read (`canvas_core::ics::valid_alarm`, now public), which is what made the unconditional render look necessary, and render the text only for `--ics`. A writer refusal is now exit 1. The listing keeps its own warnings, deduplicated in the command. | `beea53d` |
+| Medium | `crates/canvas-cli/src/commands/duration.rs:12`, `:44` | `parse_duration` and `rfc_duration` split `<N><unit>` with `raw.split_at(raw.len() - 1)`, which indexes bytes. An operand whose last character is multi-byte :  `canvas announcements --since 7é`, `canvas calendar --alarm 30€` :  split inside that character and panicked instead of exiting 2 (§14). Reproduced against `str::split_at` directly and confirmed reachable: both call sites run after the session opens, on the raw operand. | Took the unit as a whole `char` through a shared `split_unit`, so a non-ASCII unit falls out through the existing `None` path. Extended the rejection table with `7é`, `7😀` and a bare `é`, and made it assert both parsers. | `9885632` |
+| Low | `crates/canvas-cli/src/commands/calendar.rs:280` (before the fix) | `calendar` built its `partial[]` rows by calling the announcements helper and then string-replacing `announcements:` → `calendar_events:` and `Announcements for` → `Calendar for`. For a context that is not a course :  the `user_<id>` context §12.5 always asks for :  the helper had already folded the raw context code into a course scope, so the row came out as `calendar_events:course:user_12345`. That claims a course scope for a user context and disagrees with the `calendar_events:user_12345` that `sync` records for the same denial (`commands/sync.rs`, `denial_partials`). | Gave `denial_scopes` the dataset name and the word its message uses, and built a `<dataset>:course:<id>` scope only for a course context; any other context keeps its own code. §7's `announcements:course:<id>` shape is unchanged. Added a unit test covering both datasets and both context kinds. | `64b199f` |
+| Low | `crates/canvas-cli/src/commands/calendar.rs:226` (before the fix) | `calendar` rendered and validated the whole ICS document on every run, even with no `--ics`, only to harvest the one-day warnings :  which the command already computes itself from `EventRow::longer_span_warning`. A `CalendarItem` the writer refuses (a Canvas `html_url` carrying a control character, `IcsError::InvalidValue`) therefore failed a plain table that never asked for a file, and did it as exit 2, the §14 usage code, for operands the student got right. | Moved the `--alarm` grammar check to where the operand is read (`canvas_core::ics::valid_alarm`, now public), which is what made the unconditional render look necessary, and render the text only for `--ics`. A writer refusal is now exit 1. The listing keeps its own warnings, deduplicated in the command. | `beea53d` |
 
 ## What I checked and found correct
 
@@ -55,7 +55,7 @@ migration list are unchanged.
   (`classify_listing_denial`, tested both ways). Coverage stays complete,
   the surviving contexts are stored, and the denied ones are encoded into
   `fetch_log.error` as `contexts_denied:<status>@<context>` with the
-  separator characters rejected at the encoder — so a later cached read
+  separator characters rejected at the encoder :  so a later cached read
   still reports them. Request counts are asserted exactly (4 for a 12-course
   window with one denial).
 - **§12.5 ICS, verified by test rather than by client.** CRLF; folding to
@@ -97,7 +97,7 @@ migration list are unchanged.
 - **§18, README.** The `feat(R4-enum)` step gives every round-4 command its
   own dispatch arm, the `not_implemented` path is gone from the binary
   (grepped: nothing left outside `xtask`), and dropping the README status
-  column is now true — the README/clap parity test still passes with the
+  column is now true :  the README/clap parity test still passes with the
   column removed.
 - **`docs/ics-clients.md`.** No zero-lag or auto-refresh claim; it says the
   opposite explicitly. The five Apple/Google checks are recorded as not yet
@@ -115,7 +115,7 @@ migration list are unchanged.
    `sync` at exactly 7 requests for a one-course fixture.
 
    Refreshing the `submission` dataset properly costs one request per
-   assignment — for five courses with thirty assignments each that is 150
+   assignment :  for five courses with thirty assignments each that is 150
    requests on every `sync`, an order of magnitude more than the current
    fan-out, and §10's request-budget table says nothing about `sync`. §5
    also gives no rule for scoping it (all assignments? only submitted

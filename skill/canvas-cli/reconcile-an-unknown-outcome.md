@@ -4,7 +4,7 @@ A submit was interrupted. Exit 9 means the command does not know whether
 Canvas recorded the attempt. A journal is left behind, and it holds the
 evidence.
 
-**Do not submit again.** A second attempt can consume the user's last one, or
+**Do not submit again.** A second attempt can consume the student's last one, or
 create a duplicate that neither of you can remove.
 
 ## Steps
@@ -21,27 +21,27 @@ create a duplicate that neither of you can remove.
 4. `canvas submission reconcile <journal-id> --json` reads Canvas and never
    posts to it. It resolves the journal by evidence: matched, not submitted,
    or still unknown.
-5. If it stays unknown, the user has two honest options:
+5. If it stays unknown, the student has two honest options:
    - Ask the instructor, then `canvas receipts acknowledge <journal-id>` to
      close it with the outcome recorded as unknown.
-   - Resubmit deliberately, as a new attempt, with the user's explicit
-     decision — see [prepare-and-submit.md](prepare-and-submit.md).
+   - Resubmit deliberately, as a new attempt, with the student's explicit
+     decision , see [prepare-and-submit.md](prepare-and-submit.md).
 
 ## `--assume-not-submitted`
 
 `canvas submission reconcile` takes `--assume-not-submitted`. It records that
 nothing was submitted, and it retires evidence.
 
-Suggest it only when the user says so, after they have seen what
+Suggest it only when the student says so, after they have seen what
 `canvas submission` reports. The command refuses it anyway while an attempt is
-visible, or while the journal is too young for its absence to mean anything —
+visible, or while the journal is too young for its absence to mean anything ,
 exit 8, with the reason in `result`.
 
 ## Reporting
 
 Say which of the three things is true: the work is in Canvas, the work is not
 in Canvas, or the outcome is unknown. Never round "unknown" to either of the
-others. Give the journal id and the receipt id so the user can show them to an
+others. Give the journal id and the receipt id so the student can show them to an
 instructor.
 
 ## Typical commands

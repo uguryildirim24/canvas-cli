@@ -1,4 +1,4 @@
-# Code review — M8-a, richer reading context (lane `lane/w1`)
+# Code review :  M8-a, richer reading context (lane `lane/w1`)
 
 ## Verdict
 
@@ -13,7 +13,7 @@ under "Needs a decision" and none of them blocks this package.
 
 ## Gates
 
-Run with `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m8a`,
+Run with `CARGO_TARGET_DIR=<checkout>`,
 first on the delivered branch and again after every fix.
 
 | Gate | As delivered | After the fixes |
@@ -67,11 +67,11 @@ was restored each time, so it stays as `main` has it.
 | # | Sev | Where | What was wrong | What I changed | Commit |
 |---|---|---|---|---|---|
 | 1 | High | `crates/canvas-core/src/markdown/extract.rs:229`, `crates/canvas-core/src/sync/pages.rs:234`, `crates/canvas-core/src/sync/discussions.rs:344` | A reference was stored and printed exactly as written. A Canvas body links to signed and `verifier`-bearing URLs, so a capability reached `pages.data_json`, `discussion_topics.data_json`, the `syllabus_refs` projection in `courses.data_json`, the converted Markdown body, and every `files`/`external_links` row in the JSON. §15 keeps a capability off disk and out of the output, and `modules` already stripped one from its `html_url`. | Sanitize each reference where it is collected, rewriting it in the tree so the rendered Markdown loses it too: drop the userinfo and every query parameter §15 names, keep the rest of the reference. `html_url` on pages and topics now goes through the `modules` rule. New `canvas_api::redact::is_capability_key`, one unit test, one end-to-end test that reads the cache back. | `350edc2` |
-| 2 | High | `crates/canvas-cli/src/commands/discussions.rs:298` | Reply bodies were bounded at 64 KiB and carried `truncated: true`, but only the topic message raised a `partial[]` row. A thread whose replies were cut came back at exit 0 with `outcome: ok` — the one thing the package must never do with a cut body. The conversation path already reported its cut messages. | Raise a `partial[]` row under `discussion_entries:topic:<id>` and exit 12 when any shown reply was cut. New test. | `2de3ce4` |
+| 2 | High | `crates/canvas-cli/src/commands/discussions.rs:298` | Reply bodies were bounded at 64 KiB and carried `truncated: true`, but only the topic message raised a `partial[]` row. A thread whose replies were cut came back at exit 0 with `outcome: ok` :  the one thing the package must never do with a cut body. The conversation path already reported its cut messages. | Raise a `partial[]` row under `discussion_entries:topic:<id>` and exit 12 when any shown reply was cut. New test. | `2de3ce4` |
 | 3 | Medium | `crates/canvas-cli/src/commands/assignment.rs:95`, `crates/canvas-cli/src/commands/submission.rs:619` | The rubric extension is additive on the wire but only a fresh fetch wrote the added keys. A `rubric_json` or `rubric_assessment_json` row cached by a pre-M8-a build still came back with the v1 keys alone, so `assignment@1` printed criteria without `long_description`, `criterion_use_range`, and `ratings[]`, and `submission@1` printed assessments without `rating_id`, until the row's TTL expired. §7 says a declared field is always present. | Re-project both on read through the same functions that write them (`criterion_json`, new `assessment_row_json`), and cover a cache rewritten to the pre-M8-a shape. | `762e797` |
 | 4 | Medium | `crates/canvas-api/src/models/conversation.rs:72` | `unread_count` was `Option<String>`, so a Canvas that answers `{"unread_count": 7}` turned the whole `inbox unread-count` read into a decode failure. The package's own decision is that an unknown count stays `null`, and every id-shaped field in `canvas-api` already accepts a number or a string. | Accept a string or a number, keep `null` for absent and unparseable. Test over all four shapes. | `7f77f98` |
 | 5 | Low | `crates/canvas-cli/src/commands/discussions.rs:316` | The initial-post gate emitted `code: "denied"`. Every other exit 8 in the workspace, the single-item denial in this same package included, emits `code: "refused"`, and §14 names the code "Refused". Two codes for one exit is a trap for an agent that branches on `code`. | Emit `"refused"`, keep the `initial_post_required:` message prefix, update the test and the exit table in `docs/reads-v2.md`. | `9c814fd` |
-| — | — | `docs/reads-v2.md` | The contract document did not describe the capability rule, and its truncation row named only the body. | Record what the code now does: which parts of a reference are stripped and when, and that the 64 KiB bound counts per document, a reply and a conversation message included. | `375bab9` |
+| :  | :  | `docs/reads-v2.md` | The contract document did not describe the capability rule, and its truncation row named only the body. | Record what the code now does: which parts of a reference are stripped and when, and that the 64 KiB bound counts per document, a reply and a conversation message included. | `375bab9` |
 
 Test count moved 606 → 611: one unit test in `canvas-core::markdown::extract`
 and four integration tests in `crates/canvas-cli/tests/review_m8a.rs`.
@@ -96,8 +96,8 @@ and four integration tests in `crates/canvas-cli/tests/review_m8a.rs`.
    documented and widely reported to return non-announcement topics on that
    route, in which case the `yes` default can never show an announcement and
    the flag only ever removes nothing. I could not verify this against a
-   live Canvas from here, and the fix — a second request, or dropping the
-   default's promise and pointing at `canvas announcements` — changes the
+   live Canvas from here, and the fix :  a second request, or dropping the
+   default's promise and pointing at `canvas announcements` :  changes the
    contract the brief pinned.
 3. **`discussion --replies --page N` past the end of the stored set**
    returns `replies: []` beside `replies_coverage.complete = true`. The

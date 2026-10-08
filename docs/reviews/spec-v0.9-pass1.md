@@ -1,8 +1,8 @@
-# Review — SPEC v0.9 consolidation pass 1 (lane `w3`)
+# Review :  SPEC v0.9 consolidation pass 1 (lane `w3`)
 
 Verdict: **MERGE**, after the four `review(SPEC-v0.9):` commits below.
 
-Reviewed 2026-09-10 in `/home/user/projects/canvas-cli/.worktrees/w3` on
+Reviewed 2026-09-10 in `<checkout>` on
 branch `lane/w3`, against `git diff main...HEAD -- docs/` and the code on
 `main`. `git diff main HEAD -- crates xtask skill Cargo.toml Cargo.lock` is
 empty, so every "as built" claim was checked against the tree in this
@@ -14,8 +14,8 @@ Brief: `tasks/spec-v09-consolidation.md`. Package report:
 The rule under review was: every normative sentence added to `docs/SPEC.md` is
 true of the code on `main`, no new decision is made, and no §19 item is
 resolved. Sentences were checked against modules, registry entries, fixtures,
-tests and manifests — not against the REPORT or the briefs. Seven sentences
-failed; all seven are corrected below. Nothing else in §§20–23, the extended
+tests and manifests :  not against the REPORT or the briefs. Seven sentences
+failed; all seven are corrected below. Nothing else in §§20-23, the extended
 tables, or the appendices contradicted the code.
 
 ## What was corrected
@@ -23,7 +23,7 @@ tables, or the appendices contradicted the code.
 | Section | What was wrong | What it says now | Evidence |
 |---|---|---|---|
 | §20 Plan states | "A transition that matches zero rows is a lost expected-state guard and exits 13." Only `plan::approve` does that. `journal::create_linked`'s guarded `UPDATE plans … WHERE state = 'approved'` raises `StateConflict`, which `plan::link` answers with the journal the winning execute created; `ops::expire` and `ops::invalidate` ignore a row they may not move. | Names the three readings and which transition uses which. The `WHERE … state IN (…)` phrasing also became "an expected-state guard on the row", because `approve` and the execute link guard on `state = 'approved'`, not on a set. | `crates/canvas-core/src/plan/ops.rs:237`, `:328`, `:366`; `crates/canvas-core/src/journal/ops.rs:242`; `crates/canvas-core/src/plan/execute.rs:253` |
-| §20 Prepare | "runs §12.2 pre-flight step 1". `plan::prepare` runs steps 1–6. | Names the whole pre-flight, step by step. | `crates/canvas-core/src/plan/prepare.rs:51-90` |
+| §20 Prepare | "runs §12.2 pre-flight step 1". `plan::prepare` runs steps 1-6. | Names the whole pre-flight, step by step. | `crates/canvas-core/src/plan/prepare.rs:51-90` |
 | §20 Execute, rule 6 | "re-check steps 2 and 3". Under admission the code re-reads the plan and re-checks the expiry, the invalidation and the recorded approval. It does not re-check `plan_sha256`, the identity key, or the identity generation. | Names what is re-checked and says the digest and the identity checks are not repeated. | `crates/canvas-core/src/plan/execute.rs:120-142` |
 | §22.1 Foreground interest | "`canvas submit` and `plan execute` register interest before their first pre-flight request." `submit` registers after `resolve_target`, because the interest is keyed by assignment id. §19 item 29 already records exactly this gap, so the sentence contradicted its own document. | Separates the two: `plan execute` registers before its first pre-flight request; `submit` registers as soon as the assignment id exists, and points at item 29. | `crates/canvas-cli/src/commands/submit.rs:179-200`; `crates/canvas-core/src/plan/execute.rs:100`; SPEC §19 item 29 |
 | Appendix D, `discussion@1` | Sort column read "replies by `created_at` then `id`". Nothing sorts the list. | "replies in the order the reply fetch stored them: every entry page, then the nested replies, then `id`". | `crates/canvas-cli/src/commands/discussions.rs:580-585`; `crates/canvas-core/src/sync/discussions.rs:650`, `:896` |
@@ -72,7 +72,7 @@ false or ambiguous sentences appears in it.
   (`plan/record.rs:308-390`).
 - The ten frozen observations and the two sorted list fields are
   `Observations::of` (`plan/record.rs:123-190`).
-- Execute rules 1–5 and 7–10 match `plan::execute` in order, including the
+- Execute rules 1-5 and 7-10 match `plan::execute` in order, including the
   5-second `CONTENTION_WAIT`, the observation comparison before
   `check_admissible`, and the guarded transaction in `create_linked` that
   inserts the journal, consumes the approval and writes the
@@ -113,7 +113,7 @@ false or ambiguous sentences appears in it.
   success; the `"type": "object"` beside the `oneOf` in
   `json_schema::document`.
 - `dev.canvas-cli/ttlMs` and `dev.canvas-cli/cacheScope`, and every zero case
-  the SPEC lists, including "a dataset with no TTL group" — which is what the
+  the SPEC lists, including "a dataset with no TTL group" :  which is what the
   eight M8-a datasets are, since `dataset_ttl` has no arm for them.
 - The four resources, the `canvas://<key>/<generation>/<path>` encoding, and
   `not_attached` as a §7 refusal with `details.reason`.
@@ -121,7 +121,7 @@ false or ambiguous sentences appears in it.
   `input_required` before any client is built; a `requestState` naming another
   tool is `invalid_params`; a host without elicitation gets `refused`, exit 8,
   `approval_required`, carrying the plan id and the handle.
-- The catalog size — 30 tools, 220 855 bytes, ~55 224 tokens — is
+- The catalog size :  30 tools, 220 855 bytes, ~55 224 tokens :  is
   `docs/bench.md` line 91 verbatim, and M6-b's 22 tools / 41 891 tokens is
   `docs/reviews/code-M6-b.md:44`.
 - The skill ships `SKILL.md` and exactly the five named workflows; its exit
@@ -210,7 +210,7 @@ false or ambiguous sentences appears in it.
 - `0002_reads` adding all five tables and `CACHE_USER_VERSION = 2`; the three
   config keys with defaults `1h` / `15m` / `5m`, all three in `KNOWN_TOP`.
 - The eight schemas registered with fixtures, and the honest
-  `result_source: "registry fixture"` — `result_schema` has no typed arm for
+  `result_source: "registry fixture"` :  `result_schema` has no typed arm for
   any of them, and `schemas/discussion.json` really does carry a string
   `message_markdown`, which is what §19 item 35 claims.
 
@@ -232,10 +232,10 @@ false or ambiguous sentences appears in it.
 - §14's four `details.reason` values are the three `refusal_for` outputs plus
   `resources::not_attached`; no new exit code appears anywhere.
 - §18's sentence is true: SPEC §18's round table ends at R5 and REPORT §4
-  carries R6–R11.
+  carries R6-R11.
 - Appendix A: the `tokio` split (workspace `rt, macros, fs, time, sync`; per
   crate `io-util`, `signal`, `rt-multi-thread`, `process`) and the true `net`
-  statement — `net` appears only in `canvas-api`'s `[dev-dependencies]`. The
+  statement :  `net` appears only in `canvas-api`'s `[dev-dependencies]`. The
   full `rmcp` feature set, `htmd` 0.5.5 with `markup5ever_rcdom` 0.38.0, and
   the `fs4` / `sha2` / `tracing` / `uuid` versions are the manifests'.
   "No post-v1 package added a dependency after `rmcp` and `schemars`" holds:
@@ -251,8 +251,8 @@ false or ambiguous sentences appears in it.
   Rust types field for field (`output/registry.rs`), the `event@1` example
   matches `EventJson`, and no result type carries `skip_serializing_if`, so
   "every listed field is always present" still holds.
-- §19: items 1–33 are byte-identical to `main`; none was resolved, reworded or
-  renumbered. Items 34, 35 and 36 are each true — 34 against REPORT lines 86
+- §19: items 1-33 are byte-identical to `main`; none was resolved, reworded or
+  renumbered. Items 34, 35 and 36 are each true :  34 against REPORT lines 86
   and 233 and `commands/notify.rs`, 35 against `result_schema` and the
   discussion fixture, 36 against `json_schema::command_name`, which turns
   `inbox_unread@1` into `inbox unread` and leaves `canvas schema "inbox show"`
@@ -268,7 +268,7 @@ false or ambiguous sentences appears in it.
   (dir `0700`, socket `0600`) and the Windows named pipe are quoted correctly
   from REPORT §3.2 line 147, but nothing on `main` creates either. The row is
   labelled "reserved for M7-a, §24", so it does not claim to be built. Left as
-  written; the owner may prefer §24's placeholder to hold it until M7-a
+  written; Rolf may prefer §24's placeholder to hold it until M7-a
   merges, so that §9 lists only paths that exist.
 - **The Appendix A tool row** (`cargo-nextest` 0.9.143, `cargo-deny` 0.20.2,
   `cargo-dist` 0.32.0, `release-plz` 0.3.164) and the toolchain line. These
@@ -284,7 +284,7 @@ false or ambiguous sentences appears in it.
 
 ## Gates
 
-Run with `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-spec1`
+Run with `CARGO_TARGET_DIR=<checkout>`
 after the four commits above. The count is the same 731 the M8-a3 merge
 recorded, which is the evidence that this review touched no code.
 

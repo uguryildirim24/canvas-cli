@@ -1,10 +1,10 @@
-MERGE  
-M0-b defects found in this review are fixed and committed on `lane/w1`; no decision remains.  
+MERGE
+M0-b defects found in this review are fixed and committed on `lane/w1`; no decision remains.
 All five final gates pass, including 65 tests and the Rust 1.88 workspace check.
 
 ## Scope and verdict
 
-Reviewed worker commits `691a041` and `2348b18`, `git log main..HEAD --stat`, and the full package diff against the current `docs/SPEC.md` §§7, 10, 11, 14–16 and Appendices A/B, with Appendix D checked for model coverage. Final code revision: `815e6573d4c6c391588c55fd8de7516cd520bbf9`.
+Reviewed worker commits `691a041` and `2348b18`, `git log main..HEAD --stat`, and the full package diff against the current `docs/SPEC.md` §§7, 10, 11, 14-16 and Appendices A/B, with Appendix D checked for model coverage. Final code revision: `815e6573d4c6c391588c55fd8de7516cd520bbf9`.
 
 The current SPEC governs where the older package brief differs: lower governor observations always apply without reducing the watermark; cooldown targets 350 and exits on an applied sample at least 300; tracked ingestion fields use `Supplied`; valid upload redirects are returned as completion handoffs rather than automatically followed or discarded. No SPEC change was needed.
 
@@ -12,7 +12,7 @@ This verdict covers the M0-b contracts. Streaming upload/download bodies, multip
 
 ## Gate results
 
-Every Cargo invocation used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m0b`.
+Every Cargo invocation used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Final result |
 |---|---|

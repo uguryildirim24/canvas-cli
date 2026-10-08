@@ -4,13 +4,13 @@ Verified on macOS with local fixtures and subprocesses; native Windows and calen
 
 ## Scope and authority
 
-Reviewed the package brief, the complete `main..HEAD` worker change (`f49f8cc`), SPEC §§10, 12.3, 12.5, 13–16, and Appendices A/D. Final reviewed code: `a1bcf41`.
+Reviewed the package brief, the complete `main..HEAD` worker change (`f49f8cc`), SPEC §§10, 12.3, 12.5, 13-16, and Appendices A/D. Final reviewed code: `a1bcf41`.
 
 The brief predates the SPEC's identity-side download manifests. The current SPEC governs: `.canvas-cli` contains only `dest.json` and `install.lock`; SQLite lives in identity storage. No SPEC, task, store, identity, or other-crate implementation was changed. This report is the explicitly requested exception to the worker brief's docs restriction. Nothing was pushed or merged.
 
 ## Gates
 
-All commands used `CARGO_TARGET_DIR=/home/user/projects/canvas-cli/.target/rev-m3b`.
+All commands used `CARGO_TARGET_DIR=<checkout>`.
 
 | Gate | Final result |
 |---|---|
