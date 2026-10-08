@@ -9,17 +9,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "quizzes",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "network",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -31,96 +31,96 @@ expression: value
   },
   "result": {
     "attempt": 1,
-    "course_id": "100",
-    "end_at": "2026-09-11T14:30:00Z",
+    "course_id": "60100",
+    "end_at": "2040-09-11T14:30:00Z",
     "questions": [
       {
         "answer": null,
         "answers": [
           {
-            "id": "4811",
-            "text": "Phenolphthalein"
+            "id": "64811",
+            "text": "Synthetic option 15"
           },
           {
-            "id": "4812",
-            "text": "Litmus"
+            "id": "64812",
+            "text": "Synthetic option 6"
           },
           {
-            "id": "4813",
-            "text": "Methyl orange"
+            "id": "64813",
+            "text": "Synthetic option 13"
           },
           {
-            "id": "4814",
-            "text": "Starch"
+            "id": "64814",
+            "text": "Synthetic option 6"
           }
         ],
-        "id": "901",
-        "name": "Question 1",
+        "id": "60901",
+        "name": "Synthetic Quiz Submission Questions",
         "points_possible": 2.0,
         "position": 1,
         "question_type": "multiple_choice_question",
-        "text_markdown": "Which reagent marks the end point?"
+        "text_markdown": "Synthetic exercise: sort the symbols X, Y, and Z."
       },
       {
         "answer": null,
         "answers": [],
-        "id": "902",
-        "name": "Question 2",
+        "id": "60902",
+        "name": "Synthetic Quiz Submission Questions",
         "points_possible": 4.0,
         "position": 2,
         "question_type": "essay_question",
-        "text_markdown": "Name two sources of error, and how each biases the result."
+        "text_markdown": "Synthetic exercise: sort the symbols X, Y, and Z."
       },
       {
         "answer": null,
         "answers": [
           {
-            "id": "4901",
-            "text": "True"
+            "id": "64901",
+            "text": "Synthetic option 4"
           },
           {
-            "id": "4902",
-            "text": "False"
+            "id": "64902",
+            "text": "Synthetic option 5"
           }
         ],
-        "id": "903",
-        "name": "Question 3",
+        "id": "60903",
+        "name": "Synthetic Quiz Submission Questions",
         "points_possible": 2.0,
         "position": 3,
         "question_type": "true_false_question",
-        "text_markdown": "A buffer resists pH change on dilution."
+        "text_markdown": "Synthetic exercise: sort the symbols X, Y, and Z."
       },
       {
         "answer": null,
         "answers": [
           {
-            "id": "5101",
-            "text": "Rinse the burette with the titrant"
+            "id": "65101",
+            "text": "Synthetic option 34"
           },
           {
-            "id": "5102",
-            "text": "Record the initial volume"
+            "id": "65102",
+            "text": "Synthetic option 25"
           },
           {
-            "id": "5103",
-            "text": "Add the indicator to the flask"
+            "id": "65103",
+            "text": "Synthetic option 30"
           },
           {
-            "id": "5104",
-            "text": "Drain to the end point"
+            "id": "65104",
+            "text": "Synthetic option 22"
           }
         ],
-        "id": "904",
-        "name": "Question 4",
+        "id": "60904",
+        "name": "Synthetic Quiz Submission Questions",
         "points_possible": 2.0,
         "position": 4,
         "question_type": "multiple_answers_question",
-        "text_markdown": "Select every step of the procedure that runs before titration begins."
+        "text_markdown": "Synthetic exercise: sort the symbols X, Y, and Z."
       }
     ],
-    "quiz_id": "101",
+    "quiz_id": "60101",
     "started": true,
-    "started_at": "2026-09-11T14:00:00Z"
+    "started_at": "2040-09-11T14:00:00Z"
   },
   "schema": "canvas-cli/quiz_questions@1",
   "warnings": []

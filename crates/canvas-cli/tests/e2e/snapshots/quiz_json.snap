@@ -9,8 +9,8 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "quizzes",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "network",
       "stale": false
     },
@@ -18,17 +18,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "quiz",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "quiz:100:101",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "quiz:60100:60101",
       "source": "network",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -41,16 +41,16 @@ expression: value
   "result": {
     "quiz": {
       "allowed_attempts": 2,
-      "assignment_id": "9012",
+      "assignment_id": "69012",
       "cant_go_back": false,
-      "course_id": "100",
-      "description_markdown": "Chapters 4 and 5. Two attempts, highest score kept.",
-      "due_at": "2026-09-18T23:59:00Z",
+      "course_id": "60100",
+      "description_markdown": "Synthetic exercise: sort the symbols X, Y, and Z.",
+      "due_at": "2040-09-18T23:59:00Z",
       "embedded": [],
       "external_links": [],
       "files": [],
-      "html_url": "<origin>/courses/100/quizzes/101",
-      "id": "101",
+      "html_url": "<origin>/courses/60100/quizzes/60101",
+      "id": "60101",
       "ip_filtered": false,
       "lock_at": null,
       "lock_explanation": null,
@@ -62,9 +62,9 @@ expression: value
       "quiz_type": "assignment",
       "require_lockdown_browser": false,
       "time_limit": 30,
-      "title": "Week 3 Reading Quiz",
+      "title": "Synthetic Quiz",
       "truncated": false,
-      "unlock_at": "2026-09-14T00:00:00Z",
+      "unlock_at": "2040-09-14T00:00:00Z",
       "unlocked_for_user": true
     }
   },

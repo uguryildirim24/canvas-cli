@@ -1,1 +1,9 @@
-{"id": 40, "title": "Welcome", "message": "<p>Hello</p>", "posted_at": "2026-09-01T12:00:00Z", "is_announcement": true, "context_code": "course_100", "html_url": "/courses/100/discussion_topics/40"}
+{
+  "id": 60040,
+  "title": "Synthetic Announcement",
+  "message": "<p>Synthetic exercise: sort the symbols X, Y, and Z.</p>",
+  "posted_at": "2040-09-01T12:00:00Z",
+  "is_announcement": true,
+  "context_code": "course_60100",
+  "html_url": "/courses/60100/discussion_topics/60040"
+}

@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn every_browser_names_a_per_user_directory_on_this_platform() {
-        let home = Path::new("/home/rolf");
+        let home = Path::new("/home/example");
         for browser in [Browser::Chrome, Browser::Chromium, Browser::Edge] {
             let path = manifest_path(browser, home);
             if cfg!(windows) {
@@ -218,7 +218,7 @@ mod tests {
     /// must not write into Chromium's profile tree.
     #[test]
     fn the_browsers_do_not_share_a_directory() {
-        let home = Path::new("/home/rolf");
+        let home = Path::new("/home/example");
         let paths: Vec<_> = [Browser::Chrome, Browser::Chromium, Browser::Edge]
             .into_iter()
             .filter_map(|b| manifest_path(b, home))

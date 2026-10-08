@@ -9,17 +9,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "quizzes",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "network",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -30,19 +30,19 @@ expression: value
     "storage": 0
   },
   "result": {
-    "course_id": "100",
+    "course_id": "60100",
     "quizzes": [
       {
         "allowed_attempts": 2,
-        "due_at": "2026-09-18T23:59:00Z",
-        "id": "101",
+        "due_at": "2040-09-18T23:59:00Z",
+        "id": "60101",
         "locked_for_user": false,
         "points_possible": 10.0,
         "published": true,
         "question_count": 5,
         "quiz_type": "assignment",
         "time_limit": 30,
-        "title": "Week 3 Reading Quiz"
+        "title": "Synthetic Quiz"
       }
     ]
   },

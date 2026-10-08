@@ -7,7 +7,7 @@
   },
   "items": [
     {
-      "assignment_id": "2",
+      "assignment_id": "60002",
       "availability": {
         "external": null,
         "lock_at": null,
@@ -18,21 +18,21 @@
         "unlock_at": null,
         "unlock_at_local": null
       },
-      "course_code": "CHEM",
-      "course_id": "1",
+      "course_code": "SYN-600",
+      "course_id": "60001",
       "dismissed": false,
-      "due_at": "2026-09-10T03:59:00Z",
-      "due_at_local": "2026-09-09T23:59:00-04:00",
+      "due_at": "2040-09-10T03:59:00Z",
+      "due_at_local": "2040-09-09T23:59:00-04:00",
       "html_url": null,
-      "id": "2",
+      "id": "60002",
       "key": "assignment:2",
       "kind": "assignment",
       "marked_complete": false,
       "parent_assignment_id": null,
       "points_possible": null,
       "raw_type": "assignment",
-      "scheduled_at": "2026-09-10T03:59:00Z",
-      "scheduled_at_local": "2026-09-09T23:59:00-04:00",
+      "scheduled_at": "2040-09-10T03:59:00Z",
+      "scheduled_at_local": "2040-09-09T23:59:00-04:00",
       "status": {
         "attempt": null,
         "excused": null,
@@ -48,12 +48,12 @@
         "submitted_at_local": null,
         "workflow_state": null
       },
-      "title": "Homework 2"
+      "title": "Synthetic title"
     }
   ],
   "window": {
     "days": 14,
-    "end": "2026-09-21",
-    "start": "2026-09-08"
+    "end": "2040-09-21",
+    "start": "2040-09-08"
   }
 }

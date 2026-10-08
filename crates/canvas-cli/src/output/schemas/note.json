@@ -4,11 +4,11 @@
   "note": {
     "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
     "consumer": "mcp:claude-code",
-    "text": "The rubric asks for two sources. See the assignment page.",
+    "text": "Synthetic text",
     "source_refs": [
-      "https://courses.example.test/courses/45679/assignments/98765"
+      "https://canvas.example.test/courses/105679/assignments/158765"
     ],
-    "at": "2026-09-10T16:04:38Z",
+    "at": "2040-09-10T16:04:38Z",
     "generation": 3
   },
   "held": 1,

@@ -4,6 +4,6 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-  CODE       NAME             PERIOD    GRADE  
-  CHEM301    Chemistry 301    all       A-     
+  CODE       NAME                PERIOD    GRADE  
+  SYN-600    Synthetic Course    all       C      
 --- stderr ---

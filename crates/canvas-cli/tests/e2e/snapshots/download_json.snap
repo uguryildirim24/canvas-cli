@@ -9,8 +9,8 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "folders",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "cache",
       "stale": false
     },
@@ -18,8 +18,8 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "files",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "cache",
       "stale": false
     },
@@ -27,17 +27,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "modules",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "cache",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -51,13 +51,13 @@ expression: value
     "courses": [
       {
         "course_code": "",
-        "course_id": "100",
+        "course_id": "60100",
         "files": [
           {
             "action": "planned",
             "error": null,
-            "id": "501",
-            "path": "100-100/modules/01-Week 1/syllabus.pdf",
+            "id": "60501",
+            "path": "60100-60100/modules/01-Synthetic Module/synthetic-file.pdf",
             "previous_path": null,
             "size": 2048,
             "verify": null

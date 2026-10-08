@@ -1,1 +1,13 @@
-{"grading_periods": [{"id": 9, "title": "Q3"}, {"id": 10, "title": "Q4"}], "meta": null}
+{
+  "grading_periods": [
+    {
+      "id": 60009,
+      "title": "Synthetic Grading Periods Page2"
+    },
+    {
+      "id": 60010,
+      "title": "Synthetic Grading Periods Page2"
+    }
+  ],
+  "meta": null
+}

@@ -656,11 +656,11 @@ mod tests {
     use crate::identity::{IdentityDocument, Paths};
     use crate::store::OpenIdentity;
 
-    const ORIGIN: &str = "https://courses.example.test";
+    const ORIGIN: &str = "https://canvas.example.test";
 
     fn setup() -> (TempDir, OpenIdentity) {
         let dir = TempDir::new().unwrap();
-        let doc = IdentityDocument::new(ORIGIN, 12345, "2026-01-01T00:00:00Z");
+        let doc = IdentityDocument::new(ORIGIN, 62001, "2026-01-01T00:00:00Z");
         let paths = Paths::for_identity(dir.path(), &doc.key);
         fs::create_dir_all(&paths.identity_dir).unwrap();
         fs::create_dir_all(paths.lock_path.parent().unwrap()).unwrap();
@@ -731,7 +731,7 @@ mod tests {
             .call_blocking(|conns| {
                 let got = resolve_course(
                     conns,
-                    "https://courses.example.test/courses/99",
+                    "https://canvas.example.test/courses/99",
                     ORIGIN,
                     CommandClass::B,
                 )
@@ -926,7 +926,7 @@ mod tests {
                     .cache
                     .execute(
                         "INSERT INTO assignments (id, course_id, name, data_json)
-                         VALUES (10, 5, 'Problem Set 1', '{}')",
+                         VALUES (10, 5, 'Synthetic Exercise One', '{}')",
                         [],
                     )
                     .unwrap();
@@ -934,7 +934,7 @@ mod tests {
                     .cache
                     .execute(
                         "INSERT INTO assignments (id, course_id, name, data_json)
-                         VALUES (11, 5, 'Problem Set 2', '{}')",
+                         VALUES (11, 5, 'Synthetic Exercise Two', '{}')",
                         [],
                     )
                     .unwrap();
@@ -948,7 +948,7 @@ mod tests {
                 let by_url = resolve_assignment(
                     conns,
                     5,
-                    "https://courses.example.test/courses/5/assignments/11",
+                    "https://canvas.example.test/courses/5/assignments/11",
                     ORIGIN,
                     CommandClass::B,
                 )
@@ -956,13 +956,13 @@ mod tests {
                 assert_eq!(by_url.id, 11);
 
                 let by_name =
-                    resolve_assignment(conns, 5, "set 1", ORIGIN, CommandClass::C).unwrap();
+                    resolve_assignment(conns, 5, "exercise one", ORIGIN, CommandClass::C).unwrap();
                 assert_eq!(by_name.id, 10);
 
                 let mismatch = resolve_assignment(
                     conns,
                     5,
-                    "https://courses.example.test/courses/9/assignments/11",
+                    "https://canvas.example.test/courses/9/assignments/11",
                     ORIGIN,
                     CommandClass::B,
                 )
@@ -994,16 +994,16 @@ mod tests {
     #[test]
     fn canonical_urls_and_assignment_course_binding() {
         assert_eq!(
-            parse_course_url("HTTPS://LASELL.INSTRUCTURE.COM:443/courses/42?x=1", ORIGIN).unwrap(),
+            parse_course_url("HTTPS://CANVAS.EXAMPLE.TEST:443/courses/42?x=1", ORIGIN).unwrap(),
             Some(42)
         );
         assert!(matches!(
-            parse_course_url("https://user@courses.example.test/courses/42", ORIGIN),
+            parse_course_url("https://user@canvas.example.test/courses/42", ORIGIN),
             Err(ResolveError::OriginMismatch)
         ));
         assert_eq!(
             parse_assignment_url(
-                "https://courses.example.test/courses/1/files/2/assignments/3",
+                "https://canvas.example.test/courses/1/files/2/assignments/3",
                 ORIGIN
             )
             .unwrap(),
@@ -1015,10 +1015,7 @@ mod tests {
                 conns
                     .cache
                     .execute("INSERT INTO assignments (id, course_id) VALUES (10, 9)", [])?;
-                for input in [
-                    "10",
-                    "https://courses.example.test/courses/5/assignments/10",
-                ] {
+                for input in ["10", "https://canvas.example.test/courses/5/assignments/10"] {
                     assert!(matches!(
                         resolve_assignment(conns, 5, input, ORIGIN, CommandClass::B),
                         Err(ResolveError::CourseIdMismatch {
@@ -1041,19 +1038,14 @@ mod tests {
                         resolve_assignment(
                             conns,
                             1,
-                            "https://courses.example.test/courses/1/files/2",
+                            "https://canvas.example.test/courses/1/files/2",
                             ORIGIN,
                             class
                         ),
                         Err(ResolveError::AssignmentNotFound { .. })
                     ));
                     assert!(matches!(
-                        resolve_course(
-                            conns,
-                            "https://courses.example.test/files/2",
-                            ORIGIN,
-                            class
-                        ),
+                        resolve_course(conns, "https://canvas.example.test/files/2", ORIGIN, class),
                         Err(ResolveError::NotFound { .. })
                     ));
                 }

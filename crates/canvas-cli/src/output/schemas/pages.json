@@ -1,5 +1,5 @@
 {
-  "course_id": "1",
+  "course_id": "60001",
   "listing": {
     "available": true,
     "http_status": null
@@ -7,10 +7,10 @@
   "pages": [
     {
       "front_page": true,
-      "id": "301",
+      "id": "60301",
       "published": true,
-      "title": "Course Overview",
-      "updated_at": "2026-09-01T14:00:00Z",
+      "title": "Synthetic title",
+      "updated_at": "2040-09-01T14:00:00Z",
       "url": "course-overview"
     }
   ]

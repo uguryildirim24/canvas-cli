@@ -9,17 +9,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "modules",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "cache",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -30,26 +30,26 @@ expression: value
     "storage": 0
   },
   "result": {
-    "course_id": "100",
+    "course_id": "60100",
     "modules": [
       {
-        "id": "30",
+        "id": "60030",
         "items": [
           {
             "completed": null,
-            "content_id": "501",
+            "content_id": "60501",
             "html_url": null,
-            "id": "31",
+            "id": "60031",
             "lock_explanation": null,
             "locked": false,
             "position": 1,
-            "title": "Reading",
+            "title": "Synthetic Module",
             "type": "File"
           }
         ],
         "items_complete": true,
         "items_count": 1,
-        "name": "Week 1",
+        "name": "Synthetic Module",
         "position": 1,
         "state": "unlocked"
       }

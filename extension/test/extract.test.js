@@ -73,7 +73,7 @@ test("a login page yields no credential, whatever its route says", () => {
   const wire = JSON.stringify(extract);
   assert.ok(!wire.includes("hunter2"), wire);
   assert.ok(!wire.includes("SECRET-CSRF"), wire);
-  assert.ok(!wire.includes("rolf@school.test"), wire);
+  assert.ok(!wire.includes("student@school.test"), wire);
 });
 
 test("a discussion yields the posts a reader sees", () => {

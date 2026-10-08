@@ -4,5 +4,5 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-<identity>  <origin> / 1  profiles=[]  size=<n> bytes
+<identity>  <origin> / 60001  profiles=[]  size=<n> bytes
 --- stderr ---

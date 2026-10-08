@@ -4,5 +4,5 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-announcement <origin>/courses/100/discussion_topics/40 launched=false
+announcement <origin>/courses/60100/discussion_topics/60040 launched=false
 --- stderr ---

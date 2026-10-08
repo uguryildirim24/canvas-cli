@@ -9,8 +9,8 @@ expression: value
       "complete": true,
       "count": 0,
       "dataset": "folders",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "network",
       "stale": false
     },
@@ -18,8 +18,8 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "files",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "network",
       "stale": false
     },
@@ -27,24 +27,24 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "modules",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "network",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "partial",
   "partial": [
     {
       "http_status": 403,
       "message": "Folders listing unavailable (HTTP 403); folder paths unavailable",
-      "scope": "folders:course:100"
+      "scope": "folders:course:60100"
     }
   ],
   "profile": null,
@@ -54,18 +54,18 @@ expression: value
     "storage": 0
   },
   "result": {
-    "course_id": "100",
+    "course_id": "60100",
     "files": [
       {
-        "folder_id": "20",
+        "folder_id": "60020",
         "folder_path": null,
         "hidden": false,
-        "id": "501",
+        "id": "60501",
         "lock_explanation": null,
         "locked": false,
         "module_id": null,
         "module_position": null,
-        "name": "syllabus.pdf",
+        "name": "synthetic-file.pdf",
         "size": 2048,
         "source": "listing",
         "updated_at": null

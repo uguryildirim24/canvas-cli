@@ -4,10 +4,10 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-Welcome
-posted 2026-09-01T08:00:00-04:00
+Synthetic Announcement
+posted 2040-09-01T08:00:00-04:00
 unread
-<origin>/courses/100/discussion_topics/40
+<origin>/courses/60100/discussion_topics/60040
 
-Hello
+Synthetic exercise: sort the symbols X, Y, and Z.
 --- stderr ---

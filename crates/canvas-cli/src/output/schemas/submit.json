@@ -9,10 +9,10 @@
   "response_kind": null,
   "posted": {
     "evidence": "post-response",
-    "submission_id": "9001",
+    "submission_id": "69001",
     "attempt": 1,
-    "submitted_at": "2026-09-09T16:05:00Z",
-    "submitted_at_local": "2026-09-09T12:05:00-04:00",
+    "submitted_at": "2040-09-09T16:05:00Z",
+    "submitted_at_local": "2040-09-09T12:05:00-04:00",
     "workflow_state": "submitted",
     "late": false,
     "missing": false,
@@ -20,8 +20,8 @@
     "submission_type": "online_upload",
     "attachments": [
       {
-        "id": "55001",
-        "display_name": "essay.pdf",
+        "id": "115001",
+        "display_name": "synthetic-file.pdf",
         "size": 24576,
         "content_type": "application/pdf"
       }
@@ -34,10 +34,10 @@
   "candidates": [],
   "files": [
     {
-      "name": "essay.pdf",
+      "name": "synthetic-file.pdf",
       "size": 24576,
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "canvas_file_id": "55001"
+      "canvas_file_id": "115001"
     }
   ],
   "text": null,

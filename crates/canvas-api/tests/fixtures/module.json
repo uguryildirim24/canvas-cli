@@ -1,1 +1,20 @@
-{"id": 30, "name": "Week 1", "position": 1, "state": "unlocked", "items_count": 1, "items": [{"id": 31, "module_id": 30, "title": "Reading", "type": "File", "content_id": 501, "position": 1, "content_details": {"locked_for_user": false}}]}
+{
+  "id": 60030,
+  "name": "Synthetic Module",
+  "position": 1,
+  "state": "unlocked",
+  "items_count": 1,
+  "items": [
+    {
+      "id": 60031,
+      "module_id": 60030,
+      "title": "Synthetic Module",
+      "type": "File",
+      "content_id": 60501,
+      "position": 1,
+      "content_details": {
+        "locked_for_user": false
+      }
+    }
+  ]
+}

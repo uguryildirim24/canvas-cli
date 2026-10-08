@@ -9,17 +9,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "assignments",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "cache",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -46,13 +46,13 @@ expression: value
           "unlock_at": null,
           "unlock_at_local": null
         },
-        "course_id": "100",
-        "due_at": "2026-09-20T03:59:00Z",
-        "due_at_local": "2026-09-19T23:59:00-04:00",
+        "course_id": "60100",
+        "due_at": "2040-09-20T03:59:00Z",
+        "due_at_local": "2040-09-19T23:59:00-04:00",
         "group_assignment": false,
-        "html_url": "<origin>/courses/100/assignments/9",
-        "id": "9",
-        "name": "Problem Set 1",
+        "html_url": "<origin>/courses/60100/assignments/60009",
+        "id": "60009",
+        "name": "Synthetic Assignment",
         "points_possible": 100.0,
         "status": {
           "attempt": 1,
@@ -75,7 +75,7 @@ expression: value
       }
     ],
     "bucket": "open",
-    "course_id": "100"
+    "course_id": "60100"
   },
   "schema": "canvas-cli/assignments@1",
   "warnings": []

@@ -1,9 +1,9 @@
 {
   "profile": "default",
   "identity": {
-    "origin": "https://example.instructure.com",
-    "user_id": "1",
-    "key": "example.instructure.com-1-deadbeef"
+    "origin": "https://canvas.example.test",
+    "user_id": "60001",
+    "key": "canvas.example.test-60001-acd6e96a"
   },
   "token_source": "keyring",
   "stray_sources": [],
@@ -11,5 +11,5 @@
     "keyring"
   ],
   "backend": "keyring",
-  "validated_at": "2026-09-09T17:05:12Z"
+  "validated_at": "2040-09-09T17:05:12Z"
 }

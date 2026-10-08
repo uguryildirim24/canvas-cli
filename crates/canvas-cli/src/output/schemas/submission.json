@@ -2,57 +2,57 @@
   "submission": {
     "submitted": true,
     "graded": true,
-    "score": 8.5,
-    "grade": "8.5",
+    "score": 73.25,
+    "grade": "C",
     "late": false,
     "missing": false,
     "excused": false,
     "workflow_state": "graded",
-    "submitted_at": "2026-09-09T16:05:00Z",
-    "submitted_at_local": "2026-09-09T12:05:00-04:00",
+    "submitted_at": "2040-09-09T16:05:00Z",
+    "submitted_at_local": "2040-09-09T12:05:00-04:00",
     "attempt": 2,
-    "posted_at": "2026-09-09T16:30:00Z",
+    "posted_at": "2040-09-09T16:30:00Z",
     "pending": false,
     "submission_type": "online_upload",
     "body_sha256": null,
     "url": null,
     "attachments": [
       {
-        "id": "55001",
-        "display_name": "essay.pdf",
+        "id": "115001",
+        "display_name": "synthetic-file.pdf",
         "size": 24576,
         "content_type": "application/pdf"
       }
     ],
     "comments": [
       {
-        "id": "9",
-        "author": "Prof. Ada",
-        "created_at": "2026-09-09T16:40:00Z",
-        "created_at_local": "2026-09-09T12:40:00-04:00",
-        "text": "Nice work."
+        "id": "60009",
+        "author": "Synthetic Instructor",
+        "created_at": "2040-09-09T16:40:00Z",
+        "created_at_local": "2040-09-09T12:40:00-04:00",
+        "text": "Synthetic text"
       }
     ],
     "rubric_assessed": true,
     "rubric_assessment": [
       {
-        "criterion_id": "c1",
-        "points": 8.5,
-        "comments": "Clear reasoning.",
-        "rating_id": "_5721"
+        "criterion_id": "synthetic_c1",
+        "points": 73.25,
+        "comments": "Synthetic rubric comment.",
+        "rating_id": "synthetic_r1"
       }
     ]
   },
   "history": [
     {
       "attempt": 1,
-      "submitted_at": "2026-09-08T12:00:00Z",
-      "submitted_at_local": "2026-09-08T08:00:00-04:00",
+      "submitted_at": "2040-09-08T12:00:00Z",
+      "submitted_at_local": "2040-09-08T08:00:00-04:00",
       "score": null,
       "attachments": [
         {
-          "id": "55000",
-          "display_name": "draft.pdf",
+          "id": "115000",
+          "display_name": "synthetic-file.pdf",
           "size": 1024,
           "content_type": "application/pdf"
         }
@@ -60,13 +60,13 @@
     },
     {
       "attempt": 2,
-      "submitted_at": "2026-09-09T16:05:00Z",
-      "submitted_at_local": "2026-09-09T12:05:00-04:00",
-      "score": 8.5,
+      "submitted_at": "2040-09-09T16:05:00Z",
+      "submitted_at_local": "2040-09-09T12:05:00-04:00",
+      "score": 73.25,
       "attachments": [
         {
-          "id": "55001",
-          "display_name": "essay.pdf",
+          "id": "115001",
+          "display_name": "synthetic-file.pdf",
           "size": 24576,
           "content_type": "application/pdf"
         }

@@ -23,11 +23,11 @@ expression: rendered
     "result": {
       "courses": [
         {
-          "code": "CS-101",
+          "code": "SYN-600",
           "enrollment_state": "active",
           "grades": {
-            "current_grade": "A-",
-            "current_score": 92.5,
+            "current_grade": "C",
+            "current_score": 73.25,
             "final_grade": null,
             "final_score": null,
             "period": {
@@ -36,16 +36,16 @@ expression: rendered
               "title": null
             }
           },
-          "html_url": "https://example.instructure.com/courses/101",
-          "id": "101",
+          "html_url": "https://canvas.example.test/courses/60101",
+          "id": "60101",
           "is_favorite": true,
-          "name": "Intro to Computing",
+          "name": "Synthetic name",
           "restricted": false,
           "term": {
-            "end_at": "2026-12-15T05:00:00Z",
-            "id": "7",
-            "name": "Fall 2026",
-            "start_at": "2026-08-25T04:00:00Z"
+            "end_at": "2040-12-15T05:00:00Z",
+            "id": "60007",
+            "name": "Synthetic name",
+            "start_at": "2040-08-25T04:00:00Z"
           }
         }
       ]
@@ -72,11 +72,11 @@ expression: rendered
     },
     "result": {
       "course": {
-        "code": "CS-101",
+        "code": "SYN-600",
         "enrollment_state": "active",
         "grades": {
-          "current_grade": "A-",
-          "current_score": 92.5,
+          "current_grade": "C",
+          "current_score": 73.25,
           "final_grade": null,
           "final_score": null,
           "period": {
@@ -85,24 +85,24 @@ expression: rendered
             "title": null
           }
         },
-        "html_url": "https://example.instructure.com/courses/101",
-        "id": "101",
+        "html_url": "https://canvas.example.test/courses/60101",
+        "id": "60101",
         "is_favorite": true,
         "modules_count": 4,
-        "name": "Intro to Computing",
+        "name": "Synthetic name",
         "restricted": false,
         "syllabus_markdown": null,
         "teachers": [
           {
-            "id": "55",
-            "name": "Ada Lovelace"
+            "id": "60055",
+            "name": "Synthetic name"
           }
         ],
         "term": {
-          "end_at": "2026-12-15T05:00:00Z",
-          "id": "7",
-          "name": "Fall 2026",
-          "start_at": "2026-08-25T04:00:00Z"
+          "end_at": "2040-12-15T05:00:00Z",
+          "id": "60007",
+          "name": "Synthetic name",
+          "start_at": "2040-08-25T04:00:00Z"
         },
         "time_zone": "America/New_York"
       }
@@ -136,7 +136,7 @@ expression: rendered
       },
       "items": [
         {
-          "assignment_id": "2",
+          "assignment_id": "60002",
           "availability": {
             "external": null,
             "lock_at": null,
@@ -147,21 +147,21 @@ expression: rendered
             "unlock_at": null,
             "unlock_at_local": null
           },
-          "course_code": "CHEM",
-          "course_id": "1",
+          "course_code": "SYN-600",
+          "course_id": "60001",
           "dismissed": false,
-          "due_at": "2026-09-10T03:59:00Z",
-          "due_at_local": "2026-09-09T23:59:00-04:00",
+          "due_at": "2040-09-10T03:59:00Z",
+          "due_at_local": "2040-09-09T23:59:00-04:00",
           "html_url": null,
-          "id": "2",
+          "id": "60002",
           "key": "assignment:2",
           "kind": "assignment",
           "marked_complete": false,
           "parent_assignment_id": null,
           "points_possible": null,
           "raw_type": "assignment",
-          "scheduled_at": "2026-09-10T03:59:00Z",
-          "scheduled_at_local": "2026-09-09T23:59:00-04:00",
+          "scheduled_at": "2040-09-10T03:59:00Z",
+          "scheduled_at_local": "2040-09-09T23:59:00-04:00",
           "status": {
             "attempt": null,
             "excused": null,
@@ -177,13 +177,13 @@ expression: rendered
             "submitted_at_local": null,
             "workflow_state": null
           },
-          "title": "Homework 2"
+          "title": "Synthetic title"
         }
       ],
       "window": {
         "days": 14,
-        "end": "2026-09-21",
-        "start": "2026-09-08"
+        "end": "2040-09-21",
+        "start": "2040-09-08"
       }
     },
     "schema": "canvas-cli/todo@1",
@@ -223,13 +223,13 @@ expression: rendered
             "unlock_at": null,
             "unlock_at_local": null
           },
-          "course_id": "1",
-          "due_at": "2026-09-10T03:59:00Z",
-          "due_at_local": "2026-09-09T23:59:00-04:00",
+          "course_id": "60001",
+          "due_at": "2040-09-10T03:59:00Z",
+          "due_at_local": "2040-09-09T23:59:00-04:00",
           "group_assignment": false,
-          "html_url": "https://canvas.test/courses/1/assignments/2",
-          "id": "2",
-          "name": "Homework 2",
+          "html_url": "https://canvas.test/courses/60001/assignments/60002",
+          "id": "60002",
+          "name": "Synthetic name",
           "points_possible": 10.0,
           "status": {
             "attempt": 0,
@@ -265,13 +265,13 @@ expression: rendered
             "unlock_at": null,
             "unlock_at_local": null
           },
-          "course_id": "1",
+          "course_id": "60001",
           "due_at": null,
           "due_at_local": null,
           "group_assignment": false,
           "html_url": null,
-          "id": "3",
-          "name": "Homework 3",
+          "id": "60003",
+          "name": "Synthetic name",
           "points_possible": 10.0,
           "status": {
             "attempt": 0,
@@ -294,7 +294,7 @@ expression: rendered
         }
       ],
       "bucket": "all",
-      "course_id": "1"
+      "course_id": "60001"
     },
     "schema": "canvas-cli/assignments@1",
     "warnings": []
@@ -334,16 +334,16 @@ expression: rendered
         },
         "can_submit": false,
         "comments_count": null,
-        "course_id": "1",
-        "description_markdown": "Explain **chemistry**.",
-        "due_at": "2026-09-10T03:59:00Z",
-        "due_at_local": "2026-09-09T23:59:00-04:00",
+        "course_id": "60001",
+        "description_markdown": "Synthetic description markdown",
+        "due_at": "2040-09-10T03:59:00Z",
+        "due_at_local": "2040-09-09T23:59:00-04:00",
         "external_tool_name": null,
         "extra_attempts": null,
         "group_assignment": false,
-        "html_url": "https://canvas.test/courses/1/assignments/2",
-        "id": "2",
-        "name": "Homework 2",
+        "html_url": "https://canvas.test/courses/60001/assignments/60002",
+        "id": "60002",
+        "name": "Synthetic name",
         "points_possible": 10.0,
         "rubric": [
           {
@@ -351,19 +351,19 @@ expression: rendered
             "description": "Reasoning",
             "id": "c1",
             "long_description": "Shows the steps that lead to the answer.",
-            "points": 10.0,
+            "points": 73.25,
             "ratings": [
               {
                 "description": "Full marks",
                 "id": "_1001",
                 "long_description": null,
-                "points": 10.0
+                "points": 73.25
               },
               {
                 "description": "No marks",
                 "id": "_1002",
                 "long_description": null,
-                "points": 0.0
+                "points": 73.25
               }
             ]
           }
@@ -416,8 +416,8 @@ expression: rendered
       "error": null,
       "files": [
         {
-          "canvas_file_id": "55001",
-          "name": "essay.pdf",
+          "canvas_file_id": "115001",
+          "name": "synthetic-file.pdf",
           "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "size": 24576
         }
@@ -429,8 +429,8 @@ expression: rendered
         "attachments": [
           {
             "content_type": "application/pdf",
-            "display_name": "essay.pdf",
-            "id": "55001",
+            "display_name": "synthetic-file.pdf",
+            "id": "115001",
             "size": 24576
           }
         ],
@@ -441,10 +441,10 @@ expression: rendered
         "late": false,
         "missing": false,
         "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "submission_id": "9001",
+        "submission_id": "69001",
         "submission_type": "online_upload",
-        "submitted_at": "2026-09-09T16:05:00Z",
-        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "submitted_at": "2040-09-09T16:05:00Z",
+        "submitted_at_local": "2040-09-09T12:05:00-04:00",
         "url": null,
         "workflow_state": "submitted"
       },
@@ -479,25 +479,25 @@ expression: rendered
     "result": {
       "plan": {
         "approval": {
-          "at": "2026-09-09T16:04:52Z",
+          "at": "2040-09-09T16:04:52Z",
           "channel": "tty",
           "consumer": null,
           "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         },
-        "assignment_id": "202",
-        "assignment_name": "Essay 1",
+        "assignment_id": "60202",
+        "assignment_name": "Synthetic assignment name",
         "baseline_attempt": 0,
         "comment_chars": 42,
         "consumer": null,
-        "course_code": "CS-101",
-        "course_id": "101",
-        "created_at": "2026-09-09T16:04:40Z",
-        "due_at": "2026-09-15T23:59:59Z",
+        "course_code": "SYN-600",
+        "course_id": "60101",
+        "created_at": "2040-09-09T16:04:40Z",
+        "due_at": "2040-09-15T23:59:59Z",
         "estimated_attempt": 1,
-        "expires_at": "2026-09-09T16:19:40Z",
+        "expires_at": "2040-09-09T16:19:40Z",
         "files": [
           {
-            "name": "essay.pdf",
+            "name": "synthetic-file.pdf",
             "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "size": 24576
           }
@@ -539,29 +539,29 @@ expression: rendered
           "attachments": [
             {
               "content_type": "application/pdf",
-              "display_name": "draft.pdf",
-              "id": "55000",
+              "display_name": "synthetic-file.pdf",
+              "id": "115000",
               "size": 1024
             }
           ],
           "attempt": 1,
           "score": null,
-          "submitted_at": "2026-09-08T12:00:00Z",
-          "submitted_at_local": "2026-09-08T08:00:00-04:00"
+          "submitted_at": "2040-09-08T12:00:00Z",
+          "submitted_at_local": "2040-09-08T08:00:00-04:00"
         },
         {
           "attachments": [
             {
               "content_type": "application/pdf",
-              "display_name": "essay.pdf",
-              "id": "55001",
+              "display_name": "synthetic-file.pdf",
+              "id": "115001",
               "size": 24576
             }
           ],
           "attempt": 2,
-          "score": 8.5,
-          "submitted_at": "2026-09-09T16:05:00Z",
-          "submitted_at_local": "2026-09-09T12:05:00-04:00"
+          "score": 73.25,
+          "submitted_at": "2040-09-09T16:05:00Z",
+          "submitted_at_local": "2040-09-09T12:05:00-04:00"
         }
       ],
       "pending_journals": [],
@@ -569,8 +569,8 @@ expression: rendered
         "attachments": [
           {
             "content_type": "application/pdf",
-            "display_name": "essay.pdf",
-            "id": "55001",
+            "display_name": "synthetic-file.pdf",
+            "id": "115001",
             "size": 24576
           }
         ],
@@ -578,34 +578,34 @@ expression: rendered
         "body_sha256": null,
         "comments": [
           {
-            "author": "Prof. Ada",
-            "created_at": "2026-09-09T16:40:00Z",
-            "created_at_local": "2026-09-09T12:40:00-04:00",
-            "id": "9",
-            "text": "Nice work."
+            "author": "Synthetic Instructor",
+            "created_at": "2040-09-09T16:40:00Z",
+            "created_at_local": "2040-09-09T12:40:00-04:00",
+            "id": "60009",
+            "text": "Synthetic text"
           }
         ],
         "excused": false,
-        "grade": "8.5",
+        "grade": "C",
         "graded": true,
         "late": false,
         "missing": false,
         "pending": false,
-        "posted_at": "2026-09-09T16:30:00Z",
+        "posted_at": "2040-09-09T16:30:00Z",
         "rubric_assessed": true,
         "rubric_assessment": [
           {
-            "comments": "Clear reasoning.",
-            "criterion_id": "c1",
-            "points": 8.5,
-            "rating_id": "_5721"
+            "comments": "Synthetic rubric comment.",
+            "criterion_id": "synthetic_c1",
+            "points": 73.25,
+            "rating_id": "synthetic_r1"
           }
         ],
-        "score": 8.5,
+        "score": 73.25,
         "submission_type": "online_upload",
         "submitted": true,
-        "submitted_at": "2026-09-09T16:05:00Z",
-        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "submitted_at": "2040-09-09T16:05:00Z",
+        "submitted_at_local": "2040-09-09T12:05:00-04:00",
         "url": null,
         "workflow_state": "graded"
       }
@@ -632,32 +632,32 @@ expression: rendered
     },
     "result": {
       "approval": {
-        "at": "2026-09-09T16:04:52Z",
+        "at": "2040-09-09T16:04:52Z",
         "channel": "tty",
         "consumer": null,
         "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
       },
-      "assignment_id": "202",
-      "assignment_name": "Essay 1",
+      "assignment_id": "60202",
+      "assignment_name": "Synthetic assignment name",
       "attribution": "observed",
       "baseline_attempt": 0,
       "cli_version": "0.1.0",
-      "course_code": "CS-101",
-      "course_id": "101",
-      "created_at": "2026-09-09T16:04:58Z",
-      "due_at": "2026-09-15T23:59:59Z",
+      "course_code": "SYN-600",
+      "course_id": "60101",
+      "created_at": "2040-09-09T16:04:58Z",
+      "due_at": "2040-09-15T23:59:59Z",
       "files": [
         {
-          "canvas_file_id": "55001",
-          "name": "essay.pdf",
+          "canvas_file_id": "115001",
+          "name": "synthetic-file.pdf",
           "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "size": 24576
         }
       ],
       "identity": {
-        "key": "example.instructure.com-1-deadbeef",
-        "origin": "https://example.instructure.com",
-        "user_id": "1"
+        "key": "canvas.example.test-60001-acd6e96a",
+        "origin": "https://canvas.example.test",
+        "user_id": "60001"
       },
       "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
       "kind": "online_upload",
@@ -667,8 +667,8 @@ expression: rendered
         "attachments": [
           {
             "content_type": "application/pdf",
-            "display_name": "essay.pdf",
-            "id": "55001",
+            "display_name": "synthetic-file.pdf",
+            "id": "115001",
             "size": 24576
           }
         ],
@@ -679,10 +679,10 @@ expression: rendered
         "late": false,
         "missing": false,
         "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "submission_id": "9001",
+        "submission_id": "69001",
         "submission_type": "online_upload",
-        "submitted_at": "2026-09-09T16:05:00Z",
-        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "submitted_at": "2040-09-09T16:05:00Z",
+        "submitted_at_local": "2040-09-09T12:05:00-04:00",
         "url": null,
         "workflow_state": "submitted"
       },
@@ -690,15 +690,15 @@ expression: rendered
         "attachments": [
           {
             "content_type": "application/pdf",
-            "display_name": "essay.pdf",
-            "id": "55001",
+            "display_name": "synthetic-file.pdf",
+            "id": "115001",
             "size": 24576
           }
         ],
         "body_sha256": null,
         "late": false,
-        "submitted_at": "2026-09-09T16:05:00Z",
-        "submitted_at_local": "2026-09-09T12:05:00-04:00"
+        "submitted_at": "2040-09-09T16:05:00Z",
+        "submitted_at_local": "2040-09-09T12:05:00-04:00"
       },
       "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
       "text": null,
@@ -729,17 +729,17 @@ expression: rendered
         {
           "acknowledged_at": null,
           "approval": {
-            "at": "2026-09-09T16:04:52Z",
+            "at": "2040-09-09T16:04:52Z",
             "channel": "tty",
             "consumer": null,
             "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
           },
-          "assignment_id": "202",
-          "assignment_name": "Essay 1",
+          "assignment_id": "60202",
+          "assignment_name": "Synthetic assignment name",
           "baseline_attempt": 0,
-          "course_code": "CS-101",
-          "course_id": "101",
-          "created_at": "2026-09-09T16:04:58Z",
+          "course_code": "SYN-600",
+          "course_id": "60101",
+          "created_at": "2040-09-09T16:04:58Z",
           "error": null,
           "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
           "kind": "online_upload",
@@ -752,8 +752,8 @@ expression: rendered
             "attachments": [
               {
                 "content_type": "application/pdf",
-                "display_name": "essay.pdf",
-                "id": "55001",
+                "display_name": "synthetic-file.pdf",
+                "id": "115001",
                 "size": 24576
               }
             ],
@@ -764,10 +764,10 @@ expression: rendered
             "late": false,
             "missing": false,
             "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "submission_id": "9001",
+            "submission_id": "69001",
             "submission_type": "online_upload",
-            "submitted_at": "2026-09-09T16:05:00Z",
-            "submitted_at_local": "2026-09-09T12:05:00-04:00",
+            "submitted_at": "2040-09-09T16:05:00Z",
+            "submitted_at_local": "2040-09-09T12:05:00-04:00",
             "url": null,
             "workflow_state": "submitted"
           },
@@ -777,7 +777,7 @@ expression: rendered
           "server_match": null,
           "state": "submitted",
           "superseded": false,
-          "updated_at": "2026-09-09T16:05:01Z",
+          "updated_at": "2040-09-09T16:05:01Z",
           "uploaded_file_ids": [
             "55001"
           ]
@@ -811,9 +811,9 @@ expression: rendered
       "files": [
         {
           "actual_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "canvas_file_id": "55001",
+          "canvas_file_id": "115001",
           "expected_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "name": "essay.pdf",
+          "name": "synthetic-file.pdf",
           "status": "ok"
         }
       ],
@@ -850,8 +850,8 @@ expression: rendered
             "55001"
           ],
           "attempt": 1,
-          "submitted_at": "2026-09-09T16:05:00Z",
-          "submitted_at_local": "2026-09-09T12:05:00-04:00"
+          "submitted_at": "2040-09-09T16:05:00Z",
+          "submitted_at_local": "2040-09-09T12:05:00-04:00"
         }
       ],
       "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
@@ -863,8 +863,8 @@ expression: rendered
         "attachments": [
           {
             "content_type": "application/pdf",
-            "display_name": "essay.pdf",
-            "id": "55001",
+            "display_name": "synthetic-file.pdf",
+            "id": "115001",
             "size": 24576
           }
         ],
@@ -875,10 +875,10 @@ expression: rendered
         "late": false,
         "missing": false,
         "response_sha256": null,
-        "submission_id": "9001",
+        "submission_id": "69001",
         "submission_type": "online_upload",
-        "submitted_at": "2026-09-09T16:05:00Z",
-        "submitted_at_local": "2026-09-09T12:05:00-04:00",
+        "submitted_at": "2040-09-09T16:05:00Z",
+        "submitted_at_local": "2040-09-09T12:05:00-04:00",
         "url": null,
         "workflow_state": "submitted"
       },
@@ -926,11 +926,11 @@ expression: rendered
         "attachment_ids": [],
         "body_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "conversation_id": null,
-        "created_at": "2026-09-10T14:02:11Z",
-        "created_at_local": "2026-09-10T10:02:11-04:00",
-        "id": "5003",
+        "created_at": "2040-09-10T14:02:11Z",
+        "created_at_local": "2040-09-10T10:02:11-04:00",
+        "id": "65003",
         "response_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-        "user_id": "77"
+        "user_id": "60077"
       },
       "response_kind": null,
       "server_match": null,
@@ -939,15 +939,15 @@ expression: rendered
       "target": {
         "conversation_id": null,
         "conversation_subject": null,
-        "course_code": "CS-101",
-        "course_id": "101",
+        "course_code": "SYN-600",
+        "course_id": "60101",
         "kind": "discussion_reply",
-        "parent_entry_id": "4002",
+        "parent_entry_id": "64002",
         "quiz_id": null,
         "quiz_title": null,
         "recipient_names": [],
         "recipients": [],
-        "topic_id": "3001",
+        "topic_id": "63001",
         "topic_title": "Week 3 reading"
       },
       "text": {
@@ -989,12 +989,12 @@ expression: rendered
         "attachment_ids": [],
         "body_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "complete": true,
-        "created_at": "2026-09-10T14:02:11Z",
-        "created_at_local": "2026-09-10T10:02:11-04:00",
-        "id": "6004",
-        "read_at": "2026-09-10T14:31:00Z",
+        "created_at": "2040-09-10T14:02:11Z",
+        "created_at_local": "2040-09-10T10:02:11-04:00",
+        "id": "66004",
+        "read_at": "2040-09-10T14:31:00Z",
         "scanned": 3,
-        "user_id": "77"
+        "user_id": "60077"
       },
       "receipt_id": "01932f4b-2d3e-7f40-9b01-123456789abc",
       "server_match": null,
@@ -1027,29 +1027,29 @@ expression: rendered
           {
             "assignments": [
               {
-                "id": "31",
-                "name": "Problem Set 1",
+                "id": "60031",
+                "name": "Synthetic name",
                 "omit_from_final_grade": false,
                 "points_possible": 25.0,
                 "status": {
                   "attempt": 1,
                   "excused": false,
-                  "grade": "23",
+                  "grade": "C",
                   "graded": true,
                   "late": false,
                   "missing": false,
                   "pending": false,
-                  "posted_at": "2026-09-16T12:00:00Z",
-                  "score": 23.0,
+                  "posted_at": "2040-09-16T12:00:00Z",
+                  "score": 73.25,
                   "submitted": true,
-                  "submitted_at": "2026-09-14T18:00:00Z",
-                  "submitted_at_local": "2026-09-14T14:00:00-04:00",
+                  "submitted_at": "2040-09-14T18:00:00Z",
+                  "submitted_at_local": "2040-09-14T14:00:00-04:00",
                   "workflow_state": "graded"
                 }
               },
               {
-                "id": "32",
-                "name": "Problem Set 2",
+                "id": "60032",
+                "name": "Synthetic name",
                 "omit_from_final_grade": false,
                 "points_possible": 25.0,
                 "status": {
@@ -1069,26 +1069,26 @@ expression: rendered
                 }
               }
             ],
-            "id": "20",
-            "name": "Homework",
+            "id": "60020",
+            "name": "Synthetic name",
             "position": 1,
             "rules": {
               "drop_highest": null,
               "drop_lowest": 1,
               "never_drop": [
-                "31"
+                "60031"
               ]
             },
             "subtotal": {
               "possible": 50.0,
-              "score": 45.0
+              "score": 73.25
             },
             "weight": 40.0
           },
           {
             "assignments": [],
-            "id": "21",
-            "name": "Exams",
+            "id": "60021",
+            "name": "Synthetic name",
             "position": 2,
             "rules": {
               "drop_highest": null,
@@ -1101,64 +1101,64 @@ expression: rendered
         ],
         "periods": [
           {
-            "end_date": "2026-10-31T00:00:00Z",
-            "id": "5",
+            "end_date": "2040-10-31T00:00:00Z",
+            "id": "60005",
             "is_current": true,
-            "start_date": "2026-09-01T00:00:00Z",
-            "title": "Fall Term 1"
+            "start_date": "2040-09-01T00:00:00Z",
+            "title": "Synthetic title"
           },
           {
-            "end_date": "2026-12-20T00:00:00Z",
-            "id": "6",
+            "end_date": "2040-12-20T00:00:00Z",
+            "id": "60006",
             "is_current": false,
-            "start_date": "2026-11-01T00:00:00Z",
-            "title": "Fall Term 2"
+            "start_date": "2040-11-01T00:00:00Z",
+            "title": "Synthetic title"
           }
         ]
       },
       "courses": [
         {
           "course": {
-            "code": "CS-101",
+            "code": "SYN-600",
             "enrollment_state": "active",
-            "html_url": "https://example.instructure.com/courses/101",
-            "id": "101",
+            "html_url": "https://canvas.example.test/courses/60101",
+            "id": "60101",
             "is_favorite": true,
-            "name": "Intro to Computer Science",
+            "name": "Synthetic name",
             "restricted": false,
             "term": {
-              "end_at": "2026-12-20T00:00:00Z",
-              "id": "7",
-              "name": "Fall 2026",
-              "start_at": "2026-09-01T00:00:00Z"
+              "end_at": "2040-12-20T00:00:00Z",
+              "id": "60007",
+              "name": "Synthetic name",
+              "start_at": "2040-09-01T00:00:00Z"
             }
           },
           "grades": {
-            "current_grade": "A-",
-            "current_score": 91.5,
-            "final_grade": "B+",
-            "final_score": 88.0,
+            "current_grade": "C",
+            "current_score": 73.25,
+            "final_grade": "C",
+            "final_score": 73.25,
             "period": {
-              "id": "5",
+              "id": "60005",
               "mode": "current",
-              "title": "Fall Term 1"
+              "title": "Synthetic title"
             }
           },
           "unavailable_reason": null
         },
         {
           "course": {
-            "code": "MATH-201",
+            "code": "SYN-600",
             "enrollment_state": "active",
-            "html_url": "https://example.instructure.com/courses/102",
-            "id": "102",
+            "html_url": "https://canvas.example.test/courses/60102",
+            "id": "60102",
             "is_favorite": false,
-            "name": "Linear Algebra",
+            "name": "Synthetic name",
             "restricted": false,
             "term": {
               "end_at": null,
-              "id": "7",
-              "name": "Fall 2026",
+              "id": "60007",
+              "name": "Synthetic name",
               "start_at": null
             }
           },
@@ -1199,21 +1199,21 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "course_id": "101",
+      "course_id": "60101",
       "files": [
         {
-          "folder_id": "2",
+          "folder_id": "60002",
           "folder_path": "Slides",
           "hidden": false,
-          "id": "50",
+          "id": "60050",
           "lock_explanation": null,
           "locked": false,
           "module_id": null,
           "module_position": null,
-          "name": "lec.pdf",
+          "name": "synthetic-file.pdf",
           "size": 10,
           "source": "listing",
-          "updated_at": "2026-09-01T12:00:00Z"
+          "updated_at": "2040-09-01T12:00:00Z"
         }
       ],
       "listing": {
@@ -1242,26 +1242,26 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "course_id": "101",
+      "course_id": "60101",
       "modules": [
         {
-          "id": "8",
+          "id": "60008",
           "items": [
             {
               "completed": null,
-              "content_id": "50",
+              "content_id": "60050",
               "html_url": null,
-              "id": "80",
+              "id": "60080",
               "lock_explanation": null,
               "locked": false,
               "position": 1,
-              "title": "slides",
+              "title": "Synthetic title",
               "type": "File"
             }
           ],
           "items_complete": true,
           "items_count": 1,
-          "name": "Week 1",
+          "name": "Synthetic name",
           "position": 1,
           "state": "unlocked"
         }
@@ -1290,14 +1290,14 @@ expression: rendered
     "result": {
       "courses": [
         {
-          "course_code": "CS-101",
-          "course_id": "101",
+          "course_code": "SYN-600",
+          "course_id": "60101",
           "files": [
             {
               "action": "downloaded",
               "error": null,
-              "id": "50",
-              "path": "CS-101-101/files/Slides/lec.pdf",
+              "id": "60050",
+              "path": "SYN-600-60101/files/Slides/synthetic-slides.pdf",
               "previous_path": null,
               "size": 10,
               "verify": "ok"
@@ -1305,9 +1305,9 @@ expression: rendered
             {
               "action": "moved",
               "error": null,
-              "id": "51",
-              "path": "CS-101-101/files/Slides/notes.pdf",
-              "previous_path": "CS-101-101/files/notes.pdf",
+              "id": "60051",
+              "path": "SYN-600-60101/files/Slides/synthetic-notes.pdf",
+              "previous_path": "SYN-600-60101/files/synthetic-notes.pdf",
               "size": null,
               "verify": null
             }
@@ -1355,31 +1355,31 @@ expression: rendered
     "result": {
       "announcements": [
         {
-          "author": "Ada Lovelace",
-          "course_code": "CS-101",
-          "course_id": "101",
-          "html_url": "https://example.instructure.com/courses/101/discussion_topics/9001",
-          "id": "9001",
-          "posted_at": "2026-09-08T14:00:00Z",
-          "posted_at_local": "2026-09-08T10:00:00-04:00",
+          "author": "Synthetic Instructor",
+          "course_code": "SYN-600",
+          "course_id": "60101",
+          "html_url": "https://canvas.example.test/courses/60101/discussion_topics/69001",
+          "id": "69001",
+          "posted_at": "2040-09-08T14:00:00Z",
+          "posted_at_local": "2040-09-08T10:00:00-04:00",
           "read": false,
-          "title": "Lab 3 is posted"
+          "title": "Synthetic title"
         },
         {
           "author": null,
-          "course_code": "MATH-201",
-          "course_id": "102",
-          "html_url": "https://example.instructure.com/courses/102/discussion_topics/9000",
-          "id": "9000",
-          "posted_at": "2026-09-02T18:30:00Z",
-          "posted_at_local": "2026-09-02T14:30:00-04:00",
+          "course_code": "SYN-600",
+          "course_id": "60102",
+          "html_url": "https://canvas.example.test/courses/60102/discussion_topics/69000",
+          "id": "69000",
+          "posted_at": "2040-09-02T18:30:00Z",
+          "posted_at_local": "2040-09-02T14:30:00-04:00",
           "read": true,
-          "title": "Quiz 2 moved to Friday"
+          "title": "Synthetic title"
         }
       ],
       "window": {
-        "end": "2026-09-09",
-        "start": "2026-08-26"
+        "end": "2040-09-09",
+        "start": "2040-08-26"
       }
     },
     "schema": "canvas-cli/announcements@1",
@@ -1405,15 +1405,15 @@ expression: rendered
     "result": {
       "announcement": {
         "author": null,
-        "course_code": "CS-101",
-        "course_id": "101",
-        "html_url": "https://example.instructure.com/courses/101/discussion_topics/1",
-        "id": "1",
+        "course_code": "SYN-600",
+        "course_id": "60101",
+        "html_url": "https://canvas.example.test/courses/60101/discussion_topics/60001",
+        "id": "60001",
         "message_markdown": null,
-        "posted_at": "2026-09-09T12:00:00Z",
-        "posted_at_local": "2026-09-09T08:00:00-04:00",
+        "posted_at": "2040-09-09T12:00:00Z",
+        "posted_at_local": "2040-09-09T08:00:00-04:00",
         "read": true,
-        "title": "Hello"
+        "title": "Synthetic title"
       }
     },
     "schema": "canvas-cli/announcement@1",
@@ -1441,61 +1441,61 @@ expression: rendered
         {
           "all_day": false,
           "all_day_date": null,
-          "course_code": "CS-101",
-          "course_id": "101",
-          "due_at": "2026-09-09T23:59:00Z",
-          "due_at_local": "2026-09-09T19:59:00-04:00",
+          "course_code": "SYN-600",
+          "course_id": "60101",
+          "due_at": "2040-09-09T23:59:00Z",
+          "due_at_local": "2040-09-09T19:59:00-04:00",
           "end_at": null,
           "end_at_local": null,
-          "html_url": "https://example.instructure.com/courses/101/assignments/500",
-          "id": "500",
+          "html_url": "https://canvas.example.test/courses/60101/assignments/60500",
+          "id": "60500",
           "is_deadline": true,
           "kind": "assignment",
           "start_at": null,
           "start_at_local": null,
-          "title": "Problem Set 2",
-          "uid": "canvas-assignment-500@example.instructure.com-1-deadbeef"
+          "title": "Synthetic title",
+          "uid": "canvas-assignment-60500@canvas.example.test-62001-afc363ff"
         },
         {
           "all_day": false,
           "all_day_date": null,
-          "course_code": "CS-101",
-          "course_id": "101",
+          "course_code": "SYN-600",
+          "course_id": "60101",
           "due_at": null,
           "due_at_local": null,
-          "end_at": "2026-09-10T16:00:00Z",
-          "end_at_local": "2026-09-10T12:00:00-04:00",
-          "html_url": "https://example.instructure.com/calendar?event_id=700&include_contexts=course_101",
-          "id": "700",
+          "end_at": "2040-09-10T16:00:00Z",
+          "end_at_local": "2040-09-10T12:00:00-04:00",
+          "html_url": "https://canvas.example.test/calendar?event_id=700&include_contexts=course_101",
+          "id": "60700",
           "is_deadline": false,
           "kind": "event",
-          "start_at": "2026-09-10T15:00:00Z",
-          "start_at_local": "2026-09-10T11:00:00-04:00",
-          "title": "Review session",
-          "uid": "canvas-event-700@example.instructure.com-1-deadbeef"
+          "start_at": "2040-09-10T15:00:00Z",
+          "start_at_local": "2040-09-10T11:00:00-04:00",
+          "title": "Synthetic title",
+          "uid": "canvas-event-60700@canvas.example.test-62001-afc363ff"
         },
         {
           "all_day": true,
-          "all_day_date": "2026-09-14",
+          "all_day_date": "2040-09-14",
           "course_code": null,
           "course_id": null,
           "due_at": null,
           "due_at_local": null,
-          "end_at": "2026-09-14T04:00:00Z",
-          "end_at_local": "2026-09-14T00:00:00-04:00",
+          "end_at": "2040-09-14T04:00:00Z",
+          "end_at_local": "2040-09-14T00:00:00-04:00",
           "html_url": null,
-          "id": "701",
+          "id": "60701",
           "is_deadline": false,
           "kind": "event",
-          "start_at": "2026-09-14T04:00:00Z",
-          "start_at_local": "2026-09-14T00:00:00-04:00",
-          "title": "Reading day",
-          "uid": "canvas-event-701@example.instructure.com-1-deadbeef"
+          "start_at": "2040-09-14T04:00:00Z",
+          "start_at_local": "2040-09-14T00:00:00-04:00",
+          "title": "Synthetic title",
+          "uid": "canvas-event-60701@canvas.example.test-62001-afc363ff"
         }
       ],
       "window": {
-        "end": "2026-09-22",
-        "start": "2026-09-08"
+        "end": "2040-09-22",
+        "start": "2040-09-08"
       }
     },
     "schema": "canvas-cli/calendar@1",
@@ -1519,10 +1519,10 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "id": "101",
+      "id": "60101",
       "launched": true,
       "target_kind": "course",
-      "url": "https://example.instructure.com/courses/101"
+      "url": "https://canvas.example.test/courses/60101"
     },
     "schema": "canvas-cli/open@1",
     "warnings": []
@@ -1551,7 +1551,7 @@ expression: rendered
           "count": 1,
           "dataset": "courses",
           "error": null,
-          "fetched_at": "2026-09-09T17:05:12Z",
+          "fetched_at": "2040-09-09T17:05:12Z",
           "requests": 1,
           "scope": "active",
           "source": "network",
@@ -1585,7 +1585,7 @@ expression: rendered
           "complete": true,
           "count": 1,
           "dataset": "courses",
-          "fetched_at": "2026-09-09T17:05:12Z",
+          "fetched_at": "2040-09-09T17:05:12Z",
           "scope": "active",
           "source": "cache",
           "stale": false
@@ -1623,9 +1623,9 @@ expression: rendered
     "result": {
       "aliases": [
         {
-          "course_code": "CS-101",
-          "course_id": "101",
-          "name": "cs"
+          "course_code": "SYN-600",
+          "course_id": "60101",
+          "name": "Synthetic name"
         }
       ]
     },
@@ -1652,9 +1652,9 @@ expression: rendered
     "result": {
       "backend": "keyring",
       "identity": {
-        "key": "example.instructure.com-1-deadbeef",
-        "origin": "https://example.instructure.com",
-        "user_id": "1"
+        "key": "canvas.example.test-60001-acd6e96a",
+        "origin": "https://canvas.example.test",
+        "user_id": "60001"
       },
       "pending_cleanup": [
         "keyring"
@@ -1662,7 +1662,7 @@ expression: rendered
       "profile": "default",
       "stray_sources": [],
       "token_source": "keyring",
-      "validated_at": "2026-09-09T17:05:12Z"
+      "validated_at": "2040-09-09T17:05:12Z"
     },
     "schema": "canvas-cli/auth_status@1",
     "warnings": []
@@ -1687,9 +1687,9 @@ expression: rendered
     "result": {
       "backend": "keyring",
       "identity": {
-        "key": "example.instructure.com-1-deadbeef",
-        "origin": "https://example.instructure.com",
-        "user_id": "1"
+        "key": "canvas.example.test-60001-acd6e96a",
+        "origin": "https://canvas.example.test",
+        "user_id": "60001"
       },
       "profile": "default",
       "removed": []
@@ -1717,9 +1717,9 @@ expression: rendered
     "result": {
       "backend": "keyring",
       "identity": {
-        "key": "example.instructure.com-1-deadbeef",
-        "origin": "https://example.instructure.com",
-        "user_id": "1"
+        "key": "canvas.example.test-60001-acd6e96a",
+        "origin": "https://canvas.example.test",
+        "user_id": "60001"
       },
       "profile": "default",
       "removed": [
@@ -1807,7 +1807,7 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "course_id": "1",
+      "course_id": "60001",
       "listing": {
         "available": true,
         "http_status": null
@@ -1815,10 +1815,10 @@ expression: rendered
       "pages": [
         {
           "front_page": true,
-          "id": "301",
+          "id": "60301",
           "published": true,
-          "title": "Course Overview",
-          "updated_at": "2026-09-01T14:00:00Z",
+          "title": "Synthetic title",
+          "updated_at": "2040-09-01T14:00:00Z",
           "url": "course-overview"
         }
       ]
@@ -1845,8 +1845,8 @@ expression: rendered
     },
     "result": {
       "page": {
-        "body_markdown": "Read the syllabus.\n\n[embedded iframe: unavailable to this tool]",
-        "course_id": "1",
+        "body_markdown": "Synthetic body markdown",
+        "course_id": "60001",
         "embedded": [
           {
             "kind": "iframe",
@@ -1861,19 +1861,19 @@ expression: rendered
         ],
         "files": [
           {
-            "file_id": "42",
-            "name": "Syllabus.pdf",
-            "url": "https://canvas.test/courses/1/files/42"
+            "file_id": "60042",
+            "name": "synthetic-file.pdf",
+            "url": "https://canvas.test/courses/60001/files/60042"
           }
         ],
         "front_page": true,
-        "html_url": "https://canvas.test/courses/1/pages/course-overview",
-        "id": "301",
+        "html_url": "https://canvas.test/courses/60001/pages/course-overview",
+        "id": "60301",
         "locked_for_user": false,
         "published": true,
-        "title": "Course Overview",
+        "title": "Synthetic title",
         "truncated": false,
-        "updated_at": "2026-09-01T14:00:00Z",
+        "updated_at": "2040-09-01T14:00:00Z",
         "url": "course-overview"
       }
     },
@@ -1898,17 +1898,17 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "course_id": "1",
+      "course_id": "60001",
       "embedded": [],
       "external_links": [],
       "files": [
         {
-          "file_id": "42",
-          "name": "Syllabus.pdf",
-          "url": "https://canvas.test/courses/1/files/42"
+          "file_id": "60042",
+          "name": "synthetic-file.pdf",
+          "url": "https://canvas.test/courses/60001/files/60042"
         }
       ],
-      "syllabus_markdown": "Bring a calculator.",
+      "syllabus_markdown": "Synthetic syllabus markdown",
       "truncated": false,
       "updated_at": null
     },
@@ -1933,25 +1933,25 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "course_id": "1",
+      "course_id": "60001",
       "discussions": [
         {
-          "assignment_id": "2",
-          "author": "Dr. Reed",
-          "course_id": "1",
-          "group_category_id": "9",
-          "html_url": "https://canvas.test/courses/1/discussion_topics/55",
-          "id": "55",
+          "assignment_id": "60002",
+          "author": "Synthetic Instructor",
+          "course_id": "60001",
+          "group_category_id": "60009",
+          "html_url": "https://canvas.test/courses/60001/discussion_topics/60055",
+          "id": "60055",
           "is_announcement": false,
-          "last_reply_at": "2026-09-08T10:00:00Z",
+          "last_reply_at": "2040-09-08T10:00:00Z",
           "locked": false,
           "pinned": false,
           "points_possible": 5.0,
-          "posted_at": "2026-09-01T14:00:00Z",
+          "posted_at": "2040-09-01T14:00:00Z",
           "read_state": "unread",
           "reply_count": 4,
           "require_initial_post": true,
-          "title": "Week 1 reflection",
+          "title": "Synthetic title",
           "unread_count": 2
         }
       ],
@@ -1982,40 +1982,40 @@ expression: rendered
     },
     "result": {
       "discussion": {
-        "assignment_id": "2",
-        "author": "Dr. Reed",
-        "course_id": "1",
+        "assignment_id": "60002",
+        "author": "Synthetic Instructor",
+        "course_id": "60001",
         "discussion_type": "threaded",
         "embedded": [],
         "external_links": [],
         "files": [],
-        "group_category_id": "9",
+        "group_category_id": "60009",
         "group_topic_children": [
           {
-            "group_id": "77",
-            "id": "56"
+            "group_id": "60077",
+            "id": "60056"
           }
         ],
-        "html_url": "https://canvas.test/courses/1/discussion_topics/55",
-        "id": "55",
+        "html_url": "https://canvas.test/courses/60001/discussion_topics/60055",
+        "id": "60055",
         "is_announcement": false,
-        "last_reply_at": "2026-09-08T10:00:00Z",
+        "last_reply_at": "2040-09-08T10:00:00Z",
         "locked": false,
-        "message_markdown": "What surprised you this week?",
+        "message_markdown": "Synthetic message markdown",
         "pinned": false,
         "points_possible": 5.0,
-        "posted_at": "2026-09-01T14:00:00Z",
+        "posted_at": "2040-09-01T14:00:00Z",
         "read_state": "unread",
         "replies": [
           {
-            "created_at": "2026-09-02T09:00:00Z",
-            "id": "900",
-            "message_markdown": "The lab took longer than I expected.",
+            "created_at": "2040-09-02T09:00:00Z",
+            "id": "60900",
+            "message_markdown": "Synthetic message markdown",
             "parent_id": null,
             "read_state": "unread",
             "replies_count": 1,
             "truncated": false,
-            "user_id": "31",
+            "user_id": "60031",
             "user_name": "Alex Kim"
           }
         ],
@@ -2028,7 +2028,7 @@ expression: rendered
         "replies_total": 1,
         "reply_count": 4,
         "require_initial_post": true,
-        "title": "Week 1 reflection",
+        "title": "Synthetic title",
         "truncated": false,
         "unread_count": 2
       },
@@ -2058,18 +2058,18 @@ expression: rendered
     "result": {
       "conversations": [
         {
-          "context_name": "CHEM-101",
-          "id": "700",
-          "last_message_at": "2026-09-09T12:00:00Z",
+          "context_name": "SYN-600",
+          "id": "60700",
+          "last_message_at": "2040-09-09T12:00:00Z",
           "message_count": 3,
           "participants": [
             {
-              "id": "31",
-              "name": "Alex Kim"
+              "id": "60031",
+              "name": "Synthetic Participant"
             }
           ],
           "starred": false,
-          "subject": "Lab partner",
+          "subject": "Synthetic subject",
           "workflow_state": "unread"
         }
       ],
@@ -2103,33 +2103,33 @@ expression: rendered
     },
     "result": {
       "conversation": {
-        "context_name": "CHEM-101",
-        "id": "700",
-        "last_message_at": "2026-09-09T12:00:00Z",
+        "context_name": "SYN-600",
+        "id": "60700",
+        "last_message_at": "2040-09-09T12:00:00Z",
         "messages": [
           {
             "attachments": [
               {
-                "file_id": "42",
-                "name": "notes.pdf",
+                "file_id": "60042",
+                "name": "synthetic-file.pdf",
                 "size": 20480
               }
             ],
-            "author_id": "31",
-            "body": "Can we meet before the lab?",
-            "created_at": "2026-09-09T12:00:00Z",
-            "id": "9001",
+            "author_id": "60031",
+            "body": "Synthetic body",
+            "created_at": "2040-09-09T12:00:00Z",
+            "id": "69001",
             "truncated": false
           }
         ],
         "messages_complete": true,
         "participants": [
           {
-            "id": "31",
-            "name": "Alex Kim"
+            "id": "60031",
+            "name": "Synthetic Participant"
           }
         ],
-        "subject": "Lab partner",
+        "subject": "Synthetic subject",
         "workflow_state": "unread"
       },
       "pending": false,
@@ -2181,31 +2181,31 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "course_id": "101",
+      "course_id": "60101",
       "quizzes": [
         {
           "allowed_attempts": 2,
-          "due_at": "2026-09-18T23:59:00Z",
-          "id": "101",
+          "due_at": "2040-09-18T23:59:00Z",
+          "id": "60101",
           "locked_for_user": false,
           "points_possible": 10.0,
           "published": true,
           "question_count": 5,
           "quiz_type": "assignment",
           "time_limit": 30,
-          "title": "Week 3 Reading Quiz"
+          "title": "Synthetic title"
         },
         {
           "allowed_attempts": 1,
-          "due_at": "2026-09-25T23:59:00Z",
-          "id": "102",
+          "due_at": "2040-09-25T23:59:00Z",
+          "id": "60102",
           "locked_for_user": false,
           "points_possible": 8.0,
           "published": true,
           "question_count": 4,
           "quiz_type": "assignment",
           "time_limit": null,
-          "title": "Week 4 Reading Quiz"
+          "title": "Synthetic title"
         }
       ]
     },
@@ -2232,16 +2232,16 @@ expression: rendered
     "result": {
       "quiz": {
         "allowed_attempts": 2,
-        "assignment_id": "9012",
+        "assignment_id": "69012",
         "cant_go_back": false,
-        "course_id": "101",
-        "description_markdown": "Chapters 4 and 5. Two attempts, highest score kept.",
-        "due_at": "2026-09-18T23:59:00Z",
+        "course_id": "60101",
+        "description_markdown": "Synthetic description markdown",
+        "due_at": "2040-09-18T23:59:00Z",
         "embedded": [],
         "external_links": [],
         "files": [],
-        "html_url": "https://school.test/courses/101/quizzes/101",
-        "id": "101",
+        "html_url": "https://school.test/courses/60101/quizzes/60101",
+        "id": "60101",
         "ip_filtered": false,
         "lock_at": null,
         "lock_explanation": null,
@@ -2253,9 +2253,9 @@ expression: rendered
         "quiz_type": "assignment",
         "require_lockdown_browser": false,
         "time_limit": 30,
-        "title": "Week 3 Reading Quiz",
+        "title": "Synthetic title",
         "truncated": false,
-        "unlock_at": "2026-09-14T00:00:00Z",
+        "unlock_at": "2040-09-14T00:00:00Z",
         "unlocked_for_user": true
       }
     },
@@ -2281,96 +2281,96 @@ expression: rendered
     },
     "result": {
       "attempt": 1,
-      "course_id": "101",
-      "end_at": "2026-09-11T14:30:00Z",
+      "course_id": "60101",
+      "end_at": "2040-09-11T14:30:00Z",
       "questions": [
         {
           "answer": null,
           "answers": [
             {
-              "id": "4811",
-              "text": "Phenolphthalein"
+              "id": "64811",
+              "text": "Synthetic text"
             },
             {
-              "id": "4812",
-              "text": "Litmus"
+              "id": "64812",
+              "text": "Synthetic text"
             },
             {
-              "id": "4813",
-              "text": "Methyl orange"
+              "id": "64813",
+              "text": "Synthetic text"
             },
             {
-              "id": "4814",
-              "text": "Starch"
+              "id": "64814",
+              "text": "Synthetic text"
             }
           ],
-          "id": "901",
-          "name": "Question 1",
+          "id": "60901",
+          "name": "Synthetic name",
           "points_possible": 2.0,
           "position": 1,
           "question_type": "multiple_choice_question",
-          "text_markdown": "Which reagent marks the end point?"
+          "text_markdown": "Synthetic text markdown"
         },
         {
           "answer": null,
           "answers": [],
-          "id": "902",
-          "name": "Question 2",
+          "id": "60902",
+          "name": "Synthetic name",
           "points_possible": 4.0,
           "position": 2,
           "question_type": "essay_question",
-          "text_markdown": "Name two sources of error, and how each biases the result."
+          "text_markdown": "Synthetic text markdown"
         },
         {
           "answer": null,
           "answers": [
             {
-              "id": "4901",
-              "text": "True"
+              "id": "64901",
+              "text": "Synthetic text"
             },
             {
-              "id": "4902",
-              "text": "False"
+              "id": "64902",
+              "text": "Synthetic text"
             }
           ],
-          "id": "903",
-          "name": "Question 3",
+          "id": "60903",
+          "name": "Synthetic name",
           "points_possible": 2.0,
           "position": 3,
           "question_type": "true_false_question",
-          "text_markdown": "A buffer resists pH change on dilution."
+          "text_markdown": "Synthetic text markdown"
         },
         {
           "answer": null,
           "answers": [
             {
-              "id": "5101",
-              "text": "Rinse the burette with the titrant"
+              "id": "65101",
+              "text": "Synthetic text"
             },
             {
-              "id": "5102",
-              "text": "Record the initial volume"
+              "id": "65102",
+              "text": "Synthetic text"
             },
             {
-              "id": "5103",
-              "text": "Add the indicator to the flask"
+              "id": "65103",
+              "text": "Synthetic text"
             },
             {
-              "id": "5104",
-              "text": "Drain to the end point"
+              "id": "65104",
+              "text": "Synthetic text"
             }
           ],
-          "id": "904",
-          "name": "Question 4",
+          "id": "60904",
+          "name": "Synthetic name",
           "points_possible": 2.0,
           "position": 4,
           "question_type": "multiple_answers_question",
-          "text_markdown": "Select every step of the procedure that runs before titration begins."
+          "text_markdown": "Synthetic text markdown"
         }
       ],
-      "quiz_id": "101",
+      "quiz_id": "60101",
       "started": true,
-      "started_at": "2026-09-11T14:00:00Z"
+      "started_at": "2040-09-11T14:00:00Z"
     },
     "schema": "canvas-cli/quiz_questions@1",
     "warnings": []
@@ -2393,17 +2393,17 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "course_id": "101",
+      "course_id": "60101",
       "quizzes": [
         {
-          "assignment_id": "9013",
-          "due_at": "2026-09-18T23:59:00Z",
-          "id": "201",
+          "assignment_id": "69013",
+          "due_at": "2040-09-18T23:59:00Z",
+          "id": "60201",
           "max_attempts": "2",
           "points_possible": 12.0,
           "published": true,
           "time_limit_seconds": 1800,
-          "title": "Week 3 New Quiz"
+          "title": "Synthetic title"
         }
       ]
     },
@@ -2430,15 +2430,15 @@ expression: rendered
     "result": {
       "quiz": {
         "access_code_required": false,
-        "assignment_id": "9013",
-        "course_id": "101",
-        "due_at": "2026-09-18T23:59:00Z",
+        "assignment_id": "69013",
+        "course_id": "60101",
+        "due_at": "2040-09-18T23:59:00Z",
         "embedded": [],
         "external_links": [],
         "files": [],
-        "html_url": "https://school.test/courses/101/assignments/9013",
-        "id": "201",
-        "instructions_markdown": "Answer every question. Two attempts, highest score kept.",
+        "html_url": "https://school.test/courses/60101/assignments/69013",
+        "id": "60201",
+        "instructions_markdown": "Synthetic instructions markdown",
         "lock_at": null,
         "max_attempts": "2",
         "one_at_a_time": "none",
@@ -2447,9 +2447,9 @@ expression: rendered
         "score_to_keep": "highest",
         "shuffle_answers": true,
         "time_limit_seconds": 1800,
-        "title": "Week 3 New Quiz",
+        "title": "Synthetic title",
         "truncated": false,
-        "unlock_at": "2026-09-14T00:00:00Z"
+        "unlock_at": "2040-09-14T00:00:00Z"
       }
     },
     "schema": "canvas-cli/new-quiz@1",
@@ -2520,17 +2520,17 @@ expression: rendered
       "journal": {
         "acknowledged_at": null,
         "approval": {
-          "at": "2026-09-09T16:04:52Z",
+          "at": "2040-09-09T16:04:52Z",
           "channel": "tty",
           "consumer": null,
           "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         },
-        "assignment_id": "202",
-        "assignment_name": "Essay 1",
+        "assignment_id": "60202",
+        "assignment_name": "Synthetic assignment name",
         "baseline_attempt": 0,
-        "course_code": "CS-101",
-        "course_id": "101",
-        "created_at": "2026-09-09T16:04:58Z",
+        "course_code": "SYN-600",
+        "course_id": "60101",
+        "created_at": "2040-09-09T16:04:58Z",
         "error": null,
         "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
         "kind": "online_upload",
@@ -2543,8 +2543,8 @@ expression: rendered
           "attachments": [
             {
               "content_type": "application/pdf",
-              "display_name": "essay.pdf",
-              "id": "55001",
+              "display_name": "synthetic-file.pdf",
+              "id": "115001",
               "size": 24576
             }
           ],
@@ -2555,10 +2555,10 @@ expression: rendered
           "late": false,
           "missing": false,
           "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "submission_id": "9001",
+          "submission_id": "69001",
           "submission_type": "online_upload",
-          "submitted_at": "2026-09-09T16:05:00Z",
-          "submitted_at_local": "2026-09-09T12:05:00-04:00",
+          "submitted_at": "2040-09-09T16:05:00Z",
+          "submitted_at_local": "2040-09-09T12:05:00-04:00",
           "url": null,
           "workflow_state": "submitted"
         },
@@ -2568,39 +2568,39 @@ expression: rendered
         "server_match": null,
         "state": "submitted",
         "superseded": false,
-        "updated_at": "2026-09-09T16:05:01Z",
+        "updated_at": "2040-09-09T16:05:01Z",
         "uploaded_file_ids": [
           "55001"
         ]
       },
       "receipt": {
         "approval": {
-          "at": "2026-09-09T16:04:52Z",
+          "at": "2040-09-09T16:04:52Z",
           "channel": "tty",
           "consumer": null,
           "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         },
-        "assignment_id": "202",
-        "assignment_name": "Essay 1",
+        "assignment_id": "60202",
+        "assignment_name": "Synthetic assignment name",
         "attribution": "observed",
         "baseline_attempt": 0,
         "cli_version": "0.1.0",
-        "course_code": "CS-101",
-        "course_id": "101",
-        "created_at": "2026-09-09T16:04:58Z",
-        "due_at": "2026-09-15T23:59:59Z",
+        "course_code": "SYN-600",
+        "course_id": "60101",
+        "created_at": "2040-09-09T16:04:58Z",
+        "due_at": "2040-09-15T23:59:59Z",
         "files": [
           {
-            "canvas_file_id": "55001",
-            "name": "essay.pdf",
+            "canvas_file_id": "115001",
+            "name": "synthetic-file.pdf",
             "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "size": 24576
           }
         ],
         "identity": {
-          "key": "example.instructure.com-1-deadbeef",
-          "origin": "https://example.instructure.com",
-          "user_id": "1"
+          "key": "canvas.example.test-60001-acd6e96a",
+          "origin": "https://canvas.example.test",
+          "user_id": "60001"
         },
         "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
         "kind": "online_upload",
@@ -2610,8 +2610,8 @@ expression: rendered
           "attachments": [
             {
               "content_type": "application/pdf",
-              "display_name": "essay.pdf",
-              "id": "55001",
+              "display_name": "synthetic-file.pdf",
+              "id": "115001",
               "size": 24576
             }
           ],
@@ -2622,10 +2622,10 @@ expression: rendered
           "late": false,
           "missing": false,
           "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "submission_id": "9001",
+          "submission_id": "69001",
           "submission_type": "online_upload",
-          "submitted_at": "2026-09-09T16:05:00Z",
-          "submitted_at_local": "2026-09-09T12:05:00-04:00",
+          "submitted_at": "2040-09-09T16:05:00Z",
+          "submitted_at_local": "2040-09-09T12:05:00-04:00",
           "url": null,
           "workflow_state": "submitted"
         },
@@ -2633,15 +2633,15 @@ expression: rendered
           "attachments": [
             {
               "content_type": "application/pdf",
-              "display_name": "essay.pdf",
-              "id": "55001",
+              "display_name": "synthetic-file.pdf",
+              "id": "115001",
               "size": 24576
             }
           ],
           "body_sha256": null,
           "late": false,
-          "submitted_at": "2026-09-09T16:05:00Z",
-          "submitted_at_local": "2026-09-09T12:05:00-04:00"
+          "submitted_at": "2040-09-09T16:05:00Z",
+          "submitted_at_local": "2040-09-09T12:05:00-04:00"
         },
         "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
         "text": null,
@@ -2670,7 +2670,7 @@ expression: rendered
     },
     "result": {
       "bytes": 1024,
-      "path": "/home/ada/receipt.json",
+      "path": "/home/example/receipt.json",
       "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde"
     },
     "schema": "canvas-cli/receipts@1",
@@ -2694,7 +2694,7 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "acknowledged_at": "2026-09-09T16:20:00Z",
+      "acknowledged_at": "2040-09-09T16:20:00Z",
       "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd"
     },
     "schema": "canvas-cli/receipts@1",
@@ -2782,7 +2782,7 @@ expression: rendered
       "storage": 0
     },
     "result": {
-      "path": "/home/ada/.config/canvas-cli/config.toml"
+      "path": "/home/example/.config/canvas-cli/config.toml"
     },
     "schema": "canvas-cli/config@1",
     "warnings": []
@@ -2802,7 +2802,7 @@ expression: rendered
     },
     "result": {
       "default_profile_cleared": true,
-      "key": "example.instructure.com-1-deadbeef",
+      "key": "canvas.example.test-62001-afc363ff",
       "profiles_removed": [
         "default"
       ],
@@ -2836,7 +2836,7 @@ expression: rendered
           "count": 1,
           "dataset": "courses",
           "error": null,
-          "fetched_at": "2026-09-09T17:05:12Z",
+          "fetched_at": "2040-09-09T17:05:12Z",
           "requests": 1,
           "scope": "active",
           "source": "network",
@@ -2854,23 +2854,23 @@ expression: rendered
   },
   {
     "after": {
-      "due_at": "2026-09-12T03:59:00Z"
+      "due_at": "2040-09-12T03:59:00Z"
     },
     "before": {
-      "due_at": "2026-09-10T03:59:00Z"
+      "due_at": "2040-09-10T03:59:00Z"
     },
     "cursor": "12",
     "dataset": "assignments",
     "entity_key": "9",
     "generation": "01234567-89ab-4cde-8f01-23456789abcd",
     "identity": {
-      "key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "origin": "https://canvas.example.edu",
-      "user_id": "1"
+      "key": "canvas.example.test-60001-acd6e96a",
+      "origin": "https://canvas.example.test",
+      "user_id": "60001"
     },
     "kind": "due.changed",
-    "observed_at": "2026-09-09T17:05:12Z",
-    "observed_at_local": "2026-09-09T13:05:12-04:00",
+    "observed_at": "2040-09-09T17:05:12Z",
+    "observed_at_local": "2040-09-09T13:05:12-04:00",
     "schema": "canvas-cli/event@1",
     "scope": "course:100"
   },
@@ -2900,57 +2900,57 @@ expression: rendered
       "attachment": "0f3c9a1b2d4e5f60718293a4b5c6d7e8",
       "browser": {
         "account": {
-          "observed_at": "2026-09-10T16:04:40Z",
-          "user_id": "12345"
+          "observed_at": "2040-09-10T16:04:40Z",
+          "user_id": "72345"
         },
-        "assignment_id": "98765",
+        "assignment_id": "158765",
         "content_reason": null,
-        "course_id": "45679",
+        "course_id": "105679",
         "document_id": "6C1F7A2E9B3D4A58",
         "follow": {
           "dispatch_ms": 41,
           "dispatched": true,
-          "dispatched_at": "2026-09-10T16:04:39Z",
+          "dispatched_at": "2040-09-10T16:04:39Z",
           "generation": 3,
           "load": "loaded",
-          "load_at": "2026-09-10T16:04:40Z",
+          "load_at": "2040-09-10T16:04:40Z",
           "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
-          "url": "https://courses.example.test/courses/45679/assignments/98765"
+          "url": "https://canvas.example.test/courses/105679/assignments/158765"
         },
         "frame_id": 0,
         "navigation_generation": 3,
         "notes": [
           {
-            "at": "2026-09-10T16:04:38Z",
+            "at": "2040-09-10T16:04:38Z",
             "consumer": "mcp:claude-code",
             "generation": 3,
             "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
             "source_refs": [
-              "https://courses.example.test/courses/45679/assignments/98765"
+              "https://canvas.example.test/courses/105679/assignments/158765"
             ],
-            "text": "The rubric asks for two sources. See the assignment page."
+            "text": "Synthetic text"
           }
         ],
-        "observed_at": "2026-09-10T16:04:40Z",
-        "origin": "https://courses.example.test",
+        "observed_at": "2040-09-10T16:04:40Z",
+        "origin": "https://canvas.example.test",
         "page_kind": "assignment",
         "page_url": null,
         "quiz_id": null,
         "selection": "the passage the reader pointed at",
         "selection_bytes": 32,
-        "text": "the visible editor excerpt",
+        "text": "Synthetic text",
         "text_bytes": 26,
-        "title": "Essay 1",
+        "title": "Synthetic title",
         "topic_id": null,
         "truncated": false,
         "ttl_ms": 0,
-        "url": "https://courses.example.test/courses/45679/assignments/98765",
+        "url": "https://canvas.example.test/courses/105679/assignments/158765",
         "zone": "open"
       },
       "consumer": "mcp:claude-code",
       "identity": {
         "generation": "01932f3a-7a1b-7c3d-8e90-123456789abc",
-        "key": "courses.example.test-12345-3f9a1c2e"
+        "key": "canvas.example.test-62001-afc363ff"
       },
       "reason": null,
       "state": "attached"
@@ -2980,14 +2980,14 @@ expression: rendered
       "consumer": "mcp:claude-code",
       "held": 1,
       "note": {
-        "at": "2026-09-10T16:04:38Z",
+        "at": "2040-09-10T16:04:38Z",
         "consumer": "mcp:claude-code",
         "generation": 3,
         "note_id": "b6a1d4f27c8e4093a5b6c7d8e9f00112",
         "source_refs": [
-          "https://courses.example.test/courses/45679/assignments/98765"
+          "https://canvas.example.test/courses/105679/assignments/158765"
         ],
-        "text": "The rubric asks for two sources. See the assignment page."
+        "text": "Synthetic text"
       },
       "reason": null
     },
@@ -3017,20 +3017,20 @@ expression: rendered
       "follow": {
         "dispatch_ms": 41,
         "dispatched": true,
-        "dispatched_at": "2026-09-10T16:04:39Z",
+        "dispatched_at": "2040-09-10T16:04:39Z",
         "generation": 3,
         "load": "unknown",
         "load_at": null,
         "request_id": "7d2c9e10b4f34a5f8e1d0c9b8a7f6e5d",
-        "url": "https://courses.example.test/courses/45679/assignments/98765"
+        "url": "https://canvas.example.test/courses/105679/assignments/158765"
       },
-      "id": "98765",
+      "id": "158765",
       "reason": null,
       "side_effects": [
         "the browser loads the page, and Canvas' own page controllers run: a discussion page marks itself read"
       ],
       "target_kind": "assignment",
-      "url": "https://courses.example.test/courses/45679/assignments/98765"
+      "url": "https://canvas.example.test/courses/105679/assignments/158765"
     },
     "schema": "canvas-cli/follow@1",
     "warnings": []
@@ -3055,29 +3055,29 @@ expression: rendered
     "result": {
       "attachments": [
         {
-          "account_user_id": "12345",
-          "attached_at": "2026-09-10T16:03:11Z",
+          "account_user_id": "72345",
+          "attached_at": "2040-09-10T16:03:11Z",
           "consumers": [
             "mcp:claude-code"
           ],
           "navigation_generation": 3,
-          "origin": "https://courses.example.test",
+          "origin": "https://canvas.example.test",
           "state": "attached",
           "zone": "open"
         }
       ],
-      "endpoint": "/Users/rolf/.local/share/canvas-cli/bridge/courses.example.test-12345-3f9a1c2e.sock",
+      "endpoint": "/Users/example/.local/share/canvas-cli/bridge/canvas.example.test-62001-afc363ff.sock",
       "manifest": {
         "browser": "chrome",
         "extension_id": "abcdefghijklmnopabcdefghijklmnop",
         "host_name": "com.canvas_cli.bridge",
-        "path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+        "path": "/Users/example/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
         "present": true
       },
       "owner": {
         "live": true,
         "pid": 40312,
-        "started_at": "2026-09-10T16:00:00Z"
+        "started_at": "2040-09-10T16:00:00Z"
       }
     },
     "schema": "canvas-cli/bridge@1",
@@ -3105,7 +3105,7 @@ expression: rendered
       "browser": "chrome",
       "extension_id": "abcdefghijklmnopabcdefghijklmnop",
       "host_name": "com.canvas_cli.bridge",
-      "manifest_path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+      "manifest_path": "/Users/example/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
       "steps": [
         "Open chrome://extensions and turn on Developer mode.",
         "Choose \"Load unpacked\" and select the `extension/` directory of this checkout.",

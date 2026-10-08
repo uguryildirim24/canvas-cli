@@ -1,1 +1,16 @@
-{"course_id": 100, "plannable_type": "assignment", "plannable_id": 9, "plannable": {"id": 9, "title": "Problem Set 1", "points_possible": 100}, "plannable_date": "2026-09-20T03:59:00Z", "planner_override": {"id": 1, "marked_complete": false, "dismissed": false}}
+{
+  "course_id": 60100,
+  "plannable_type": "assignment",
+  "plannable_id": 60009,
+  "plannable": {
+    "id": 60009,
+    "title": "Synthetic Planner",
+    "points_possible": 100
+  },
+  "plannable_date": "2040-09-20T03:59:00Z",
+  "planner_override": {
+    "id": 60001,
+    "marked_complete": false,
+    "dismissed": false
+  }
+}

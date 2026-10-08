@@ -35,11 +35,7 @@ fn ts(secs: i64) -> Timestamp {
 
 fn setup() -> (TempDir, OpenIdentity) {
     let dir = TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://courses.example.test",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.test", 62001, "2026-01-01T00:00:00Z");
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
     fs::create_dir_all(paths.lock_path.parent().unwrap()).unwrap();
@@ -529,7 +525,7 @@ async fn module_inline_cases_fetch_all_needed_pages_and_keep_supplied_fields() {
             {"id":3, "items_count":2, "items":[{"id":30}]},
             {"id":4, "items_count":1, "state":"locked", "items":[{
                 "id":40, "type":"File", "content_id":"50", "title":"notes",
-                "html_url":"https://courses.example.test/courses/5/modules/items/40",
+                "html_url":"https://canvas.example.test/courses/5/modules/items/40",
                 "completion_requirement":{"completed":true,"untracked":"discard"},
                 "content_details":{"locked_for_user":true,"lock_explanation":"wait"}
             }]}
@@ -588,7 +584,7 @@ async fn module_inline_cases_fetch_all_needed_pages_and_keep_supplied_fields() {
             assert_eq!(data["module_state"], "locked");
             assert_eq!(
                 data["html_url"],
-                "https://courses.example.test/courses/5/modules/items/40"
+                "https://canvas.example.test/courses/5/modules/items/40"
             );
             assert!(!raw.contains("discard"));
             Ok(())

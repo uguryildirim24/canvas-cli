@@ -5,7 +5,7 @@ import { companion, fixture } from "./load.js";
 
 const { apiView, attachmentView, followView, journalView, panelView } = companion;
 
-const ORIGIN = "https://courses.example.test";
+const ORIGIN = "https://canvas.example.test";
 
 function journal(state, extra = {}) {
   return {

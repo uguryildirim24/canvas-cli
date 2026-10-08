@@ -1,1 +1,42 @@
-{"id": 77, "assignment_id": 9, "user_id": 1, "attempt": 1, "submitted_at": "2026-09-19T12:00:00Z", "workflow_state": "submitted", "score": 95.0, "grade": "A", "late": false, "missing": false, "submission_type": "online_upload", "attachments": [{"id": 501, "display_name": "ps1.pdf", "size": 1024, "content-type": "application/pdf"}], "submission_comments": [{"id": 1, "comment": "nice", "author_name": "Ada"}], "submission_history": [{"id": 77, "attempt": 1, "workflow_state": "submitted"}], "rubric_assessment": {"_123": {"points": 5.0, "comments": "ok", "rating_id": "_5721"}}}
+{
+  "id": 60077,
+  "assignment_id": 60009,
+  "user_id": 60001,
+  "attempt": 1,
+  "submitted_at": "2040-09-19T12:00:00Z",
+  "workflow_state": "submitted",
+  "score": 73.25,
+  "grade": "C",
+  "late": false,
+  "missing": false,
+  "submission_type": "online_upload",
+  "attachments": [
+    {
+      "id": 60501,
+      "display_name": "synthetic-file.pdf",
+      "size": 1024,
+      "content-type": "application/pdf"
+    }
+  ],
+  "submission_comments": [
+    {
+      "id": 60001,
+      "comment": "Synthetic fixture comment.",
+      "author_name": "Synthetic Instructor"
+    }
+  ],
+  "submission_history": [
+    {
+      "id": 60077,
+      "attempt": 1,
+      "workflow_state": "submitted"
+    }
+  ],
+  "rubric_assessment": {
+    "synthetic_c1": {
+      "points": 3.25,
+      "comments": "Synthetic rubric comment.",
+      "rating_id": "synthetic_r1"
+    }
+  }
+}

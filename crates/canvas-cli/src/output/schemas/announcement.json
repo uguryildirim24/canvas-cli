@@ -1,1 +1,14 @@
-{ "announcement": { "id": "1", "course_id": "101", "course_code": "CS-101", "title": "Hello", "posted_at": "2026-09-09T12:00:00Z", "posted_at_local": "2026-09-09T08:00:00-04:00", "author": null, "read": true, "html_url": "https://example.instructure.com/courses/101/discussion_topics/1", "message_markdown": null } }
+{
+  "announcement": {
+    "id": "60001",
+    "course_id": "60101",
+    "course_code": "SYN-600",
+    "title": "Synthetic title",
+    "posted_at": "2040-09-09T12:00:00Z",
+    "posted_at_local": "2040-09-09T08:00:00-04:00",
+    "author": null,
+    "read": true,
+    "html_url": "https://canvas.example.test/courses/60101/discussion_topics/60001",
+    "message_markdown": null
+  }
+}

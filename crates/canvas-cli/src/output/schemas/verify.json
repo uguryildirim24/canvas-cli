@@ -5,8 +5,8 @@
   "attribution": "observed",
   "files": [
     {
-      "canvas_file_id": "55001",
-      "name": "essay.pdf",
+      "canvas_file_id": "115001",
+      "name": "synthetic-file.pdf",
       "expected_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "actual_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "status": "ok"

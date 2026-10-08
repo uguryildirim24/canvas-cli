@@ -4,11 +4,11 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-Week 3 New Quiz
+Synthetic New Quiz
 New Quiz — taken in the browser
-<origin>/courses/100/assignments/9013
+<origin>/courses/60100/assignments/69013
 12 points · 30 minutes · 2 attempts
-due 2026-09-18T23:59:00Z
+due 2040-09-18T23:59:00Z
 
-Answer every question. Two attempts, highest score kept.
+Synthetic exercise: sort the symbols X, Y, and Z.
 --- stderr ---

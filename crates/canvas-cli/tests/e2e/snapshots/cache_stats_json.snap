@@ -5,11 +5,11 @@ expression: value
 {
   "exit": 0,
   "freshness": [],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -25,8 +25,8 @@ expression: value
         "complete": true,
         "count": 1,
         "dataset": "announcements",
-        "fetched_at": "2026-09-09T17:05:12Z",
-        "scope": "window:2026-09-08..2026-09-21:ctx:ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+        "fetched_at": "2040-09-09T17:05:12Z",
+        "scope": "window:2040-09-08..2040-09-21:ctx:f1ede85063de36b37686b6a5c9b998529aa2e850578229c284e68956c7d1ba8f",
         "source": "cache",
         "stale": false
       },
@@ -34,8 +34,8 @@ expression: value
         "complete": true,
         "count": 1,
         "dataset": "assignments",
-        "fetched_at": "2026-09-09T17:05:12Z",
-        "scope": "course:100",
+        "fetched_at": "2040-09-09T17:05:12Z",
+        "scope": "course:60100",
         "source": "cache",
         "stale": false
       },
@@ -43,8 +43,8 @@ expression: value
         "complete": true,
         "count": 2,
         "dataset": "course_totals",
-        "fetched_at": "2026-09-09T17:05:12Z",
-        "scope": "course:100",
+        "fetched_at": "2040-09-09T17:05:12Z",
+        "scope": "course:60100",
         "source": "cache",
         "stale": false
       },
@@ -52,7 +52,7 @@ expression: value
         "complete": true,
         "count": 1,
         "dataset": "courses",
-        "fetched_at": "2026-09-09T17:05:12Z",
+        "fetched_at": "2040-09-09T17:05:12Z",
         "scope": "active",
         "source": "cache",
         "stale": false
@@ -61,7 +61,7 @@ expression: value
         "complete": true,
         "count": 1,
         "dataset": "enrollment_grades",
-        "fetched_at": "2026-09-09T17:05:12Z",
+        "fetched_at": "2040-09-09T17:05:12Z",
         "scope": "period:none",
         "source": "cache",
         "stale": false
@@ -70,8 +70,8 @@ expression: value
         "complete": true,
         "count": 1,
         "dataset": "grading_periods",
-        "fetched_at": "2026-09-09T17:05:12Z",
-        "scope": "course:100",
+        "fetched_at": "2040-09-09T17:05:12Z",
+        "scope": "course:60100",
         "source": "cache",
         "stale": false
       },
@@ -79,7 +79,7 @@ expression: value
         "complete": true,
         "count": 1,
         "dataset": "missing",
-        "fetched_at": "2026-09-09T17:05:12Z",
+        "fetched_at": "2040-09-09T17:05:12Z",
         "scope": "all",
         "source": "cache",
         "stale": false
@@ -88,8 +88,8 @@ expression: value
         "complete": true,
         "count": 1,
         "dataset": "planner",
-        "fetched_at": "2026-09-09T17:05:12Z",
-        "scope": "window:2026-09-08..2026-09-21",
+        "fetched_at": "2040-09-09T17:05:12Z",
+        "scope": "window:2040-09-08..2040-09-21",
         "source": "cache",
         "stale": false
       },
@@ -97,7 +97,7 @@ expression: value
         "complete": true,
         "count": 1,
         "dataset": "terms",
-        "fetched_at": "2026-09-09T17:05:12Z",
+        "fetched_at": "2040-09-09T17:05:12Z",
         "scope": "active",
         "source": "cache",
         "stale": false

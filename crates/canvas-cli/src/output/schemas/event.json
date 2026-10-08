@@ -2,21 +2,21 @@
   "schema": "canvas-cli/event@1",
   "cursor": "12",
   "kind": "due.changed",
-  "observed_at": "2026-09-09T17:05:12Z",
-  "observed_at_local": "2026-09-09T13:05:12-04:00",
+  "observed_at": "2040-09-09T17:05:12Z",
+  "observed_at_local": "2040-09-09T13:05:12-04:00",
   "identity": {
-    "origin": "https://canvas.example.edu",
-    "user_id": "1",
-    "key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    "origin": "https://canvas.example.test",
+    "user_id": "60001",
+    "key": "canvas.example.test-60001-acd6e96a"
   },
   "generation": "01234567-89ab-4cde-8f01-23456789abcd",
   "dataset": "assignments",
   "scope": "course:100",
   "entity_key": "9",
   "before": {
-    "due_at": "2026-09-10T03:59:00Z"
+    "due_at": "2040-09-10T03:59:00Z"
   },
   "after": {
-    "due_at": "2026-09-12T03:59:00Z"
+    "due_at": "2040-09-12T03:59:00Z"
   }
 }

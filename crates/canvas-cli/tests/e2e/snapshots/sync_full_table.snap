@@ -5,21 +5,21 @@ expression: body
 exit: 0
 --- stdout ---
   DATASET              SCOPE                                 SOURCE     COUNT    STALE    REQUESTS  
-  announcements        window:2026-09-08..2026-09-21:ctx:    network    1        false    1         
-                       ad57366865126e55649ecb23ae1d488875                                           
-                       44976efea46a48eb5d85a6eeb4d306                                               
-  assignments          course:100                            network    1        false    1         
-  calendar_events      window:2026-09-08..2026-09-21:ctx:    network    1        false    1         
-                       d21ee8da5900505f23e4d4dfa5fe7b90c2                                           
-                       dbc4a8a0e40edd1c03ddb1234e5820                                               
-  course_totals        course:100                            network    2        false    0         
+  announcements        window:2040-09-08..2040-09-21:ctx:    network    1        false    1         
+                       f1ede85063de36b37686b6a5c9b998529a                                           
+                       a2e850578229c284e68956c7d1ba8f                                               
+  assignments          course:60100                          network    1        false    1         
+  calendar_events      window:2040-09-08..2040-09-21:ctx:    network    1        false    1         
+                       f9fa549820cb3c8c50b3c2ff400ceb804f                                           
+                       6e4dfd08cb01942bc917f6928cc699                                               
+  course_totals        course:60100                          network    2        false    0         
   courses              active                                network    1        false    1         
   enrollment_grades    period:none                           network    1        false    1         
-  files                course:100                            network    1        false    1         
-  folders              course:100                            network    1        false    1         
-  grading_periods      course:100                            network    1        false    1         
+  files                course:60100                          network    1        false    1         
+  folders              course:60100                          network    1        false    1         
+  grading_periods      course:60100                          network    1        false    1         
   missing              all                                   network    1        false    1         
-  modules              course:100                            network    1        false    1         
-  planner              window:2026-09-08..2026-09-21         network    1        false    1         
+  modules              course:60100                          network    1        false    1         
+  planner              window:2040-09-08..2040-09-21         network    1        false    1         
   terms                active                                network    1        false    0         
 --- stderr ---

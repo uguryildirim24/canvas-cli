@@ -1,23 +1,23 @@
 {
-  "course_id": "1",
+  "course_id": "60001",
   "discussions": [
     {
-      "assignment_id": "2",
-      "author": "Dr. Reed",
-      "course_id": "1",
-      "group_category_id": "9",
-      "html_url": "https://canvas.test/courses/1/discussion_topics/55",
-      "id": "55",
+      "assignment_id": "60002",
+      "author": "Synthetic Instructor",
+      "course_id": "60001",
+      "group_category_id": "60009",
+      "html_url": "https://canvas.test/courses/60001/discussion_topics/60055",
+      "id": "60055",
       "is_announcement": false,
-      "last_reply_at": "2026-09-08T10:00:00Z",
+      "last_reply_at": "2040-09-08T10:00:00Z",
       "locked": false,
       "pinned": false,
       "points_possible": 5.0,
-      "posted_at": "2026-09-01T14:00:00Z",
+      "posted_at": "2040-09-01T14:00:00Z",
       "read_state": "unread",
       "reply_count": 4,
       "require_initial_post": true,
-      "title": "Week 1 reflection",
+      "title": "Synthetic title",
       "unread_count": 2
     }
   ],

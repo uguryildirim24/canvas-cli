@@ -2,7 +2,7 @@
 source: crates/canvas-cli/tests/grades.rs
 expression: stdout
 ---
-  CODE        NAME                  PERIOD    GRADE        
-  CS-101      Intro to Computing    all       B+           
-  MATH-201    Linear Algebra        all       unavailable  
-  PHYS-301    Mechanics             all       D
+  CODE       NAME                     PERIOD    GRADE        
+  SYN-101    Synthetic Computing      all       C+           
+  SYN-201    Synthetic Mathematics    all       unavailable  
+  SYN-301    Synthetic Physics        all       D

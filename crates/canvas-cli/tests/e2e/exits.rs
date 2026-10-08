@@ -157,7 +157,7 @@ async fn exit_9_submission_recovery() {
         .override_get(
             &format!("/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}/submissions/self"),
             200,
-            json!({ "id": 77, "attempt": 0, "submission_history": [] }),
+            json!({ "id": 60077, "attempt": 0, "submission_history": [] }),
         )
         .await;
     let env = E2e::with_server(&server);
@@ -202,7 +202,7 @@ async fn exit_10_verification_mismatch() {
             &format!("/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}/submissions/self"),
             200,
             json!({
-                "id": 77,
+                "id": 60077,
                 "attempt": 1,
                 "submitted_at": crate::harness::NOW,
                 "workflow_state": "submitted",
@@ -210,7 +210,7 @@ async fn exit_10_verification_mismatch() {
                 "body": "<p>something else entirely</p>",
                 "attachments": [],
                 "submission_history": [{
-                    "id": 77,
+                    "id": 60077,
                     "attempt": 1,
                     "submitted_at": crate::harness::NOW,
                     "workflow_state": "submitted",

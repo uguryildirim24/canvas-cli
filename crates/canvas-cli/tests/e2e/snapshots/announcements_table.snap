@@ -4,6 +4,6 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-  POSTED              COURSE     ID    TITLE      READ    
-  2026-09-01 08:00    CHEM301    40    Welcome    unread  
+  POSTED              COURSE     ID       TITLE                     READ    
+  2040-09-01 08:00    SYN-600    60040    Synthetic Announcement    unread  
 --- stderr ---

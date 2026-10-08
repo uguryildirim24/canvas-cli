@@ -2,17 +2,17 @@
 source: crates/canvas-cli/tests/grades.rs
 expression: stdout
 ---
-CS-101  Intro to Computing
+SYN-101  Synthetic Computing
 
-Homework  (40%)
+Synthetic Exercises  (40%)
   drop lowest 1 · never drop 31
-  ASSIGNMENT       SCORE    OUT OF    STATUS   
-  Problem Set 1    23       25        graded   
-  Problem Set 2    —        25        missing  
-  subtotal: 23 / 50
+  ASSIGNMENT                SCORE    OUT OF    STATUS   
+  Synthetic Exercise One    13.25    25        graded   
+  Synthetic Exercise Two    —        25        missing  
+  subtotal: 13.25 / 50
 
-Exams  (60%)
+Synthetic Exams  (40.25%)
   ASSIGNMENT    SCORE    OUT OF    STATUS  
 
-  CODE      NAME                  PERIOD    GRADE  
-  CS-101    Intro to Computing    all       B+
+  CODE       NAME                   PERIOD    GRADE  
+  SYN-101    Synthetic Computing    all       C+

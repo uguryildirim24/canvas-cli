@@ -16,16 +16,16 @@
     },
     "can_submit": false,
     "comments_count": null,
-    "course_id": "1",
-    "description_markdown": "Explain **chemistry**.",
-    "due_at": "2026-09-10T03:59:00Z",
-    "due_at_local": "2026-09-09T23:59:00-04:00",
+    "course_id": "60001",
+    "description_markdown": "Synthetic description markdown",
+    "due_at": "2040-09-10T03:59:00Z",
+    "due_at_local": "2040-09-09T23:59:00-04:00",
     "external_tool_name": null,
     "extra_attempts": null,
     "group_assignment": false,
-    "html_url": "https://canvas.test/courses/1/assignments/2",
-    "id": "2",
-    "name": "Homework 2",
+    "html_url": "https://canvas.test/courses/60001/assignments/60002",
+    "id": "60002",
+    "name": "Synthetic name",
     "points_possible": 10.0,
     "rubric": [
       {
@@ -33,19 +33,19 @@
         "description": "Reasoning",
         "id": "c1",
         "long_description": "Shows the steps that lead to the answer.",
-        "points": 10.0,
+        "points": 73.25,
         "ratings": [
           {
             "description": "Full marks",
             "id": "_1001",
             "long_description": null,
-            "points": 10.0
+            "points": 73.25
           },
           {
             "description": "No marks",
             "id": "_1002",
             "long_description": null,
-            "points": 0.0
+            "points": 73.25
           }
         ]
       }

@@ -1,1 +1,14 @@
-{"id": 55, "course_id": 100, "user_id": 1, "type": "StudentEnrollment", "role": "StudentEnrollment", "enrollment_state": "active", "grades": {"current_score": 92.5, "current_grade": "A-", "final_score": 90.0, "final_grade": "A-"}}
+{
+  "id": 60055,
+  "course_id": 60100,
+  "user_id": 60001,
+  "type": "StudentEnrollment",
+  "role": "StudentEnrollment",
+  "enrollment_state": "active",
+  "grades": {
+    "current_score": 73.25,
+    "current_grade": "C",
+    "final_score": 73.25,
+    "final_grade": "C"
+  }
+}

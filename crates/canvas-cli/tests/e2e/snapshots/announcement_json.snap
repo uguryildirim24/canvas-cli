@@ -9,17 +9,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "announcement",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "announcement:40",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "announcement:60040",
       "source": "cache",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -33,14 +33,14 @@ expression: value
     "announcement": {
       "author": null,
       "course_code": null,
-      "course_id": "100",
-      "html_url": "<origin>/courses/100/discussion_topics/40",
-      "id": "40",
-      "message_markdown": "Hello",
-      "posted_at": "2026-09-01T12:00:00Z",
-      "posted_at_local": "2026-09-01T08:00:00-04:00",
+      "course_id": "60100",
+      "html_url": "<origin>/courses/60100/discussion_topics/60040",
+      "id": "60040",
+      "message_markdown": "Synthetic exercise: sort the symbols X, Y, and Z.",
+      "posted_at": "2040-09-01T12:00:00Z",
+      "posted_at_local": "2040-09-01T08:00:00-04:00",
       "read": false,
-      "title": "Welcome"
+      "title": "Synthetic Announcement"
     }
   },
   "schema": "canvas-cli/announcement@1",

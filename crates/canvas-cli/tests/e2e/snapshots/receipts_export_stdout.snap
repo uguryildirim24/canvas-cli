@@ -9,22 +9,22 @@ exit: 0
   "journal_id": "00000000-0000-4000-8000-00000000000j",
   "identity": {
     "origin": "<origin>",
-    "user_id": "1",
+    "user_id": "60001",
     "key": "<identity>"
   },
-  "course_id": "100",
+  "course_id": "60100",
   "course_code": null,
-  "assignment_id": "9",
-  "assignment_name": "Problem Set 1",
+  "assignment_id": "60009",
+  "assignment_name": "Synthetic Assignment",
   "kind": "online_text_entry",
   "baseline_attempt": 0,
   "attribution": "observed",
   "posted": {
     "evidence": "post-response",
-    "submission_id": "77",
+    "submission_id": "60077",
     "attempt": 1,
-    "submitted_at": "2026-09-09T17:05:12Z",
-    "submitted_at_local": "2026-09-09T13:05:12-04:00",
+    "submitted_at": "2040-09-09T17:05:12Z",
+    "submitted_at_local": "2040-09-09T13:05:12-04:00",
     "workflow_state": "submitted",
     "late": false,
     "missing": false,
@@ -33,7 +33,7 @@ exit: 0
     "attachments": [],
     "body_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683",
     "url": null,
-    "response_sha256": "19fbb9f8c3139bdc9a93f7b9678be0d70f0ef67c7ec08dcefb5ddcbd8114213c"
+    "response_sha256": "067c7992520b409d65c5032f13ea3c0f56359cd2e007de03ac5eda9708532e16"
   },
   "readback": {
     "submitted_at": null,
@@ -50,13 +50,13 @@ exit: 0
     "server_body_sha256": "8f7f27cedc8acf48084063da78451ae9962da2446289983c782736f78476b683"
   },
   "url": null,
-  "due_at": "2026-09-20T03:59:00Z",
+  "due_at": "2040-09-20T03:59:00Z",
   "cli_version": "<version>",
   "created_at": "<clock>",
   "plan_id": "<id>",
   "approval": {
     "channel": "yes-flag",
-    "at": "2026-09-09T17:05:12Z",
+    "at": "2040-09-09T17:05:12Z",
     "consumer": null,
     "plan_sha256": "<digest>"
   },

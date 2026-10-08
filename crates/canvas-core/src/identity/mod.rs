@@ -472,9 +472,9 @@ mod key_tests {
 
     #[test]
     fn identity_key_examples() {
-        let k = IdentityKey::compute("https://courses.example.test", 12345);
-        assert!(k.as_str().starts_with("courses.example.test-12345-"));
-        assert_eq!(k.as_str().len(), "courses.example.test-12345-".len() + 8);
+        let k = IdentityKey::compute("https://canvas.example.test", 62001);
+        assert!(k.as_str().starts_with("canvas.example.test-62001-"));
+        assert_eq!(k.as_str().len(), "canvas.example.test-62001-".len() + 8);
 
         let k6 = IdentityKey::compute("https://[::1]:8443", 7);
         assert!(k6.as_str().starts_with("___1__8443-7-"));

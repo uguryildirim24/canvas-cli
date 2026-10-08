@@ -5,7 +5,7 @@ expression: body
 exit: 0
 --- stdout ---
 path: <scratch>/data/<identity>/cache.sqlite
-size_bytes: 155648
+size_bytes: <n>
   TABLE                  ROWS  
   courses                1     
   terms                  1     

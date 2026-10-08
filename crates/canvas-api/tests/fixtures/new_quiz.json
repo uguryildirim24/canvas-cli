@@ -1,13 +1,13 @@
 {
-  "id": "201",
-  "title": "Week 3 New Quiz",
-  "instructions": "<p>Answer every question. Two attempts, highest score kept.</p>",
-  "assignment_group_id": "7",
-  "assignment_id": "9013",
+  "id": "60201",
+  "title": "Synthetic New Quiz",
+  "instructions": "<p>Synthetic exercise: sort the symbols X, Y, and Z.</p>",
+  "assignment_group_id": "60007",
+  "assignment_id": "69013",
   "points_possible": 12.0,
-  "due_at": "2026-09-18T23:59:00Z",
+  "due_at": "2040-09-18T23:59:00Z",
   "lock_at": null,
-  "unlock_at": "2026-09-14T00:00:00Z",
+  "unlock_at": "2040-09-14T00:00:00Z",
   "published": true,
   "grading_type": "points",
   "quiz_settings": {
@@ -25,5 +25,5 @@
       "score_to_keep": "highest"
     }
   },
-  "html_url": "https://school.test/courses/101/assignments/9013"
+  "html_url": "https://canvas.example.test/courses/60101/assignments/69013"
 }

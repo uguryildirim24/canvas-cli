@@ -223,7 +223,7 @@ async fn announcements() {
 async fn announcement() {
     both_modes(
         "announcement",
-        &["announcement", &COURSE_ID.to_string(), "40"],
+        &["announcement", &COURSE_ID.to_string(), "60040"],
     )
     .await;
 }
@@ -273,11 +273,11 @@ async fn open_subcommands() {
         &["open", "assignment", &course, &assignment],
         0,
     );
-    snapshot_both(&env, "open_file", &["open", "file", "501"], 0);
+    snapshot_both(&env, "open_file", &["open", "file", "60501"], 0);
     snapshot_both(
         &env,
         "open_announcement",
-        &["open", "announcement", &course, "40"],
+        &["open", "announcement", &course, "60040"],
         0,
     );
 }
@@ -461,7 +461,7 @@ async fn reconcile_and_acknowledge_an_unknown_journal() {
         .override_get(
             &format!("/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}/submissions/self"),
             200,
-            serde_json::json!({ "id": 77, "attempt": 0, "submission_history": [] }),
+            serde_json::json!({ "id": 60077, "attempt": 0, "submission_history": [] }),
         )
         .await;
     let env = E2e::with_server(&server);

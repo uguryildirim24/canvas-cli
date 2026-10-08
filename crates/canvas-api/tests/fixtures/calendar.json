@@ -1,1 +1,9 @@
-{"id": 50, "title": "Office hours", "start_at": "2026-09-15T15:00:00Z", "end_at": "2026-09-15T16:00:00Z", "all_day": false, "all_day_date": null, "context_code": "course_100"}
+{
+  "id": 60050,
+  "title": "Synthetic Calendar",
+  "start_at": "2040-09-15T15:00:00Z",
+  "end_at": "2040-09-15T16:00:00Z",
+  "all_day": false,
+  "all_day_date": null,
+  "context_code": "course_60100"
+}

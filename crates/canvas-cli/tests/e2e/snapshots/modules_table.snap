@@ -4,7 +4,7 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-  ID      NAME         POS    STATE       ITEMS    COMPLETE  
-  30      Week 1       1      unlocked    1        yes       
-    31      Reading    1      File        501                
+  ID         NAME                  POS    STATE       ITEMS    COMPLETE  
+  60030      Synthetic Module      1      unlocked    1        yes       
+    60031      Synthetic Module    1      File        60501              
 --- stderr ---

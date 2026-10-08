@@ -3,46 +3,59 @@
   "courses": [
     {
       "course": {
-        "id": "101",
-        "code": "CS-101",
-        "name": "Intro to Computer Science",
+        "id": "60101",
+        "code": "SYN-600",
+        "name": "Synthetic name",
         "term": {
-          "id": "7",
-          "name": "Fall 2026",
-          "start_at": "2026-09-01T00:00:00Z",
-          "end_at": "2026-12-20T00:00:00Z"
+          "id": "60007",
+          "name": "Synthetic name",
+          "start_at": "2040-09-01T00:00:00Z",
+          "end_at": "2040-12-20T00:00:00Z"
         },
         "enrollment_state": "active",
         "is_favorite": true,
         "restricted": false,
-        "html_url": "https://example.instructure.com/courses/101"
+        "html_url": "https://canvas.example.test/courses/60101"
       },
       "grades": {
-        "current_score": 91.5,
-        "current_grade": "A-",
-        "final_score": 88.0,
-        "final_grade": "B+",
-        "period": { "mode": "current", "id": "5", "title": "Fall Term 1" }
+        "current_score": 73.25,
+        "current_grade": "C",
+        "final_score": 73.25,
+        "final_grade": "C",
+        "period": {
+          "mode": "current",
+          "id": "60005",
+          "title": "Synthetic title"
+        }
       },
       "unavailable_reason": null
     },
     {
       "course": {
-        "id": "102",
-        "code": "MATH-201",
-        "name": "Linear Algebra",
-        "term": { "id": "7", "name": "Fall 2026", "start_at": null, "end_at": null },
+        "id": "60102",
+        "code": "SYN-600",
+        "name": "Synthetic name",
+        "term": {
+          "id": "60007",
+          "name": "Synthetic name",
+          "start_at": null,
+          "end_at": null
+        },
         "enrollment_state": "active",
         "is_favorite": false,
         "restricted": false,
-        "html_url": "https://example.instructure.com/courses/102"
+        "html_url": "https://canvas.example.test/courses/60102"
       },
       "grades": {
         "current_score": null,
         "current_grade": null,
         "final_score": null,
         "final_grade": null,
-        "period": { "mode": "current", "id": null, "title": null }
+        "period": {
+          "mode": "current",
+          "id": null,
+          "title": null
+        }
       },
       "unavailable_reason": "no current grading period total"
     }
@@ -50,37 +63,46 @@
   "course": {
     "groups": [
       {
-        "id": "20",
-        "name": "Homework",
+        "id": "60020",
+        "name": "Synthetic name",
         "position": 1,
         "weight": 40.0,
-        "rules": { "drop_lowest": 1, "drop_highest": null, "never_drop": ["31"] },
-        "subtotal": { "score": 45.0, "possible": 50.0 },
+        "rules": {
+          "drop_lowest": 1,
+          "drop_highest": null,
+          "never_drop": [
+            "60031"
+          ]
+        },
+        "subtotal": {
+          "score": 73.25,
+          "possible": 50.0
+        },
         "assignments": [
           {
-            "id": "31",
-            "name": "Problem Set 1",
+            "id": "60031",
+            "name": "Synthetic name",
             "points_possible": 25.0,
             "omit_from_final_grade": false,
             "status": {
               "submitted": true,
               "graded": true,
-              "score": 23.0,
-              "grade": "23",
+              "score": 73.25,
+              "grade": "C",
               "late": false,
               "missing": false,
               "excused": false,
               "workflow_state": "graded",
-              "submitted_at": "2026-09-14T18:00:00Z",
-              "submitted_at_local": "2026-09-14T14:00:00-04:00",
+              "submitted_at": "2040-09-14T18:00:00Z",
+              "submitted_at_local": "2040-09-14T14:00:00-04:00",
               "attempt": 1,
-              "posted_at": "2026-09-16T12:00:00Z",
+              "posted_at": "2040-09-16T12:00:00Z",
               "pending": false
             }
           },
           {
-            "id": "32",
-            "name": "Problem Set 2",
+            "id": "60032",
+            "name": "Synthetic name",
             "points_possible": 25.0,
             "omit_from_final_grade": false,
             "status": {
@@ -102,28 +124,32 @@
         ]
       },
       {
-        "id": "21",
-        "name": "Exams",
+        "id": "60021",
+        "name": "Synthetic name",
         "position": 2,
         "weight": 60.0,
-        "rules": { "drop_lowest": null, "drop_highest": null, "never_drop": [] },
+        "rules": {
+          "drop_lowest": null,
+          "drop_highest": null,
+          "never_drop": []
+        },
         "subtotal": null,
         "assignments": []
       }
     ],
     "periods": [
       {
-        "id": "5",
-        "title": "Fall Term 1",
-        "start_date": "2026-09-01T00:00:00Z",
-        "end_date": "2026-10-31T00:00:00Z",
+        "id": "60005",
+        "title": "Synthetic title",
+        "start_date": "2040-09-01T00:00:00Z",
+        "end_date": "2040-10-31T00:00:00Z",
         "is_current": true
       },
       {
-        "id": "6",
-        "title": "Fall Term 2",
-        "start_date": "2026-11-01T00:00:00Z",
-        "end_date": "2026-12-20T00:00:00Z",
+        "id": "60006",
+        "title": "Synthetic title",
+        "start_date": "2040-11-01T00:00:00Z",
+        "end_date": "2040-12-20T00:00:00Z",
         "is_current": false
       }
     ]

@@ -1711,15 +1711,15 @@ mod tests {
     fn m1b_fixtures_deserialize_to_typed_results() {
         let courses: CoursesResult =
             serde_json::from_str(include_str!("schemas/courses.json")).unwrap();
-        assert_eq!(courses.courses[0].id, "101");
+        assert_eq!(courses.courses[0].id, "60101");
 
         let course: CourseResult =
             serde_json::from_str(include_str!("schemas/course.json")).unwrap();
-        assert_eq!(course.course.teachers[0].id, "55");
+        assert_eq!(course.course.teachers[0].id, "60055");
 
         let aliases: AliasResult =
             serde_json::from_str(include_str!("schemas/alias.json")).unwrap();
-        assert_eq!(aliases.aliases[0].course_id, "101");
+        assert_eq!(aliases.aliases[0].course_id, "60101");
 
         let sync: SyncResult = serde_json::from_str(include_str!("schemas/sync.json")).unwrap();
         assert_eq!(sync.datasets[0].source, FreshnessSource::Network);
@@ -1737,12 +1737,12 @@ mod tests {
         assert!(!path.path.is_empty());
 
         let files: FilesResult = serde_json::from_str(include_str!("schemas/files.json")).unwrap();
-        assert_eq!(files.course_id, "101");
+        assert_eq!(files.course_id, "60101");
         assert!(files.listing.available);
 
         let modules: ModulesResult =
             serde_json::from_str(include_str!("schemas/modules.json")).unwrap();
-        assert_eq!(modules.course_id, "101");
+        assert_eq!(modules.course_id, "60101");
 
         let download: DownloadResult =
             serde_json::from_str(include_str!("schemas/download.json")).unwrap();
@@ -1753,7 +1753,7 @@ mod tests {
             serde_json::from_str(include_str!("schemas/grades.json")).unwrap();
         assert_eq!(grades.period_mode, "current");
         // Appendix D sorts courses by code, groups by position.
-        assert_eq!(grades.courses[0].course.code, "CS-101");
+        assert_eq!(grades.courses[0].course.code, "SYN-600");
         assert_eq!(
             grades.courses[1].unavailable_reason.as_deref(),
             Some("no current grading period total")
@@ -1853,14 +1853,14 @@ mod tests {
     fn m4b_fixtures_deserialize_to_typed_results() {
         let announcements: AnnouncementsResult =
             serde_json::from_str(include_str!("schemas/announcements.json")).unwrap();
-        assert_eq!(announcements.window.start, "2026-08-26");
+        assert_eq!(announcements.window.start, "2040-08-26");
         // Appendix D: `posted_at` desc, then id.
-        assert_eq!(announcements.announcements[0].id, "9001");
+        assert_eq!(announcements.announcements[0].id, "69001");
         assert!(!announcements.announcements[0].read);
 
         let announcement: AnnouncementResult =
             serde_json::from_str(include_str!("schemas/announcement.json")).unwrap();
-        assert_eq!(announcement.announcement.item.id, "1");
+        assert_eq!(announcement.announcement.item.id, "60001");
         assert!(announcement.announcement.message_markdown.is_none());
 
         let calendar: CalendarResult =
@@ -1868,9 +1868,9 @@ mod tests {
         assert_eq!(calendar.items.len(), 3);
         assert!(calendar.items[0].is_deadline);
         let all_day = calendar.items.last().unwrap();
-        assert!(all_day.all_day && all_day.all_day_date.as_deref() == Some("2026-09-14"));
+        assert!(all_day.all_day && all_day.all_day_date.as_deref() == Some("2040-09-14"));
         assert!(
-            all_day.uid.starts_with("canvas-event-701@"),
+            all_day.uid.starts_with("canvas-event-60701@"),
             "UID carries the identity key (§12.5)"
         );
 
@@ -1943,7 +1943,7 @@ mod tests {
         let rows = &typed.courses[0].files;
         assert_eq!(
             rows[1].previous_path.as_deref(),
-            Some("CS-101-101/files/notes.pdf")
+            Some("SYN-600-60101/files/synthetic-notes.pdf")
         );
         assert!(rows[1].size.is_none() && rows[1].verify.is_none());
     }
@@ -1962,11 +1962,11 @@ mod tests {
                 serde_json::from_str(include_str!("schemas/courses.json")).unwrap();
             let mut env = Envelope::new(
                 SCHEMA_COURSES,
-                Some("lasell"),
+                Some("example"),
                 Some(IdentityRef {
-                    origin: "https://courses.example.test".into(),
-                    user_id: "12345".into(),
-                    key: "courses.example.test-12345-3f9a1c2e".into(),
+                    origin: "https://canvas.example.test".into(),
+                    user_id: "62001".into(),
+                    key: "canvas.example.test-62001-afc363ff".into(),
                 }),
             )
             .with_result(result);

@@ -82,8 +82,8 @@ mod tests {
     #[test]
     fn https_default_and_port_rules() {
         assert_eq!(
-            canonicalize_origin("Lasell.Instructure.COM").unwrap(),
-            "https://courses.example.test"
+            canonicalize_origin("Canvas.Example.TEST").unwrap(),
+            "https://canvas.example.test"
         );
         assert_eq!(
             canonicalize_origin("https://example.test:443").unwrap(),

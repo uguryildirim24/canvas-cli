@@ -4,6 +4,6 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-  ID     SOURCE     PATH      NAME            SIZE  
-  501    listing    Week 1    syllabus.pdf    2048  
+  ID       SOURCE     PATH                NAME                  SIZE  
+  60501    listing    Synthetic Folder    synthetic-file.pdf    2048  
 --- stderr ---

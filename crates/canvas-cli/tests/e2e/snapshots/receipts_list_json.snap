@@ -5,11 +5,11 @@ expression: value
 {
   "exit": 0,
   "freshness": [],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -24,16 +24,16 @@ expression: value
       {
         "acknowledged_at": null,
         "approval": {
-          "at": "2026-09-09T17:05:12Z",
+          "at": "2040-09-09T17:05:12Z",
           "channel": "yes-flag",
           "consumer": null,
           "plan_sha256": "<digest>"
         },
-        "assignment_id": "9",
-        "assignment_name": "Problem Set 1",
+        "assignment_id": "60009",
+        "assignment_name": "Synthetic Assignment",
         "baseline_attempt": 0,
         "course_code": null,
-        "course_id": "100",
+        "course_id": "60100",
         "created_at": "<clock>",
         "error": null,
         "journal_id": "00000000-0000-4000-8000-00000000000j",
@@ -51,11 +51,11 @@ expression: value
           "excused": null,
           "late": false,
           "missing": false,
-          "response_sha256": "19fbb9f8c3139bdc9a93f7b9678be0d70f0ef67c7ec08dcefb5ddcbd8114213c",
-          "submission_id": "77",
+          "response_sha256": "067c7992520b409d65c5032f13ea3c0f56359cd2e007de03ac5eda9708532e16",
+          "submission_id": "60077",
           "submission_type": "online_text_entry",
-          "submitted_at": "2026-09-09T17:05:12Z",
-          "submitted_at_local": "2026-09-09T13:05:12-04:00",
+          "submitted_at": "2040-09-09T17:05:12Z",
+          "submitted_at_local": "2040-09-09T13:05:12-04:00",
           "url": null,
           "workflow_state": "submitted"
         },

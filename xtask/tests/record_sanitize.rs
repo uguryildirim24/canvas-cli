@@ -53,7 +53,7 @@ async fn mount(server: &MockServer) {
                     ResponseTemplate::new(200)
                         .set_body_json(json!({
                             "id": 4242, "name": "Ada Lovelace",
-                            "login_id": "alovelace", "primary_email": "ada@lasell.edu",
+                            "login_id": "alovelace", "primary_email": "ada@campus.example.test",
                             "avatar_url": "https://canvas.real.edu/images/9/a?token=capability"
                         }))
                         .append_header("Date", "Tue, 09 Sep 2026 17:05:12 GMT")
@@ -345,7 +345,7 @@ async fn a_recording_sanitizes_into_a_tracked_set_and_a_rerun_changes_nothing() 
     for leak in [
         "Ada Lovelace",
         "alovelace",
-        "ada@lasell.edu",
+        "ada@campus.example.test",
         "capability",
         "verifier",
         "canvas.real.edu",
@@ -376,7 +376,7 @@ async fn a_recording_sanitizes_into_a_tracked_set_and_a_rerun_changes_nothing() 
         "Ada",
         "Lovelace",
         "alovelace",
-        "lasell",
+        "campus",
         "Syllabus",
         "\"77\"",
     ] {

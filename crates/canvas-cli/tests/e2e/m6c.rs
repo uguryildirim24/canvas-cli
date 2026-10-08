@@ -22,9 +22,9 @@ use super::harness::{ASSIGNMENT_ID, COURSE_ID, CanvasServer, E2e, Fixtures, NOW,
 /// The observation id embeds the cache row's `fetched_at`, which makes a
 /// re-run idempotent. A test that wants a second observation therefore has to
 /// move the frozen clock, exactly as real time would.
-const LATER: &str = "2026-09-09T18:05:12Z";
+const LATER: &str = "2040-09-09T18:05:12Z";
 /// A third instant, for a run that must observe after [`LATER`].
-const LATEST: &str = "2026-09-09T19:05:12Z";
+const LATEST: &str = "2040-09-09T19:05:12Z";
 
 /// Every TTL at zero, so each tick refreshes and the test controls the pace.
 const NO_TTL: &str = "\
@@ -97,7 +97,7 @@ async fn a_first_tick_is_silent_and_the_next_one_streams_what_changed() {
 
     // Move the due date; the next complete observation reports exactly that.
     let mut assignment = Fixtures::assignment();
-    assignment["due_at"] = json!("2026-09-30T03:59:00Z");
+    assignment["due_at"] = json!("2040-09-30T03:59:00Z");
     server
         .override_get(
             &format!("/api/v1/courses/{COURSE_ID}/assignments"),
@@ -391,7 +391,7 @@ async fn notify_posts_one_line_per_kind_group_and_never_repeats_a_cursor() {
 
     watch(&env, &["watch", "--jsonl", "--once"], &[]).assert_code(0);
     let mut assignment = Fixtures::assignment();
-    assignment["due_at"] = json!("2026-09-30T03:59:00Z");
+    assignment["due_at"] = json!("2040-09-30T03:59:00Z");
     server
         .override_get(
             &format!("/api/v1/courses/{COURSE_ID}/assignments"),
@@ -475,7 +475,7 @@ async fn sigint_closes_the_stream_cleanly_with_the_cursor_durable() {
     // Put one event in the log, so the resident run has something to replay.
     watch(&env, &["watch", "--jsonl", "--once"], &[]).assert_code(0);
     let mut assignment = Fixtures::assignment();
-    assignment["due_at"] = json!("2026-09-30T03:59:00Z");
+    assignment["due_at"] = json!("2040-09-30T03:59:00Z");
     server
         .override_get(
             &format!("/api/v1/courses/{COURSE_ID}/assignments"),

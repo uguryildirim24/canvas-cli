@@ -5,11 +5,11 @@ expression: body
 exit: 0
 --- stdout ---
 missing=1 due_today=0 due_week=1 hidden=0
-2026-09-11
-  ID    Course     Name          Due                                 Status   
-  11    CHEM301    Lab Report    Fri Sep 11, 11:59 PM (in 2d 10h)    missing  
-2026-09-19
-  ID    Course     Name             Due                                  Status   
-  9     CHEM301    Problem Set 1    Sat Sep 19, 11:59 PM (in 10d 10h)    unknown  
+2040-09-11
+  ID       Course     Name                 Due                                 Status   
+  60011    SYN-600    Synthetic Missing    Tue Sep 11, 11:59 PM (in 2d 10h)    missing  
+2040-09-19
+  ID       Course     Name                 Due                                  Status   
+  60009    SYN-600    Synthetic Planner    Wed Sep 19, 11:59 PM (in 10d 10h)    unknown  
 
 --- stderr ---

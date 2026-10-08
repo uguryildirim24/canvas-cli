@@ -1,11 +1,11 @@
 {
-  "course_id": "101",
+  "course_id": "60101",
   "quizzes": [
     {
-      "id": "101",
-      "title": "Week 3 Reading Quiz",
+      "id": "60101",
+      "title": "Synthetic title",
       "quiz_type": "assignment",
-      "due_at": "2026-09-18T23:59:00Z",
+      "due_at": "2040-09-18T23:59:00Z",
       "question_count": 5,
       "points_possible": 10.0,
       "time_limit": 30,
@@ -14,10 +14,10 @@
       "locked_for_user": false
     },
     {
-      "id": "102",
-      "title": "Week 4 Reading Quiz",
+      "id": "60102",
+      "title": "Synthetic title",
       "quiz_type": "assignment",
-      "due_at": "2026-09-25T23:59:00Z",
+      "due_at": "2040-09-25T23:59:00Z",
       "question_count": 4,
       "points_possible": 8.0,
       "time_limit": null,

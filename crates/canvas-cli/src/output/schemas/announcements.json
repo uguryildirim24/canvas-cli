@@ -1,27 +1,30 @@
 {
-  "window": { "start": "2026-08-26", "end": "2026-09-09" },
+  "window": {
+    "start": "2040-08-26",
+    "end": "2040-09-09"
+  },
   "announcements": [
     {
-      "id": "9001",
-      "course_id": "101",
-      "course_code": "CS-101",
-      "title": "Lab 3 is posted",
-      "posted_at": "2026-09-08T14:00:00Z",
-      "posted_at_local": "2026-09-08T10:00:00-04:00",
-      "author": "Ada Lovelace",
+      "id": "69001",
+      "course_id": "60101",
+      "course_code": "SYN-600",
+      "title": "Synthetic title",
+      "posted_at": "2040-09-08T14:00:00Z",
+      "posted_at_local": "2040-09-08T10:00:00-04:00",
+      "author": "Synthetic Instructor",
       "read": false,
-      "html_url": "https://example.instructure.com/courses/101/discussion_topics/9001"
+      "html_url": "https://canvas.example.test/courses/60101/discussion_topics/69001"
     },
     {
-      "id": "9000",
-      "course_id": "102",
-      "course_code": "MATH-201",
-      "title": "Quiz 2 moved to Friday",
-      "posted_at": "2026-09-02T18:30:00Z",
-      "posted_at_local": "2026-09-02T14:30:00-04:00",
+      "id": "69000",
+      "course_id": "60102",
+      "course_code": "SYN-600",
+      "title": "Synthetic title",
+      "posted_at": "2040-09-02T18:30:00Z",
+      "posted_at_local": "2040-09-02T14:30:00-04:00",
       "author": null,
       "read": true,
-      "html_url": "https://example.instructure.com/courses/102/discussion_topics/9000"
+      "html_url": "https://canvas.example.test/courses/60102/discussion_topics/69000"
     }
   ]
 }

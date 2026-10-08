@@ -1,1 +1,10 @@
-{ "profile": "default", "identity": { "origin": "https://example.instructure.com", "user_id": "1", "key": "example.instructure.com-1-deadbeef" }, "backend": "keyring", "removed": [] }
+{
+  "profile": "default",
+  "identity": {
+    "origin": "https://canvas.example.test",
+    "user_id": "60001",
+    "key": "canvas.example.test-60001-acd6e96a"
+  },
+  "backend": "keyring",
+  "removed": []
+}

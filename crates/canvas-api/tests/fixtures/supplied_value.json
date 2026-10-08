@@ -1,1 +1,5 @@
-{"id": 9, "name": "Value can_submit", "can_submit": false}
+{
+  "id": 60009,
+  "name": "Synthetic Supplied Value",
+  "can_submit": false
+}

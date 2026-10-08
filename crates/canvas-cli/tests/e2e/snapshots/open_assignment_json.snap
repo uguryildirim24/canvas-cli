@@ -5,11 +5,11 @@ expression: value
 {
   "exit": 0,
   "freshness": [],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -20,10 +20,10 @@ expression: value
     "storage": 0
   },
   "result": {
-    "id": "9",
+    "id": "60009",
     "launched": false,
     "target_kind": "assignment",
-    "url": "<origin>/courses/100/assignments/9"
+    "url": "<origin>/courses/60100/assignments/60009"
   },
   "schema": "canvas-cli/open@1",
   "warnings": []

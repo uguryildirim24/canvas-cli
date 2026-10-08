@@ -26,13 +26,13 @@ struct Fixture {
 impl Fixture {
     fn new(origin: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let doc = IdentityDocument::new(origin, 123, "2026-01-01T00:00:00Z");
+        let doc = IdentityDocument::new(origin, 123, "2040-01-01T00:00:00Z");
         let paths = Paths::for_identity(dir.path().join("data"), &doc.key);
         doc.write(&paths.identity_json()).unwrap();
         let open = OpenIdentity::open(&paths, &doc).unwrap();
         let key = doc.key.to_string();
         open.store.call_blocking(move |conns| {
-            conns.state.execute("INSERT INTO credential (identity_key,token_sha256,validated_at) VALUES (?1,?2,'2026-01-01T00:00:00Z')", rusqlite::params![key, format!("{:x}", Sha256::digest(TOKEN.as_bytes()))])?;
+            conns.state.execute("INSERT INTO credential (identity_key,token_sha256,validated_at) VALUES (?1,?2,'2040-01-01T00:00:00Z')", rusqlite::params![key, format!("{:x}", Sha256::digest(TOKEN.as_bytes()))])?;
             Ok(())
         }).unwrap();
         Self { dir, doc }
@@ -44,7 +44,7 @@ impl Fixture {
             .env("CANVAS_DATA_ROOT", self.dir.path().join("data"))
             .env("CANVAS_IDENTITY_KEY", self.doc.key.as_str())
             .env("XDG_CONFIG_HOME", self.dir.path().join("config"))
-            .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
+            .env("CANVAS_NOW", "2040-09-09T17:05:12Z")
             .env("TZ", "America/New_York")
             .env("COLUMNS", "100")
             .env("CANVAS_TOKEN", TOKEN)
@@ -66,7 +66,7 @@ impl Fixture {
     fn seed_courses(&self) {
         self.store().store.call_blocking(|c| {
             c.cache.execute("INSERT INTO courses(id,course_code,name) VALUES(1,'CHEM','Chemistry')", [])?;
-            c.cache.execute("INSERT INTO fetch_log(dataset,scope,fetched_at,complete,count,stale,epoch_seen) VALUES('courses','active','2026-09-09T17:05:12Z',1,1,0,0)", [])?;
+            c.cache.execute("INSERT INTO fetch_log(dataset,scope,fetched_at,complete,count,stale,epoch_seen) VALUES('courses','active','2040-09-09T17:05:12Z',1,1,0,0)", [])?;
             c.cache.execute("INSERT INTO membership(dataset,scope,entity_kind,entity_id,position) VALUES('courses','active','course','1',0)", [])?;
             Ok(())
         }).unwrap();
@@ -114,7 +114,7 @@ async fn mock_assignment(server: &MockServer) {
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "id": 2, "course_id": 1, "name": "Problem Set 3",
             "submission_types": ["online_text_entry", "online_upload", "online_url"],
-            "can_submit": true, "due_at": "2026-09-10T03:59:00Z",
+            "can_submit": true, "due_at": "2040-09-10T03:59:00Z",
             "submission": {"attempt": 0}
         })))
         .mount(server)
@@ -125,18 +125,18 @@ async fn mock_assignment(server: &MockServer) {
 fn submission_body() -> Value {
     json!({
         "id": 55, "assignment_id": 2, "user_id": 123, "attempt": 2,
-        "score": 8.5, "grade": "8.5", "submitted_at": "2026-09-09T16:05:00Z",
+        "score": 73.25, "grade": "C", "submitted_at": "2040-09-09T16:05:00Z",
         "workflow_state": "graded", "late": false, "missing": false, "excused": false,
-        "submission_type": "online_upload", "posted_at": "2026-09-09T16:30:00Z",
+        "submission_type": "online_upload", "posted_at": "2040-09-09T16:30:00Z",
         "body": null, "url": null,
-        "attachments": [{"id": 55001, "display_name": "essay.pdf", "size": 24576, "content_type": "application/pdf"}],
-        "submission_comments": [{"id": 9, "comment": "Nice work.", "author_name": "Prof. Ada", "created_at": "2026-09-09T16:40:00Z"}],
-        "rubric_assessment": {"c1": {"points": 8.5, "comments": "Clear reasoning.", "rating_id": "_5721"}},
+        "attachments": [{"id": 115_001, "display_name": "synthetic-file.pdf", "size": 24576, "content_type": "application/pdf"}],
+        "submission_comments": [{"id": 60009, "comment": "Synthetic text", "author_name": "Synthetic Instructor", "created_at": "2040-09-09T16:40:00Z"}],
+        "rubric_assessment": {"synthetic_c1": {"points": 73.25, "comments": "Synthetic rubric comment.", "rating_id": "synthetic_r1"}},
         "submission_history": [
-            {"id": 55, "attempt": 2, "submitted_at": "2026-09-09T16:05:00Z", "workflow_state": "graded", "score": 8.5,
-             "attachments": [{"id": 55001, "display_name": "essay.pdf", "size": 24576, "content_type": "application/pdf"}]},
-            {"id": 54, "attempt": 1, "submitted_at": "2026-09-08T12:00:00Z", "workflow_state": "submitted", "score": null,
-             "attachments": [{"id": 55000, "display_name": "draft.pdf", "size": 1024, "content_type": "application/pdf"}]}
+            {"id": 55, "attempt": 2, "submitted_at": "2040-09-09T16:05:00Z", "workflow_state": "graded", "score": 73.25,
+             "attachments": [{"id": 115_001, "display_name": "synthetic-file.pdf", "size": 24576, "content_type": "application/pdf"}]},
+            {"id": 54, "attempt": 1, "submitted_at": "2040-09-08T12:00:00Z", "workflow_state": "submitted", "score": null,
+             "attachments": [{"id": 115_000, "display_name": "synthetic-file.pdf", "size": 1024, "content_type": "application/pdf"}]}
         ]
     })
 }
@@ -146,7 +146,7 @@ async fn mock_assignments_list(server: &MockServer) {
     Mock::given(path("/api/v1/courses/1/assignments"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
             "id": 2, "course_id": 1, "name": "Problem Set 3",
-            "due_at": "2026-09-10T03:59:00Z", "submission_types": ["online_upload"]
+            "due_at": "2040-09-10T03:59:00Z", "submission_types": ["online_upload"]
         }])))
         .mount(server)
         .await;
@@ -181,13 +181,13 @@ async fn submit_resolves_names_aliases_and_urls_over_the_m1c_datasets() {
     Mock::given(method("POST"))
         .and(path("/api/v1/courses/1/assignments/2/submissions"))
         .respond_with(ResponseTemplate::new(201).set_body_json(
-            json!({"id": 55, "attempt": 1, "submitted_at": "2026-09-09T17:05:12Z", "body": "<p>hello</p>"}),
+            json!({"id": 55, "attempt": 1, "submitted_at": "2040-09-09T17:05:12Z", "body": "<p>hello</p>"}),
         ))
         .mount(&server)
         .await;
     Mock::given(path("/api/v1/courses/1/assignments/2/submissions/self"))
         .respond_with(ResponseTemplate::new(200).set_body_json(
-            json!({"attempt": 1, "submission_history": [{"id": 55, "attempt": 1, "submitted_at": "2026-09-09T17:05:12Z", "body": "<p>hello</p>", "attachments": []}]}),
+            json!({"attempt": 1, "submission_history": [{"id": 55, "attempt": 1, "submitted_at": "2040-09-09T17:05:12Z", "body": "<p>hello</p>", "attachments": []}]}),
         ))
         .mount(&server)
         .await;
@@ -294,20 +294,26 @@ async fn submission_show_reads_the_m1c_dataset_and_matches_the_registry_fixture(
     assert_eq!(result["submission"]["attempt"], 2);
     assert_eq!(result["submission"]["graded"], true);
     assert_eq!(result["submission"]["submitted"], true);
-    assert_eq!(result["submission"]["score"], 8.5);
+    assert_eq!(result["submission"]["score"], 73.25);
     assert_eq!(result["submission"]["pending"], false);
-    assert_eq!(result["submission"]["posted_at"], "2026-09-09T16:30:00Z");
+    assert_eq!(result["submission"]["posted_at"], "2040-09-09T16:30:00Z");
     assert_eq!(
         result["submission"]["submitted_at_local"],
-        "2026-09-09T12:05:00-04:00"
+        "2040-09-09T12:05:00-04:00"
     );
-    assert_eq!(result["submission"]["attachments"][0]["id"], "55001");
-    assert_eq!(result["submission"]["comments"][0]["text"], "Nice work.");
-    assert_eq!(result["submission"]["comments"][0]["author"], "Prof. Ada");
+    assert_eq!(result["submission"]["attachments"][0]["id"], "115001");
+    assert_eq!(
+        result["submission"]["comments"][0]["text"],
+        "Synthetic text"
+    );
+    assert_eq!(
+        result["submission"]["comments"][0]["author"],
+        "Synthetic Instructor"
+    );
     assert_eq!(result["submission"]["rubric_assessed"], true);
     assert_eq!(
         result["submission"]["rubric_assessment"][0]["criterion_id"],
-        "c1"
+        "synthetic_c1"
     );
     // Without --history the array is present and empty (Appendix D).
     assert_eq!(result["history"], json!([]));
@@ -319,11 +325,11 @@ async fn submission_show_reads_the_m1c_dataset_and_matches_the_registry_fixture(
     assert_eq!(history.len(), 2);
     assert_eq!(history[0]["attempt"], 1);
     assert_eq!(history[1]["attempt"], 2);
-    assert_eq!(history[0]["attachments"][0]["id"], "55000");
-    assert_eq!(history[1]["score"], 8.5);
+    assert_eq!(history[0]["attachments"][0]["id"], "115000");
+    assert_eq!(history[1]["score"], 73.25);
     assert_eq!(
         history[0]["submitted_at_local"],
-        "2026-09-08T08:00:00-04:00"
+        "2040-09-08T08:00:00-04:00"
     );
 
     // Offline serves the cached dataset without a request.
@@ -393,8 +399,8 @@ async fn mock_reader_sources(server: &MockServer) {
     Mock::given(path("/api/v1/planner/items"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
             "plannable_type": "assignment", "plannable_id": 2, "course_id": 1,
-            "plannable_date": "2026-09-10T03:59:00Z",
-            "plannable": {"id": 2, "title": "Problem Set 3", "due_at": "2026-09-10T03:59:00Z"},
+            "plannable_date": "2040-09-10T03:59:00Z",
+            "plannable": {"id": 2, "title": "Problem Set 3", "due_at": "2040-09-10T03:59:00Z"},
             "submissions": {"submitted": false, "graded": false}
         }])))
         .mount(server)
@@ -434,7 +440,7 @@ async fn assert_readers_see_pending(f: &Fixture, journal_id: &str, state: &str) 
         assert_eq!(submission[field], Value::Null, "{field} at {state}");
     }
     // The server-observed payload around the status is still reported.
-    assert_eq!(submission["attachments"][0]["id"], "55001", "{state}");
+    assert_eq!(submission["attachments"][0]["id"], "115001", "{state}");
     assert_eq!(
         pending["result"]["history"].as_array().unwrap().len(),
         2,

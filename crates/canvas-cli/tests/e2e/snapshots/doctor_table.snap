@@ -6,7 +6,7 @@ exit: 0
 --- stdout ---
 identity selected: true
 [ok] config: config parsed
-[ok] profile_identity: <origin> / 1
+[ok] profile_identity: <origin> / 60001
 [ok] credential_row: active_source=file cleanup_keyring=false cleanup_file=false
 [ok] stray_credentials: none
 [ok] databases: cache schema=3, state schema=5

@@ -4,6 +4,6 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-  ID     TITLE                  TYPE          DUE                     QUESTIONS    POINTS    STATE  
-  101    Week 3 Reading Quiz    assignment    2026-09-18T23:59:00Z    5            10               
+  ID       TITLE             TYPE          DUE                     QUESTIONS    POINTS    STATE  
+  60101    Synthetic Quiz    assignment    2040-09-18T23:59:00Z    5            10               
 --- stderr ---

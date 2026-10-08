@@ -1,1 +1,6 @@
-{ "target_kind": "course", "id": "101", "url": "https://example.instructure.com/courses/101", "launched": true }
+{
+  "target_kind": "course",
+  "id": "60101",
+  "url": "https://canvas.example.test/courses/60101",
+  "launched": true
+}

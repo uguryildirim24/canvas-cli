@@ -4,5 +4,5 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-assignment <origin>/courses/100/assignments/9 launched=false
+assignment <origin>/courses/60100/assignments/60009 launched=false
 --- stderr ---

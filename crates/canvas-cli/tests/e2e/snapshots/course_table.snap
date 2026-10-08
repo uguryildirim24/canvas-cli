@@ -4,11 +4,11 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-CHEM301  Chemistry 301
-term: Fall 2026
-grade: A-
-<origin>/courses/100
+SYN-600  Synthetic Course
+term: Synthetic Term
+grade: C
+<origin>/courses/60100
 teacher: 
 
-Hi
+Synthetic exercise: sort the symbols X, Y, and Z.
 --- stderr ---

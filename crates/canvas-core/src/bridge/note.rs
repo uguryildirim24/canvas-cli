@@ -130,13 +130,13 @@ pub fn check(text: &str, source_refs: &[String], origin: &str, held: usize) -> R
 mod tests {
     use super::*;
 
-    const ORIGIN: &str = "https://courses.example.test";
+    const ORIGIN: &str = "https://canvas.example.test";
 
     #[test]
     fn a_ref_is_the_granted_origin_or_this_project_and_nothing_else() {
         for good in [
-            "https://courses.example.test/courses/1/assignments/2",
-            "https://courses.example.test/",
+            "https://canvas.example.test/courses/1/assignments/2",
+            "https://canvas.example.test/",
             "canvas://receipts/0199",
             "canvas://assignment/45679/98765",
         ] {
@@ -146,10 +146,10 @@ mod tests {
             "javascript:alert(1)",
             "data:text/html,<script>alert(1)</script>",
             "file:///etc/passwd",
-            "http://courses.example.test/courses/1",
-            "https://courses.example.test.evil.test/courses/1",
+            "http://canvas.example.test/courses/1",
+            "https://canvas.example.test.evil.test/courses/1",
             "https://evil.test/courses/1",
-            "https://user@courses.example.test/courses/1@evil.test",
+            "https://user@canvas.example.test/courses/1@evil.test",
             "canvas://",
             "",
             "not a url",

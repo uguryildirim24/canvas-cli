@@ -3,12 +3,12 @@
   "dry_run": false,
   "courses": [
     {
-      "course_id": "101",
-      "course_code": "CS-101",
+      "course_id": "60101",
+      "course_code": "SYN-600",
       "files": [
         {
-          "id": "50",
-          "path": "CS-101-101/files/Slides/lec.pdf",
+          "id": "60050",
+          "path": "SYN-600-60101/files/Slides/synthetic-slides.pdf",
           "previous_path": null,
           "action": "downloaded",
           "size": 10,
@@ -16,9 +16,9 @@
           "verify": "ok"
         },
         {
-          "id": "51",
-          "path": "CS-101-101/files/Slides/notes.pdf",
-          "previous_path": "CS-101-101/files/notes.pdf",
+          "id": "60051",
+          "path": "SYN-600-60101/files/Slides/synthetic-notes.pdf",
+          "previous_path": "SYN-600-60101/files/synthetic-notes.pdf",
           "action": "moved",
           "size": null,
           "error": null,

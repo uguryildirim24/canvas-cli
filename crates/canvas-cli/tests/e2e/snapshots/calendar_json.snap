@@ -9,8 +9,8 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "planner",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "window:2026-09-08..2026-09-21",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "window:2040-09-08..2040-09-21",
       "source": "cache",
       "stale": false
     },
@@ -18,7 +18,7 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "courses",
-      "fetched_at": "2026-09-09T17:05:12Z",
+      "fetched_at": "2040-09-09T17:05:12Z",
       "scope": "active",
       "source": "cache",
       "stale": false
@@ -27,17 +27,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "calendar_events",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "window:2026-09-08..2026-09-21:ctx:d21ee8da5900505f23e4d4dfa5fe7b90c2dbc4a8a0e40edd1c03ddb1234e5820",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "window:2040-09-08..2040-09-21:ctx:f9fa549820cb3c8c50b3c2ff400ceb804f6e4dfd08cb01942bc917f6928cc699",
       "source": "cache",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -52,43 +52,43 @@ expression: value
       {
         "all_day": false,
         "all_day_date": null,
-        "course_code": "CHEM301",
-        "course_id": "100",
+        "course_code": "SYN-600",
+        "course_id": "60100",
         "due_at": null,
         "due_at_local": null,
-        "end_at": "2026-09-15T16:00:00Z",
-        "end_at_local": "2026-09-15T12:00:00-04:00",
+        "end_at": "2040-09-15T16:00:00Z",
+        "end_at_local": "2040-09-15T12:00:00-04:00",
         "html_url": null,
-        "id": "50",
+        "id": "60050",
         "is_deadline": false,
         "kind": "event",
-        "start_at": "2026-09-15T15:00:00Z",
-        "start_at_local": "2026-09-15T11:00:00-04:00",
-        "title": "Office hours",
-        "uid": "canvas-event-50@<identity>"
+        "start_at": "2040-09-15T15:00:00Z",
+        "start_at_local": "2040-09-15T11:00:00-04:00",
+        "title": "Synthetic Calendar",
+        "uid": "canvas-event-60050@<identity>"
       },
       {
         "all_day": false,
         "all_day_date": null,
-        "course_code": "CHEM301",
-        "course_id": "100",
-        "due_at": "2026-09-20T03:59:00Z",
-        "due_at_local": "2026-09-19T23:59:00-04:00",
+        "course_code": "SYN-600",
+        "course_id": "60100",
+        "due_at": "2040-09-20T03:59:00Z",
+        "due_at_local": "2040-09-19T23:59:00-04:00",
         "end_at": null,
         "end_at_local": null,
         "html_url": null,
-        "id": "9",
+        "id": "60009",
         "is_deadline": true,
         "kind": "assignment",
         "start_at": null,
         "start_at_local": null,
-        "title": "Problem Set 1",
-        "uid": "canvas-assignment-9@<identity>"
+        "title": "Synthetic Planner",
+        "uid": "canvas-assignment-60009@<identity>"
       }
     ],
     "window": {
-      "end": "2026-09-21",
-      "start": "2026-09-08"
+      "end": "2040-09-21",
+      "start": "2040-09-08"
     }
   },
   "schema": "canvas-cli/calendar@1",

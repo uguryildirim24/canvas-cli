@@ -5,14 +5,14 @@
     "owner": "n/a",
     "superseded": false,
     "acknowledged_at": null,
-    "course_id": "101",
-    "course_code": "CS-101",
-    "assignment_id": "202",
-    "assignment_name": "Essay 1",
+    "course_id": "60101",
+    "course_code": "SYN-600",
+    "assignment_id": "60202",
+    "assignment_name": "Synthetic assignment name",
     "kind": "online_upload",
     "baseline_attempt": 0,
-    "created_at": "2026-09-09T16:04:58Z",
-    "updated_at": "2026-09-09T16:05:01Z",
+    "created_at": "2040-09-09T16:04:58Z",
+    "updated_at": "2040-09-09T16:05:01Z",
     "uploaded_file_ids": [
       "55001"
     ],
@@ -21,10 +21,10 @@
     "not_submitted_evidence": null,
     "posted": {
       "evidence": "post-response",
-      "submission_id": "9001",
+      "submission_id": "69001",
       "attempt": 1,
-      "submitted_at": "2026-09-09T16:05:00Z",
-      "submitted_at_local": "2026-09-09T12:05:00-04:00",
+      "submitted_at": "2040-09-09T16:05:00Z",
+      "submitted_at_local": "2040-09-09T12:05:00-04:00",
       "workflow_state": "submitted",
       "late": false,
       "missing": false,
@@ -32,8 +32,8 @@
       "submission_type": "online_upload",
       "attachments": [
         {
-          "id": "55001",
-          "display_name": "essay.pdf",
+          "id": "115001",
+          "display_name": "synthetic-file.pdf",
           "size": 24576,
           "content_type": "application/pdf"
         }
@@ -49,7 +49,7 @@
     "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
     "approval": {
       "channel": "tty",
-      "at": "2026-09-09T16:04:52Z",
+      "at": "2040-09-09T16:04:52Z",
       "consumer": null,
       "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     },
@@ -59,23 +59,23 @@
     "receipt_id": "01932f3a-9c3d-7e5f-a012-3456789abcde",
     "journal_id": "01932f3a-8b2c-7d4e-9f01-23456789abcd",
     "identity": {
-      "origin": "https://example.instructure.com",
-      "user_id": "1",
-      "key": "example.instructure.com-1-deadbeef"
+      "origin": "https://canvas.example.test",
+      "user_id": "60001",
+      "key": "canvas.example.test-60001-acd6e96a"
     },
-    "course_id": "101",
-    "course_code": "CS-101",
-    "assignment_id": "202",
-    "assignment_name": "Essay 1",
+    "course_id": "60101",
+    "course_code": "SYN-600",
+    "assignment_id": "60202",
+    "assignment_name": "Synthetic assignment name",
     "kind": "online_upload",
     "baseline_attempt": 0,
     "attribution": "observed",
     "posted": {
       "evidence": "post-response",
-      "submission_id": "9001",
+      "submission_id": "69001",
       "attempt": 1,
-      "submitted_at": "2026-09-09T16:05:00Z",
-      "submitted_at_local": "2026-09-09T12:05:00-04:00",
+      "submitted_at": "2040-09-09T16:05:00Z",
+      "submitted_at_local": "2040-09-09T12:05:00-04:00",
       "workflow_state": "submitted",
       "late": false,
       "missing": false,
@@ -83,8 +83,8 @@
       "submission_type": "online_upload",
       "attachments": [
         {
-          "id": "55001",
-          "display_name": "essay.pdf",
+          "id": "115001",
+          "display_name": "synthetic-file.pdf",
           "size": 24576,
           "content_type": "application/pdf"
         }
@@ -94,13 +94,13 @@
       "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "readback": {
-      "submitted_at": "2026-09-09T16:05:00Z",
-      "submitted_at_local": "2026-09-09T12:05:00-04:00",
+      "submitted_at": "2040-09-09T16:05:00Z",
+      "submitted_at_local": "2040-09-09T12:05:00-04:00",
       "late": false,
       "attachments": [
         {
-          "id": "55001",
-          "display_name": "essay.pdf",
+          "id": "115001",
+          "display_name": "synthetic-file.pdf",
           "size": 24576,
           "content_type": "application/pdf"
         }
@@ -109,21 +109,21 @@
     },
     "files": [
       {
-        "name": "essay.pdf",
+        "name": "synthetic-file.pdf",
         "size": 24576,
         "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "canvas_file_id": "55001"
+        "canvas_file_id": "115001"
       }
     ],
     "text": null,
     "url": null,
-    "due_at": "2026-09-15T23:59:59Z",
+    "due_at": "2040-09-15T23:59:59Z",
     "cli_version": "0.1.0",
-    "created_at": "2026-09-09T16:04:58Z",
+    "created_at": "2040-09-09T16:04:58Z",
     "plan_id": "01932f3a-7a1b-7c3d-8e90-123456789abc",
     "approval": {
       "channel": "tty",
-      "at": "2026-09-09T16:04:52Z",
+      "at": "2040-09-09T16:04:52Z",
       "consumer": null,
       "plan_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     },

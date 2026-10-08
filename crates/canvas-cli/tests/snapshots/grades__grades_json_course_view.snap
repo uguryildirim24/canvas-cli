@@ -9,7 +9,7 @@ expression: v
       "complete": true,
       "count": 3,
       "dataset": "courses",
-      "fetched_at": "2026-09-09T16:00:00Z",
+      "fetched_at": "2040-09-09T16:00:00Z",
       "scope": "active",
       "source": "cache",
       "stale": true
@@ -18,8 +18,8 @@ expression: v
       "complete": true,
       "count": 2,
       "dataset": "grading_periods",
-      "fetched_at": "2026-09-09T16:00:00Z",
-      "scope": "course:101",
+      "fetched_at": "2040-09-09T16:00:00Z",
+      "scope": "course:61001",
       "source": "cache",
       "stale": true
     },
@@ -27,7 +27,7 @@ expression: v
       "complete": true,
       "count": 5,
       "dataset": "enrollment_grades",
-      "fetched_at": "2026-09-09T16:00:00Z",
+      "fetched_at": "2040-09-09T16:00:00Z",
       "scope": "period:none",
       "source": "cache",
       "stale": true
@@ -36,8 +36,8 @@ expression: v
       "complete": true,
       "count": 2,
       "dataset": "course_totals",
-      "fetched_at": "2026-09-09T16:00:00Z",
-      "scope": "course:101",
+      "fetched_at": "2040-09-09T16:00:00Z",
+      "scope": "course:61001",
       "source": "cache",
       "stale": true
     },
@@ -45,17 +45,17 @@ expression: v
       "complete": true,
       "count": 2,
       "dataset": "assignment_groups",
-      "fetched_at": "2026-09-09T16:00:00Z",
-      "scope": "course:101:period:none",
+      "fetched_at": "2040-09-09T16:00:00Z",
+      "scope": "course:61001:period:none",
       "source": "cache",
       "stale": true
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "KEY",
-    "origin": "https://courses.example.test",
-    "user_id": "12345"
+    "origin": "https://canvas.example.test",
+    "user_id": "62001"
   },
   "outcome": "ok",
   "partial": [],
@@ -72,28 +72,28 @@ expression: v
           "assignments": [
             {
               "id": "31",
-              "name": "Problem Set 1",
+              "name": "Synthetic Exercise One",
               "omit_from_final_grade": false,
               "points_possible": 25.0,
               "status": {
                 "attempt": 1,
                 "excused": false,
-                "grade": "23",
+                "grade": "13.25",
                 "graded": true,
                 "late": false,
                 "missing": false,
                 "pending": false,
-                "posted_at": "2026-09-16T12:00:00Z",
-                "score": 23.0,
+                "posted_at": "2040-09-16T12:00:00Z",
+                "score": 13.25,
                 "submitted": true,
-                "submitted_at": "2026-09-13T18:00:00Z",
-                "submitted_at_local": "2026-09-13T14:00:00-04:00",
+                "submitted_at": "2040-09-13T18:00:00Z",
+                "submitted_at_local": "2040-09-13T14:00:00-04:00",
                 "workflow_state": "graded"
               }
             },
             {
               "id": "32",
-              "name": "Problem Set 2",
+              "name": "Synthetic Exercise Two",
               "omit_from_final_grade": false,
               "points_possible": 25.0,
               "status": {
@@ -114,7 +114,7 @@ expression: v
             }
           ],
           "id": "20",
-          "name": "Homework",
+          "name": "Synthetic Exercises",
           "position": 1,
           "rules": {
             "drop_highest": null,
@@ -125,14 +125,14 @@ expression: v
           },
           "subtotal": {
             "possible": 50.0,
-            "score": 23.0
+            "score": 13.25
           },
           "weight": 40.0
         },
         {
           "assignments": [],
           "id": "21",
-          "name": "Exams",
+          "name": "Synthetic Exams",
           "position": 2,
           "rules": {
             "drop_highest": null,
@@ -140,48 +140,48 @@ expression: v
             "never_drop": []
           },
           "subtotal": null,
-          "weight": 60.0
+          "weight": 40.25
         }
       ],
       "periods": [
         {
-          "end_date": "2026-10-31T00:00:00Z",
+          "end_date": "2040-10-31T00:00:00Z",
           "id": "5",
           "is_current": true,
-          "start_date": "2026-09-01T00:00:00Z",
-          "title": "Fall Term 1"
+          "start_date": "2040-09-01T00:00:00Z",
+          "title": "Synthetic Period One"
         },
         {
-          "end_date": "2026-12-20T00:00:00Z",
+          "end_date": "2040-12-20T00:00:00Z",
           "id": "6",
           "is_current": false,
-          "start_date": "2026-11-01T00:00:00Z",
-          "title": "Fall Term 2"
+          "start_date": "2040-11-01T00:00:00Z",
+          "title": "Synthetic Period Two"
         }
       ]
     },
     "courses": [
       {
         "course": {
-          "code": "CS-101",
+          "code": "SYN-101",
           "enrollment_state": "active",
-          "html_url": "https://courses.example.test/courses/101",
-          "id": "101",
+          "html_url": "https://canvas.example.test/courses/61001",
+          "id": "61001",
           "is_favorite": true,
-          "name": "Intro to Computing",
+          "name": "Synthetic Computing",
           "restricted": false,
           "term": {
-            "end_at": "2026-12-15T05:00:00Z",
+            "end_at": "2040-12-15T05:00:00Z",
             "id": "7",
             "name": "Fall 2026",
-            "start_at": "2026-08-25T04:00:00Z"
+            "start_at": "2040-08-25T04:00:00Z"
           }
         },
         "grades": {
-          "current_grade": "B+",
-          "current_score": 88.0,
+          "current_grade": "C+",
+          "current_score": 68.25,
           "final_grade": "B",
-          "final_score": 85.0,
+          "final_score": 65.25,
           "period": {
             "id": null,
             "mode": "all",

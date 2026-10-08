@@ -10,16 +10,16 @@ expression: value
       "count": 1,
       "dataset": "modules",
       "fetched_at": "2026-09-09T16:00:00Z",
-      "scope": "course:101",
+      "scope": "course:61001",
       "source": "cache",
       "stale": true
     }
   ],
   "generated_at": "2026-09-09T17:05:12Z",
   "identity": {
-    "key": "courses.example.test-12345-f1e3cb02",
-    "origin": "https://courses.example.test",
-    "user_id": "12345"
+    "key": "canvas.example.test-62001-afc363ff",
+    "origin": "https://canvas.example.test",
+    "user_id": "62001"
   },
   "outcome": "ok",
   "partial": [],
@@ -30,7 +30,7 @@ expression: value
     "storage": 0
   },
   "result": {
-    "course_id": "101",
+    "course_id": "61001",
     "modules": [
       {
         "id": "8",

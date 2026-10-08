@@ -44,17 +44,17 @@ fn fixtures_deserialize() {
 #[test]
 fn quiz_models_deserialize() {
     let quiz: Quiz = load(include_str!("fixtures/quiz.json"));
-    assert_eq!(quiz.id, 101);
+    assert_eq!(quiz.id, 60101);
     assert_eq!(quiz.time_limit, Some(30));
     assert!(quiz.has_attempts_left());
 
     let doc: QuizSubmissionsDoc = load(include_str!("fixtures/quiz_submission.json"));
     let submission = doc.quiz_submissions.first().expect("one quiz submission");
-    assert_eq!(submission.id, 501);
+    assert_eq!(submission.id, 60501);
     assert_eq!(submission.attempt, Some(1));
     assert_eq!(
         submission.validation_token.as_deref(),
-        Some("0123456789abcdef")
+        Some("SYNTHETIC_QUIZ_VALIDATION_TOKEN")
     );
     assert!(submission.is_live());
     assert!(!submission.is_complete());
@@ -63,7 +63,7 @@ fn quiz_models_deserialize() {
         load(include_str!("fixtures/quiz_submission_questions.json"));
     assert_eq!(questions.quiz_submission_questions.len(), 4);
     let first = questions.quiz_submission_questions[0].clone();
-    assert_eq!(first.id, 901);
+    assert_eq!(first.id, 60901);
     assert_eq!(
         first.question_type.as_deref(),
         Some("multiple_choice_question")
@@ -87,7 +87,7 @@ fn quiz_models_deserialize() {
 #[test]
 fn new_quiz_models_deserialize() {
     let quiz: NewQuiz = load(include_str!("fixtures/new_quiz.json"));
-    assert_eq!(quiz.id, 201);
+    assert_eq!(quiz.id, 60201);
     assert_eq!(quiz.time_limit_seconds(), Some(1800));
     let attempts = quiz
         .quiz_settings
@@ -102,12 +102,12 @@ fn grading_periods_wrapped_pages() {
     let page1: WrappedCollection<GradingPeriod> =
         load(include_str!("fixtures/grading_periods_page1.json"));
     assert_eq!(page1.items.len(), 2);
-    assert_eq!(page1.items[0].id, 7);
+    assert_eq!(page1.items[0].id, 60007);
 
     let page2: WrappedCollection<GradingPeriod> =
         load(include_str!("fixtures/grading_periods_page2.json"));
     assert_eq!(page2.items.len(), 2);
-    assert_eq!(page2.items[0].id, 9);
+    assert_eq!(page2.items[0].id, 60009);
 }
 
 #[test]
@@ -142,15 +142,15 @@ fn tracked_core_detail_status_and_scoped_grades_keep_all_three_states() {
     states!(a, n, v; attempt, submitted_at, graded_at, score, grade, late, missing, excused, workflow_state);
     assert_eq!(
         v.submitted_at.as_value().unwrap().to_string(),
-        "2026-09-19T09:00:00Z"
+        "2040-09-19T09:00:00Z"
     );
     assert_eq!(
         value.due_at.as_value().unwrap().to_string(),
-        "2026-09-20T04:00:00Z"
+        "2040-09-20T04:00:00Z"
     );
     assert_eq!(
         value.html_url.as_value().unwrap().as_str(),
-        "https://canvas.example.test/courses/100/assignments/9"
+        "https://canvas.example.test/courses/60100/assignments/60009"
     );
     let a = absent.course.unwrap().enrollments.unwrap();
     let n = null.course.unwrap().enrollments.unwrap();

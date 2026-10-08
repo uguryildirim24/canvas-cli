@@ -93,7 +93,7 @@ fn courses_json_snapshot_from_fixture_cache() {
     assert_eq!(value["outcome"], "ok");
     assert_eq!(value["exit"], 0);
     assert_eq!(value["generated_at"], "2026-09-09T17:05:12Z");
-    assert_eq!(value["result"]["courses"][0]["code"], "CS-101");
+    assert_eq!(value["result"]["courses"][0]["code"], "SYN-61001");
     assert_eq!(value["freshness"][0]["dataset"], "courses");
     assert_eq!(value["freshness"][0]["source"], "cache");
     insta::assert_json_snapshot!(value);
@@ -101,11 +101,7 @@ fn courses_json_snapshot_from_fixture_cache() {
 
 fn prepare_identity_only() -> (tempfile::TempDir, String) {
     let dir = tempfile::TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://courses.example.test",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.test", 62001, "2026-01-01T00:00:00Z");
     let key = doc.key.to_string();
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
@@ -118,11 +114,7 @@ fn prepare_identity_only() -> (tempfile::TempDir, String) {
 
 fn prepare_seeded_courses() -> (tempfile::TempDir, String) {
     let dir = tempfile::TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://courses.example.test",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.test", 62001, "2026-01-01T00:00:00Z");
     let key = doc.key.to_string();
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
@@ -139,10 +131,10 @@ fn prepare_seeded_courses() -> (tempfile::TempDir, String) {
             conns.cache.execute(
                 r#"INSERT INTO courses (id, name, course_code, html_url, term_id, data_json)
                  VALUES (
-                    101,
-                    'Intro to Computing',
-                    'CS-101',
-                    'https://courses.example.test/courses/101',
+                    61001,
+                    'Synthetic Computing',
+                    'SYN-61001',
+                    'https://canvas.example.test/courses/61001',
                     7,
                     '{"enrollment_state":"active","is_favorite":true,"restricted":false}'
                  )"#,
@@ -150,12 +142,12 @@ fn prepare_seeded_courses() -> (tempfile::TempDir, String) {
             )?;
             conns.cache.execute(
                 "INSERT INTO course_totals (course_id, mode, current_score, current_grade, data_json)
-                 VALUES (101, 'all', 92.5, 'A-', '{}')",
+                 VALUES (61001, 'all', 92.5, 'A-', '{}')",
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
-                 VALUES ('courses', 'active', 'course', '101', 0)",
+                 VALUES ('courses', 'active', 'course', '61001', 0)",
                 [],
             )?;
             conns.cache.execute(

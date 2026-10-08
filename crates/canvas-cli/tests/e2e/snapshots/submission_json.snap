@@ -9,17 +9,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "submission",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "assignment:9",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "assignment:60009",
       "source": "cache",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -44,8 +44,8 @@ expression: value
       "attachments": [
         {
           "content_type": "application/pdf",
-          "display_name": "ps1.pdf",
-          "id": "501",
+          "display_name": "synthetic-file.pdf",
+          "id": "60501",
           "size": 1024
         }
       ],
@@ -53,15 +53,15 @@ expression: value
       "body_sha256": null,
       "comments": [
         {
-          "author": "Ada",
+          "author": "Synthetic Instructor",
           "created_at": "<clock>",
-          "created_at_local": "2026-09-09T11:00:00-04:00",
-          "id": "1",
-          "text": "nice"
+          "created_at_local": "2040-09-09T11:00:00-04:00",
+          "id": "60001",
+          "text": "Synthetic fixture comment."
         }
       ],
       "excused": null,
-      "grade": "A",
+      "grade": "C",
       "graded": false,
       "late": false,
       "missing": false,
@@ -70,17 +70,17 @@ expression: value
       "rubric_assessed": true,
       "rubric_assessment": [
         {
-          "comments": "ok",
-          "criterion_id": "_123",
-          "points": 5.0,
-          "rating_id": "_5721"
+          "comments": "Synthetic rubric comment.",
+          "criterion_id": "synthetic_c1",
+          "points": 3.25,
+          "rating_id": "synthetic_r1"
         }
       ],
-      "score": 95.0,
+      "score": 73.25,
       "submission_type": "online_upload",
       "submitted": true,
-      "submitted_at": "2026-09-19T12:00:00Z",
-      "submitted_at_local": "2026-09-19T08:00:00-04:00",
+      "submitted_at": "2040-09-19T12:00:00Z",
+      "submitted_at_local": "2040-09-19T08:00:00-04:00",
       "url": null,
       "workflow_state": "submitted"
     }

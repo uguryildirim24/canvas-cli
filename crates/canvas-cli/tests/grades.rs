@@ -11,21 +11,21 @@ fn bin() -> StdCommand {
     StdCommand::new(env!("CARGO_BIN_EXE_canvas"))
 }
 
-/// Three active courses: CS-101 has grading periods, MATH-201 does not, and
-/// PHYS-301 is absent from the course list's totals (no `course_totals` row).
+/// Three active courses: SYN-101 has grading periods, SYN-201 does not, and
+/// SYN-301 is absent from the course list's totals (no `course_totals` row).
 fn seed_courses(open: &OpenIdentity) {
     open.store
         .call_blocking(|conns| {
             conns.cache.execute(
                 "INSERT INTO terms (id, name, start_at, end_at, data_json)
-                 VALUES (7, 'Fall 2026', '2026-08-25T04:00:00Z', '2026-12-15T05:00:00Z', '{}')",
+                 VALUES (7, 'Fall 2026', '2040-08-25T04:00:00Z', '2040-12-15T05:00:00Z', '{}')",
                 [],
             )?;
             conns.cache.execute(
                 r#"INSERT INTO courses (id, name, course_code, html_url, term_id, data_json)
                  VALUES (
-                    101, 'Intro to Computing', 'CS-101',
-                    'https://courses.example.test/courses/101', 7,
+                    61001, 'Synthetic Computing', 'SYN-101',
+                    'https://canvas.example.test/courses/61001', 7,
                     '{"enrollment_state":"active","is_favorite":true,"restricted":false,"has_grading_periods":1}'
                  )"#,
                 [],
@@ -33,8 +33,8 @@ fn seed_courses(open: &OpenIdentity) {
             conns.cache.execute(
                 r#"INSERT INTO courses (id, name, course_code, html_url, term_id, data_json)
                  VALUES (
-                    102, 'Linear Algebra', 'MATH-201',
-                    'https://courses.example.test/courses/102', 7,
+                    61002, 'Synthetic Mathematics', 'SYN-201',
+                    'https://canvas.example.test/courses/61002', 7,
                     '{"enrollment_state":"active","is_favorite":false,"restricted":false}'
                  )"#,
                 [],
@@ -42,22 +42,22 @@ fn seed_courses(open: &OpenIdentity) {
             conns.cache.execute(
                 r#"INSERT INTO courses (id, name, course_code, html_url, term_id, data_json)
                  VALUES (
-                    103, 'Mechanics', 'PHYS-301',
-                    'https://courses.example.test/courses/103', 7,
+                    61003, 'Synthetic Physics', 'SYN-301',
+                    'https://canvas.example.test/courses/61003', 7,
                     '{"enrollment_state":"active","is_favorite":false,"restricted":false}'
                  )"#,
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
-                 VALUES ('courses', 'active', 'course', '101', 0),
-                        ('courses', 'active', 'course', '102', 1),
-                        ('courses', 'active', 'course', '103', 2)",
+                 VALUES ('courses', 'active', 'course', '61001', 0),
+                        ('courses', 'active', 'course', '61002', 1),
+                        ('courses', 'active', 'course', '61003', 2)",
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('courses', 'active', '2026-09-09T16:00:00Z', 1, 3, 0, 0)",
+                 VALUES ('courses', 'active', '2040-09-09T16:00:00Z', 1, 3, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -73,33 +73,33 @@ fn seed_totals(open: &OpenIdentity) {
                 r#"INSERT INTO course_totals
                     (course_id, mode, current_score, current_grade, final_score, final_grade, data_json)
                  VALUES
-                   (101, 'all', 88.0, 'B+', 85.0, 'B', '{}'),
-                   (101, 'current', 91.5, 'A-', 90.0, 'A-',
-                    '{"period_id":"5","period_title":"Fall Term 1"}'),
-                   (102, 'all', NULL, NULL, NULL, NULL, '{}'),
-                   (102, 'current', NULL, NULL, NULL, NULL, '{}')"#,
+                   (61001, 'all', 68.25, 'C+', 65.25, 'B', '{}'),
+                   (61001, 'current', 73.25, 'C', 70.25, 'C',
+                    '{"period_id":"5","period_title":"Synthetic Period One"}'),
+                   (61002, 'all', NULL, NULL, NULL, NULL, '{}'),
+                   (61002, 'current', NULL, NULL, NULL, NULL, '{}')"#,
                 [],
             )?;
             for (key, field) in [
-                ("101|all", "current_score"),
-                ("101|all", "current_grade"),
-                ("101|all", "final_score"),
-                ("101|all", "final_grade"),
-                ("101|current", "current_score"),
-                ("101|current", "current_grade"),
-                ("101|current", "final_score"),
-                ("101|current", "final_grade"),
+                ("61001|all", "current_score"),
+                ("61001|all", "current_grade"),
+                ("61001|all", "final_score"),
+                ("61001|all", "final_grade"),
+                ("61001|current", "current_score"),
+                ("61001|current", "current_grade"),
+                ("61001|current", "final_score"),
+                ("61001|current", "final_grade"),
             ] {
                 conns.cache.execute(
                     "INSERT INTO field_obs (entity_kind, entity_key, field, observed_at)
-                     VALUES ('course_totals', ?1, ?2, '2026-09-09T16:00:00Z')",
+                     VALUES ('course_totals', ?1, ?2, '2040-09-09T16:00:00Z')",
                     rusqlite::params![key, field],
                 )?;
             }
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('course_totals', 'course:101', '2026-09-09T16:00:00Z', 1, 2, 0, 0),
-                        ('course_totals', 'course:102', '2026-09-09T16:00:00Z', 1, 2, 0, 0)",
+                 VALUES ('course_totals', 'course:61001', '2040-09-09T16:00:00Z', 1, 2, 0, 0),
+                        ('course_totals', 'course:61002', '2040-09-09T16:00:00Z', 1, 2, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -109,8 +109,8 @@ fn seed_totals(open: &OpenIdentity) {
 
 /// `enrollment_grades` for the whole course and for period 5 only.
 ///
-/// Courses 101 and 103 each hold two enrollments (a section change); only one
-/// carries values, which is what the de-duplication rule must keep. Course 103
+/// Courses 61001 and 61003 each hold two enrollments (a section change); only one
+/// carries values, which is what the de-duplication rule must keep. Course 61003
 /// has no `course_totals` row, so its overview total comes from that rule.
 fn seed_enrollments(open: &OpenIdentity) {
     open.store
@@ -120,20 +120,20 @@ fn seed_enrollments(open: &OpenIdentity) {
                     (enrollment_id, period, course_id, current_score, current_grade,
                      final_score, final_grade, data_json)
                  VALUES
-                   (900, 'none', 101, NULL, NULL, NULL, NULL, '{}'),
-                   (901, 'none', 101, 88.0, 'B+', 85.0, 'B', '{}'),
-                   (902, 'none', 102, NULL, NULL, NULL, NULL, '{}'),
-                   (903, 'none', 103, NULL, NULL, NULL, NULL, '{}'),
-                   (904, 'none', 103, 64.0, 'D', 60.0, 'D-', '{}'),
-                   (900, '5', 101, 77.0, 'C+', 75.0, 'C', '{}'),
-                   (901, '5', 101, 77.0, 'C+', 75.0, 'C', '{}')",
+                   (900, 'none', 61001, NULL, NULL, NULL, NULL, '{}'),
+                   (901, 'none', 61001, 68.25, 'C+', 65.25, 'B', '{}'),
+                   (902, 'none', 61002, NULL, NULL, NULL, NULL, '{}'),
+                   (903, 'none', 61003, NULL, NULL, NULL, NULL, '{}'),
+                   (904, 'none', 61003, 44.25, 'D', 40.25, 'F', '{}'),
+                   (900, '5', 61001, 57.25, 'C+', 55.25, 'C', '{}'),
+                   (901, '5', 61001, 57.25, 'C+', 55.25, 'C', '{}')",
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('enrollment_grades', 'period:none', '2026-09-09T16:00:00Z', 1, 5, 0, 0),
-                        ('enrollment_grades', 'period:5', '2026-09-09T16:00:00Z', 1, 2, 0, 0),
-                        ('enrollment_grades', 'period:999', '2026-09-09T16:00:00Z', 1, 0, 0, 0)",
+                 VALUES ('enrollment_grades', 'period:none', '2040-09-09T16:00:00Z', 1, 5, 0, 0),
+                        ('enrollment_grades', 'period:5', '2040-09-09T16:00:00Z', 1, 2, 0, 0),
+                        ('enrollment_grades', 'period:999', '2040-09-09T16:00:00Z', 1, 0, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -146,23 +146,23 @@ fn seed_periods(open: &OpenIdentity) {
         .call_blocking(|conns| {
             conns.cache.execute(
                 "INSERT INTO grading_periods (id, course_id, title, start_date, end_date, data_json)
-                 VALUES (5, 101, 'Fall Term 1', '2026-09-01T00:00:00Z', '2026-10-31T00:00:00Z', '{}'),
-                        (6, 101, 'Fall Term 2', '2026-11-01T00:00:00Z', '2026-12-20T00:00:00Z', '{}')",
+                 VALUES (5, 61001, 'Synthetic Period One', '2040-09-01T00:00:00Z', '2040-10-31T00:00:00Z', '{}'),
+                        (6, 61001, 'Synthetic Period Two', '2040-11-01T00:00:00Z', '2040-12-20T00:00:00Z', '{}')",
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
-                 VALUES ('grading_periods', 'course:101', 'grading_period', '5', 0),
-                        ('grading_periods', 'course:101', 'grading_period', '6', 1)",
+                 VALUES ('grading_periods', 'course:61001', 'grading_period', '5', 0),
+                        ('grading_periods', 'course:61001', 'grading_period', '6', 1)",
                 [],
             )?;
-            // Course 102 has no grading periods; Canvas answers with an empty
+            // Course 61002 has no grading periods; Canvas answers with an empty
             // list, which is complete coverage of zero rows.
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
-                 VALUES ('grading_periods', 'course:101', '2026-09-09T16:00:00Z', 1, 2, 0, 0),
-                        ('grading_periods', 'course:102', '2026-09-09T16:00:00Z', 1, 0, 0, 0),
-                        ('grading_periods', 'course:103', '2026-09-09T16:00:00Z', 1, 0, 0, 0)",
+                 VALUES ('grading_periods', 'course:61001', '2040-09-09T16:00:00Z', 1, 2, 0, 0),
+                        ('grading_periods', 'course:61002', '2040-09-09T16:00:00Z', 1, 0, 0, 0),
+                        ('grading_periods', 'course:61003', '2040-09-09T16:00:00Z', 1, 0, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -178,11 +178,11 @@ fn seed_groups(open: &OpenIdentity) {
                 r#"INSERT INTO assignment_groups
                     (id, course_id, name, position, group_weight, rules_json, data_json)
                  VALUES (
-                    20, 101, 'Homework', 1, 40.0,
+                    20, 61001, 'Synthetic Exercises', 1, 40.0,
                     '{"drop_lowest":1,"drop_highest":null,"never_drop":["31"]}',
-                    '{"assignments_by_period":{"none":{"observed_at":"2026-09-09T16:00:00Z","subtotal":{"score":23.0,"possible":50.0},"assignments":[
-                        {"id":"32","name":"Problem Set 2","due_at":"2026-09-28T03:59:00Z","points_possible":25.0,"omit_from_final_grade":false,"score":null,"grade":null,"excused":null,"late":null,"missing":true,"posted_at":null,"workflow_state":"unsubmitted","submitted_at":null,"attempt":null},
-                        {"id":"31","name":"Problem Set 1","due_at":"2026-09-14T03:59:00Z","points_possible":25.0,"omit_from_final_grade":false,"score":23.0,"grade":"23","excused":false,"late":false,"missing":false,"posted_at":"2026-09-16T12:00:00Z","workflow_state":"graded","submitted_at":"2026-09-13T18:00:00Z","attempt":1}
+                    '{"assignments_by_period":{"none":{"observed_at":"2040-09-09T16:00:00Z","subtotal":{"score":13.25,"possible":50.0},"assignments":[
+                        {"id":"32","name":"Synthetic Exercise Two","due_at":"2040-09-28T03:59:00Z","points_possible":25.0,"omit_from_final_grade":false,"score":null,"grade":null,"excused":null,"late":null,"missing":true,"posted_at":null,"workflow_state":"unsubmitted","submitted_at":null,"attempt":null},
+                        {"id":"31","name":"Synthetic Exercise One","due_at":"2040-09-14T03:59:00Z","points_possible":25.0,"omit_from_final_grade":false,"score":13.25,"grade":"13.25","excused":false,"late":false,"missing":false,"posted_at":"2040-09-16T12:00:00Z","workflow_state":"graded","submitted_at":"2040-09-13T18:00:00Z","attempt":1}
                     ]}}}'
                  )"#,
                 [],
@@ -191,25 +191,25 @@ fn seed_groups(open: &OpenIdentity) {
                 r#"INSERT INTO assignment_groups
                     (id, course_id, name, position, group_weight, rules_json, data_json)
                  VALUES (
-                    21, 101, 'Exams', 2, 60.0, NULL,
-                    '{"assignments_by_period":{"none":{"observed_at":"2026-09-09T16:00:00Z","assignments":[]}}}'
+                    21, 61001, 'Synthetic Exams', 2, 40.25, NULL,
+                    '{"assignments_by_period":{"none":{"observed_at":"2040-09-09T16:00:00Z","assignments":[]}}}'
                  )"#,
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO membership (dataset, scope, entity_kind, entity_id, position)
-                 VALUES ('assignment_groups', 'course:101:period:none', 'assignment_group', '20', 0),
-                        ('assignment_groups', 'course:101:period:none', 'assignment_group', '21', 1)",
+                 VALUES ('assignment_groups', 'course:61001:period:none', 'assignment_group', '20', 0),
+                        ('assignment_groups', 'course:61001:period:none', 'assignment_group', '21', 1)",
                 [],
             )?;
             conns.cache.execute(
                 "INSERT INTO fetch_log (dataset, scope, fetched_at, complete, count, stale, epoch_seen)
                  VALUES
-                   ('assignment_groups', 'course:101:period:none', '2026-09-09T16:00:00Z', 1, 2, 0, 0),
-                   ('assignment_groups', 'course:101:period:5', '2026-09-09T16:00:00Z', 1, 0, 0, 0),
-                   ('assignment_groups', 'course:102:period:none', '2026-09-09T16:00:00Z', 1, 0, 0, 0),
-                   ('assignment_groups', 'course:102:period:5', '2026-09-09T16:00:00Z', 1, 0, 0, 0),
-                   ('assignment_groups', 'course:103:period:none', '2026-09-09T16:00:00Z', 1, 0, 0, 0)",
+                   ('assignment_groups', 'course:61001:period:none', '2040-09-09T16:00:00Z', 1, 2, 0, 0),
+                   ('assignment_groups', 'course:61001:period:5', '2040-09-09T16:00:00Z', 1, 0, 0, 0),
+                   ('assignment_groups', 'course:61002:period:none', '2040-09-09T16:00:00Z', 1, 0, 0, 0),
+                   ('assignment_groups', 'course:61002:period:5', '2040-09-09T16:00:00Z', 1, 0, 0, 0),
+                   ('assignment_groups', 'course:61003:period:none', '2040-09-09T16:00:00Z', 1, 0, 0, 0)",
                 [],
             )?;
             Ok(())
@@ -219,11 +219,7 @@ fn seed_groups(open: &OpenIdentity) {
 
 fn prepare() -> (tempfile::TempDir, String) {
     let dir = tempfile::TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://courses.example.test",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.test", 62001, "2040-01-01T00:00:00Z");
     let key = doc.key.to_string();
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
@@ -243,7 +239,7 @@ fn run(dir: &tempfile::TempDir, key: &str, args: &[&str]) -> (i32, String) {
     let output = bin()
         .env("CANVAS_DATA_ROOT", dir.path())
         .env("CANVAS_IDENTITY_KEY", key)
-        .env("CANVAS_NOW", "2026-09-09T17:05:12Z")
+        .env("CANVAS_NOW", "2040-09-09T17:05:12Z")
         .env("COLUMNS", "100")
         .env("TZ", "America/New_York")
         .env_remove("CANVAS_TOKEN")
@@ -273,7 +269,7 @@ fn a_course_without_periods_defaults_to_all() {
         &key,
         &[
             "grades",
-            "MATH-201",
+            "SYN-201",
             "--offline",
             "--json",
             "--color",
@@ -293,7 +289,7 @@ fn a_course_with_periods_defaults_to_current() {
         &key,
         &[
             "grades",
-            "CS-101",
+            "SYN-101",
             "--offline",
             "--json",
             "--color",
@@ -305,9 +301,9 @@ fn a_course_with_periods_defaults_to_current() {
     let grades = &v["result"]["courses"][0]["grades"];
     assert_eq!(grades["period"]["mode"], "current");
     assert_eq!(grades["period"]["id"], "5");
-    assert_eq!(grades["period"]["title"], "Fall Term 1");
+    assert_eq!(grades["period"]["title"], "Synthetic Period One");
     // The current-period total, not the whole-course one.
-    assert_eq!(grades["current_score"], 91.5);
+    assert_eq!(grades["current_score"], 73.25);
 }
 
 #[test]
@@ -318,7 +314,7 @@ fn explicit_all_reads_the_whole_course_total() {
         &key,
         &[
             "grades",
-            "CS-101",
+            "SYN-101",
             "--period",
             "all",
             "--offline",
@@ -330,7 +326,7 @@ fn explicit_all_reads_the_whole_course_total() {
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["result"]["period_mode"], "all");
     let grades = &v["result"]["courses"][0]["grades"];
-    assert_eq!(grades["current_score"], 88.0);
+    assert_eq!(grades["current_score"], 68.25);
     // A total from one mode is never labelled with another.
     assert!(grades["period"]["id"].is_null());
     assert!(grades["period"]["title"].is_null());
@@ -344,7 +340,7 @@ fn an_explicit_valid_period_reads_that_periods_enrollments() {
         &key,
         &[
             "grades",
-            "CS-101",
+            "SYN-101",
             "--period",
             "5",
             "--offline",
@@ -357,11 +353,11 @@ fn an_explicit_valid_period_reads_that_periods_enrollments() {
     assert_eq!(v["result"]["period_mode"], "id");
     let grades = &v["result"]["courses"][0]["grades"];
     // Period 5's enrollment values, not the current-period or course totals.
-    assert_eq!(grades["current_score"], 77.0);
+    assert_eq!(grades["current_score"], 57.25);
     assert_eq!(grades["current_grade"], "C+");
     assert_eq!(grades["period"]["mode"], "id");
     assert_eq!(grades["period"]["id"], "5");
-    assert_eq!(grades["period"]["title"], "Fall Term 1");
+    assert_eq!(grades["period"]["title"], "Synthetic Period One");
 }
 
 #[test]
@@ -388,13 +384,13 @@ fn a_non_numeric_period_is_a_usage_error() {
 #[test]
 fn a_period_absent_for_one_course_reports_unavailable() {
     let (dir, key) = prepare();
-    // Period 5 belongs to CS-101; MATH-201 has no row for it.
+    // Period 5 belongs to SYN-101; SYN-201 has no row for it.
     let (code, v) = run_json(
         &dir,
         &key,
         &[
             "grades",
-            "MATH-201",
+            "SYN-201",
             "--period",
             "5",
             "--offline",
@@ -417,13 +413,13 @@ fn a_period_absent_for_one_course_reports_unavailable() {
 #[test]
 fn a_period_the_selected_course_lacks_is_unavailable_not_an_error() {
     let (dir, key) = prepare();
-    // 999 is not in CS-101's period list, so the course reports unavailable.
+    // 999 is not in SYN-101's period list, so the course reports unavailable.
     let (code, v) = run_json(
         &dir,
         &key,
         &[
             "grades",
-            "CS-101",
+            "SYN-101",
             "--period",
             "999",
             "--offline",
@@ -480,7 +476,7 @@ fn null_totals_stay_null_and_print_unavailable() {
         &key,
         &[
             "grades",
-            "MATH-201",
+            "SYN-201",
             "--offline",
             "--json",
             "--color",
@@ -504,7 +500,7 @@ fn null_totals_stay_null_and_print_unavailable() {
     let (code, human) = run(
         &dir,
         &key,
-        &["grades", "MATH-201", "--offline", "--color", "never"],
+        &["grades", "SYN-201", "--offline", "--color", "never"],
     );
     assert_eq!(code, 0);
     assert!(human.contains("unavailable"), "human={human}");
@@ -513,8 +509,8 @@ fn null_totals_stay_null_and_print_unavailable() {
 #[test]
 fn duplicate_enrollments_collapse_to_one_row_per_course() {
     let (dir, key) = prepare();
-    // Courses 101 and 103 each have two `none` enrollments; only the second
-    // carries values. Course 103 has no `course_totals` row, so its total is
+    // Courses 61001 and 61003 each have two `none` enrollments; only the second
+    // carries values. Course 61003 has no `course_totals` row, so its total is
     // read straight from the de-duplicated enrollments.
     let (code, v) = run_json(
         &dir,
@@ -536,12 +532,12 @@ fn duplicate_enrollments_collapse_to_one_row_per_course() {
         .iter()
         .map(|c| c["course"]["id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, ["101", "102", "103"], "sorted by code");
+    assert_eq!(ids, ["61001", "61002", "61003"], "sorted by code");
     // The enrollment that carried values wins over the empty one.
     let phys = &courses[2]["grades"];
-    assert_eq!(phys["current_score"], 64.0, "{v}");
+    assert_eq!(phys["current_score"], 44.25, "{v}");
     assert_eq!(phys["current_grade"], "D");
-    assert_eq!(phys["final_score"], 60.0);
+    assert_eq!(phys["final_score"], 40.25);
 }
 
 /// SPEC §12.4: totals from one period mode are never labelled with another.
@@ -555,7 +551,7 @@ fn an_uncovered_course_never_borrows_whole_course_totals_for_current() {
         &key,
         &[
             "grades",
-            "PHYS-301",
+            "SYN-301",
             "--period",
             "current",
             "--offline",
@@ -589,7 +585,7 @@ fn an_uncovered_course_never_borrows_whole_course_totals_for_current() {
         &key,
         &[
             "grades",
-            "PHYS-301",
+            "SYN-301",
             "--period",
             "all",
             "--offline",
@@ -599,7 +595,7 @@ fn an_uncovered_course_never_borrows_whole_course_totals_for_current() {
         ],
     );
     assert_eq!(code, 0, "{v}");
-    assert_eq!(v["result"]["courses"][0]["grades"]["current_score"], 64.0);
+    assert_eq!(v["result"]["courses"][0]["grades"]["current_score"], 44.25);
 }
 
 // --- course view ---
@@ -612,7 +608,7 @@ fn the_course_view_carries_groups_periods_and_sorted_assignments() {
         &key,
         &[
             "grades",
-            "CS-101",
+            "SYN-101",
             "--period",
             "all",
             "--offline",
@@ -626,12 +622,12 @@ fn the_course_view_carries_groups_periods_and_sorted_assignments() {
     let groups = view["groups"].as_array().unwrap();
     assert_eq!(groups.len(), 2);
     // Groups sort by position.
-    assert_eq!(groups[0]["name"], "Homework");
+    assert_eq!(groups[0]["name"], "Synthetic Exercises");
     assert_eq!(groups[0]["weight"], 40.0);
     assert_eq!(groups[0]["rules"]["drop_lowest"], 1);
     assert_eq!(groups[0]["rules"]["never_drop"][0], "31");
     // A subtotal appears only when the API supplied one.
-    assert_eq!(groups[0]["subtotal"]["score"], 23.0);
+    assert_eq!(groups[0]["subtotal"]["score"], 13.25);
     assert!(groups[1]["subtotal"].is_null());
     // Assignments sort by due_at then id, regardless of stored order.
     let names: Vec<&str> = groups[0]["assignments"]
@@ -640,7 +636,7 @@ fn the_course_view_carries_groups_periods_and_sorted_assignments() {
         .iter()
         .map(|a| a["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["Problem Set 1", "Problem Set 2"]);
+    assert_eq!(names, ["Synthetic Exercise One", "Synthetic Exercise Two"]);
     let status = &groups[0]["assignments"][1]["status"];
     assert_eq!(status["missing"], true);
     assert_eq!(status["pending"], false);
@@ -711,11 +707,7 @@ fn offline_with_coverage_serves_the_cache_without_requests() {
 #[test]
 fn offline_without_coverage_is_exit_7() {
     let dir = tempfile::TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://courses.example.test",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.test", 62001, "2040-01-01T00:00:00Z");
     let key = doc.key.to_string();
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
@@ -757,7 +749,7 @@ fn grades_json_snapshot_from_fixture_cache() {
         &key,
         &[
             "grades",
-            "CS-101",
+            "SYN-101",
             "--period",
             "all",
             "--offline",
@@ -779,7 +771,7 @@ fn grades_human_snapshot_from_fixture_cache() {
         &key,
         &[
             "grades",
-            "CS-101",
+            "SYN-101",
             "--period",
             "all",
             "--offline",

@@ -5,11 +5,11 @@ expression: value
 {
   "exit": 9,
   "freshness": [],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "recovery",
   "partial": [],
@@ -20,7 +20,7 @@ expression: value
     "storage": 0
   },
   "result": {
-    "assume_available": false,
+    "assume_available": true,
     "attribution": null,
     "candidates": [],
     "journal_id": "00000000-0000-4000-8000-00000000000j",

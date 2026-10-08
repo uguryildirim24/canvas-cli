@@ -1,39 +1,39 @@
 {
   "discussion": {
-    "assignment_id": "2",
-    "author": "Dr. Reed",
-    "course_id": "1",
+    "assignment_id": "60002",
+    "author": "Synthetic Instructor",
+    "course_id": "60001",
     "discussion_type": "threaded",
     "embedded": [],
     "external_links": [],
     "files": [],
-    "group_category_id": "9",
+    "group_category_id": "60009",
     "group_topic_children": [
       {
-        "group_id": "77",
-        "id": "56"
+        "group_id": "60077",
+        "id": "60056"
       }
     ],
-    "html_url": "https://canvas.test/courses/1/discussion_topics/55",
-    "id": "55",
+    "html_url": "https://canvas.test/courses/60001/discussion_topics/60055",
+    "id": "60055",
     "is_announcement": false,
-    "last_reply_at": "2026-09-08T10:00:00Z",
+    "last_reply_at": "2040-09-08T10:00:00Z",
     "locked": false,
-    "message_markdown": "What surprised you this week?",
+    "message_markdown": "Synthetic message markdown",
     "pinned": false,
     "points_possible": 5.0,
-    "posted_at": "2026-09-01T14:00:00Z",
+    "posted_at": "2040-09-01T14:00:00Z",
     "read_state": "unread",
     "replies": [
       {
-        "created_at": "2026-09-02T09:00:00Z",
-        "id": "900",
-        "message_markdown": "The lab took longer than I expected.",
+        "created_at": "2040-09-02T09:00:00Z",
+        "id": "60900",
+        "message_markdown": "Synthetic message markdown",
         "parent_id": null,
         "read_state": "unread",
         "replies_count": 1,
         "truncated": false,
-        "user_id": "31",
+        "user_id": "60031",
         "user_name": "Alex Kim"
       }
     ],
@@ -46,7 +46,7 @@
     "replies_total": 1,
     "reply_count": 4,
     "require_initial_post": true,
-    "title": "Week 1 reflection",
+    "title": "Synthetic title",
     "truncated": false,
     "unread_count": 2
   },

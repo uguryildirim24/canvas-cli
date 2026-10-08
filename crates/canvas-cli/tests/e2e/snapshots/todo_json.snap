@@ -9,7 +9,7 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "courses",
-      "fetched_at": "2026-09-09T17:05:12Z",
+      "fetched_at": "2040-09-09T17:05:12Z",
       "scope": "active",
       "source": "cache",
       "stale": false
@@ -18,8 +18,8 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "planner",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "window:2026-09-08..2026-09-21",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "window:2040-09-08..2040-09-21",
       "source": "cache",
       "stale": false
     },
@@ -27,17 +27,17 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "missing",
-      "fetched_at": "2026-09-09T17:05:12Z",
+      "fetched_at": "2040-09-09T17:05:12Z",
       "scope": "all",
       "source": "cache",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -56,7 +56,7 @@ expression: value
     },
     "items": [
       {
-        "assignment_id": "11",
+        "assignment_id": "60011",
         "availability": {
           "external": false,
           "lock_at": null,
@@ -67,14 +67,14 @@ expression: value
           "unlock_at": null,
           "unlock_at_local": null
         },
-        "course_code": "CHEM301",
-        "course_id": "100",
+        "course_code": "SYN-600",
+        "course_id": "60100",
         "dismissed": false,
-        "due_at": "2026-09-12T03:59:00Z",
-        "due_at_local": "2026-09-11T23:59:00-04:00",
+        "due_at": "2040-09-12T03:59:00Z",
+        "due_at_local": "2040-09-11T23:59:00-04:00",
         "html_url": null,
-        "id": "11",
-        "key": "assignment:11",
+        "id": "60011",
+        "key": "assignment:60011",
         "kind": "assignment",
         "marked_complete": false,
         "parent_assignment_id": null,
@@ -97,10 +97,10 @@ expression: value
           "submitted_at_local": null,
           "workflow_state": null
         },
-        "title": "Lab Report"
+        "title": "Synthetic Missing"
       },
       {
-        "assignment_id": "9",
+        "assignment_id": "60009",
         "availability": {
           "external": null,
           "lock_at": null,
@@ -111,21 +111,21 @@ expression: value
           "unlock_at": null,
           "unlock_at_local": null
         },
-        "course_code": "CHEM301",
-        "course_id": "100",
+        "course_code": "SYN-600",
+        "course_id": "60100",
         "dismissed": false,
-        "due_at": "2026-09-20T03:59:00Z",
-        "due_at_local": "2026-09-19T23:59:00-04:00",
+        "due_at": "2040-09-20T03:59:00Z",
+        "due_at_local": "2040-09-19T23:59:00-04:00",
         "html_url": null,
-        "id": "9",
-        "key": "assignment:9",
+        "id": "60009",
+        "key": "assignment:60009",
         "kind": "assignment",
         "marked_complete": false,
         "parent_assignment_id": null,
         "points_possible": null,
         "raw_type": "assignment",
-        "scheduled_at": "2026-09-20T03:59:00Z",
-        "scheduled_at_local": "2026-09-19T23:59:00-04:00",
+        "scheduled_at": "2040-09-20T03:59:00Z",
+        "scheduled_at_local": "2040-09-19T23:59:00-04:00",
         "status": {
           "attempt": null,
           "excused": null,
@@ -141,13 +141,13 @@ expression: value
           "submitted_at_local": null,
           "workflow_state": null
         },
-        "title": "Problem Set 1"
+        "title": "Synthetic Planner"
       }
     ],
     "window": {
       "days": 14,
-      "end": "2026-09-21",
-      "start": "2026-09-08"
+      "end": "2040-09-21",
+      "start": "2040-09-08"
     }
   },
   "schema": "canvas-cli/todo@1",

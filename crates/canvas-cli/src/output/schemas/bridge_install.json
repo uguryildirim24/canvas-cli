@@ -3,7 +3,7 @@
   "host_name": "com.canvas_cli.bridge",
   "extension_id": "abcdefghijklmnopabcdefghijklmnop",
   "binary": "/usr/local/bin/canvas",
-  "manifest_path": "/Users/rolf/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
+  "manifest_path": "/Users/example/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.canvas_cli.bridge.json",
   "written": true,
   "steps": [
     "Open chrome://extensions and turn on Developer mode.",

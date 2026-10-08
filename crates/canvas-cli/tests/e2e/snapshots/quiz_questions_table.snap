@@ -4,28 +4,28 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-attempt 1 of quiz 101
-attempt ends 2026-09-11T14:30:00Z
+attempt 1 of quiz 60101
+attempt ends 2040-09-11T14:30:00Z
 
-Q901  multiple_choice_question  2 pts  Question 1
-Which reagent marks the end point?
-  [4811] Phenolphthalein
-  [4812] Litmus
-  [4813] Methyl orange
-  [4814] Starch
+Q60901  multiple_choice_question  2 pts  Synthetic Quiz Submission Questions
+Synthetic exercise: sort the symbols X, Y, and Z.
+  [64811] Synthetic option 15
+  [64812] Synthetic option 6
+  [64813] Synthetic option 13
+  [64814] Synthetic option 6
 
-Q902  essay_question  4 pts  Question 2
-Name two sources of error, and how each biases the result.
+Q60902  essay_question  4 pts  Synthetic Quiz Submission Questions
+Synthetic exercise: sort the symbols X, Y, and Z.
 
-Q903  true_false_question  2 pts  Question 3
-A buffer resists pH change on dilution.
-  [4901] True
-  [4902] False
+Q60903  true_false_question  2 pts  Synthetic Quiz Submission Questions
+Synthetic exercise: sort the symbols X, Y, and Z.
+  [64901] Synthetic option 4
+  [64902] Synthetic option 5
 
-Q904  multiple_answers_question  2 pts  Question 4
-Select every step of the procedure that runs before titration begins.
-  [5101] Rinse the burette with the titrant
-  [5102] Record the initial volume
-  [5103] Add the indicator to the flask
-  [5104] Drain to the end point
+Q60904  multiple_answers_question  2 pts  Synthetic Quiz Submission Questions
+Synthetic exercise: sort the symbols X, Y, and Z.
+  [65101] Synthetic option 34
+  [65102] Synthetic option 25
+  [65103] Synthetic option 30
+  [65104] Synthetic option 22
 --- stderr ---

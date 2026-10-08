@@ -133,7 +133,7 @@ async fn wrapped_collection_follows_two_pages_and_multiple_link_headers() {
     while let Some(page) = pages.next().await {
         ids.extend(page.unwrap().items.into_iter().map(|item| item.id));
     }
-    assert_eq!(ids, vec![7, 8, 9, 10]);
+    assert_eq!(ids, vec![60007, 60008, 60009, 60010]);
     assert_eq!(client.telemetry().api, 2);
 }
 

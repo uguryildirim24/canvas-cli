@@ -4,7 +4,7 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-  WHEN                COURSE     KIND              TITLE          
-  2026-09-15 11:00    CHEM301    event             Office hours   
-  2026-09-19 23:59    CHEM301    assignment due    Problem Set 1  
+  WHEN                COURSE     KIND              TITLE               
+  2040-09-15 11:00    SYN-600    event             Synthetic Calendar  
+  2040-09-19 23:59    SYN-600    assignment due    Synthetic Planner   
 --- stderr ---

@@ -1,7 +1,7 @@
 //! Quiz taking against the fixture server (SPEC §12.7).
 //!
-//! The listing and the detail name quiz 101 in course 100; the session
-//! fixtures carry the live session (quiz submission 501, attempt 1) with its
+//! The listing and the detail name quiz 60101 in course 100; the session
+//! fixtures carry the live session (quiz submission 60501, attempt 1) with its
 //! four censored questions. Every write runs with `--yes`, the way the other
 //! end-to-end writes do, and the journal id is masked before snapshotting.
 
@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::harness::{COURSE_ID, CanvasServer, E2e};
 
-const QUIZ_ID: &str = "101";
+const QUIZ_ID: &str = "60101";
 
 #[tokio::test]
 async fn quizzes_lists() {
@@ -19,7 +19,7 @@ async fn quizzes_lists() {
     run.assert_code(0);
     let value = run.json();
     assert_eq!(value["schema"], "canvas-cli/quizzes@1");
-    assert_eq!(value["result"]["course_id"], "100");
+    assert_eq!(value["result"]["course_id"], "60100");
     assert_eq!(value["result"]["quizzes"].as_array().unwrap().len(), 1);
     env.snapshot_json("quizzes_json", &run);
 }
@@ -41,7 +41,7 @@ async fn quiz_show() {
     run.assert_code(0);
     let value = run.json();
     assert_eq!(value["schema"], "canvas-cli/quiz@1");
-    assert_eq!(value["result"]["quiz"]["id"], "101");
+    assert_eq!(value["result"]["quiz"]["id"], "60101");
     env.snapshot_json("quiz_json", &run);
 }
 
@@ -49,7 +49,7 @@ async fn quiz_show() {
 async fn quiz_show_table() {
     let server = CanvasServer::start().await;
     let env = E2e::with_server(&server);
-    let run = env.run(&["quiz", &COURSE_ID.to_string(), "Week 3 Reading Quiz"]);
+    let run = env.run(&["quiz", &COURSE_ID.to_string(), "Synthetic Quiz"]);
     run.assert_code(0);
     env.snapshot("quiz_table", &run);
 }
@@ -137,7 +137,7 @@ async fn quiz_submit_answers_and_completes() {
     let env = E2e::with_server(&server);
     let answers = env.write_file(
         "answers.json",
-        br#"[{"id":901,"answer":4811},{"id":902,"answer":"A wet flask dilutes the titrant."},{"id":903,"answer":4901},{"id":904,"answer":[5101,5102]}]"#,
+        br#"[{"id":60901,"answer":64811},{"id":60902,"answer":"Synthetic free-text answer."},{"id":60903,"answer":64901},{"id":60904,"answer":[65101,65102]}]"#,
     );
     let run = env.run(&[
         "quiz",
@@ -154,7 +154,7 @@ async fn quiz_submit_answers_and_completes() {
     assert_eq!(value["schema"], "canvas-cli/operation@1");
     assert_eq!(value["result"]["kind"], "quiz_submit");
     assert_eq!(value["result"]["state"], "posted");
-    assert_eq!(value["result"]["response"]["id"], "501");
+    assert_eq!(value["result"]["response"]["id"], "60501");
     env.mask_ids_from_journals();
     env.snapshot_json("quiz_submit_json", &run);
 }
@@ -165,7 +165,7 @@ async fn quiz_submit_table() {
     let env = E2e::with_server(&server);
     let answers = env.write_file(
         "answers.json",
-        br#"[{"id":901,"answer":4811},{"id":902,"answer":"A wet flask dilutes the titrant."},{"id":903,"answer":4901},{"id":904,"answer":[5101,5102]}]"#,
+        br#"[{"id":60901,"answer":64811},{"id":60902,"answer":"Synthetic free-text answer."},{"id":60903,"answer":64901},{"id":60904,"answer":[65101,65102]}]"#,
     );
     let run = env.run(&[
         "quiz",
@@ -223,7 +223,7 @@ async fn quiz_submit_without_a_session_is_exit_8() {
         )
         .await;
     let env = E2e::with_server(&server);
-    let answers = env.write_file("answers.json", br#"[{"id":901,"answer":4811}]"#);
+    let answers = env.write_file("answers.json", br#"[{"id":60901,"answer":64811}]"#);
     let run = env.run(&[
         "quiz",
         "submit",
@@ -268,7 +268,7 @@ async fn new_quizzes_lists() {
     run.assert_code(0);
     let value = run.json();
     assert_eq!(value["schema"], "canvas-cli/new-quizzes@1");
-    assert_eq!(value["result"]["course_id"], "100");
+    assert_eq!(value["result"]["course_id"], "60100");
     assert_eq!(value["result"]["quizzes"].as_array().unwrap().len(), 1);
     env.snapshot_json("new_quizzes_json", &run);
 }
@@ -286,11 +286,11 @@ async fn new_quizzes_table() {
 async fn new_quiz_show() {
     let server = CanvasServer::start().await;
     let env = E2e::with_server(&server);
-    let run = env.run(&["new-quiz", &COURSE_ID.to_string(), "9013", "--json"]);
+    let run = env.run(&["new-quiz", &COURSE_ID.to_string(), "69013", "--json"]);
     run.assert_code(0);
     let value = run.json();
     assert_eq!(value["schema"], "canvas-cli/new-quiz@1");
-    assert_eq!(value["result"]["quiz"]["id"], "201");
+    assert_eq!(value["result"]["quiz"]["id"], "60201");
     env.snapshot_json("new_quiz_json", &run);
 }
 
@@ -298,7 +298,7 @@ async fn new_quiz_show() {
 async fn new_quiz_show_table() {
     let server = CanvasServer::start().await;
     let env = E2e::with_server(&server);
-    let run = env.run(&["new-quiz", &COURSE_ID.to_string(), "9013"]);
+    let run = env.run(&["new-quiz", &COURSE_ID.to_string(), "69013"]);
     run.assert_code(0);
     env.snapshot("new_quiz_table", &run);
 }

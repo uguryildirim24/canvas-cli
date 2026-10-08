@@ -4,7 +4,8 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-  course    path                                      action     size    verify  
-            100-100/modules/01-Week 1/syllabus.pdf    planned    2048            
+  course    path                                action     size    verify  
+            60100-60100/modules/01-Synthetic    planned    2048            
+            Module/synthetic-file.pdf                                      
 totals: planned=1 downloaded=0 moved=0 skipped=0 unmanaged=0 modified=0 locked=0 unavailable=0 skipped_external=0 unsafe_path=0 unresolved_move=0 failed=0 bytes=2048
 --- stderr ---

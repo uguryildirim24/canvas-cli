@@ -5,13 +5,13 @@ expression: body
 exit: 0
 --- stdout ---
 quiz_submit posted  journal=00000000-0000-4000-8000-00000000000j
-quiz 101 "Week 3 Reading Quiz"  course 100
-text transform=json  input_sha256=72da3196d7da98149e76ef8183b987fba4e39db41f95436764bbf4da0d738254  sent_sha256=72da3196d7da98149e76ef8183b987fba4e39db41f95436764bbf4da0d738254
+quiz 60101 "Synthetic Quiz"  course 60100
+text transform=json  input_sha256=38abaaef574bb0cfde16c9a1fb4712bcee692152a8e030a867716c2e4ca9e0ab  sent_sha256=38abaaef574bb0cfde16c9a1fb4712bcee692152a8e030a867716c2e4ca9e0ab
 receipt 00000000-0000-4000-8000-00000000000r  attribution=accepted
-canvas id 501  created 2026-09-09T13:05:12-04:00
+canvas id 60501  created 2040-09-09T13:05:12-04:00
 delivery observable
 --- stderr ---
 quiz_submit plan
-quiz 101 "Week 3 Reading Quiz"  course 100
-  text transform=json input_sha256=72da3196d7da98149e76ef8183b987fba4e39db41f95436764bbf4da0d738254 sent_sha256=72da3196d7da98149e76ef8183b987fba4e39db41f95436764bbf4da0d738254
-  expires 2026-09-09T17:20:12Z
+quiz 60101 "Synthetic Quiz"  course 60100
+  text transform=json input_sha256=38abaaef574bb0cfde16c9a1fb4712bcee692152a8e030a867716c2e4ca9e0ab sent_sha256=38abaaef574bb0cfde16c9a1fb4712bcee692152a8e030a867716c2e4ca9e0ab
+  expires 2040-09-09T17:20:12Z

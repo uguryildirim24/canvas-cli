@@ -4,6 +4,6 @@ expression: "String::from_utf8(out).unwrap()"
 ---
 submit submitted  journal=01932f3a-8b2c-7d4e-9f01-23456789abcd
 receipt 01932f3a-9c3d-7e5f-a012-3456789abcde  attribution=observed
-attempt 1  submitted_at 2026-09-09T12:05:00-04:00
-  File         Bytes    SHA-256                                                             Canvas ID  
-  essay.pdf    24576    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb    55001
+attempt 1  submitted_at 2040-09-09T12:05:00-04:00
+  File                  Bytes    SHA-256                                                             Canvas ID  
+  synthetic-file.pdf    24576    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb    115001

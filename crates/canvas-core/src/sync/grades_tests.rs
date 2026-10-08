@@ -27,11 +27,7 @@ fn ts(secs: i64) -> Timestamp {
 
 fn setup() -> (TempDir, OpenIdentity) {
     let dir = TempDir::new().unwrap();
-    let doc = IdentityDocument::new(
-        "https://courses.example.test",
-        12345,
-        "2026-01-01T00:00:00Z",
-    );
+    let doc = IdentityDocument::new("https://canvas.example.test", 62001, "2040-01-01T00:00:00Z");
     let paths = Paths::for_identity(dir.path(), &doc.key);
     fs::create_dir_all(&paths.identity_dir).unwrap();
     fs::create_dir_all(paths.lock_path.parent().unwrap()).unwrap();
@@ -152,7 +148,7 @@ fn each_period_keeps_its_own_assignment_list_and_clock() {
             entities: vec![assignment_group_to_entity(
                 &group(
                     20,
-                    "Homework",
+                    "Synthetic Exercises",
                     Some(vec![assignment(31, "PS1"), assignment(32, "PS2")]),
                 ),
                 7,
@@ -167,7 +163,7 @@ fn each_period_keeps_its_own_assignment_list_and_clock() {
         IngestPage {
             fetched_at: ts(20),
             entities: vec![assignment_group_to_entity(
-                &group(20, "Homework", Some(vec![assignment(31, "PS1")])),
+                &group(20, "Synthetic Exercises", Some(vec![assignment(31, "PS1")])),
                 7,
                 ts(20),
             )],
@@ -206,7 +202,7 @@ fn an_out_of_order_arrival_never_replaces_a_newer_list_for_its_period() {
             entities: vec![assignment_group_to_entity(
                 &group(
                     20,
-                    "Homework",
+                    "Synthetic Exercises",
                     Some(vec![assignment(31, "PS1"), assignment(32, "PS2")]),
                 ),
                 7,
@@ -221,7 +217,7 @@ fn an_out_of_order_arrival_never_replaces_a_newer_list_for_its_period() {
         IngestPage {
             fetched_at: ts(20),
             entities: vec![assignment_group_to_entity(
-                &group(20, "Homework", Some(vec![assignment(31, "PS1")])),
+                &group(20, "Synthetic Exercises", Some(vec![assignment(31, "PS1")])),
                 7,
                 ts(20),
             )],
@@ -266,7 +262,7 @@ fn an_absent_assignment_list_leaves_the_stored_one_alone() {
         IngestPage {
             fetched_at: ts(10),
             entities: vec![assignment_group_to_entity(
-                &group(20, "Homework", Some(vec![assignment(31, "PS1")])),
+                &group(20, "Synthetic Exercises", Some(vec![assignment(31, "PS1")])),
                 7,
                 ts(10),
             )],
@@ -279,7 +275,7 @@ fn an_absent_assignment_list_leaves_the_stored_one_alone() {
         IngestPage {
             fetched_at: ts(40),
             entities: vec![assignment_group_to_entity(
-                &group(20, "Homework", None),
+                &group(20, "Synthetic Exercises", None),
                 7,
                 ts(40),
             )],
@@ -312,7 +308,7 @@ fn group_columns_and_rules_are_projected() {
         IngestPage {
             fetched_at: ts(10),
             entities: vec![assignment_group_to_entity(
-                &group(20, "Homework", Some(vec![])),
+                &group(20, "Synthetic Exercises", Some(vec![])),
                 7,
                 ts(10),
             )],
@@ -329,7 +325,7 @@ fn group_columns_and_rules_are_projected() {
             )?)
         })
         .unwrap();
-    assert_eq!(name, "Homework");
+    assert_eq!(name, "Synthetic Exercises");
     assert_eq!(position, 1);
     assert!((weight - 40.0).abs() < f64::EPSILON);
     let rules: Value = serde_json::from_str(&rules).unwrap();
@@ -376,7 +372,7 @@ fn scoped_enrollment_values_keep_each_period_separate() {
         &p,
         IngestPage {
             fetched_at: ts(30),
-            entities: vec![enrollment_to_entity(&enrollment(75.0), "5")],
+            entities: vec![enrollment_to_entity(&enrollment(55.25), "5")],
         },
     );
 
@@ -395,7 +391,7 @@ fn scoped_enrollment_values_keep_each_period_separate() {
         .unwrap();
     assert_eq!(
         scores,
-        vec![("5".to_owned(), Some(75.0)), ("6".to_owned(), Some(80.0))],
+        vec![("5".to_owned(), Some(55.25)), ("6".to_owned(), Some(80.0))],
         "each period keeps its own value"
     );
 
@@ -446,7 +442,7 @@ fn a_newer_observation_for_one_period_never_suppresses_an_older_one_for_another(
         &p,
         IngestPage {
             fetched_at: ts(30),
-            entities: vec![enrollment_to_entity(&enrollment(75.0), "5")],
+            entities: vec![enrollment_to_entity(&enrollment(55.25), "5")],
         },
     );
     // Q arrives second with an older clock and must still be written.
@@ -480,7 +476,7 @@ fn a_newer_observation_for_one_period_never_suppresses_an_older_one_for_another(
     assert_eq!(
         rows,
         vec![
-            ("5".to_owned(), Some(75.0), ts(30).to_string()),
+            ("5".to_owned(), Some(55.25), ts(30).to_string()),
             ("6".to_owned(), Some(80.0), ts(20).to_string()),
         ],
         "period Q keeps its own value and its own older clock"
@@ -503,7 +499,7 @@ fn an_older_arrival_does_not_overwrite_a_newer_value_in_the_same_period() {
         &p,
         IngestPage {
             fetched_at: ts(30),
-            entities: vec![enrollment_to_entity(&enrollment(75.0), "5")],
+            entities: vec![enrollment_to_entity(&enrollment(55.25), "5")],
         },
     );
     ingest(
@@ -525,7 +521,7 @@ fn an_older_arrival_does_not_overwrite_a_newer_value_in_the_same_period() {
             )?)
         })
         .unwrap();
-    assert_eq!(score, Some(75.0));
+    assert_eq!(score, Some(55.25));
 }
 
 // --- wrapped grading-period pagination ---
@@ -543,8 +539,8 @@ async fn the_grading_periods_wrapper_is_followed_across_two_pages() {
             ResponseTemplate::new(200)
                 .set_body_json(json!({
                     "grading_periods": [
-                        {"id": "5", "title": "Fall Term 1",
-                         "start_date": "2026-09-01T00:00:00Z", "end_date": "2026-10-31T00:00:00Z"}
+                        {"id": "5", "title": "Synthetic Period One",
+                         "start_date": "2040-09-01T00:00:00Z", "end_date": "2040-10-31T00:00:00Z"}
                     ],
                     "meta": {"primaryCollection": "grading_periods"}
                 }))
@@ -557,8 +553,8 @@ async fn the_grading_periods_wrapper_is_followed_across_two_pages() {
         .and(query_param("page", "2"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "grading_periods": [
-                {"id": "6", "title": "Fall Term 2",
-                 "start_date": "2026-11-01T00:00:00Z", "end_date": "2026-12-20T00:00:00Z"}
+                {"id": "6", "title": "Synthetic Period Two",
+                 "start_date": "2040-11-01T00:00:00Z", "end_date": "2040-12-20T00:00:00Z"}
             ]
         })))
         .mount(&server)
@@ -590,7 +586,7 @@ async fn the_grading_periods_wrapper_is_followed_across_two_pages() {
             Ok(rows)
         })
         .unwrap();
-    assert_eq!(titles, vec!["Fall Term 1", "Fall Term 2"]);
+    assert_eq!(titles, vec!["Synthetic Period One", "Synthetic Period Two"]);
 }
 
 #[tokio::test]
@@ -604,14 +600,14 @@ async fn a_group_refresh_sends_the_period_and_stores_the_inline_assignments() {
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([
             {
                 "id": "20",
-                "name": "Homework",
+                "name": "Synthetic Exercises",
                 "position": 1,
                 "group_weight": 40.0,
                 "rules": {"drop_lowest": 1, "never_drop": ["31"]},
                 "assignments": [
                     {"id": "31", "name": "PS1", "points_possible": 25.0,
-                     "due_at": "2026-09-14T03:59:00Z", "omit_from_final_grade": false,
-                     "submission": {"score": 23.0, "grade": "23", "workflow_state": "graded"}}
+                     "due_at": "2040-09-14T03:59:00Z", "omit_from_final_grade": false,
+                     "submission": {"score": 13.25, "grade": "13.25", "workflow_state": "graded"}}
                 ]
             }
         ])))
@@ -637,7 +633,7 @@ async fn a_group_refresh_sends_the_period_and_stores_the_inline_assignments() {
     let stored = &data["assignments_by_period"]["5"]["assignments"][0];
     assert_eq!(stored["id"], "31");
     assert_eq!(stored["name"], "PS1");
-    assert_eq!(stored["score"], 23.0);
+    assert_eq!(stored["score"], 13.25);
     assert_eq!(stored["workflow_state"], "graded");
     // The projection is an allowlist: no capability-bearing fields ride along.
     assert!(stored.get("html_url").is_none(), "{stored}");
@@ -654,7 +650,7 @@ async fn an_assignment_without_a_submission_carries_no_status_keys() {
         .and(path("/api/v1/courses/7/assignment_groups"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([
             {
-                "id": "20", "name": "Homework", "position": 1, "rules": {},
+                "id": "20", "name": "Synthetic Exercises", "position": 1, "rules": {},
                 "assignments": [
                     {"id": "31", "name": "PS1", "points_possible": 25.0},
                     {"id": "32", "name": "PS2", "points_possible": 25.0,
@@ -696,7 +692,7 @@ async fn an_explicit_null_group_field_clears_the_stored_value() {
     Mock::given(method("GET"))
         .and(path("/api/v1/courses/7/assignment_groups"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-            {"id": "20", "name": "Homework", "position": 1, "group_weight": 40.0, "rules": {}}
+            {"id": "20", "name": "Synthetic Exercises", "position": 1, "group_weight": 40.0, "rules": {}}
         ])))
         .mount(&server)
         .await;
@@ -719,7 +715,7 @@ async fn an_explicit_null_group_field_clears_the_stored_value() {
     Mock::given(method("GET"))
         .and(path("/api/v1/courses/7/assignment_groups"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-            {"id": "20", "name": "Homework", "position": 1, "group_weight": null, "rules": {}}
+            {"id": "20", "name": "Synthetic Exercises", "position": 1, "group_weight": null, "rules": {}}
         ])))
         .mount(&server)
         .await;

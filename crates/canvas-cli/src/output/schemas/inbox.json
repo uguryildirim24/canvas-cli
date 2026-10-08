@@ -1,18 +1,18 @@
 {
   "conversations": [
     {
-      "context_name": "CHEM-101",
-      "id": "700",
-      "last_message_at": "2026-09-09T12:00:00Z",
+      "context_name": "SYN-600",
+      "id": "60700",
+      "last_message_at": "2040-09-09T12:00:00Z",
       "message_count": 3,
       "participants": [
         {
-          "id": "31",
-          "name": "Alex Kim"
+          "id": "60031",
+          "name": "Synthetic Participant"
         }
       ],
       "starred": false,
-      "subject": "Lab partner",
+      "subject": "Synthetic subject",
       "workflow_state": "unread"
     }
   ],

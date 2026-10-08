@@ -9,8 +9,8 @@ expression: value
       "complete": true,
       "count": 1,
       "dataset": "course",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "cache",
       "stale": false
     },
@@ -18,17 +18,17 @@ expression: value
       "complete": true,
       "count": 2,
       "dataset": "course_totals",
-      "fetched_at": "2026-09-09T17:05:12Z",
-      "scope": "course:100",
+      "fetched_at": "2040-09-09T17:05:12Z",
+      "scope": "course:60100",
       "source": "cache",
       "stale": false
     }
   ],
-  "generated_at": "2026-09-09T17:05:12Z",
+  "generated_at": "2040-09-09T17:05:12Z",
   "identity": {
     "key": "<identity>",
     "origin": "<origin>",
-    "user_id": "1"
+    "user_id": "60001"
   },
   "outcome": "ok",
   "partial": [],
@@ -40,37 +40,37 @@ expression: value
   },
   "result": {
     "course": {
-      "code": "CHEM301",
+      "code": "SYN-600",
       "enrollment_state": "active",
       "grades": {
-        "current_grade": "A-",
-        "current_score": 92.5,
-        "final_grade": "A-",
-        "final_score": 90.0,
+        "current_grade": "C",
+        "current_score": 73.25,
+        "final_grade": "C",
+        "final_score": 73.25,
         "period": {
           "id": null,
           "mode": "all",
           "title": null
         }
       },
-      "html_url": "<origin>/courses/100",
-      "id": "100",
+      "html_url": "<origin>/courses/60100",
+      "id": "60100",
       "is_favorite": true,
       "modules_count": null,
-      "name": "Chemistry 301",
+      "name": "Synthetic Course",
       "restricted": false,
-      "syllabus_markdown": "Hi",
+      "syllabus_markdown": "Synthetic exercise: sort the symbols X, Y, and Z.",
       "teachers": [
         {
-          "id": "55",
+          "id": "60055",
           "name": ""
         }
       ],
       "term": {
-        "end_at": "2026-12-15T10:00:00Z",
-        "id": "10",
-        "name": "Fall 2026",
-        "start_at": "2026-08-25T04:00:00Z"
+        "end_at": "2040-12-15T10:00:00Z",
+        "id": "60010",
+        "name": "Synthetic Term",
+        "start_at": "2040-08-25T04:00:00Z"
       },
       "time_zone": null
     }

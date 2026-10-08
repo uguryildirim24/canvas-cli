@@ -21,17 +21,17 @@ use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// The instant every snapshot is taken at.
-pub const NOW: &str = "2026-09-09T17:05:12Z";
+pub const NOW: &str = "2040-09-09T17:05:12Z";
 /// Fixed zone, so `ts+local` fields and human dates are stable.
 pub const TZ: &str = "America/New_York";
 /// The token the fixture server accepts.
 pub const TOKEN: &str = "e2e-fixture-token";
-/// The user id in `user.json`.
-pub const USER_ID: i64 = 1;
+/// The synthetic account id in `user.json`.
+pub const USER_ID: i64 = 60001;
 /// The course id in `course.json`.
-pub const COURSE_ID: i64 = 100;
+pub const COURSE_ID: i64 = 60100;
 /// The assignment id in `assignment.json`.
-pub const ASSIGNMENT_ID: i64 = 9;
+pub const ASSIGNMENT_ID: i64 = 60009;
 /// Mount priority for a per-test route override (lower wins in `wiremock`).
 const OVERRIDE_PRIORITY: u8 = 1;
 /// Stand-in ids, the same width as the UUIDs they replace, so a table that
@@ -198,7 +198,7 @@ impl CanvasServer {
         let mut course = Fixtures::course();
         course["term"] = Fixtures::term();
         course["html_url"] = json!(format!("{}/courses/{COURSE_ID}", self.uri()));
-        course["teachers"] = json!([{ "id": "55", "display_name": "Grace Hopper" }]);
+        course["teachers"] = json!([{ "id": "60055", "display_name": "Synthetic Instructor" }]);
         self.json("/api/v1/courses", json!([course.clone()])).await;
         self.json(&format!("/api/v1/courses/{COURSE_ID}"), course)
             .await;
@@ -223,7 +223,7 @@ impl CanvasServer {
         // The shipped comment has no `created_at`; Appendix D declares that
         // field non-nullable, and every real Canvas comment carries it.
         let mut submission = Fixtures::submission();
-        submission["submission_comments"][0]["created_at"] = json!("2026-09-09T15:00:00Z");
+        submission["submission_comments"][0]["created_at"] = json!("2040-09-09T15:00:00Z");
         self.json(
             &format!("/api/v1/courses/{COURSE_ID}/assignments/{ASSIGNMENT_ID}/submissions/self"),
             submission,
@@ -233,7 +233,7 @@ impl CanvasServer {
 
     async fn mount_planner(&self) {
         let mut planner = Fixtures::planner();
-        planner["plannable"]["due_at"] = json!("2026-09-20T03:59:00Z");
+        planner["plannable"]["due_at"] = json!("2040-09-20T03:59:00Z");
         self.json("/api/v1/planner/items", json!([planner])).await;
         self.json(
             "/api/v1/users/self/missing_submissions",
@@ -296,13 +296,13 @@ impl CanvasServer {
     async fn mount_announcements_and_calendar(&self) {
         let mut announcement = Fixtures::announcement();
         announcement["html_url"] = json!(format!(
-            "{}/courses/{COURSE_ID}/discussion_topics/40",
+            "{}/courses/{COURSE_ID}/discussion_topics/60040",
             self.uri()
         ));
         self.json("/api/v1/announcements", json!([announcement.clone()]))
             .await;
         self.json(
-            &format!("/api/v1/courses/{COURSE_ID}/discussion_topics/40"),
+            &format!("/api/v1/courses/{COURSE_ID}/discussion_topics/60040"),
             announcement,
         )
         .await;
@@ -343,45 +343,45 @@ impl CanvasServer {
 
     /// Serve the Classic Quizzes taking routes from the shipped fixtures.
     ///
-    /// The listing and the detail name quiz 101 in course 100; the session
-    /// fixtures carry the live session (quiz submission 501, attempt 1). A
+    /// The listing and the detail name quiz 60101 in course 100; the session
+    /// fixtures carry the live session (quiz submission 60501, attempt 1). A
     /// test that needs another answer — none started, locked, a different
     /// completion — overrides the one route it changes.
     async fn mount_quizzes(&self) {
         let mut quiz = Fixtures::quiz();
-        quiz["html_url"] = json!(format!("{}/courses/{COURSE_ID}/quizzes/101", self.uri()));
+        quiz["html_url"] = json!(format!("{}/courses/{COURSE_ID}/quizzes/60101", self.uri()));
         self.json(
             &format!("/api/v1/courses/{COURSE_ID}/quizzes"),
             json!([quiz.clone()]),
         )
         .await;
-        self.json(&format!("/api/v1/courses/{COURSE_ID}/quizzes/101"), quiz)
+        self.json(&format!("/api/v1/courses/{COURSE_ID}/quizzes/60101"), quiz)
             .await;
         let mut submission = Fixtures::quiz_submission();
         submission["quiz_submissions"][0]["html_url"] = json!(format!(
-            "{}/courses/{COURSE_ID}/quizzes/101/submissions/501",
+            "{}/courses/{COURSE_ID}/quizzes/60101/submissions/60501",
             self.uri()
         ));
         submission["quiz_submissions"][0]["user_id"] = json!(USER_ID);
         self.json(
-            &format!("/api/v1/courses/{COURSE_ID}/quizzes/101/submission"),
+            &format!("/api/v1/courses/{COURSE_ID}/quizzes/60101/submission"),
             submission.clone(),
         )
         .await;
         self.json(
-            "/api/v1/quiz_submissions/501/questions",
+            "/api/v1/quiz_submissions/60501/questions",
             Fixtures::quiz_submission_questions(),
         )
         .await;
         Mock::given(method("POST"))
             .and(path(format!(
-                "/api/v1/courses/{COURSE_ID}/quizzes/101/submissions"
+                "/api/v1/courses/{COURSE_ID}/quizzes/60101/submissions"
             )))
             .respond_with(ResponseTemplate::new(200).set_body_json(submission))
             .mount(&self.server)
             .await;
         Mock::given(method("POST"))
-            .and(path("/api/v1/quiz_submissions/501/questions".to_owned()))
+            .and(path("/api/v1/quiz_submissions/60501/questions".to_owned()))
             .respond_with(QuizAnswersEcho)
             .mount(&self.server)
             .await;
@@ -393,7 +393,7 @@ impl CanvasServer {
         complete["quiz_submissions"][0]["user_id"] = json!(USER_ID);
         Mock::given(method("POST"))
             .and(path(format!(
-                "/api/v1/courses/{COURSE_ID}/quizzes/101/submissions/501/complete"
+                "/api/v1/courses/{COURSE_ID}/quizzes/60101/submissions/60501/complete"
             )))
             .respond_with(ResponseTemplate::new(200).set_body_json(complete))
             .mount(&self.server)
@@ -402,13 +402,13 @@ impl CanvasServer {
 
     /// Serve the New Quizzes metadata routes from the shipped fixture.
     ///
-    /// The listing and the detail name New Quiz 201 (assignment 9013) in
+    /// The listing and the detail name New Quiz 60201 (assignment 69013) in
     /// course 100. Taking one is an LTI session no token reaches, so there
     /// is nothing to mount for it.
     async fn mount_new_quizzes(&self) {
         let mut quiz = Fixtures::new_quiz();
         quiz["html_url"] = json!(format!(
-            "{}/courses/{COURSE_ID}/assignments/9013",
+            "{}/courses/{COURSE_ID}/assignments/69013",
             self.uri()
         ));
         self.json(
@@ -417,7 +417,7 @@ impl CanvasServer {
         )
         .await;
         self.json(
-            &format!("/api/quiz/v1/courses/{COURSE_ID}/quizzes/9013"),
+            &format!("/api/quiz/v1/courses/{COURSE_ID}/quizzes/69013"),
             quiz,
         )
         .await;
@@ -545,7 +545,7 @@ impl wiremock::Respond for EchoSubmission {
 /// The submission Canvas would report after accepting `submission`.
 fn posted_attempt(submission: &Value) -> Value {
     let entry = json!({
-        "id": 77,
+        "id": 60077,
         "attempt": 1,
         "submitted_at": NOW,
         "workflow_state": "submitted",
@@ -555,7 +555,7 @@ fn posted_attempt(submission: &Value) -> Value {
         "attachments": [],
     });
     json!({
-        "id": 77,
+        "id": 60077,
         "assignment_id": ASSIGNMENT_ID,
         "user_id": USER_ID,
         "attempt": 1,
@@ -700,7 +700,7 @@ impl E2e {
 
     /// Create the identity directory, optionally recording a validated token.
     pub fn install_identity(&mut self, origin: &str, user_id: i64, validated: bool) {
-        let doc = IdentityDocument::new(origin, user_id, "2026-01-01T00:00:00Z");
+        let doc = IdentityDocument::new(origin, user_id, "2040-01-01T00:00:00Z");
         let paths = Paths::for_identity(&self.data_dir, &doc.key);
         std::fs::create_dir_all(&paths.identity_dir).unwrap();
         std::fs::create_dir_all(paths.lock_path.parent().unwrap()).unwrap();
@@ -712,7 +712,7 @@ impl E2e {
                 .call_blocking(move |conns| {
                     conns.state.execute(
                         "INSERT INTO credential (identity_key, token_sha256, validated_at, active_source)
-                         VALUES (?1, ?2, '2026-01-01T00:00:00Z', 'file')",
+                         VALUES (?1, ?2, '2040-01-01T00:00:00Z', 'file')",
                         rusqlite::params![key, token_hash()],
                     )?;
                     Ok(())
@@ -1018,6 +1018,7 @@ impl E2e {
             }
         }
         out = mask_number_after(&out, "size=");
+        out = mask_number_after(&out, "size_bytes: ");
         out = mask_number_after(&out, "seconds=");
         // `receipts export --out -` streams the receipt document itself, whose
         // volatile keys keep the placeholders `VOLATILE_KEYS` gives them, so a

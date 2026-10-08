@@ -1,15 +1,15 @@
 {
-  "course_id": "1",
+  "course_id": "60001",
   "embedded": [],
   "external_links": [],
   "files": [
     {
-      "file_id": "42",
-      "name": "Syllabus.pdf",
-      "url": "https://canvas.test/courses/1/files/42"
+      "file_id": "60042",
+      "name": "synthetic-file.pdf",
+      "url": "https://canvas.test/courses/60001/files/60042"
     }
   ],
-  "syllabus_markdown": "Bring a calculator.",
+  "syllabus_markdown": "Synthetic syllabus markdown",
   "truncated": false,
   "updated_at": null
 }

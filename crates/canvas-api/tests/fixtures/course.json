@@ -1,1 +1,28 @@
-{"id": "100", "name": "Chemistry 301", "course_code": "CHEM301", "workflow_state": "available", "is_favorite": true, "syllabus_body": "<p>Hi</p>", "access_restricted_by_date": false, "html_url": "/courses/100", "term": {"id": 10, "name": "Fall 2026"}, "enrollments": [{"type": "student", "enrollment_state": "active", "computed_current_score": 92.5, "computed_final_score": 90.0, "computed_current_grade": "A-", "computed_final_grade": "A-", "current_period_computed_current_score": 88.0, "current_period_computed_final_score": 88.0, "current_period_computed_current_grade": "B+", "current_period_computed_final_grade": "B+"}]}
+{
+  "id": "60100",
+  "name": "Synthetic Course",
+  "course_code": "SYN-600",
+  "workflow_state": "available",
+  "is_favorite": true,
+  "syllabus_body": "<p>Synthetic exercise: sort the symbols X, Y, and Z.</p>",
+  "access_restricted_by_date": false,
+  "html_url": "/courses/60100",
+  "term": {
+    "id": 60010,
+    "name": "Synthetic Course"
+  },
+  "enrollments": [
+    {
+      "type": "student",
+      "enrollment_state": "active",
+      "computed_current_score": 73.25,
+      "computed_final_score": 73.25,
+      "computed_current_grade": "C",
+      "computed_final_grade": "C",
+      "current_period_computed_current_score": 73.25,
+      "current_period_computed_final_score": 73.25,
+      "current_period_computed_current_grade": "C",
+      "current_period_computed_final_grade": "C"
+    }
+  ]
+}

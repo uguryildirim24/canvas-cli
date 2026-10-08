@@ -1,1 +1,26 @@
-{"id": 9, "name": "Problem Set 1", "description": "<p>Do it</p>", "due_at": "2026-09-20T03:59:00Z", "unlock_at": null, "lock_at": null, "points_possible": 100.0, "submission_types": ["online_upload"], "allowed_extensions": ["pdf"], "allowed_attempts": 2, "group_category_id": null, "course_id": 100, "locked_for_user": false, "html_url": "/courses/100/assignments/9", "submission": {"id": 77, "attempt": 1, "workflow_state": "submitted"}, "can_submit": true}
+{
+  "id": 60009,
+  "name": "Synthetic Assignment",
+  "description": "<p>Synthetic exercise: sort the symbols X, Y, and Z.</p>",
+  "due_at": "2040-09-20T03:59:00Z",
+  "unlock_at": null,
+  "lock_at": null,
+  "points_possible": 100.0,
+  "submission_types": [
+    "online_upload"
+  ],
+  "allowed_extensions": [
+    "pdf"
+  ],
+  "allowed_attempts": 2,
+  "group_category_id": null,
+  "course_id": 60100,
+  "locked_for_user": false,
+  "html_url": "/courses/60100/assignments/60009",
+  "submission": {
+    "id": 60077,
+    "attempt": 1,
+    "workflow_state": "submitted"
+  },
+  "can_submit": true
+}

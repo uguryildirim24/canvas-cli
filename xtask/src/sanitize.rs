@@ -741,7 +741,7 @@ mod tests {
                 "name": "Ada Lovelace",
                 "sortable_name": "Lovelace, Ada",
                 "login_id": "alovelace",
-                "primary_email": "ada@lasell.edu",
+                "primary_email": "ada@example.test",
                 "avatar_url": "https://canvas.real.edu/images/thumbnails/9/abc?token=t",
                 "url": "https://files.real.edu/courses/7/files/33/download?verifier=cap&download=1"
             }),
@@ -789,7 +789,7 @@ mod tests {
 
     #[test]
     fn free_text_keeps_element_names_but_never_attributes() {
-        let input = "<p>Ask <a href=\"mailto:ada@lasell.edu\" title=\"Ada\">Ada</a> \
+        let input = "<p>Ask <a href=\"mailto:ada@example.test\" title=\"Ada\">Ada</a> \
                      or see <img src=\"https://canvas.real.edu/users/77/avatar.png\"/>.</p>";
         let out = placeholder(input);
         assert_eq!(out.chars().count(), input.chars().count());
@@ -801,7 +801,7 @@ mod tests {
         for leak in [
             "mailto",
             "ada",
-            "lasell",
+            "example",
             "Ada",
             "canvas.real.edu",
             "avatar",

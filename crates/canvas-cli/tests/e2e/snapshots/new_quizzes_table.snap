@@ -4,6 +4,6 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-  ID     ASSIGNMENT    TITLE              DUE                     POINTS    TIME    ATTEMPTS  
-  201    9013          Week 3 New Quiz    2026-09-18T23:59:00Z    12        30m     2         
+  ID       ASSIGNMENT    TITLE                 DUE                     POINTS    TIME    ATTEMPTS  
+  60201    69013         Synthetic New Quiz    2040-09-18T23:59:00Z    12        30m     2         
 --- stderr ---

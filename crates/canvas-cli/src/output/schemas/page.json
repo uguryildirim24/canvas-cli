@@ -1,7 +1,7 @@
 {
   "page": {
-    "body_markdown": "Read the syllabus.\n\n[embedded iframe: unavailable to this tool]",
-    "course_id": "1",
+    "body_markdown": "Synthetic body markdown",
+    "course_id": "60001",
     "embedded": [
       {
         "kind": "iframe",
@@ -16,19 +16,19 @@
     ],
     "files": [
       {
-        "file_id": "42",
-        "name": "Syllabus.pdf",
-        "url": "https://canvas.test/courses/1/files/42"
+        "file_id": "60042",
+        "name": "synthetic-file.pdf",
+        "url": "https://canvas.test/courses/60001/files/60042"
       }
     ],
     "front_page": true,
-    "html_url": "https://canvas.test/courses/1/pages/course-overview",
-    "id": "301",
+    "html_url": "https://canvas.test/courses/60001/pages/course-overview",
+    "id": "60301",
     "locked_for_user": false,
     "published": true,
-    "title": "Course Overview",
+    "title": "Synthetic title",
     "truncated": false,
-    "updated_at": "2026-09-01T14:00:00Z",
+    "updated_at": "2040-09-01T14:00:00Z",
     "url": "course-overview"
   }
 }

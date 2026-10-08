@@ -19,16 +19,16 @@ expression: value
       "count": null,
       "dataset": "course_totals",
       "fetched_at": null,
-      "scope": "course:101",
+      "scope": "course:61001",
       "source": "cache",
       "stale": true
     }
   ],
   "generated_at": "2026-09-09T17:05:12Z",
   "identity": {
-    "key": "courses.example.test-12345-f1e3cb02",
-    "origin": "https://courses.example.test",
-    "user_id": "12345"
+    "key": "canvas.example.test-62001-afc363ff",
+    "origin": "https://canvas.example.test",
+    "user_id": "62001"
   },
   "outcome": "ok",
   "partial": [],
@@ -41,7 +41,7 @@ expression: value
   "result": {
     "courses": [
       {
-        "code": "CS-101",
+        "code": "SYN-61001",
         "enrollment_state": "active",
         "grades": {
           "current_grade": "A-",
@@ -54,10 +54,10 @@ expression: value
             "title": null
           }
         },
-        "html_url": "https://courses.example.test/courses/101",
-        "id": "101",
+        "html_url": "https://canvas.example.test/courses/61001",
+        "id": "61001",
         "is_favorite": true,
-        "name": "Intro to Computing",
+        "name": "Synthetic Computing",
         "restricted": false,
         "term": {
           "end_at": "2026-12-15T05:00:00Z",

@@ -4,9 +4,9 @@ expression: body
 ---
 exit: 0
 --- stdout ---
-logged in as Ada Lovelace (1)
+logged in as Synthetic Student (60001)
 profile: default
-identity: <origin> / 1
+identity: <origin> / 60001
 credential backend: file
 --- stderr ---
 using token from stdin
